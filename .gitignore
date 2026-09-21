@@ -1,0 +1,43 @@
+# --- Segredos e configuração local ---
+.env
+*.env.local
+
+# --- Python / backend ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.tsbuildinfo
+npm-debug.log*
+
+# --- Modelos e pesos (nunca versionar) ---
+*.safetensors
+*.ckpt
+*.pt
+*.bin
+*.onnx
+
+# --- Referências e mídia gerada (grandes, ficam fora do Git) ---
+personas/*/references/*
+!personas/*/references/.gitkeep
+outputs/
+generated/
+*.png
+*.jpg
+*.jpeg
+*.webp
+!frontend/public/**
+!frontend/src/**
+
+# --- SO / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

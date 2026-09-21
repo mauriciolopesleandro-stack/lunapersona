@@ -1,0 +1,33 @@
+{
+  "_comment": "Registro de metadados dos modelos disponiveis no ComfyUI (RunPod). Os arquivos .safetensors NAO ficam neste repositorio, apenas a referencia a eles. Adicionar um modelo novo aqui NAO baixa nada automaticamente - e apenas metadado para o Model Manager.",
+  "models": [
+    {
+      "id": "flux-kontext-dev-fp8",
+      "name": "FLUX.1 Kontext [dev] (fp8 scaled)",
+      "engine": "flux-kontext",
+      "type": "image-generation",
+      "status": "active",
+      "files": {
+        "unet_name": "flux1-dev-kontext_fp8_scaled.safetensors",
+        "clip_name_1": "clip_l.safetensors",
+        "clip_name_2": "t5xxl_fp8_e4m3fn_scaled.safetensors",
+        "vae_name": "ae.safetensors"
+      },
+      "loader_config": {
+        "unet_weight_dtype": "default",
+        "clip_type": "flux"
+      },
+      "compatible_workflows": ["flux-kontext-txt2img"],
+      "defaults": {
+        "width": 1024,
+        "height": 1024,
+        "steps": 20,
+        "guidance": 2.5,
+        "sampler_name": "euler",
+        "scheduler": "simple"
+      },
+      "notes": "Modelo atualmente instalado no pod RunPod sp8bay1sk6qs2o (GPU L4 24GB). Suporta edicao de imagem com referencia (uso futuro); workflow de teste da Fase 1 usa apenas texto-para-imagem.",
+      "license_check_required": false
+    }
+  ]
+}

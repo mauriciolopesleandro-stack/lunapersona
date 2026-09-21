@@ -1,0 +1,13 @@
+{
+  "_comment": "Configuracao nao-sensivel, versionada. Segredos/URLs ficam no .env.",
+  "default_model_id": "flux-kontext-dev-fp8",
+  "default_workflow_id": "flux-kontext-txt2img",
+  "generation_defaults": {
+    "width": 1024,
+    "height": 1024,
+    "steps": 20,
+    "guidance": 2.5,
+    "sampler_name": "euler",
+    "scheduler": "simple"
+  }
+}

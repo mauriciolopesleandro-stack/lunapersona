@@ -1,0 +1,116 @@
+{
+  "meta": {
+    "id": "flux-kontext-txt2img",
+    "title": "FLUX.1 Kontext - Texto para Imagem (teste)",
+    "description": "Workflow minimo da Fase 1: prompt de texto -> imagem, usando FLUX.1 Kontext [dev] sem imagem de referencia. Baseado no grafo padrao publicado pela ComfyUI para modelos Flux (UNETLoader + DualCLIPLoader + VAELoader + SamplerCustomAdvanced). NAO validado ainda contra o /object_info do pod em execucao real - validar nomes de nos, widgets e valores de enum assim que o pod estiver acessivel, antes do primeiro uso.",
+    "compatible_models": ["flux-kontext-dev-fp8"],
+    "required_params": ["prompt"],
+    "optional_params": {
+      "width": 1024,
+      "height": 1024,
+      "steps": 20,
+      "guidance": 2.5,
+      "seed": 0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "filename_prefix": "luna_studio"
+    }
+  },
+  "graph": {
+    "1": {
+      "class_type": "UNETLoader",
+      "inputs": {
+        "unet_name": "${UNET_NAME}",
+        "weight_dtype": "${UNET_WEIGHT_DTYPE}"
+      }
+    },
+    "2": {
+      "class_type": "DualCLIPLoader",
+      "inputs": {
+        "clip_name1": "${CLIP_NAME_1}",
+        "clip_name2": "${CLIP_NAME_2}",
+        "type": "${CLIP_TYPE}"
+      }
+    },
+    "3": {
+      "class_type": "VAELoader",
+      "inputs": {
+        "vae_name": "${VAE_NAME}"
+      }
+    },
+    "4": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "${PROMPT}",
+        "clip": ["2", 0]
+      }
+    },
+    "5": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": "${WIDTH}",
+        "height": "${HEIGHT}",
+        "batch_size": 1
+      }
+    },
+    "6": {
+      "class_type": "FluxGuidance",
+      "inputs": {
+        "conditioning": ["4", 0],
+        "guidance": "${GUIDANCE}"
+      }
+    },
+    "7": {
+      "class_type": "RandomNoise",
+      "inputs": {
+        "noise_seed": "${SEED}"
+      }
+    },
+    "8": {
+      "class_type": "KSamplerSelect",
+      "inputs": {
+        "sampler_name": "${SAMPLER_NAME}"
+      }
+    },
+    "9": {
+      "class_type": "BasicScheduler",
+      "inputs": {
+        "model": ["1", 0],
+        "scheduler": "${SCHEDULER}",
+        "steps": "${STEPS}",
+        "denoise": 1.0
+      }
+    },
+    "10": {
+      "class_type": "BasicGuider",
+      "inputs": {
+        "model": ["1", 0],
+        "conditioning": ["6", 0]
+      }
+    },
+    "11": {
+      "class_type": "SamplerCustomAdvanced",
+      "inputs": {
+        "noise": ["7", 0],
+        "guider": ["10", 0],
+        "sampler": ["8", 0],
+        "sigmas": ["9", 0],
+        "latent_image": ["5", 0]
+      }
+    },
+    "12": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": ["11", 0],
+        "vae": ["3", 0]
+      }
+    },
+    "13": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": ["12", 0],
+        "filename_prefix": "${FILENAME_PREFIX}"
+      }
+    }
+  }
+}
