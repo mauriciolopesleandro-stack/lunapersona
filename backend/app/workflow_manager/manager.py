@@ -4,7 +4,6 @@ adicionar um novo workflow e so adicionar um arquivo .json nessa pasta.
 """
 from __future__ import annotations
 
-import copy
 import json
 import re
 from dataclasses import dataclass
@@ -76,9 +75,7 @@ class WorkflowManager:
             )
 
         merged = {**wf.optional_params, **params}
-        graph = copy.deepcopy(wf.graph_template)
-        self._substitute(graph, merged, workflow_id)
-        return graph
+        return self._substitute(wf.graph_template, merged, workflow_id)
 
     def _substitute(self, node: Any, params: dict[str, Any], workflow_id: str) -> Any:
         if isinstance(node, dict):
