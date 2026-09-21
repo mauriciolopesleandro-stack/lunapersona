@@ -1,7 +1,7 @@
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.clients.comfyui_client import ComfyUIError
 from app.model_manager.manager import ModelNotFoundError
@@ -12,6 +12,8 @@ router = APIRouter()
 
 
 class GenerateBody(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     prompt: str = Field(..., min_length=1)
     model_id: str | None = None
     workflow_id: str | None = None

@@ -4,16 +4,16 @@
     "title": "FLUX.1 Kontext - Texto para Imagem (teste)",
     "description": "Workflow minimo da Fase 1: prompt de texto -> imagem, usando FLUX.1 Kontext [dev] sem imagem de referencia. Baseado no grafo padrao publicado pela ComfyUI para modelos Flux (UNETLoader + DualCLIPLoader + VAELoader + SamplerCustomAdvanced). NAO validado ainda contra o /object_info do pod em execucao real - validar nomes de nos, widgets e valores de enum assim que o pod estiver acessivel, antes do primeiro uso.",
     "compatible_models": ["flux-kontext-dev-fp8"],
-    "required_params": ["prompt"],
+    "required_params": ["PROMPT"],
     "optional_params": {
-      "width": 1024,
-      "height": 1024,
-      "steps": 20,
-      "guidance": 2.5,
-      "seed": 0,
-      "sampler_name": "euler",
-      "scheduler": "simple",
-      "filename_prefix": "luna_studio"
+      "WIDTH": 1024,
+      "HEIGHT": 1024,
+      "STEPS": 20,
+      "GUIDANCE": 2.5,
+      "SEED": 0,
+      "SAMPLER_NAME": "euler",
+      "SCHEDULER": "simple",
+      "FILENAME_PREFIX": "luna_studio"
     }
   },
   "graph": {
