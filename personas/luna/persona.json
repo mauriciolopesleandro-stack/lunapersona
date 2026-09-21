@@ -1,0 +1,37 @@
+{
+  "id": "luna",
+  "name": "Luna",
+  "description": "Persona principal do Luna AI Studio. Perfil de identidade em construcao (Fase 2) - preencher as caracteristicas fixas conforme as referencias forem importadas.",
+  "identity": {
+    "fixed": {
+      "formato_rosto": "",
+      "caracteristicas_faciais": "",
+      "olhos": "",
+      "sobrancelhas": "",
+      "nariz": "",
+      "boca": "",
+      "formato_cabelo": "",
+      "cor_cabelo": "",
+      "textura_cabelo": "",
+      "tom_pele": "",
+      "caracteristicas_corporais": "",
+      "caracteristicas_visuais_permanentes": ""
+    },
+    "variable_defaults": {
+      "roupa": "",
+      "cenario": "",
+      "iluminacao": "",
+      "pose": "",
+      "expressao": "",
+      "camera": ""
+    }
+  },
+  "generation": {
+    "model_id": "flux-kontext-dev-fp8",
+    "workflow_id": "flux-kontext-txt2img"
+  },
+  "identity_methods": {
+    "planned": ["image_prompting", "ip_adapter", "faceid", "lora"],
+    "active": ["image_prompting"]
+  }
+}

@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     def models_registry_path(self) -> Path:
         return REPO_ROOT / "models" / "registry.json"
 
+    @property
+    def personas_dir(self) -> Path:
+        return REPO_ROOT / "personas"
+
 
 @lru_cache
 def get_settings() -> Settings:

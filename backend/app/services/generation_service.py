@@ -11,6 +11,7 @@ from typing import Any
 
 from app.clients.comfyui_client import ComfyUIClient, GenerationOutputImage
 from app.model_manager.manager import ModelManager
+from app.persona_manager.manager import PersonaManager
 from app.workflow_manager.manager import WorkflowManager
 
 
@@ -19,6 +20,7 @@ class GenerationRequest:
     prompt: str
     model_id: str
     workflow_id: str
+    persona_id: str | None = None
     width: int | None = None
     height: int | None = None
     steps: int | None = None
@@ -33,6 +35,7 @@ class GenerationResponse:
     prompt_id: str
     model_id: str
     workflow_id: str
+    persona_id: str | None
     images: list[GenerationOutputImage]
     duration_seconds: float
 
@@ -43,18 +46,27 @@ class GenerationService:
         comfyui_client: ComfyUIClient,
         workflow_manager: WorkflowManager,
         model_manager: ModelManager,
+        persona_manager: PersonaManager,
     ) -> None:
         self.comfyui_client = comfyui_client
         self.workflow_manager = workflow_manager
         self.model_manager = model_manager
+        self.persona_manager = persona_manager
 
     async def generate(self, req: GenerationRequest) -> GenerationResponse:
         model = self.model_manager.get_model(req.model_id)
 
         seed = req.seed if req.seed is not None else uuid.uuid4().int % (2**32)
 
+        prompt = req.prompt
+        if req.persona_id:
+            persona = self.persona_manager.get_persona(req.persona_id)
+            identity_fragment = persona.identity_prompt_fragment()
+            if identity_fragment:
+                prompt = f"{identity_fragment}, {req.prompt}"
+
         params: dict[str, Any] = {
-            "PROMPT": req.prompt,
+            "PROMPT": prompt,
             "WIDTH": req.width or model.defaults.get("width", 1024),
             "HEIGHT": req.height or model.defaults.get("height", 1024),
             "STEPS": req.steps or model.defaults.get("steps", 20),
@@ -79,6 +91,7 @@ class GenerationService:
             prompt_id=prompt_id,
             model_id=req.model_id,
             workflow_id=req.workflow_id,
+            persona_id=req.persona_id,
             images=images,
             duration_seconds=duration,
         )

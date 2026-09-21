@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.clients.comfyui_client import ComfyUIClient
 from app.config import get_settings
 from app.model_manager.manager import ModelManager
-from app.routes import generate, health, models, workflows
+from app.persona_manager.manager import PersonaManager
+from app.routes import generate, health, models, personas, workflows
 from app.services.generation_service import GenerationService
 from app.workflow_manager.manager import WorkflowManager
 
@@ -31,10 +32,12 @@ app.state.comfyui_client = ComfyUIClient(
 )
 app.state.workflow_manager = WorkflowManager(settings.workflows_dir)
 app.state.model_manager = ModelManager(settings.models_registry_path)
+app.state.persona_manager = PersonaManager(settings.personas_dir)
 app.state.generation_service = GenerationService(
     comfyui_client=app.state.comfyui_client,
     workflow_manager=app.state.workflow_manager,
     model_manager=app.state.model_manager,
+    persona_manager=app.state.persona_manager,
 )
 
 config_path = settings.workflows_dir.parent / "config" / "default.json"
@@ -44,6 +47,7 @@ app.include_router(health.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(generate.router, prefix="/api")
+app.include_router(personas.router, prefix="/api")
 
 
 @app.get("/")

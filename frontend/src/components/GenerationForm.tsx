@@ -1,14 +1,16 @@
 import { useState } from "react";
-import type { ModelInfo, WorkflowInfo } from "../api/client";
+import type { ModelInfo, PersonaSummary, WorkflowInfo } from "../api/client";
 
 interface Props {
   models: ModelInfo[];
   workflows: WorkflowInfo[];
+  personas: PersonaSummary[];
   loading: boolean;
   onSubmit: (params: {
     prompt: string;
     modelId: string;
     workflowId: string;
+    personaId: string;
     width: number;
     height: number;
     steps: number;
@@ -16,10 +18,11 @@ interface Props {
   }) => void;
 }
 
-export function GenerationForm({ models, workflows, loading, onSubmit }: Props) {
+export function GenerationForm({ models, workflows, personas, loading, onSubmit }: Props) {
   const [prompt, setPrompt] = useState("");
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
   const [workflowId, setWorkflowId] = useState(workflows[0]?.id ?? "");
+  const [personaId, setPersonaId] = useState("");
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(1024);
   const [steps, setSteps] = useState(20);
@@ -34,6 +37,7 @@ export function GenerationForm({ models, workflows, loading, onSubmit }: Props) 
           prompt,
           modelId: modelId || models[0]?.id,
           workflowId: workflowId || workflows[0]?.id,
+          personaId,
           width,
           height,
           steps,
@@ -42,6 +46,16 @@ export function GenerationForm({ models, workflows, loading, onSubmit }: Props) 
       }}
     >
       <h2>Geração</h2>
+
+      <label htmlFor="persona">Persona</label>
+      <select id="persona" value={personaId} onChange={(e) => setPersonaId(e.target.value)}>
+        <option value="">Nenhuma</option>
+        {personas.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
 
       <label htmlFor="prompt">Prompt</label>
       <textarea

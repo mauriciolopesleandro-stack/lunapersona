@@ -1,12 +1,21 @@
 # Persona: Luna
 
-Este diretório vai conter, na **Fase 2**, o perfil de identidade da persona Luna.
+Perfil de identidade da persona Luna (Fase 2).
 
-- `references/` — pasta de destino para importação das 100+ imagens de referência (hoje no Drive). As imagens originais **nunca são movidas nem modificadas**; nada aqui é versionado no Git (ver `.gitignore`). Nada foi importado ainda.
+- `persona.json` — perfil persistente: nome, descrição, Identity Profile (características **fixas** vs **variáveis**), modelo/workflow padrão e os métodos de preservação de identidade planejados/ativos. Versionado no Git (é configuração, não mídia).
+- `references/` — imagens de referência enviadas pela interface (upload via `POST /api/personas/luna/references`). **Nunca versionadas no Git** (ver `.gitignore`) — ficam apenas no volume persistente do backend. `references/index.json` guarda os metadados de cada referência (id, arquivo, data de upload, se é a principal).
 
-## Ainda não implementado (Fase 2)
+## Identity Profile: fixo vs variável
 
-- Persona Manager (carrega o perfil da Luna e expõe ao backend)
-- Identity Profile (estrutura de dados que descreve a identidade visual)
-- Importação/organização das referências, thumbnails, deduplicação
-- Avaliação técnica do método de preservação de identidade (LoRA / IP-Adapter / FaceID / embeddings) compatível com FLUX.1 Kontext e a GPU L4 24GB — **nenhuma dessas técnicas foi implementada ainda**, propositalmente.
+- **Fixo** (`identity.fixed`): características que NÃO devem mudar entre gerações — formato do rosto, olhos, sobrancelhas, nariz, boca, cabelo (formato/cor/textura), tom de pele, características corporais e outras características visuais permanentes.
+- **Variável** (`identity.variable_defaults`): roupa, cenário, iluminação, pose, expressão, câmera — o que muda a cada geração.
+
+## Mecanismo de identidade ativo hoje
+
+Apenas **image prompting por texto**: ao gerar com `persona_id: "luna"`, o backend concatena as características fixas não vazias ao prompt do usuário antes de montar o workflow. Nenhuma alteração no grafo do ComfyUI.
+
+## Ainda não implementado (proposital, fases futuras)
+
+- IP-Adapter, FaceID, LoRA — a arquitetura (`identity_methods.planned`) já reserva o espaço, mas nada foi implementado.
+- Thumbnails e deduplicação automática de referências.
+- Treinamento de qualquer modelo.

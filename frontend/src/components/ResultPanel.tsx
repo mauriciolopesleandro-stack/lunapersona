@@ -24,6 +24,12 @@ export function ResultPanel({ result, error }: Props) {
             <dd>{result.model_id}</dd>
             <dt>Workflow</dt>
             <dd>{result.workflow_id}</dd>
+            {result.persona_id && (
+              <>
+                <dt>Persona</dt>
+                <dd>{result.persona_id}</dd>
+              </>
+            )}
             <dt>Prompt ID</dt>
             <dd>{result.prompt_id}</dd>
             <dt>Duração</dt>
