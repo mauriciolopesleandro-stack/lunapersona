@@ -5,21 +5,29 @@ import {
   generateImage,
   getHealth,
   getModels,
+  getPersona,
   getPersonas,
   getPodStatus,
   getWorkflows,
+  personaReferenceFileUrl,
   wakePod,
 } from "./api/client";
-import { ChatAssistant } from "./components/ChatAssistant";
-import { GenerationForm } from "./components/GenerationForm";
+import { GalleryPage } from "./components/GalleryPage";
+import { GeneratePanel } from "./components/GeneratePanel";
+import { HistoryPage } from "./components/HistoryPage";
 import { PersonasView } from "./components/PersonasView";
-import { PodStatusPanel } from "./components/PodStatusPanel";
 import { ResultPanel } from "./components/ResultPanel";
+import { SettingsPage } from "./components/SettingsPage";
+import { Sidebar, type Tab } from "./components/Sidebar";
+import { TopBar } from "./components/TopBar";
+import { addHistoryEntry, getHistory, type HistoryEntry } from "./lib/history";
+import { getSettings } from "./lib/settings";
 
 const WAKE_POLL_INTERVAL_MS = 5_000;
 const WAKE_MAX_WAIT_MS = 3 * 60_000;
 const BOOTSTRAP_RETRY_INTERVAL_MS = 8_000;
 const BOOTSTRAP_MAX_ATTEMPTS = 5;
+const THEME_STORAGE_KEY = "luna_theme";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,7 +61,7 @@ async function ensurePodAwake(onMessage: (msg: string | null) => void): Promise<
     if (wake.alreadyRunning) return false;
   } catch (e) {
     onMessage(
-      `Nao foi possivel ligar o pod automaticamente (${e instanceof Error ? e.message : e}). Tentando gerar mesmo assim...`
+      `Não foi possível ligar o pod automaticamente (${e instanceof Error ? e.message : e}). Tentando gerar mesmo assim...`
     );
     return false;
   }
@@ -84,15 +92,26 @@ async function ensurePodAwake(onMessage: (msg: string | null) => void): Promise<
   return true;
 }
 
-type Tab = "geracao" | "personas";
+function loadTheme(): "dark" | "light" {
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    return saved === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("geracao");
+  const [tab, setTab] = useState<Tab>("gerar");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">(loadTheme);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [workflows, setWorkflows] = useState<WorkflowInfo[]>([]);
   const [personas, setPersonas] = useState<PersonaSummary[]>([]);
+  const [personaThumbnails, setPersonaThumbnails] = useState<Record<string, string>>({});
   const [result, setResult] = useState<GenerateResponse | null>(null);
+  const [resultPrompt, setResultPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -100,6 +119,22 @@ export default function App() {
   const [waking, setWaking] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [personaId, setPersonaId] = useState("");
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+  const [lastGenerateParams, setLastGenerateParams] = useState<Parameters<typeof generateImage>[0] | null>(null);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // ignora - preferencia nao critica
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    setHistory(getHistory());
+  }, []);
 
   async function handleWakePod() {
     setWaking(true);
@@ -121,16 +156,72 @@ export default function App() {
     return getPersonas()
       .then((list) => {
         setPersonas(list);
+        loadPersonaThumbnails(list);
         return list;
       })
       .catch(() => [] as PersonaSummary[]);
+  }
+
+  function loadPersonaThumbnails(list: PersonaSummary[]) {
+    list.forEach((p) => {
+      getPersona(p.id)
+        .then((detail) => {
+          const primary = detail.references.find((r) => r.is_primary) ?? detail.references[0];
+          if (!primary) return;
+          setPersonaThumbnails((prev) => ({ ...prev, [p.id]: personaReferenceFileUrl(p.id, primary.id) }));
+        })
+        .catch(() => {
+          // sem foto de referencia ainda - card mostra so o nome
+        });
+    });
   }
 
   useEffect(() => {
     loadConfig();
   }, []);
 
-  async function handleGenerate(params: {
+  async function executeGenerate(body: Parameters<typeof generateImage>[0], displayPrompt: string) {
+    setLoading(true);
+    setError(null);
+    setPodMessage(null);
+    try {
+      const wasColdStart = await ensurePodAwake(setPodMessage);
+      if (wasColdStart) {
+        const freshPersonas = await loadConfig();
+        if (!body.persona_id && freshPersonas.length > 0) {
+          setPodMessage(
+            "Pod ligado. A lista de personas acabou de carregar - selecione a Luna acima e clique em Gerar de novo."
+          );
+          setLoading(false);
+          return;
+        }
+      }
+      setLastGenerateParams(body);
+      const res = await generateImage(body);
+      setResult(res);
+      setResultPrompt(displayPrompt);
+      const image = res.images[0];
+      if (image) {
+        const personaName = personas.find((p) => p.id === body.persona_id)?.name ?? null;
+        const entry = addHistoryEntry({
+          prompt: displayPrompt,
+          personaId: body.persona_id || null,
+          personaName,
+          imageUrl: image.url,
+          result: res,
+          requestBody: body,
+        });
+        setHistory(getHistory());
+        setActiveHistoryId(entry.id);
+      }
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function runGenerate(params: {
     prompt: string;
     modelId: string;
     workflowId: string;
@@ -140,22 +231,8 @@ export default function App() {
     steps: number;
     guidance: number;
   }) {
-    setLoading(true);
-    setError(null);
-    setPodMessage(null);
-    try {
-      const wasColdStart = await ensurePodAwake(setPodMessage);
-      if (wasColdStart) {
-        const freshPersonas = await loadConfig();
-        if (!params.personaId && freshPersonas.length > 0) {
-          setPodMessage(
-            "Pod ligado. A lista de personas acabou de carregar - selecione a Luna acima e clique em Gerar de novo."
-          );
-          setLoading(false);
-          return;
-        }
-      }
-      const res = await generateImage({
+    return executeGenerate(
+      {
         prompt: params.prompt,
         model_id: params.modelId,
         workflow_id: params.workflowId,
@@ -164,13 +241,20 @@ export default function App() {
         height: params.height,
         steps: params.steps,
         guidance: params.guidance,
-      });
-      setResult(res);
-    } catch (e) {
-      setError(String(e instanceof Error ? e.message : e));
-    } finally {
-      setLoading(false);
-    }
+      },
+      params.prompt
+    );
+  }
+
+  function handleRegenerate() {
+    if (lastGenerateParams) executeGenerate(lastGenerateParams, resultPrompt);
+  }
+
+  function handleSelectHistoryEntry(entry: HistoryEntry) {
+    setResult(entry.result);
+    setResultPrompt(entry.prompt);
+    setActiveHistoryId(entry.id);
+    setLastGenerateParams(entry.requestBody);
   }
 
   useEffect(() => {
@@ -179,53 +263,72 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [podMessage, loading]);
 
+  const settings = getSettings();
+
   return (
-    <div className="app">
-      <header>
-        <h1>Luna AI Studio</h1>
-        <p className="status">
-          Backend: {health?.backend ?? "..."} · ComfyUI:{" "}
-          <span className={health?.comfyui.ok ? "ok" : "down"}>
-            {health ? (health.comfyui.ok ? "conectado" : "indisponível") : "verificando..."}
-          </span>
-        </p>
-        {health && !health.comfyui.ok && <p className="error small">{health.comfyui.message}</p>}
-        {loadError && <p className="error small">{loadError}</p>}
-
-        <PodStatusPanel onWake={handleWakePod} waking={waking} />
-        {podMessage && <p className="pod-toast">{podMessage}</p>}
-
-        <nav className="top-tabs">
-          <button type="button" className={tab === "geracao" ? "active" : ""} onClick={() => setTab("geracao")}>
-            Geração
-          </button>
-          <button type="button" className={tab === "personas" ? "active" : ""} onClick={() => setTab("personas")}>
-            Personas
-          </button>
-        </nav>
-      </header>
-
-      {tab === "geracao" ? (
-        <main className="geracao-main">
-          <ChatAssistant personas={personas} personaId={personaId} onUsePrompt={setPrompt} />
-          <div className="geracao-row">
-            <GenerationForm
-              models={models}
-              workflows={workflows}
-              personas={personas}
-              loading={loading}
-              prompt={prompt}
-              onPromptChange={setPrompt}
-              personaId={personaId}
-              onPersonaChange={setPersonaId}
-              onSubmit={handleGenerate}
-            />
-            <ResultPanel result={result} error={error} />
-          </div>
-        </main>
-      ) : (
-        <PersonasView models={models} workflows={workflows} />
+    <div className="shell">
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 20 }}
+        />
       )}
+      <Sidebar tab={tab} onTabChange={setTab} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      <div className="main-col">
+        <TopBar
+          onWake={handleWakePod}
+          waking={waking}
+          theme={theme}
+          onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
+
+        <div className="page">
+          {podMessage && <p className="page-toast">{podMessage}</p>}
+          {loadError && <p className="error small" style={{ marginBottom: 12 }}>{loadError}</p>}
+          {health && !health.comfyui.ok && (
+            <p className="error small" style={{ marginBottom: 12 }}>
+              {health.comfyui.message}
+            </p>
+          )}
+
+          {tab === "gerar" && (
+            <div className="generate-grid">
+              <GeneratePanel
+                personas={personas}
+                personaThumbnails={personaThumbnails}
+                models={models}
+                workflows={workflows}
+                loading={loading}
+                prompt={prompt}
+                onPromptChange={setPrompt}
+                personaId={personaId}
+                onPersonaChange={setPersonaId}
+                settings={settings}
+                onNavigatePersonas={() => setTab("personas")}
+                onSubmit={runGenerate}
+              />
+              <ResultPanel
+                result={result}
+                error={error}
+                loading={loading}
+                resultPrompt={resultPrompt}
+                history={history}
+                activeHistoryId={activeHistoryId}
+                onEditPrompt={setPrompt}
+                onRegenerate={handleRegenerate}
+                onSelectHistoryEntry={handleSelectHistoryEntry}
+              />
+            </div>
+          )}
+
+          {tab === "personas" && <PersonasView models={models} workflows={workflows} />}
+          {tab === "historico" && <HistoryPage />}
+          {tab === "galeria" && <GalleryPage />}
+          {tab === "configuracoes" && <SettingsPage models={models} workflows={workflows} health={health} />}
+        </div>
+      </div>
     </div>
   );
 }
