@@ -20,10 +20,13 @@ import { findSshPort, getPodAndBalance, RunpodConfigError } from "./_runpod.js";
 // isso git pull roda em primeiro plano (rapido, só pra pegar o script mais
 // recente) e o bootstrap em si e disparado em background (nohup) - a funcao
 // so espera ele SER LANCADO, nao terminar.
+// O "< /dev/null" e essencial: sem ele, o processo em background continua
+// segurando o stdin herdado do canal SSH, e o exec nunca sinaliza "close"
+// (ficamos esperando o script inteiro terminar mesmo com nohup + &).
 const REMOTE_COMMAND =
   "cd /workspace/lunapersona && git pull && " +
   "mkdir -p /tmp/luna-logs && " +
-  "nohup bash scripts/runpod_bootstrap.sh > /tmp/luna-logs/bootstrap.log 2>&1 & disown; " +
+  "nohup bash scripts/runpod_bootstrap.sh < /dev/null > /tmp/luna-logs/bootstrap.log 2>&1 & disown; " +
   "echo BOOTSTRAP_LAUNCHED";
 // Testando ao vivo, o handshake demorou mais pela rede da Vercel do que
 // direto da minha maquina (que conectou na hora) - 15s nao foi suficiente.
