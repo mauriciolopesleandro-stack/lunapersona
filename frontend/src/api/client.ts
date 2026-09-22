@@ -202,3 +202,27 @@ export async function deletePersonaReference(personaId: string, referenceId: str
 export function personaReferenceFileUrl(personaId: string, referenceId: string): string {
   return `${API_BASE}/personas/${personaId}/references/${referenceId}/file`;
 }
+
+// --- Status/ligar o pod RunPod --------------------------------------------
+// Essas duas chamam funcoes serverless da propria Vercel (nao o backend no
+// pod), entao usam caminho relativo em vez de API_BASE: precisam responder
+// mesmo com o pod desligado.
+
+export interface PodStatus {
+  running: boolean;
+  desiredStatus: string;
+  costPerHr: number;
+  uptimeSeconds: number;
+  liveSpend: number;
+  balance: number;
+}
+
+export async function getPodStatus(): Promise<PodStatus> {
+  const res = await fetch("/api/runpod-status");
+  return handleResponse<PodStatus>(res);
+}
+
+export async function wakePod(): Promise<{ alreadyRunning: boolean }> {
+  const res = await fetch("/api/runpod-wake", { method: "POST" });
+  return handleResponse<{ alreadyRunning: boolean }>(res);
+}

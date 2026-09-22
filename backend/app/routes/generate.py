@@ -32,6 +32,7 @@ class GenerateBody(BaseModel):
 async def generate(body: GenerateBody, request: Request):
     default_config = request.app.state.default_config
     generation_service = request.app.state.generation_service
+    request.app.state.idle_shutdown.touch()
 
     model_id = body.model_id or default_config["default_model_id"]
     workflow_id = body.workflow_id or default_config["default_workflow_id"]

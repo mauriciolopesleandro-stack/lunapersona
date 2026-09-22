@@ -1,20 +1,20 @@
 {
   "id": "luna",
   "name": "Luna",
-  "description": "Persona principal do Luna AI Studio. Perfil de identidade em construcao (Fase 2) - preencher as caracteristicas fixas conforme as referencias forem importadas.",
+  "description": "Persona principal do Luna AI Studio. Identity Profile preenchido a partir de analise visual de 4 imagens (de um total de 26) do Google Drive, pasta 'Luna' > 'Dataset aprovado - treino LoRA Lunavox'. IMPORTANTE (ver LEIA-ME.txt dessa pasta): as 26 imagens sao sinteticas, geradas via Flux Kontext a partir de UM unico retrato-base ('Retrato elegante com colares em camadas'), nao sao fotografias de uma pessoa real. O usuario confirmou explicitamente usar esse dataset aprovado como referencia oficial de identidade da Luna. Apenas 4 das 26 imagens foram importadas para personas/luna/references/ (as outras 22 nao foram baixadas para economizar contexto/tokens - ficam disponiveis no Drive para quando o treino de LoRA for implementado).",
   "identity": {
     "fixed": {
-      "formato_rosto": "",
-      "caracteristicas_faciais": "",
-      "olhos": "",
-      "sobrancelhas": "",
-      "nariz": "",
-      "boca": "",
-      "formato_cabelo": "",
-      "cor_cabelo": "",
-      "textura_cabelo": "",
-      "tom_pele": "",
-      "caracteristicas_corporais": "",
+      "formato_rosto": "oval, macas do rosto marcadas, queixo levemente afilado",
+      "caracteristicas_faciais": "traços simetricos e marcantes, expressao direta/confiante nas referencias",
+      "olhos": "castanho-escuros, formato amendoado, olhar direto para a camera na maioria das referencias",
+      "sobrancelhas": "grossas, retas, bem definidas, tom castanho-escuro",
+      "nariz": "reto e fino, ponta levemente arredondada",
+      "boca": "labios cheios, tom nude-rosado natural",
+      "formato_cabelo": "longo (abaixo do busto), ondulado solto, repartido ao meio ou levemente de lado",
+      "cor_cabelo": "castanho bem escuro/quase preto na raiz, com mechas (balaiagem) em tom caramelo-acobreado nas pontas",
+      "textura_cabelo": "ondulado, volumoso, brilho natural",
+      "tom_pele": "oliva/bronzeada, dourada, uniforme",
+      "caracteristicas_corporais": "corpo esguio e tonificado, altura media-alta aparente nas fotos de corpo inteiro",
       "caracteristicas_visuais_permanentes": ""
     },
     "variable_defaults": {

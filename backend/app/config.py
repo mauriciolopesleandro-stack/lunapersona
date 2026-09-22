@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     comfyui_url: str = "http://127.0.0.1:8188"
     runpod_pod_id: str = ""
     comfyui_api_key: str = ""
+    runpod_api_key: str = ""
+    idle_shutdown_minutes: float = 5.0
 
     llm_api_url: str = ""
     llm_api_key: str = ""

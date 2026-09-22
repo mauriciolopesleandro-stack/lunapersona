@@ -1,9 +1,48 @@
 import { useEffect, useState } from "react";
 import type { GenerateResponse, HealthResponse, ModelInfo, PersonaSummary, WorkflowInfo } from "./api/client";
-import { generateImage, getHealth, getModels, getPersonas, getWorkflows } from "./api/client";
+import { generateImage, getHealth, getModels, getPersonas, getPodStatus, getWorkflows, wakePod } from "./api/client";
 import { GenerationForm } from "./components/GenerationForm";
 import { PersonasView } from "./components/PersonasView";
+import { PodStatusPanel } from "./components/PodStatusPanel";
 import { ResultPanel } from "./components/ResultPanel";
+
+const WAKE_POLL_INTERVAL_MS = 5_000;
+const WAKE_MAX_WAIT_MS = 3 * 60_000;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Garante que o pod esta ligado antes de gerar. Se ja estiver rodando,
+// retorna na hora; senao, dispara o resume e fica consultando o status ate
+// aparecer "running" (ou desistir apos WAKE_MAX_WAIT_MS).
+async function ensurePodAwake(onMessage: (msg: string | null) => void): Promise<void> {
+  try {
+    const wake = await wakePod();
+    if (wake.alreadyRunning) return;
+  } catch (e) {
+    onMessage(
+      `Nao foi possivel ligar o pod automaticamente (${e instanceof Error ? e.message : e}). Tentando gerar mesmo assim...`
+    );
+    return;
+  }
+
+  onMessage("Ligando o pod... isso pode levar de 1 a 3 minutos.");
+  const deadline = Date.now() + WAKE_MAX_WAIT_MS;
+  while (Date.now() < deadline) {
+    await sleep(WAKE_POLL_INTERVAL_MS);
+    try {
+      const status = await getPodStatus();
+      if (status.running) {
+        onMessage("Pod ligado. Gerando imagem...");
+        return;
+      }
+    } catch {
+      // ignora falhas de polling isoladas e tenta de novo no proximo ciclo
+    }
+  }
+  onMessage("O pod demorou mais que o esperado para ligar. Tentando gerar mesmo assim...");
+}
 
 type Tab = "geracao" | "personas";
 
@@ -17,6 +56,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [podMessage, setPodMessage] = useState<string | null>(null);
 
   useEffect(() => {
     getHealth().then(setHealth).catch((e) => setLoadError(String(e)));
@@ -37,7 +77,9 @@ export default function App() {
   }) {
     setLoading(true);
     setError(null);
+    setPodMessage(null);
     try {
+      await ensurePodAwake(setPodMessage);
       const res = await generateImage({
         prompt: params.prompt,
         model_id: params.modelId,
@@ -56,6 +98,12 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (!podMessage || loading) return;
+    const timer = setTimeout(() => setPodMessage(null), 8000);
+    return () => clearTimeout(timer);
+  }, [podMessage, loading]);
+
   return (
     <div className="app">
       <header>
@@ -68,6 +116,9 @@ export default function App() {
         </p>
         {health && !health.comfyui.ok && <p className="error small">{health.comfyui.message}</p>}
         {loadError && <p className="error small">{loadError}</p>}
+
+        <PodStatusPanel />
+        {podMessage && <p className="pod-toast">{podMessage}</p>}
 
         <nav className="top-tabs">
           <button type="button" className={tab === "geracao" ? "active" : ""} onClick={() => setTab("geracao")}>
