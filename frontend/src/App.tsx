@@ -16,15 +16,18 @@ function sleep(ms: number) {
 // Garante que o pod esta ligado antes de gerar. Se ja estiver rodando,
 // retorna na hora; senao, dispara o resume e fica consultando o status ate
 // aparecer "running" (ou desistir apos WAKE_MAX_WAIT_MS).
-async function ensurePodAwake(onMessage: (msg: string | null) => void): Promise<void> {
+// Retorna true se o pod estava desligado e precisou ser ligado agora (ou
+// seja: um "cold start", onde listas de persona/modelo podem ter ficado
+// desatualizadas e vale a pena recarrega-las antes de gerar).
+async function ensurePodAwake(onMessage: (msg: string | null) => void): Promise<boolean> {
   try {
     const wake = await wakePod();
-    if (wake.alreadyRunning) return;
+    if (wake.alreadyRunning) return false;
   } catch (e) {
     onMessage(
       `Nao foi possivel ligar o pod automaticamente (${e instanceof Error ? e.message : e}). Tentando gerar mesmo assim...`
     );
-    return;
+    return false;
   }
 
   onMessage("Ligando o pod... isso pode levar de 1 a 3 minutos.");
@@ -34,14 +37,15 @@ async function ensurePodAwake(onMessage: (msg: string | null) => void): Promise<
     try {
       const status = await getPodStatus();
       if (status.running) {
-        onMessage("Pod ligado. Gerando imagem...");
-        return;
+        onMessage("Pod ligado.");
+        return true;
       }
     } catch {
       // ignora falhas de polling isoladas e tenta de novo no proximo ciclo
     }
   }
   onMessage("O pod demorou mais que o esperado para ligar. Tentando gerar mesmo assim...");
+  return true;
 }
 
 type Tab = "geracao" | "personas";
@@ -58,11 +62,20 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [podMessage, setPodMessage] = useState<string | null>(null);
 
-  useEffect(() => {
+  async function loadConfig() {
     getHealth().then(setHealth).catch((e) => setLoadError(String(e)));
     getModels().then(setModels).catch((e) => setLoadError(String(e)));
     getWorkflows().then(setWorkflows).catch((e) => setLoadError(String(e)));
-    getPersonas().then(setPersonas).catch(() => undefined);
+    return getPersonas()
+      .then((list) => {
+        setPersonas(list);
+        return list;
+      })
+      .catch(() => [] as PersonaSummary[]);
+  }
+
+  useEffect(() => {
+    loadConfig();
   }, []);
 
   async function handleGenerate(params: {
@@ -79,7 +92,17 @@ export default function App() {
     setError(null);
     setPodMessage(null);
     try {
-      await ensurePodAwake(setPodMessage);
+      const wasColdStart = await ensurePodAwake(setPodMessage);
+      if (wasColdStart) {
+        const freshPersonas = await loadConfig();
+        if (!params.personaId && freshPersonas.length > 0) {
+          setPodMessage(
+            "Pod ligado. A lista de personas acabou de carregar - selecione a Luna acima e clique em Gerar de novo."
+          );
+          setLoading(false);
+          return;
+        }
+      }
       const res = await generateImage({
         prompt: params.prompt,
         model_id: params.modelId,
