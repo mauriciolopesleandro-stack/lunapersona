@@ -70,6 +70,10 @@ if pgrep -f "uvicorn app.main:app" >/dev/null 2>&1; then
     sleep 2
 fi
 cd "$BACKEND_DIR"
+# Sobrescreve por variavel de ambiente (tem prioridade sobre o .env no
+# pydantic-settings) para o caso do .env do pod ter uma linha LLM_API_URL=
+# vazia (sobra de antes dessa feature existir) - evita reeditar o .env.
+export LLM_API_URL="${LLM_API_URL:-http://127.0.0.1:11434}"
 nohup "$VENV_DIR/bin/uvicorn" app.main:app --host 0.0.0.0 --port 8000 > "$LOG_DIR/uvicorn.log" 2>&1 &
 disown
 sleep 3
