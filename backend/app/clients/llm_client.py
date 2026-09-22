@@ -34,7 +34,7 @@ class OllamaClient:
     pod que o backend - por isso normalmente aponta para 127.0.0.1.
     """
 
-    def __init__(self, base_url: str, model: str, timeout: float = 60.0) -> None:
+    def __init__(self, base_url: str, model: str, timeout: float = 120.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
