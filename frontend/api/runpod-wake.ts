@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { getPodAndBalance, resumePod, RunpodConfigError } from "./_runpod";
+import { getPodAndBalance, resumePod, RunpodConfigError } from "./_runpod.js";
 
 // POST /api/runpod-wake
 // Dispara o religamento do pod se ele nao estiver rodando. Nao espera o

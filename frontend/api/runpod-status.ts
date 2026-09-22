@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { getPodAndBalance, RunpodConfigError } from "./_runpod";
+import { getPodAndBalance, RunpodConfigError } from "./_runpod.js";
 
 // GET /api/runpod-status
 // Retorna saldo da conta RunPod + estado/custo do pod, para o painel do frontend.
