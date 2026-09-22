@@ -65,6 +65,16 @@ python scripts/check_comfyui_connection.py
 
 Esse script confere se o pod está acessível e se os nós usados pelo workflow de teste (`workflows/flux-kontext-txt2img.json`) existem na instância atual do ComfyUI — os nomes de nós podem variar entre versões/custom nodes, então essa validação é importante antes da primeira geração real.
 
+### 5. Ligar o Ollama (chat) + backend dentro do pod RunPod
+
+O template atual do pod não inicia o Ollama nem o backend automaticamente no boot. Depois de subir o pod e dar `git pull`, rode uma vez (via Jupyter/terminal do pod):
+
+```bash
+bash scripts/runpod_bootstrap.sh
+```
+
+Isso instala o `zstd` e o Ollama se ainda não estiverem presentes, baixa o modelo definido em `LLM_MODEL` (padrão `llama3.2:3b`), sobe o `ollama serve` e o backend FastAPI em segundo plano (logs em `/tmp/luna-logs/`). É seguro rodar de novo — ele reinicia o que já estiver de pé em vez de duplicar processos.
+
 ## Regras do projeto
 
 - Nenhum modelo `.safetensors`, imagem grande, API key ou `.env` real entra no Git (ver `.gitignore`).

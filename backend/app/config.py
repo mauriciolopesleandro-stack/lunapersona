@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     llm_api_url: str = "http://127.0.0.1:11434"
     llm_api_key: str = ""
-    llm_model: str = "llama3.1:8b"
+    llm_model: str = "llama3.2:3b"
 
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
