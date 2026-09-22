@@ -22,11 +22,14 @@ VENV_DIR="$REPO_ROOT/.venv-persist"
 export OLLAMA_MODELS="$REPO_ROOT/.ollama-models"
 mkdir -p "$LOG_DIR" "$OLLAMA_MODELS"
 
-echo "== 1/5: zstd (necessario pelo instalador do Ollama) =="
-if ! command -v zstd >/dev/null 2>&1; then
-    apt-get update -qq && apt-get install -y -qq zstd
+echo "== 1/5: zstd + pciutils (necessarios pelo instalador do Ollama) =="
+# pciutils (lspci) e o que o installer do Ollama usa pra detectar a GPU e
+# baixar o backend CUDA; sem ele ele caiu silenciosamente pra modo CPU
+# (respostas de chat em ~70s em vez de poucos segundos numa L4 real).
+if ! command -v zstd >/dev/null 2>&1 || ! command -v lspci >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y -qq zstd pciutils
 else
-    echo "zstd ja instalado."
+    echo "zstd e pciutils ja instalados."
 fi
 
 echo "== 2/5: Ollama (binario) =="
