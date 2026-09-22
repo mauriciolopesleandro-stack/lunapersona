@@ -81,10 +81,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   res.setHeader("Content-Type", "application/json");
 
   try {
-    const privateKey = process.env.RUNPOD_SSH_PRIVATE_KEY;
-    if (!privateKey) {
+    const rawKey = process.env.RUNPOD_SSH_PRIVATE_KEY;
+    if (!rawKey) {
       throw new RunpodConfigError("RUNPOD_SSH_PRIVATE_KEY nao configurada na Vercel.");
     }
+    // Aceita tanto a chave OpenSSH crua (com quebras de linha reais) quanto,
+    // preferencialmente, a versao em base64 - campos de env var de UI
+    // costumam perder/escapar quebras de linha ao colar, o que quebra o
+    // parser do ssh2 ("Malformed OpenSSH private key"). Base64 nao tem esse
+    // problema por nao conter quebras de linha nenhuma.
+    const privateKey = rawKey.trim().startsWith("-----BEGIN")
+      ? rawKey
+      : Buffer.from(rawKey, "base64").toString("utf8");
     const username = process.env.RUNPOD_SSH_USER || "root";
 
     const data = await getPodAndBalance();

@@ -87,7 +87,7 @@ Configuração (uma vez só):
 bash scripts/generate_runpod_ssh_key.sh
 ```
 
-1. Cole o conteúdo de `.secrets/runpod_ssh_key` (chave **privada**) na variável `RUNPOD_SSH_PRIVATE_KEY`, direto no painel da Vercel — nunca em um arquivo do Git.
+1. Cole a saída em **base64** que o script imprime (chave **privada**, codificada) na variável `RUNPOD_SSH_PRIVATE_KEY`, direto no painel da Vercel — nunca em um arquivo do Git. Tem que ser base64: campos de env var de UI costumam perder as quebras de linha do formato OpenSSH ao colar, quebrando o parser ("Malformed OpenSSH private key").
 2. Cole o conteúdo de `.secrets/runpod_ssh_key.pub` (chave pública, não é segredo) na env var `PUBLIC_KEY` do pod, em RunPod → Edit Pod → Environment variables. O próprio `start.sh` da imagem lê essa variável e autoriza a chave em `~/.ssh/authorized_keys` no boot.
 3. Confirme que a porta TCP `22` está na lista "Expose TCP ports" do pod (já vem assim por padrão).
 
