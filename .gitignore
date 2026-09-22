@@ -10,6 +10,10 @@ __pycache__/
 venv/
 .pytest_cache/
 
+# --- Setup persistente do pod (fica no Network Volume, nunca no Git) ---
+.venv-persist/
+.ollama-models/
+
 # --- Node / frontend ---
 node_modules/
 frontend/dist/

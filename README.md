@@ -75,6 +75,8 @@ bash scripts/runpod_bootstrap.sh
 
 Isso instala o `zstd` e o Ollama se ainda não estiverem presentes, baixa o modelo definido em `LLM_MODEL` (padrão `llama3.2:3b`), sobe o `ollama serve` e o backend FastAPI em segundo plano (logs em `/tmp/luna-logs/`). É seguro rodar de novo — ele reinicia o que já estiver de pé em vez de duplicar processos.
 
+**Economia:** o modelo do Ollama (`.ollama-models/`) e o ambiente Python (`.venv-persist/`) ficam salvos dentro do próprio repo, que vive no Network Volume persistente — ou seja, só baixam/instalam na primeira vez. Num pod novo (migração, GPU diferente), o script reconhece que já existem e pula direto para religar os processos, economizando minutos de GPU ligada.
+
 ## Regras do projeto
 
 - Nenhum modelo `.safetensors`, imagem grande, API key ou `.env` real entra no Git (ver `.gitignore`).
