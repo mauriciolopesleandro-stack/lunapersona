@@ -247,3 +247,17 @@ export async function wakePod(): Promise<{ alreadyRunning: boolean }> {
   const res = await fetch("/api/runpod-wake", { method: "POST" });
   return handleResponse<{ alreadyRunning: boolean }>(res);
 }
+
+export interface BootstrapResult {
+  ok: boolean;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+// Roda o bootstrap (Ollama + backend) dentro do pod via SSH. So faz sentido
+// chamar depois que o pod ja esta "running" (ver ensurePodAwake em App.tsx).
+export async function bootstrapPod(): Promise<BootstrapResult> {
+  const res = await fetch("/api/runpod-bootstrap", { method: "POST" });
+  return handleResponse<BootstrapResult>(res);
+}

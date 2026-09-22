@@ -35,12 +35,20 @@ export function podId(): string {
   return requireEnv("RUNPOD_POD_ID");
 }
 
+export interface PodPort {
+  ip: string;
+  isIpPublic: boolean;
+  privatePort: number;
+  publicPort: number;
+  type: string;
+}
+
 export interface PodQueryResult {
   pod: {
     id: string;
     desiredStatus: string;
     costPerHr: string | number;
-    runtime: { uptimeInSeconds: number } | null;
+    runtime: { uptimeInSeconds: number; ports: PodPort[] | null } | null;
   } | null;
   myself: { clientBalance: number };
 }
@@ -51,7 +59,10 @@ const POD_STATUS_QUERY = `
       id
       desiredStatus
       costPerHr
-      runtime { uptimeInSeconds }
+      runtime {
+        uptimeInSeconds
+        ports { ip isIpPublic privatePort publicPort type }
+      }
     }
     myself { clientBalance }
   }
@@ -59,6 +70,13 @@ const POD_STATUS_QUERY = `
 
 export async function getPodAndBalance() {
   return runpodGraphQL<PodQueryResult>(POD_STATUS_QUERY, { podId: podId() });
+}
+
+// Acha o mapeamento TCP publico da porta 22 (SSH) nas portas do runtime.
+// Retorna null se o pod nao estiver rodando ou a porta 22 nao estiver exposta.
+export function findSshPort(ports: PodPort[] | null | undefined): PodPort | null {
+  if (!ports) return null;
+  return ports.find((p) => p.privatePort === 22 && p.type === "tcp" && p.isIpPublic) ?? null;
 }
 
 const RESUME_MUTATION = `

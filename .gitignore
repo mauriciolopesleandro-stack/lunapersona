@@ -1,6 +1,7 @@
 # --- Segredos e configuração local ---
 .env
 *.env.local
+.secrets/
 
 # --- Python / backend ---
 __pycache__/

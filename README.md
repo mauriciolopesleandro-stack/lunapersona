@@ -77,6 +77,22 @@ Isso instala o `zstd` e o Ollama se ainda não estiverem presentes, baixa o mode
 
 **Economia:** o modelo do Ollama (`.ollama-models/`) e o ambiente Python (`.venv-persist/`) ficam salvos dentro do próprio repo, que vive no Network Volume persistente — ou seja, só baixam/instalam na primeira vez. Num pod novo (migração, GPU diferente), o script reconhece que já existem e pula direto para religar os processos, economizando minutos de GPU ligada.
 
+### 6. Automatizar o passo 5 (opcional): bootstrap via SSH ao clicar "Ligar pod"
+
+O template do pod (`runpod/comfyui`) não suporta um comando de start customizado — o campo "Container start command" do RunPod só anexa argumentos inertes ao entrypoint da imagem, não o substitui (confirmado testando: o ComfyUI sobe normal, mas nada além disso roda). Para automatizar de verdade sem depender do Jupyter, o botão "Ligar pod" do frontend chama `/api/runpod-bootstrap`, que conecta no pod via SSH assim que ele fica `running` e roda o passo 5 sozinho.
+
+Configuração (uma vez só):
+
+```bash
+bash scripts/generate_runpod_ssh_key.sh
+```
+
+1. Cole o conteúdo de `.secrets/runpod_ssh_key` (chave **privada**) na variável `RUNPOD_SSH_PRIVATE_KEY`, direto no painel da Vercel — nunca em um arquivo do Git.
+2. Cole o conteúdo de `.secrets/runpod_ssh_key.pub` (chave pública, não é segredo) na env var `PUBLIC_KEY` do pod, em RunPod → Edit Pod → Environment variables. O próprio `start.sh` da imagem lê essa variável e autoriza a chave em `~/.ssh/authorized_keys` no boot.
+3. Confirme que a porta TCP `22` está na lista "Expose TCP ports" do pod (já vem assim por padrão).
+
+Sem essa configuração, o botão "Ligar pod" continua funcionando normalmente (só liga a GPU) — o passo 5 manual via Jupyter continua sendo o fallback.
+
 ## Regras do projeto
 
 - Nenhum modelo `.safetensors`, imagem grande, API key ou `.env` real entra no Git (ver `.gitignore`).

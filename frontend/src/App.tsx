@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import type { GenerateResponse, HealthResponse, ModelInfo, PersonaSummary, WorkflowInfo } from "./api/client";
-import { generateImage, getHealth, getModels, getPersonas, getPodStatus, getWorkflows, wakePod } from "./api/client";
+import {
+  bootstrapPod,
+  generateImage,
+  getHealth,
+  getModels,
+  getPersonas,
+  getPodStatus,
+  getWorkflows,
+  wakePod,
+} from "./api/client";
 import { ChatAssistant } from "./components/ChatAssistant";
 import { GenerationForm } from "./components/GenerationForm";
 import { PersonasView } from "./components/PersonasView";
@@ -9,9 +18,27 @@ import { ResultPanel } from "./components/ResultPanel";
 
 const WAKE_POLL_INTERVAL_MS = 5_000;
 const WAKE_MAX_WAIT_MS = 3 * 60_000;
+const BOOTSTRAP_RETRY_INTERVAL_MS = 8_000;
+const BOOTSTRAP_MAX_ATTEMPTS = 5;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Roda o bootstrap (Ollama + backend) dentro do pod via SSH. Logo apos o pod
+// entrar em "running" a porta SSH ainda pode nao estar mapeada - por isso
+// tenta de novo algumas vezes antes de desistir.
+async function runBootstrapWithRetry(onMessage: (msg: string | null) => void): Promise<void> {
+  for (let attempt = 1; attempt <= BOOTSTRAP_MAX_ATTEMPTS; attempt++) {
+    try {
+      const result = await bootstrapPod();
+      if (result.ok) return;
+      throw new Error(`comando saiu com codigo ${result.exitCode}`);
+    } catch (e) {
+      if (attempt === BOOTSTRAP_MAX_ATTEMPTS) throw e;
+      await sleep(BOOTSTRAP_RETRY_INTERVAL_MS);
+    }
+  }
 }
 
 // Garante que o pod esta ligado antes de gerar. Se ja estiver rodando,
@@ -38,7 +65,15 @@ async function ensurePodAwake(onMessage: (msg: string | null) => void): Promise<
     try {
       const status = await getPodStatus();
       if (status.running) {
-        onMessage("Pod ligado.");
+        onMessage("Pod ligado. Preparando chat e geração (git pull + Ollama + backend)...");
+        try {
+          await runBootstrapWithRetry(onMessage);
+          onMessage("Pod pronto.");
+        } catch (e) {
+          onMessage(
+            `Pod ligado, mas não consegui preparar automaticamente (${e instanceof Error ? e.message : e}). Chat/geração podem levar mais um pouco para responder.`
+          );
+        }
         return true;
       }
     } catch {
