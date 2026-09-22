@@ -65,13 +65,13 @@ async function ensurePodAwake(onMessage: (msg: string | null) => void): Promise<
     try {
       const status = await getPodStatus();
       if (status.running) {
-        onMessage("Pod ligado. Preparando chat e geração (git pull + Ollama + backend)...");
+        onMessage("Pod ligado. Disparando preparação do chat e backend (git pull + Ollama)...");
         try {
           await runBootstrapWithRetry(onMessage);
-          onMessage("Pod pronto.");
+          onMessage("Preparação disparada - chat e geração devem ficar prontos em 1-2 minutos.");
         } catch (e) {
           onMessage(
-            `Pod ligado, mas não consegui preparar automaticamente (${e instanceof Error ? e.message : e}). Chat/geração podem levar mais um pouco para responder.`
+            `Pod ligado, mas não consegui disparar a preparação automaticamente (${e instanceof Error ? e.message : e}). Chat/geração podem levar mais um pouco para responder.`
           );
         }
         return true;

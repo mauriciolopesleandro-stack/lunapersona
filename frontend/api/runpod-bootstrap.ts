@@ -14,11 +14,21 @@ import { findSshPort, getPodAndBalance, RunpodConfigError } from "./_runpod.js";
 // A chave publica correspondente precisa estar na env var PUBLIC_KEY do pod
 // (nao e segredo - o proprio start.sh da imagem le essa variavel e autoriza
 // a chave em ~/.ssh/authorized_keys no boot).
-const REMOTE_COMMAND = "cd /workspace/lunapersona && git pull && bash scripts/runpod_bootstrap.sh";
+// O bootstrap em si (reinstala Ollama/zstd/pciutils no container efemero,
+// reusa modelo/venv do volume persistente) pode passar de 1-2 minutos -
+// tempo demais pra uma funcao serverless esperar de forma sincrona. Por
+// isso git pull roda em primeiro plano (rapido, só pra pegar o script mais
+// recente) e o bootstrap em si e disparado em background (nohup) - a funcao
+// so espera ele SER LANCADO, nao terminar.
+const REMOTE_COMMAND =
+  "cd /workspace/lunapersona && git pull && " +
+  "mkdir -p /tmp/luna-logs && " +
+  "nohup bash scripts/runpod_bootstrap.sh > /tmp/luna-logs/bootstrap.log 2>&1 & disown; " +
+  "echo BOOTSTRAP_LAUNCHED";
 // Testando ao vivo, o handshake demorou mais pela rede da Vercel do que
 // direto da minha maquina (que conectou na hora) - 15s nao foi suficiente.
 const SSH_CONNECT_TIMEOUT_MS = 30_000;
-const COMMAND_TIMEOUT_MS = 55_000;
+const COMMAND_TIMEOUT_MS = 25_000;
 
 interface RemoteResult {
   stdout: string;
