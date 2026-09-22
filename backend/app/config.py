@@ -13,8 +13,9 @@ class Settings(BaseSettings):
     runpod_api_key: str = ""
     idle_shutdown_minutes: float = 5.0
 
-    llm_api_url: str = ""
+    llm_api_url: str = "http://127.0.0.1:11434"
     llm_api_key: str = ""
+    llm_model: str = "llama3.1:8b"
 
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000

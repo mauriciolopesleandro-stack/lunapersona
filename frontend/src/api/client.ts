@@ -203,6 +203,27 @@ export function personaReferenceFileUrl(personaId: string, referenceId: string):
   return `${API_BASE}/personas/${personaId}/references/${referenceId}/file`;
 }
 
+// --- Chat (assistente de criacao de prompts) --------------------------
+// Roda no backend (pod), diferente do runpod-status/wake que rodam na
+// Vercel - por isso usa API_BASE como as outras chamadas ao backend.
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function sendChatMessage(
+  personaId: string | undefined,
+  messages: ChatMessage[]
+): Promise<ChatMessage> {
+  const res = await fetch(`${API_BASE}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ persona_id: personaId || undefined, messages }),
+  });
+  return handleResponse<ChatMessage>(res);
+}
+
 // --- Status/ligar o pod RunPod --------------------------------------------
 // Essas duas chamam funcoes serverless da propria Vercel (nao o backend no
 // pod), entao usam caminho relativo em vez de API_BASE: precisam responder

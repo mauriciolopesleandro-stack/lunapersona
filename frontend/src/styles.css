@@ -27,11 +27,72 @@ header h1 {
   color: #ff6b6b;
 }
 
-main {
+.geracao-main {
+  margin-top: 16px;
+}
+
+.geracao-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
-  margin-top: 16px;
+  margin-top: 24px;
+}
+
+.chat-assistant {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 12px 0;
+  padding-right: 4px;
+}
+
+.chat-bubble {
+  padding: 8px 12px;
+  border-radius: 8px;
+  max-width: 80%;
+}
+
+.chat-bubble p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.chat-bubble.user {
+  align-self: flex-end;
+  background: #6c5ce7;
+  color: white;
+}
+
+.chat-bubble.assistant {
+  align-self: flex-start;
+  background: #14151a;
+  border: 1px solid #2c2d35;
+}
+
+.chat-bubble button.small {
+  margin-top: 8px;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.chat-input-row textarea {
+  flex: 1;
+}
+
+.chat-input-row button {
+  margin-top: 0;
+  white-space: nowrap;
 }
 
 .panel {

@@ -4,11 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.clients.comfyui_client import ComfyUIClient
+from app.clients.llm_client import OllamaClient
 from app.config import get_settings
 from app.idle_shutdown import IdleShutdownTracker
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
-from app.routes import generate, health, models, personas, workflows
+from app.routes import chat, generate, health, models, personas, workflows
+from app.services.chat_service import ChatService
 from app.services.generation_service import GenerationService
 from app.workflow_manager.manager import WorkflowManager
 
@@ -40,6 +42,11 @@ app.state.generation_service = GenerationService(
     model_manager=app.state.model_manager,
     persona_manager=app.state.persona_manager,
 )
+app.state.llm_client = OllamaClient(base_url=settings.llm_api_url, model=settings.llm_model)
+app.state.chat_service = ChatService(
+    llm_client=app.state.llm_client,
+    persona_manager=app.state.persona_manager,
+)
 
 config_path = settings.workflows_dir.parent / "config" / "default.json"
 app.state.default_config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -55,6 +62,7 @@ app.include_router(models.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(generate.router, prefix="/api")
 app.include_router(personas.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
 
 
 @app.on_event("startup")

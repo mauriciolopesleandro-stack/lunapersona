@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { GenerateResponse, HealthResponse, ModelInfo, PersonaSummary, WorkflowInfo } from "./api/client";
 import { generateImage, getHealth, getModels, getPersonas, getPodStatus, getWorkflows, wakePod } from "./api/client";
+import { ChatAssistant } from "./components/ChatAssistant";
 import { GenerationForm } from "./components/GenerationForm";
 import { PersonasView } from "./components/PersonasView";
 import { PodStatusPanel } from "./components/PodStatusPanel";
@@ -61,6 +62,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [podMessage, setPodMessage] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState("");
+  const [personaId, setPersonaId] = useState("");
 
   async function loadConfig() {
     getHealth().then(setHealth).catch((e) => setLoadError(String(e)));
@@ -154,15 +157,22 @@ export default function App() {
       </header>
 
       {tab === "geracao" ? (
-        <main>
-          <GenerationForm
-            models={models}
-            workflows={workflows}
-            personas={personas}
-            loading={loading}
-            onSubmit={handleGenerate}
-          />
-          <ResultPanel result={result} error={error} />
+        <main className="geracao-main">
+          <ChatAssistant personas={personas} personaId={personaId} onUsePrompt={setPrompt} />
+          <div className="geracao-row">
+            <GenerationForm
+              models={models}
+              workflows={workflows}
+              personas={personas}
+              loading={loading}
+              prompt={prompt}
+              onPromptChange={setPrompt}
+              personaId={personaId}
+              onPersonaChange={setPersonaId}
+              onSubmit={handleGenerate}
+            />
+            <ResultPanel result={result} error={error} />
+          </div>
         </main>
       ) : (
         <PersonasView models={models} workflows={workflows} />

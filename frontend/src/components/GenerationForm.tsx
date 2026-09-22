@@ -6,6 +6,10 @@ interface Props {
   workflows: WorkflowInfo[];
   personas: PersonaSummary[];
   loading: boolean;
+  prompt: string;
+  onPromptChange: (prompt: string) => void;
+  personaId: string;
+  onPersonaChange: (personaId: string) => void;
   onSubmit: (params: {
     prompt: string;
     modelId: string;
@@ -18,11 +22,19 @@ interface Props {
   }) => void;
 }
 
-export function GenerationForm({ models, workflows, personas, loading, onSubmit }: Props) {
-  const [prompt, setPrompt] = useState("");
+export function GenerationForm({
+  models,
+  workflows,
+  personas,
+  loading,
+  prompt,
+  onPromptChange,
+  personaId,
+  onPersonaChange,
+  onSubmit,
+}: Props) {
   const [modelId, setModelId] = useState(models[0]?.id ?? "");
   const [workflowId, setWorkflowId] = useState(workflows[0]?.id ?? "");
-  const [personaId, setPersonaId] = useState("");
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(1024);
   const [steps, setSteps] = useState(20);
@@ -48,7 +60,7 @@ export function GenerationForm({ models, workflows, personas, loading, onSubmit 
       <h2>Geração</h2>
 
       <label htmlFor="persona">Persona</label>
-      <select id="persona" value={personaId} onChange={(e) => setPersonaId(e.target.value)}>
+      <select id="persona" value={personaId} onChange={(e) => onPersonaChange(e.target.value)}>
         <option value="">Nenhuma</option>
         {personas.map((p) => (
           <option key={p.id} value={p.id}>
@@ -62,7 +74,7 @@ export function GenerationForm({ models, workflows, personas, loading, onSubmit 
         id="prompt"
         rows={4}
         value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
+        onChange={(e) => onPromptChange(e.target.value)}
         placeholder="Descreva a imagem que deseja gerar..."
         required
       />
