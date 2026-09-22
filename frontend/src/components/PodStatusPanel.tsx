@@ -13,7 +13,12 @@ function formatUptime(seconds: number): string {
   return `${m}m ${s}s`;
 }
 
-export function PodStatusPanel() {
+interface PodStatusPanelProps {
+  onWake?: () => void;
+  waking?: boolean;
+}
+
+export function PodStatusPanel({ onWake, waking }: PodStatusPanelProps) {
   const [status, setStatus] = useState<PodStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [liveUptime, setLiveUptime] = useState(0);
@@ -75,6 +80,11 @@ export function PodStatusPanel() {
       <span className="pod-stat">
         Saldo: <strong>{formatUSD(status.balance)}</strong>
       </span>
+      {!status.running && onWake && (
+        <button type="button" className="small pod-wake-btn" onClick={onWake} disabled={waking}>
+          {waking ? "Ligando..." : "Ligar pod"}
+        </button>
+      )}
       {status.running && (
         <>
           <span className="pod-stat">

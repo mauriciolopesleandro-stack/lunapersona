@@ -62,8 +62,22 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [podMessage, setPodMessage] = useState<string | null>(null);
+  const [waking, setWaking] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [personaId, setPersonaId] = useState("");
+
+  async function handleWakePod() {
+    setWaking(true);
+    setPodMessage(null);
+    try {
+      const wasColdStart = await ensurePodAwake(setPodMessage);
+      if (wasColdStart) {
+        await loadConfig();
+      }
+    } finally {
+      setWaking(false);
+    }
+  }
 
   async function loadConfig() {
     getHealth().then(setHealth).catch((e) => setLoadError(String(e)));
@@ -143,7 +157,7 @@ export default function App() {
         {health && !health.comfyui.ok && <p className="error small">{health.comfyui.message}</p>}
         {loadError && <p className="error small">{loadError}</p>}
 
-        <PodStatusPanel />
+        <PodStatusPanel onWake={handleWakePod} waking={waking} />
         {podMessage && <p className="pod-toast">{podMessage}</p>}
 
         <nav className="top-tabs">

@@ -223,6 +223,10 @@ button.danger {
   color: #e8e8ec;
 }
 
+.pod-wake-btn {
+  margin-top: 0;
+}
+
 .pod-toast {
   margin-top: 8px;
   padding: 8px 12px;
