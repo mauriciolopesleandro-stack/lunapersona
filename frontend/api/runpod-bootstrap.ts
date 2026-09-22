@@ -15,8 +15,10 @@ import { findSshPort, getPodAndBalance, RunpodConfigError } from "./_runpod.js";
 // (nao e segredo - o proprio start.sh da imagem le essa variavel e autoriza
 // a chave em ~/.ssh/authorized_keys no boot).
 const REMOTE_COMMAND = "cd /workspace/lunapersona && git pull && bash scripts/runpod_bootstrap.sh";
-const SSH_CONNECT_TIMEOUT_MS = 15_000;
-const COMMAND_TIMEOUT_MS = 4 * 60_000;
+// Testando ao vivo, o handshake demorou mais pela rede da Vercel do que
+// direto da minha maquina (que conectou na hora) - 15s nao foi suficiente.
+const SSH_CONNECT_TIMEOUT_MS = 30_000;
+const COMMAND_TIMEOUT_MS = 55_000;
 
 interface RemoteResult {
   stdout: string;

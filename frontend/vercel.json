@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/runpod-bootstrap.ts": {
+      "maxDuration": 60
+    }
+  }
+}
