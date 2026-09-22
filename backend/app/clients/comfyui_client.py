@@ -130,6 +130,28 @@ class ComfyUIClient:
             )
         return resp.json()
 
+    async def upload_image(self, filename: str, content: bytes) -> str:
+        """Envia uma imagem para o ComfyUI (pasta input/) para uso em nos como
+        LoadImage. Retorna o nome de arquivo real usado pelo ComfyUI (pode
+        diferir do enviado se ja existir um arquivo com esse nome)."""
+        try:
+            async with httpx.AsyncClient(timeout=self.connect_timeout) as client:
+                resp = await client.post(
+                    f"{self.base_url}/upload/image",
+                    files={"image": (filename, content)},
+                    data={"overwrite": "true"},
+                    headers=self._headers(),
+                )
+        except httpx.RequestError as exc:
+            raise ComfyUIConnectionError(str(exc)) from exc
+
+        if resp.status_code != 200:
+            raise ComfyUIExecutionError(
+                f"Falha ao enviar imagem de referencia ao ComfyUI (status {resp.status_code}): {resp.text}"
+            )
+        data = resp.json()
+        return data.get("name", filename)
+
     async def queue_prompt(self, graph: dict[str, Any], client_id: str | None = None) -> str:
         """Envia um grafo (formato de API do ComfyUI) para a fila de execucao."""
         client_id = client_id or str(uuid.uuid4())

@@ -260,6 +260,20 @@ class PersonaManager:
                 return self._references_dir(persona_id) / entry["filename"]
         raise ReferenceNotFoundError(f"Referencia '{reference_id}' nao encontrada.")
 
+    def get_primary_reference_bytes(self, persona_id: str) -> tuple[str, bytes] | None:
+        """Retorna (nome_do_arquivo, conteudo) da referencia principal da
+        persona, ou None se ela nao tiver nenhuma - usado pelo
+        GenerationService para ancorar a identidade numa imagem real via
+        FLUX Kontext em vez de so descricao em texto."""
+        entries = self._load_reference_index(persona_id)
+        if not entries:
+            return None
+        primary = next((e for e in entries if e.get("is_primary")), entries[0])
+        path = self._references_dir(persona_id) / primary["filename"]
+        if not path.exists():
+            return None
+        return primary["filename"], path.read_bytes()
+
     def delete_reference(self, persona_id: str, reference_id: str) -> None:
         entries = self._load_reference_index(persona_id)
         remaining = [e for e in entries if e["id"] != reference_id]

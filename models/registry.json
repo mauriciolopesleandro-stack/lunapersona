@@ -17,7 +17,7 @@
         "unet_weight_dtype": "default",
         "clip_type": "flux"
       },
-      "compatible_workflows": ["flux-kontext-txt2img"],
+      "compatible_workflows": ["flux-kontext-txt2img", "flux-kontext-reference"],
       "defaults": {
         "width": 1024,
         "height": 1024,
