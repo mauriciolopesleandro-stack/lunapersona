@@ -30,8 +30,15 @@ const REMOTE_COMMAND =
   "echo BOOTSTRAP_LAUNCHED";
 // Testando ao vivo, o handshake demorou mais pela rede da Vercel do que
 // direto da minha maquina (que conectou na hora) - 15s nao foi suficiente.
-const SSH_CONNECT_TIMEOUT_MS = 30_000;
-const COMMAND_TIMEOUT_MS = 25_000;
+// COMMAND_TIMEOUT_MS tambem ja se mostrou curto demais: o comando remoto
+// (git pull + lancar o bootstrap em background) as vezes passou de 25s so
+// pra devolver o "echo" - a funcao dava "Timeout" no frontend mesmo com o
+// bootstrap tendo sido disparado com sucesso do lado do pod. Os dois juntos
+// (30s + 40s = 70s) ficam perto do limite de execucao de uma funcao
+// serverless da Vercel no plano gratuito (60s) - por isso maxDuration no
+// vercel.json tambem subiu.
+const SSH_CONNECT_TIMEOUT_MS = 20_000;
+const COMMAND_TIMEOUT_MS = 35_000;
 
 interface RemoteResult {
   stdout: string;
