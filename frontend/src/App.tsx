@@ -257,6 +257,11 @@ export default function App() {
     setResultPrompt(entry.prompt);
     setActiveHistoryId(entry.id);
     setLastGenerateParams(entry.requestBody);
+    // Sem isso, o card de persona na tela de Gerar ficava com a Luna
+    // marcada mesmo depois de abrir um item do historico sem persona (ou de
+    // outra persona) - "Gerar novamente" usava o persona_id do historico,
+    // divergindo do que a tela mostrava selecionado.
+    setPersonaId(entry.requestBody.persona_id || "");
   }
 
   useEffect(() => {
