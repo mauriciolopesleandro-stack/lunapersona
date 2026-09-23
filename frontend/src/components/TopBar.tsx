@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { getPodStatus, stopPodRequest, type PodStatus } from "../api/client";
+import { getHealth, getPodStatus, stopPodRequest, type PodStatus } from "../api/client";
 
 const POLL_INTERVAL_MS = 15_000;
+const BACKEND_POLL_INTERVAL_MS = 8_000;
 
 function formatUSD(value: number): string {
   return `$${value.toFixed(2)}`;
@@ -20,6 +21,9 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar }: 
   const [error, setError] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
+  // Pod "rodando" (RunPod) e diferente de "chat pronto" (backend/Ollama de
+  // pe dentro do pod) - o Ollama ainda demora a subir depois do pod ligar.
+  const [backendReady, setBackendReady] = useState(false);
 
   async function refreshStatus() {
     try {
@@ -69,6 +73,32 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar }: 
 
   const running = status?.running ?? false;
 
+  // So fica de olho no backend enquanto o pod estiver rodando - sem isso
+  // fica tentando bater num pod desligado a cada poucos segundos a toa.
+  useEffect(() => {
+    if (!running) {
+      setBackendReady(false);
+      return;
+    }
+    let cancelled = false;
+
+    async function checkBackend() {
+      try {
+        await getHealth();
+        if (!cancelled) setBackendReady(true);
+      } catch {
+        if (!cancelled) setBackendReady(false);
+      }
+    }
+
+    checkBackend();
+    const interval = setInterval(checkBackend, BACKEND_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [running]);
+
   return (
     <div className="topbar">
       <button type="button" className="icon-btn topbar-menu-btn" onClick={onOpenSidebar} aria-label="Abrir menu">
@@ -81,6 +111,14 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar }: 
             <span className="pill-dot" />
             <span className="topbar-label-full">Pod Online</span>
             <span className="topbar-label-short">Online</span>
+          </span>
+          <span
+            className={`pill ${backendReady ? "pill-ready" : "pill-preparing"}`}
+            title={backendReady ? "Chat e geracao prontos para usar" : "Backend ainda esta subindo dentro do pod (pode levar 1-2 min)"}
+          >
+            <span className="pill-dot" />
+            <span className="topbar-label-full">{backendReady ? "Chat pronto" : "Preparando chat..."}</span>
+            <span className="topbar-label-short">{backendReady ? "Pronto" : "Prep..."}</span>
           </span>
           <button
             type="button"

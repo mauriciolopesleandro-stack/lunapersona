@@ -19,6 +19,8 @@
   --success-bg: rgba(52, 211, 153, 0.14);
   --danger: #f87171;
   --danger-bg: rgba(248, 113, 113, 0.14);
+  --warning: #fbbf24;
+  --warning-bg: rgba(251, 191, 36, 0.14);
   --radius-lg: 20px;
   --radius-md: 14px;
   --radius-sm: 9px;
@@ -273,6 +275,32 @@ a {
 
 .pill-online .pill-dot {
   background: var(--success);
+}
+
+.pill-ready {
+  color: var(--success);
+  background: var(--success-bg);
+  border-color: transparent;
+}
+
+.pill-ready .pill-dot {
+  background: var(--success);
+}
+
+.pill-preparing {
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-color: transparent;
+}
+
+.pill-preparing .pill-dot {
+  background: var(--warning);
+  animation: pill-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pill-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 .pill-offline {
