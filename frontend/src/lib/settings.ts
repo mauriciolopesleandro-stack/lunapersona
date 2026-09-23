@@ -13,8 +13,8 @@ export interface GenerationSettings {
 export const DEFAULT_SETTINGS: GenerationSettings = {
   modelId: "",
   workflowId: "",
-  steps: 20,
-  guidance: 2.5,
+  steps: 26,
+  guidance: 4.0,
 };
 
 export function getSettings(): GenerationSettings {

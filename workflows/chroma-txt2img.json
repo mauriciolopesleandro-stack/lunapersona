@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "id": "chroma-txt2img",
+    "title": "Chroma1-HD - Texto para Imagem",
+    "description": "Prompt de texto -> imagem com Chroma1-HD (fp8mixed). Baseado no workflow oficial publicado em huggingface.co/lodestones/Chroma1-HD (UNETLoader + CLIPLoader tipo chroma + T5TokenizerOptions + ModelSamplingAuraFlow shift 1 + CFGGuider com prompt negativo + BetaSamplingScheduler). Chroma nao aceita imagem de referencia: a identidade da persona vem so do texto. GUIDANCE aqui e o CFG (padrao 4.0).",
+    "compatible_models": ["chroma1-hd-fp8"],
+    "required_params": ["PROMPT"],
+    "optional_params": {
+      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, watermark, signature, text",
+      "WIDTH": 1024,
+      "HEIGHT": 1024,
+      "STEPS": 26,
+      "GUIDANCE": 4.0,
+      "SEED": 0,
+      "SAMPLER_NAME": "euler",
+      "FILENAME_PREFIX": "luna_studio"
+    }
+  },
+  "graph": {
+    "1": {
+      "class_type": "UNETLoader",
+      "inputs": {
+        "unet_name": "${UNET_NAME}",
+        "weight_dtype": "${UNET_WEIGHT_DTYPE}"
+      }
+    },
+    "2": {
+      "class_type": "CLIPLoader",
+      "inputs": {
+        "clip_name": "${CLIP_NAME_1}",
+        "type": "${CLIP_TYPE}",
+        "device": "default"
+      }
+    },
+    "3": {
+      "class_type": "VAELoader",
+      "inputs": {
+        "vae_name": "${VAE_NAME}"
+      }
+    },
+    "4": {
+      "class_type": "T5TokenizerOptions",
+      "inputs": {
+        "clip": ["2", 0],
+        "min_padding": 0,
+        "min_length": 0
+      }
+    },
+    "5": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "${PROMPT}",
+        "clip": ["4", 0]
+      }
+    },
+    "6": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "${NEGATIVE_PROMPT}",
+        "clip": ["4", 0]
+      }
+    },
+    "7": {
+      "class_type": "ModelSamplingAuraFlow",
+      "inputs": {
+        "model": ["1", 0],
+        "shift": 1.0
+      }
+    },
+    "8": {
+      "class_type": "CFGGuider",
+      "inputs": {
+        "model": ["7", 0],
+        "positive": ["5", 0],
+        "negative": ["6", 0],
+        "cfg": "${GUIDANCE}"
+      }
+    },
+    "9": {
+      "class_type": "EmptySD3LatentImage",
+      "inputs": {
+        "width": "${WIDTH}",
+        "height": "${HEIGHT}",
+        "batch_size": 1
+      }
+    },
+    "10": {
+      "class_type": "RandomNoise",
+      "inputs": {
+        "noise_seed": "${SEED}"
+      }
+    },
+    "11": {
+      "class_type": "KSamplerSelect",
+      "inputs": {
+        "sampler_name": "${SAMPLER_NAME}"
+      }
+    },
+    "12": {
+      "class_type": "BetaSamplingScheduler",
+      "inputs": {
+        "model": ["7", 0],
+        "steps": "${STEPS}",
+        "alpha": 0.45,
+        "beta": 0.45
+      }
+    },
+    "13": {
+      "class_type": "SamplerCustomAdvanced",
+      "inputs": {
+        "noise": ["10", 0],
+        "guider": ["8", 0],
+        "sampler": ["11", 0],
+        "sigmas": ["12", 0],
+        "latent_image": ["9", 0]
+      }
+    },
+    "14": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": ["13", 0],
+        "vae": ["3", 0]
+      }
+    },
+    "15": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": ["14", 0],
+        "filename_prefix": "${FILENAME_PREFIX}"
+      }
+    }
+  }
+}

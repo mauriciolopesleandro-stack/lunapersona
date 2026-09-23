@@ -15,4 +15,4 @@ A aplicação nunca fica presa a um único workflow: novos arquivos podem ser ad
 
 ## Workflows atuais
 
-- `flux-kontext-txt2img.json` — texto → imagem com FLUX.1 Kontext [dev], sem imagem de referência (uso da Fase 1). **Ainda não validado contra uma instância real do ComfyUI** — os nomes de nós (`UNETLoader`, `DualCLIPLoader`, `FluxGuidance`, `BasicGuider`, `SamplerCustomAdvanced`, etc.) seguem o grafo padrão publicado para modelos Flux, mas podem variar conforme a versão do ComfyUI/custom nodes instalados no pod. Antes do primeiro uso real, confirme os nomes via `GET /object_info` do ComfyUI (ou rode `scripts/check_comfyui_connection.py`).
+- `chroma-txt2img.json` — texto → imagem com Chroma1-HD (fp8mixed), baseado no workflow oficial do modelo. Chroma não aceita imagem de referência: a identidade da persona vem só do texto do prompt. Os workflows FLUX Kontext (txt2img e reference) foram removidos na troca para o Chroma e continuam no histórico do Git.

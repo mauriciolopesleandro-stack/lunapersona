@@ -2,31 +2,30 @@
   "_comment": "Registro de metadados dos modelos disponiveis no ComfyUI (RunPod). Os arquivos .safetensors NAO ficam neste repositorio, apenas a referencia a eles. Adicionar um modelo novo aqui NAO baixa nada automaticamente - e apenas metadado para o Model Manager.",
   "models": [
     {
-      "id": "flux-kontext-dev-fp8",
-      "name": "FLUX.1 Kontext [dev] (fp8 scaled)",
-      "engine": "flux-kontext",
+      "id": "chroma1-hd-fp8",
+      "name": "Chroma1-HD (fp8mixed)",
+      "engine": "chroma",
       "type": "image-generation",
       "status": "active",
       "files": {
-        "unet_name": "flux1-dev-kontext_fp8_scaled.safetensors",
-        "clip_name_1": "clip_l.safetensors",
-        "clip_name_2": "t5xxl_fp8_e4m3fn_scaled.safetensors",
+        "unet_name": "Chroma1-HD-fp8mixed.safetensors",
+        "clip_name_1": "t5xxl_fp8_e4m3fn_scaled.safetensors",
         "vae_name": "ae.safetensors"
       },
       "loader_config": {
         "unet_weight_dtype": "default",
-        "clip_type": "flux"
+        "clip_type": "chroma"
       },
-      "compatible_workflows": ["flux-kontext-txt2img", "flux-kontext-reference"],
+      "compatible_workflows": ["chroma-txt2img"],
       "defaults": {
         "width": 1024,
         "height": 1024,
-        "steps": 20,
-        "guidance": 2.5,
+        "steps": 26,
+        "guidance": 4.0,
         "sampler_name": "euler",
-        "scheduler": "simple"
+        "scheduler": "beta"
       },
-      "notes": "Modelo atualmente instalado no pod RunPod sp8bay1sk6qs2o (GPU L4 24GB). Suporta edicao de imagem com referencia (uso futuro); workflow de teste da Fase 1 usa apenas texto-para-imagem.",
+      "notes": "Chroma1-HD 8.9B (Apache 2.0), base FLUX.1-schnell. Arquivo fp8mixed do repackaged oficial da ComfyUI (huggingface.co/Comfy-Org/Chroma1-HD_repackaged), ~9.2 GB, em ComfyUI/models/diffusion_models. Reaproveita o T5 e o VAE que ja estavam no pod para o FLUX. So texto-para-imagem: sem imagem de referencia, a identidade da persona vem apenas do prompt (ate existir uma LoRA).",
       "license_check_required": false
     }
   ]

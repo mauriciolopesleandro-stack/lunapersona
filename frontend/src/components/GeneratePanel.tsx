@@ -85,8 +85,10 @@ export function GeneratePanel({
     const finalPrompt = `${prompt.trim()}${ambiente.trim() ? `. Ambiente: ${ambiente.trim()}` : ""}${style.suffix}`;
     onSubmit({
       prompt: finalPrompt,
-      modelId: settings.modelId || models[0]?.id,
-      workflowId: settings.workflowId || workflows[0]?.id,
+      // Ignora modelo/workflow salvo no navegador que nao existe mais no
+      // backend (ex: FLUX Kontext depois da troca para o Chroma).
+      modelId: models.some((m) => m.id === settings.modelId) ? settings.modelId : models[0]?.id,
+      workflowId: workflows.some((w) => w.id === settings.workflowId) ? settings.workflowId : workflows[0]?.id,
       personaId,
       width: format.width,
       height: format.height,

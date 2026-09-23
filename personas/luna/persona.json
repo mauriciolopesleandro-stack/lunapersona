@@ -27,8 +27,8 @@
     }
   },
   "generation": {
-    "model_id": "flux-kontext-dev-fp8",
-    "workflow_id": "flux-kontext-txt2img"
+    "model_id": "chroma1-hd-fp8",
+    "workflow_id": "chroma-txt2img"
   },
   "identity_methods": {
     "planned": ["image_prompting", "ip_adapter", "faceid", "lora"],

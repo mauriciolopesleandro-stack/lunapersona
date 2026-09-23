@@ -10,7 +10,7 @@ from app.clients.llm_client import ChatMessage, OllamaClient
 from app.persona_manager.manager import Persona, PersonaManager
 
 BASE_SYSTEM_PROMPT = """Voce e um assistente que ajuda o usuario a escrever prompts para \
-geracao de imagens com IA (modelo Flux Kontext). Seu trabalho e conversar com o usuario \
+geracao de imagens com IA (modelo Chroma1-HD). Seu trabalho e conversar com o usuario \
 sobre a cena que ele quer gerar (roupa, cenario, pose, iluminacao, camera, humor) e, ao \
 final, propor um prompt pronto em UMA frase, usando linguagem fotografica (ex: \
 "realistic photography", "natural light", "85mm", "shallow depth of field") para \
