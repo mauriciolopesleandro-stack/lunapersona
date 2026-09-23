@@ -222,6 +222,28 @@ a {
   }
 }
 
+.topbar-label-short {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    padding: 12px 14px;
+    gap: 6px;
+  }
+  .pill {
+    padding: 6px 9px;
+    font-size: 11.5px;
+    gap: 4px;
+  }
+  .topbar-label-full {
+    display: none;
+  }
+  .topbar-label-short {
+    display: inline;
+  }
+}
+
 .pill {
   display: inline-flex;
   align-items: center;

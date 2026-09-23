@@ -79,7 +79,8 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar }: 
         <>
           <span className="pill pill-online">
             <span className="pill-dot" />
-            Pod Online
+            <span className="topbar-label-full">Pod Online</span>
+            <span className="topbar-label-short">Online</span>
           </span>
           <button
             type="button"
@@ -88,7 +89,10 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar }: 
             disabled={stopping}
             title={stopError ?? "Desligar o pod para parar a cobrança"}
           >
-            {stopping ? "Desligando..." : stopError ? "Erro ao desligar · tentar de novo" : "⏻ Desligar"}
+            <span className="topbar-label-full">
+              {stopping ? "Desligando..." : stopError ? "Erro ao desligar · tentar de novo" : "⏻ Desligar"}
+            </span>
+            <span className="topbar-label-short">{stopping ? "..." : "⏻"}</span>
           </button>
         </>
       ) : (
@@ -100,12 +104,14 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar }: 
           title="Clique para ligar o pod"
         >
           <span className="pill-dot" />
-          {waking ? "Ligando..." : "Pod Offline · clique para ligar"}
+          <span className="topbar-label-full">{waking ? "Ligando..." : "Pod Offline · clique para ligar"}</span>
+          <span className="topbar-label-short">{waking ? "..." : "Ligar"}</span>
         </button>
       )}
 
       <span className="pill pill-credits" title="Saldo real da conta RunPod">
-        Créditos: {status && !error ? formatUSD(status.balance) : "..."}
+        <span className="topbar-label-full">Créditos: </span>
+        {status && !error ? formatUSD(status.balance) : "..."}
       </span>
 
       <button
