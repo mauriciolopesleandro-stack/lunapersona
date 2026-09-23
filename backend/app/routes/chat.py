@@ -20,6 +20,9 @@ class ChatBody(BaseModel):
 @router.post("/chat")
 async def chat(body: ChatBody, request: Request):
     chat_service = request.app.state.chat_service
+    # Conversar tambem conta como uso: sem isso o auto-desligamento derruba
+    # o pod no meio de um chat so porque nao houve geracao de imagem.
+    request.app.state.idle_shutdown.touch()
 
     history = [ChatMessage(role=m.role, content=m.content) for m in body.messages]
 
@@ -34,4 +37,5 @@ async def chat(body: ChatBody, request: Request):
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    request.app.state.idle_shutdown.touch()
     return {"role": "assistant", "content": reply, "model": model}

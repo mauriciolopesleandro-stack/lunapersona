@@ -2,7 +2,7 @@
 
 Roda como uma tarefa de fundo dentro do proprio backend (que so existe
 enquanto o pod esta ligado). Conta o tempo desde a ultima chamada a
-/api/generate e, se passar de `idle_shutdown_minutes` sem nenhuma geracao,
+/api/generate ou /api/chat e, se passar de `idle_shutdown_minutes` sem uso,
 chama a API da RunPod para desligar o proprio pod.
 
 Precisa de RUNPOD_API_KEY + RUNPOD_POD_ID configurados; se faltar qualquer
