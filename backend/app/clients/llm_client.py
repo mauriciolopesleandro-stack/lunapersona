@@ -83,10 +83,17 @@ class OllamaClient:
             "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": False,
+            # Desliga o "raciocinio" de modelos como qwen3: sem isso a resposta
+            # demora bem mais e pode estourar o limite de ~100s do proxy RunPod.
+            "think": False,
         }
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(f"{self.base_url}/api/chat", json=payload)
+                if resp.status_code == 400 and "think" in resp.text.lower():
+                    # Modelo sem suporte a "think" - repete sem o campo.
+                    payload.pop("think")
+                    resp = await client.post(f"{self.base_url}/api/chat", json=payload)
         except httpx.TimeoutException as exc:
             raise LLMTimeoutError(
                 f"O Ollama nao respondeu em {self.timeout:.0f}s (modelo '{model}'). "

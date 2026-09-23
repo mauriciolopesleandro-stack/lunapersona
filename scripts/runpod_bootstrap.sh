@@ -19,7 +19,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_DIR="$REPO_ROOT/backend"
 LOG_DIR="/tmp/luna-logs"
 VENV_DIR="$REPO_ROOT/.venv-persist"
-export OLLAMA_MODELS="$REPO_ROOT/.ollama-models"
+# Pasta dos modelos do Ollama: OLLAMA_MODELS do .env (onde o modelo foi
+# instalado manualmente, ex: /workspace/ollama_models); senao, dentro do repo.
+if [ -z "${OLLAMA_MODELS:-}" ] && [ -f "$REPO_ROOT/.env" ]; then
+    OLLAMA_MODELS="$(grep -E "^OLLAMA_MODELS=" "$REPO_ROOT/.env" | tail -n1 | cut -d= -f2- | tr -d "\r\"' ")"
+fi
+export OLLAMA_MODELS="${OLLAMA_MODELS:-$REPO_ROOT/.ollama-models}"
 mkdir -p "$LOG_DIR" "$OLLAMA_MODELS"
 
 echo "== 1/5: zstd + pciutils (necessarios pelo instalador do Ollama) =="
