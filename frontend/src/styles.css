@@ -257,6 +257,19 @@ a {
   color: var(--text-muted);
 }
 
+.pill-stop {
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: transparent;
+}
+
+.pill-stop:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .pill-credits {
   color: var(--text);
 }

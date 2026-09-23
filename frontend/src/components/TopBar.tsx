@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getPodStatus, type PodStatus } from "../api/client";
+import { getPodStatus, stopPodRequest, type PodStatus } from "../api/client";
 
 const POLL_INTERVAL_MS = 15_000;
 
@@ -18,6 +18,31 @@ interface Props {
 export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar }: Props) {
   const [status, setStatus] = useState<PodStatus | null>(null);
   const [error, setError] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
+
+  async function refreshStatus() {
+    try {
+      setStatus(await getPodStatus());
+      setError(false);
+    } catch {
+      setError(true);
+    }
+  }
+
+  async function handleStop() {
+    if (!window.confirm("Desligar o pod agora? Chat e geração de imagem param até ligar de novo.")) return;
+    setStopping(true);
+    setStopError(null);
+    try {
+      await stopPodRequest();
+      await refreshStatus();
+    } catch (e) {
+      setStopError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStopping(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -51,10 +76,21 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar }: 
       </button>
 
       {running ? (
-        <span className="pill pill-online">
-          <span className="pill-dot" />
-          Pod Online
-        </span>
+        <>
+          <span className="pill pill-online">
+            <span className="pill-dot" />
+            Pod Online
+          </span>
+          <button
+            type="button"
+            className="pill pill-stop"
+            onClick={handleStop}
+            disabled={stopping}
+            title={stopError ?? "Desligar o pod para parar a cobrança"}
+          >
+            {stopping ? "Desligando..." : stopError ? "Erro ao desligar · tentar de novo" : "⏻ Desligar"}
+          </button>
+        </>
       ) : (
         <button
           type="button"

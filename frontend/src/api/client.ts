@@ -277,6 +277,15 @@ export async function wakePod(): Promise<{ alreadyRunning: boolean }> {
   return handleResponse<{ alreadyRunning: boolean }>(res);
 }
 
+export async function stopPodRequest(): Promise<{ alreadyStopped: boolean }> {
+  const res = await fetch("/api/runpod-stop", { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `Erro HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export interface BootstrapResult {
   ok: boolean;
   exitCode: number | null;
