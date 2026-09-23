@@ -49,12 +49,18 @@ else
 fi
 
 echo "== 3/5: modelo do chat =="
-LLM_MODEL="${LLM_MODEL:-llama3.2:3b}"
-if ollama list | grep -q "${LLM_MODEL%%:*}"; then
-    echo "Modelo $LLM_MODEL ja esta em $OLLAMA_MODELS (nao precisa baixar de novo)."
+# O modelo e instalado manualmente no pod (este script NUNCA baixa modelo).
+# So confere se o LLM_MODEL do .env (o mesmo que o backend usa) existe.
+if [ -z "${LLM_MODEL:-}" ] && [ -f "$REPO_ROOT/.env" ]; then
+    LLM_MODEL="$(grep -E "^LLM_MODEL=" "$REPO_ROOT/.env" | tail -n1 | cut -d= -f2- | tr -d "\r\"' ")"
+fi
+ollama list || true
+if [ -z "${LLM_MODEL:-}" ]; then
+    echo "LLM_MODEL vazio - o backend vai usar o primeiro modelo instalado acima."
+elif ollama list | awk 'NR>1 {print $1}' | grep -qx -e "$LLM_MODEL" -e "$LLM_MODEL:latest"; then
+    echo "Modelo $LLM_MODEL encontrado."
 else
-    echo "Baixando modelo $LLM_MODEL pela primeira vez (fica salvo no volume)..."
-    ollama pull "$LLM_MODEL"
+    echo "AVISO: modelo $LLM_MODEL nao esta instalado no Ollama - o chat vai responder erro ate ajustar LLM_MODEL no .env."
 fi
 
 echo "== 4/5: dependencias do backend (venv persistente) =="

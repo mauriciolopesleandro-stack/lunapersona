@@ -37,7 +37,7 @@ class ChatService:
             return BASE_SYSTEM_PROMPT
         return BASE_SYSTEM_PROMPT + PERSONA_SYSTEM_PROMPT_SUFFIX.format(name=persona.name)
 
-    async def reply(self, persona_id: str | None, history: list[ChatMessage]) -> str:
+    async def reply(self, persona_id: str | None, history: list[ChatMessage]) -> tuple[str, str]:
         persona = self.persona_manager.get_persona(persona_id) if persona_id else None
         system = ChatMessage(role="system", content=self._system_prompt(persona))
         return await self.llm_client.chat([system, *history])

@@ -73,7 +73,7 @@ O template atual do pod não inicia o Ollama nem o backend automaticamente no bo
 bash scripts/runpod_bootstrap.sh
 ```
 
-Isso instala o `zstd` e o Ollama se ainda não estiverem presentes, baixa o modelo definido em `LLM_MODEL` (padrão `llama3.2:3b`), sobe o `ollama serve` e o backend FastAPI em segundo plano (logs em `/tmp/luna-logs/`). É seguro rodar de novo — ele reinicia o que já estiver de pé em vez de duplicar processos.
+Isso instala o `zstd` e o Ollama se ainda não estiverem presentes, confere se o modelo de `LLM_MODEL` (do `.env`) está instalado — o modelo é instalado manualmente, o script nunca baixa modelo; com `LLM_MODEL` vazio o backend usa o primeiro modelo do `ollama list` —, sobe o `ollama serve` e o backend FastAPI em segundo plano (logs em `/tmp/luna-logs/`). É seguro rodar de novo — ele reinicia o que já estiver de pé em vez de duplicar processos.
 
 **Economia:** o modelo do Ollama (`.ollama-models/`) e o ambiente Python (`.venv-persist/`) ficam salvos dentro do próprio repo, que vive no Network Volume persistente — ou seja, só baixam/instalam na primeira vez. Num pod novo (migração, GPU diferente), o script reconhece que já existem e pula direto para religar os processos, economizando minutos de GPU ligada.
 

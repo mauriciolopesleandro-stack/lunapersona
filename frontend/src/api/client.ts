@@ -212,16 +212,45 @@ export interface ChatMessage {
   content: string;
 }
 
+// O nome do modelo e definido so no backend (LLM_MODEL); o frontend apenas
+// o recebe de volta para exibir qual modelo respondeu.
+export interface ChatReply extends ChatMessage {
+  model?: string;
+}
+
 export async function sendChatMessage(
   personaId: string | undefined,
   messages: ChatMessage[]
-): Promise<ChatMessage> {
-  const res = await fetch(`${API_BASE}/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ persona_id: personaId || undefined, messages }),
-  });
-  return handleResponse<ChatMessage>(res);
+): Promise<ChatReply> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ persona_id: personaId || undefined, messages }),
+    });
+  } catch {
+    // fetch so rejeita sem resposta HTTP: pod desligado, backend reiniciando
+    // ou o proxy da RunPod cortou a conexao (~100s) sem cabecalho CORS.
+    throw new Error(
+      "Sem resposta do backend. O pod pode estar desligado ou o backend reiniciando - " +
+        "ou a resposta passou do limite de ~100s do proxy da RunPod. Tente novamente em instantes."
+    );
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let detail = "";
+    try {
+      detail = JSON.parse(text).detail ?? "";
+    } catch {
+      // resposta nao-JSON (ex: pagina HTML de erro do proxy)
+    }
+    if (!detail && (res.status === 502 || res.status === 504 || res.status === 524)) {
+      detail = "O proxy da RunPod nao obteve resposta do backend a tempo. Tente novamente em instantes.";
+    }
+    throw new Error(`Erro ${res.status} no chat: ${detail || res.statusText || "sem detalhes"}`);
+  }
+  return res.json() as Promise<ChatReply>;
 }
 
 // --- Status/ligar o pod RunPod --------------------------------------------

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ModelInfo, PersonaSummary, WorkflowInfo } from "../api/client";
 import type { GenerationSettings } from "../lib/settings";
-import { ChatAssistant } from "./ChatAssistant";
+import { ChatAssistant, type ChatSession } from "./ChatAssistant";
 
 interface FormatPreset {
   id: string;
@@ -44,6 +44,7 @@ interface Props {
   onPersonaChange: (personaId: string) => void;
   settings: GenerationSettings;
   onNavigatePersonas: () => void;
+  chat: ChatSession;
   onSubmit: (params: {
     prompt: string;
     modelId: string;
@@ -68,6 +69,7 @@ export function GeneratePanel({
   onPersonaChange,
   settings,
   onNavigatePersonas,
+  chat,
   onSubmit,
 }: Props) {
   const [ambiente, setAmbiente] = useState("");
@@ -140,7 +142,7 @@ export function GeneratePanel({
           {showChat ? "Fechar assistente de prompt" : "✨ Pedir ajuda da IA para montar o prompt"}
         </button>
       </div>
-      {showChat && <ChatAssistant personas={personas} personaId={personaId} onUsePrompt={onPromptChange} />}
+      {showChat && <ChatAssistant chat={chat} personas={personas} personaId={personaId} onUsePrompt={onPromptChange} />}
 
       <div className="step-label">3. Ambiente (opcional)</div>
       <textarea

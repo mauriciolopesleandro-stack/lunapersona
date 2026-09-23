@@ -12,6 +12,7 @@ import {
   personaReferenceFileUrl,
   wakePod,
 } from "./api/client";
+import { useChatSession } from "./components/ChatAssistant";
 import { GalleryPage } from "./components/GalleryPage";
 import { GeneratePanel } from "./components/GeneratePanel";
 import { HistoryPage } from "./components/HistoryPage";
@@ -121,6 +122,7 @@ export default function App() {
   const [personaId, setPersonaId] = useState("");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
+  const chat = useChatSession();
   const [lastGenerateParams, setLastGenerateParams] = useState<Parameters<typeof generateImage>[0] | null>(null);
 
   useEffect(() => {
@@ -307,6 +309,7 @@ export default function App() {
                 onPersonaChange={setPersonaId}
                 settings={settings}
                 onNavigatePersonas={() => setTab("personas")}
+                chat={chat}
                 onSubmit={runGenerate}
               />
               <ResultPanel

@@ -42,7 +42,9 @@ app.state.generation_service = GenerationService(
     model_manager=app.state.model_manager,
     persona_manager=app.state.persona_manager,
 )
-app.state.llm_client = OllamaClient(base_url=settings.llm_api_url, model=settings.llm_model)
+app.state.llm_client = OllamaClient(
+    base_url=settings.llm_api_url, model=settings.llm_model, timeout=settings.llm_timeout
+)
 app.state.chat_service = ChatService(
     llm_client=app.state.llm_client,
     persona_manager=app.state.persona_manager,
