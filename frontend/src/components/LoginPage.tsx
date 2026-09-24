@@ -313,7 +313,7 @@ export function LoginPage({ onReady }: Props) {
             <p className="lg-card-sub">
               {phase === "no-gpu"
                 ? "A GPU do estúdio está ocupada no momento."
-                : "Isso pode levar de 1 a 3 minutos na primeira vez."}
+                : "Se precisar ligar uma GPU nova, pode levar até 10 minutos."}
             </p>
             {phase === "starting" && <div className="lg-spinner" aria-hidden="true" />}
           </div>

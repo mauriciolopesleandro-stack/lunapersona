@@ -16,6 +16,7 @@
 // Os dois volumes tem o mesmo conteudo: o proprio pod sincroniza um com o
 // outro via API S3 da RunPod (scripts/volume_sync.py), entao tanto faz em
 // qual deles o estudio sobe.
+import { s3ObjectExists } from "./_s3.js";
 import { storeConfigured, storeDelete, storeSetIfAbsent } from "./_store.js";
 
 const RUNPOD_REST_URL = "https://rest.runpod.io/v1";
@@ -30,14 +31,30 @@ export class NoGpuAvailableError extends Error {}
 export interface StudioVolume {
   id: string;
   dataCenterId: string;
+  // O volume original tem tudo por definicao; a copia so pode receber o
+  // estudio depois de uma sincronizacao completa (marcador READY_MARKER_KEY
+  // gravado por scripts/volume_sync.py) - senao o estudio subiria sem
+  // modelos, personas nem .env.
+  original?: boolean;
 }
 
 // Ordem = preferencia. O primeiro e o volume original (mais perto do
 // Brasil); o segundo e a copia sincronizada.
 export const VOLUMES: StudioVolume[] = [
-  { id: "1o5y5cpw99", dataCenterId: "US-MO-2" }, // luna-models
+  { id: "1o5y5cpw99", dataCenterId: "US-MO-2", original: true }, // luna-models
   { id: "7s449owvmb", dataCenterId: "EU-RO-1" }, // luna-models-ro
 ];
+
+const READY_MARKER_KEY = ".luna-sync/ready.json";
+
+async function volumeIsReady(volume: StudioVolume): Promise<boolean> {
+  if (volume.original) return true;
+  try {
+    return await s3ObjectExists(volume.dataCenterId, volume.id, READY_MARKER_KEY);
+  } catch {
+    return false;
+  }
+}
 
 // Precos por hora da Secure Cloud (a unica que aceita network volume),
 // usados so para filtrar pelo teto e ordenar da mais barata para a mais cara.
@@ -269,6 +286,8 @@ function podEnv(volume: StudioVolume): Record<string, string> {
     PUBLIC_KEY: SSH_PUBLIC_KEY,
     LUNA_SELF_VOLUME_ID: volume.id,
     LUNA_SELF_DATACENTER: volume.dataCenterId,
+    // Na primeira sincronizacao, o que difere vale o do volume original.
+    LUNA_SELF_ORIGINAL: volume.original ? "1" : "0",
   };
   if (peer) {
     env.LUNA_PEER_VOLUME_ID = peer.id;
@@ -355,6 +374,12 @@ async function wakeStudioUnlocked(): Promise<WakeResult> {
     .sort((a, b) => volumeRank(a) - volumeRank(b));
   const stuck: StudioPod[] = [];
   for (const pod of stopped) {
+    const volume = VOLUMES.find((v) => v.id === pod.networkVolumeId);
+    if (!volume || !(await volumeIsReady(volume))) {
+      attempts.push(`${pod.id}: volume ${pod.dataCenterId ?? "?"} ainda sem a copia completa`);
+      stuck.push(pod);
+      continue;
+    }
     if (pod.costPerHr > cap) {
       attempts.push(`${pod.id}: custa $${pod.costPerHr}/h, acima do teto $${cap}/h`);
       stuck.push(pod);
@@ -374,6 +399,10 @@ async function wakeStudioUnlocked(): Promise<WakeResult> {
     .sort((a, b) => a.pricePerHr - b.pricePerHr)
     .map((g) => g.id);
   for (const volume of VOLUMES) {
+    if (!(await volumeIsReady(volume))) {
+      attempts.push(`${volume.dataCenterId}: volume ainda sem a copia completa - pulado`);
+      continue;
+    }
     try {
       const pod = await deployPod(volume, gpuTypeIds);
       // Os pods que nao religaram ficaram presos a uma maquina lotada e nao

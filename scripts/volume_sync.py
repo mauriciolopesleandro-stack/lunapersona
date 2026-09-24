@@ -8,7 +8,7 @@ cada poucos minutos, e pelo backend antes de desligar por inatividade.
   python scripts/volume_sync.py small   # config + personas (segundos)
   python scripts/volume_sync.py big     # modelos (so transfere o que mudou)
   python scripts/volume_sync.py all
-  python scripts/volume_sync.py small --prefer-remote   # volume recem-clonado
+  python scripts/volume_sync.py small --prefer-remote   # forca o outro lado a vencer
 
 Regra de sincronizacao (por arquivo, dos dois lados):
   - so de um lado e nunca sincronizado antes -> copia para o outro;
@@ -155,7 +155,7 @@ def sync_root(s3, bucket: str, root: str, state: dict, prefer_remote: bool) -> d
     local = list_local(root)
     remote = list_remote(s3, bucket, root)
     prev = {k: v for k, v in state.items() if k == root or k.startswith(root + "/")}
-    counts = {"up": 0, "down": 0, "del_local": 0, "del_remote": 0, "skip_del": 0}
+    counts = {"up": 0, "down": 0, "del_local": 0, "del_remote": 0, "skip_del": 0, "errors": 0}
 
     deletions: list[tuple[str, str]] = []
     for rel in sorted(set(local) | set(remote) | set(prev)):
@@ -172,10 +172,13 @@ def sync_root(s3, bucket: str, root: str, state: dict, prefer_remote: bool) -> d
                 if same(L, R) or (L[0] == R[0] and S is None):
                     state[rel] = {"l": list(L), "r": list(R)}
                     continue
-                # Volume recem-clonado: o git deu mtime "agora" a tudo, entao
-                # "mais novo" nao quer dizer "editado" - o outro lado vence.
-                local_wins = not (S is None and prefer_remote) and (not remote_changed or L[1] >= R[1])
-                if local_changed and local_wins:
+                if S is None:
+                    # Primeiro encontro dos dois lados: data nao prova nada (um
+                    # git clone da mtime "agora" a tudo) - vence o original.
+                    local_wins = not prefer_remote
+                else:
+                    local_wins = local_changed and (not remote_changed or L[1] >= R[1])
+                if local_wins:
                     r_new = upload(s3, bucket, rel)
                     state[rel] = {"l": list(L), "r": list(r_new)}
                     counts["up"] += 1
@@ -201,6 +204,7 @@ def sync_root(s3, bucket: str, root: str, state: dict, prefer_remote: bool) -> d
                 state.pop(rel, None)
         except Exception as exc:  # um arquivo com erro nao para o resto
             log(f"ERRO em {rel}: {exc}")
+            counts["errors"] += 1
 
     total = max(len(local), len(remote))
     limit = max(MAX_DELETE_FLOOR, int(total * MAX_DELETE_FRACTION))
@@ -219,10 +223,12 @@ def sync_root(s3, bucket: str, root: str, state: dict, prefer_remote: bool) -> d
                 state.pop(rel, None)
             except Exception as exc:
                 log(f"ERRO ao remover {rel} ({side}): {exc}")
+                counts["errors"] += 1
     return counts
 
 
 SYNC_ENV_KEYS = ("RUNPOD_S3_ACCESS_KEY", "RUNPOD_S3_SECRET_KEY", "LUNA_PEER_VOLUME_ID", "LUNA_PEER_DATACENTER")
+OPTIONAL_ENV_KEYS = ("LUNA_SELF_ORIGINAL",)
 
 
 def load_container_env() -> None:
@@ -236,14 +242,17 @@ def load_container_env() -> None:
         return
     for item in raw.split(b"\0"):
         key, _, value = item.decode("utf-8", "replace").partition("=")
-        if key in SYNC_ENV_KEYS and not os.environ.get(key):
+        if key in SYNC_ENV_KEYS + OPTIONAL_ENV_KEYS and not os.environ.get(key):
             os.environ[key] = value
 
 
 def main() -> int:
     load_container_env()
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    prefer_remote = "--prefer-remote" in sys.argv[1:]
+    # Arquivo que nunca foi sincronizado e esta diferente nos dois lados: o
+    # volume original (LUNA_SELF_ORIGINAL=1, o que ja tinha tudo) vence; a
+    # copia perde (o que ela tem pode ter vindo so de um git clone recente).
+    prefer_remote = "--prefer-remote" in sys.argv[1:] or os.environ.get("LUNA_SELF_ORIGINAL") != "1"
     group = args[0] if args else "small"
     roots = GROUPS["small"] + GROUPS["big"] if group == "all" else GROUPS.get(group)
     if roots is None:
@@ -264,14 +273,36 @@ def main() -> int:
         fcntl.flock(lock, fcntl.LOCK_EX)  # uma sincronizacao por vez
         state = json.loads(state_file.read_text()) if state_file.exists() else {}
         started = time.monotonic()
+        problems = 0
         for root in roots:
             counts = sync_root(s3, peer_bucket, root, state, prefer_remote)
             state_file.write_text(json.dumps(state))
+            problems += counts["errors"] + counts["skip_del"]
             changed = {k: v for k, v in counts.items() if v}
             if changed:
                 log(f"{root}: {changed}")
-        log(f"{group}: ok em {time.monotonic() - started:.0f}s (peer {peer_bucket} @ {os.environ['LUNA_PEER_DATACENTER']})")
-    return 0
+        log(
+            f"{group}: {'ok' if not problems else f'{problems} problema(s)'} em {time.monotonic() - started:.0f}s "
+            f"(peer {peer_bucket} @ {os.environ['LUNA_PEER_DATACENTER']})"
+        )
+        if group == "all" and not problems:
+            mark_ready(s3, peer_bucket)
+    return 0 if not problems else 1
+
+
+# A Vercel so sobe o estudio no volume-copia depois que este marcador existe
+# nele (ver volumeIsReady em frontend/api/_runpod.ts): sem ele, o estudio
+# subiria sem modelos, personas nem .env.
+READY_MARKER = ".luna-sync/ready.json"
+
+
+def mark_ready(s3, peer_bucket: str) -> None:
+    body = json.dumps({"synced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "peer": peer_bucket})
+    local = WORKSPACE / READY_MARKER
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_text(body)
+    s3.put_object(Bucket=peer_bucket, Key=READY_MARKER, Body=body.encode())
+    log("Volumes iguais - marcador de pronto gravado nos dois lados.")
 
 
 if __name__ == "__main__":

@@ -32,7 +32,8 @@ if [ -d "$REPO_DIR/.git" ]; then
 else
     echo "Volume sem o repositorio - clonando."
     git clone "$REPO_URL" "$REPO_DIR"
-    # Tudo acabou de ser criado pelo clone: nas diferencas, vale o outro volume.
+    # Tudo acabou de ser criado pelo clone: nas diferencas, vale o outro volume
+    # (mesmo se este for o original - o clone nao tem nada editado).
     FIRST_SYNC_FLAGS="--prefer-remote"
 fi
 
@@ -54,7 +55,9 @@ for _ in $(seq 1 300); do
     sleep 2
 done
 
-"$SYNC_VENV/bin/python" "$REPO_DIR/scripts/volume_sync.py" big
+# "all" (config + modelos): quando termina sem erro, marca os dois volumes
+# como iguais - so entao a Vercel passa a usar o volume-copia.
+"$SYNC_VENV/bin/python" "$REPO_DIR/scripts/volume_sync.py" all
 
 while true; do
     sleep "$SYNC_INTERVAL_S"
