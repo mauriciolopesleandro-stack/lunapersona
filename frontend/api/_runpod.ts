@@ -165,6 +165,9 @@ export interface StudioPod {
   dataCenterId: string | null;
   networkVolumeId: string | null;
   gpuDisplayName: string | null;
+  // Pod criado com as chaves S3 no ambiente (as variaveis de um pod ficam
+  // fixas desde a criacao - religar um pod antigo nao as acrescenta).
+  hasSyncKeys: boolean;
 }
 
 interface RestPod {
@@ -177,6 +180,7 @@ interface RestPod {
   lastStartedAt?: string | null;
   machine?: { dataCenterId?: string; gpuDisplayName?: string } | null;
   networkVolume?: { id?: string; dataCenterId?: string } | null;
+  env?: Record<string, string> | null;
 }
 
 function toStudioPod(p: RestPod): StudioPod {
@@ -191,6 +195,7 @@ function toStudioPod(p: RestPod): StudioPod {
     dataCenterId: p.networkVolume?.dataCenterId ?? p.machine?.dataCenterId ?? null,
     networkVolumeId: p.networkVolume?.id ?? null,
     gpuDisplayName: p.machine?.gpuDisplayName ?? null,
+    hasSyncKeys: Boolean(p.env?.RUNPOD_S3_ACCESS_KEY),
   };
 }
 
@@ -385,6 +390,11 @@ async function wakeStudioUnlocked(): Promise<WakeResult> {
     const volume = VOLUMES.find((v) => v.id === pod.networkVolumeId);
     if (!volume || !(await volumeUsable(volume))) {
       attempts.push(`${pod.id}: volume ${pod.dataCenterId ?? "?"} ainda sem a copia completa e sem chaves S3`);
+      stuck.push(pod);
+      continue;
+    }
+    if (s3Configured() && !pod.hasSyncKeys) {
+      attempts.push(`${pod.id}: criado sem as chaves S3 - substituido por um pod novo`);
       stuck.push(pod);
       continue;
     }
