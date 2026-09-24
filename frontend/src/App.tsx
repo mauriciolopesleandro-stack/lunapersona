@@ -360,7 +360,13 @@ export default function App() {
             </div>
           )}
 
-          {tab === "personas" && <PersonasView models={models} workflows={workflows} />}
+          {tab === "personas" && (
+            <PersonasView
+              models={models}
+              workflows={workflows}
+              onReferencesChanged={() => loadPersonaThumbnails(personas)}
+            />
+          )}
           {tab === "historico" && <HistoryPage />}
           {tab === "galeria" && <GalleryPage />}
           {tab === "configuracoes" && <SettingsPage models={models} workflows={workflows} health={health} />}

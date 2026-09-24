@@ -1,6 +1,11 @@
 import { useRef, useState } from "react";
 import type { PersonaReference } from "../api/client";
-import { deletePersonaReference, personaReferenceFileUrl, uploadPersonaReference } from "../api/client";
+import {
+  deletePersonaReference,
+  personaReferenceFileUrl,
+  setPrimaryPersonaReference,
+  uploadPersonaReference,
+} from "../api/client";
 
 interface Props {
   personaId: string;
@@ -41,6 +46,16 @@ export function PersonaReferences({ personaId, references, onChange }: Props) {
     }
   }
 
+  // A principal e a foto que aparece no card da persona (tela Gerar).
+  async function handleSetPrimary(referenceId: string) {
+    setError(null);
+    try {
+      onChange(await setPrimaryPersonaReference(personaId, referenceId));
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    }
+  }
+
   return (
     <div>
       <h3>Referências ({references.length})</h3>
@@ -64,6 +79,11 @@ export function PersonaReferences({ personaId, references, onChange }: Props) {
               <img src={personaReferenceFileUrl(personaId, ref.id)} alt={ref.original_filename} />
               {ref.is_primary && <span className="reference-badge">principal</span>}
               <p className="muted small reference-name">{ref.original_filename}</p>
+              {!ref.is_primary && (
+                <button type="button" className="small" onClick={() => handleSetPrimary(ref.id)}>
+                  Definir como principal
+                </button>
+              )}
               <button type="button" className="danger small" onClick={() => handleDelete(ref.id)}>
                 Excluir
               </button>

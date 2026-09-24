@@ -274,6 +274,16 @@ class PersonaManager:
             return None
         return primary["filename"], path.read_bytes()
 
+    def set_primary_reference(self, persona_id: str, reference_id: str) -> list[PersonaReference]:
+        """Marca uma referencia como a principal (foto do card da persona)."""
+        entries = self._load_reference_index(persona_id)
+        if not any(e["id"] == reference_id for e in entries):
+            raise ReferenceNotFoundError(f"Referencia '{reference_id}' nao encontrada.")
+        for entry in entries:
+            entry["is_primary"] = entry["id"] == reference_id
+        self._save_reference_index(persona_id, entries)
+        return [PersonaReference(**e) for e in entries]
+
     def delete_reference(self, persona_id: str, reference_id: str) -> None:
         entries = self._load_reference_index(persona_id)
         remaining = [e for e in entries if e["id"] != reference_id]

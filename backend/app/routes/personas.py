@@ -113,6 +113,16 @@ async def get_reference_file(persona_id: str, reference_id: str, request: Reques
     return FileResponse(path)
 
 
+@router.put("/personas/{persona_id}/references/{reference_id}/primary")
+async def set_primary_reference(persona_id: str, reference_id: str, request: Request):
+    manager = _persona_manager(request)
+    try:
+        references = manager.set_primary_reference(persona_id, reference_id)
+    except ReferenceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"references": [asdict(r) for r in references]}
+
+
 @router.delete("/personas/{persona_id}/references/{reference_id}")
 async def delete_reference(persona_id: str, reference_id: str, request: Request):
     manager = _persona_manager(request)

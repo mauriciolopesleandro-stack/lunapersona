@@ -10,9 +10,12 @@ type SubTab = "identidade" | "referencias" | "configuracoes";
 interface Props {
   models: ModelInfo[];
   workflows: WorkflowInfo[];
+  // Fotos mudaram (envio, exclusao, nova principal): a tela Gerar recarrega
+  // a miniatura do card da persona.
+  onReferencesChanged?: () => void;
 }
 
-export function PersonasView({ models, workflows }: Props) {
+export function PersonasView({ models, workflows, onReferencesChanged }: Props) {
   const [personas, setPersonas] = useState<PersonaSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [persona, setPersona] = useState<PersonaDetail | null>(null);
@@ -97,7 +100,10 @@ export function PersonasView({ models, workflows }: Props) {
               <PersonaReferences
                 personaId={persona.id}
                 references={persona.references}
-                onChange={(references) => setPersona({ ...persona, references })}
+                onChange={(references) => {
+                  setPersona({ ...persona, references });
+                  onReferencesChanged?.();
+                }}
               />
             )}
             {subTab === "configuracoes" && (

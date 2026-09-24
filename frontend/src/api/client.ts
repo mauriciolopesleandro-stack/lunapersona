@@ -272,6 +272,14 @@ export async function deletePersonaReference(personaId: string, referenceId: str
   await handleResponse<{ deleted: string }>(res);
 }
 
+export async function setPrimaryPersonaReference(personaId: string, referenceId: string): Promise<PersonaReference[]> {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/references/${referenceId}/primary`, {
+    method: "PUT",
+  });
+  const data = await handleResponse<{ references: PersonaReference[] }>(res);
+  return data.references;
+}
+
 export function personaReferenceFileUrl(personaId: string, referenceId: string): string {
   return `${currentApiBase()}/personas/${personaId}/references/${referenceId}/file`;
 }
