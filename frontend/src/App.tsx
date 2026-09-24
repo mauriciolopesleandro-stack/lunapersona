@@ -20,6 +20,7 @@ import { LoginPage } from "./components/LoginPage";
 import { GeneratePanel } from "./components/GeneratePanel";
 import { HistoryPage } from "./components/HistoryPage";
 import { PersonasView } from "./components/PersonasView";
+import { ProfilePage } from "./components/ProfilePage";
 import { ResultPanel } from "./components/ResultPanel";
 import { SettingsPage } from "./components/SettingsPage";
 import { Sidebar, type Tab } from "./components/Sidebar";
@@ -313,6 +314,7 @@ export default function App() {
           theme={theme}
           onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
           onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenProfile={() => setTab("perfil")}
           onLogout={handleLogout}
         />
 
@@ -360,6 +362,7 @@ export default function App() {
           {tab === "historico" && <HistoryPage />}
           {tab === "galeria" && <GalleryPage />}
           {tab === "configuracoes" && <SettingsPage models={models} workflows={workflows} health={health} />}
+          {tab === "perfil" && <ProfilePage onLogout={handleLogout} />}
         </div>
       </div>
     </div>

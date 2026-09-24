@@ -25,6 +25,31 @@ export async function logout(): Promise<void> {
   await fetch("/api/logout", { method: "POST" });
 }
 
+export interface Profile {
+  email: string;
+  canChangePassword: boolean;
+  minPasswordLength: number;
+}
+
+export async function getProfile(): Promise<Profile> {
+  const res = await fetch("/api/profile");
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail ?? `Erro HTTP ${res.status}`);
+  return body;
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const res = await fetch("/api/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? `Erro HTTP ${res.status}`);
+  }
+}
+
 export interface HealthResponse {
   backend: string;
   comfyui: {

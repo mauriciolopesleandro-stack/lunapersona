@@ -1,4 +1,4 @@
-export type Tab = "gerar" | "personas" | "historico" | "galeria" | "configuracoes";
+export type Tab = "gerar" | "personas" | "historico" | "galeria" | "configuracoes" | "perfil";
 
 interface Props {
   tab: Tab;
@@ -13,6 +13,7 @@ const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: "historico", label: "Histórico", icon: "↺" },
   { id: "galeria", label: "Galeria", icon: "▦" },
   { id: "configuracoes", label: "Configurações", icon: "⚙" },
+  { id: "perfil", label: "Meu perfil", icon: "◉" },
 ];
 
 export function Sidebar({ tab, onTabChange, open, onClose }: Props) {
