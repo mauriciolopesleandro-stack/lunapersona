@@ -1,4 +1,27 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+// Endereco do backend. O pod do estudio muda (sobe em outra maquina ou no
+// outro volume quando falta GPU), entao em producao o endereco vem de
+// /api/runpod-status (apiBase do pod atual). VITE_API_BASE_URL so vale como
+// reserva - ex: rodando local, onde /api/runpod-status nao existe.
+const FALLBACK_API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+let podApiBase: string | null = null;
+let apiBaseLookup: Promise<void> | null = null;
+
+function currentApiBase(): string {
+  return podApiBase ?? FALLBACK_API_BASE;
+}
+
+async function apiBase(): Promise<string> {
+  if (!podApiBase) {
+    apiBaseLookup ??= getPodStatus()
+      .then(() => undefined)
+      .catch(() => undefined)
+      .finally(() => {
+        apiBaseLookup = null;
+      });
+    await apiBaseLookup;
+  }
+  return currentApiBase();
+}
 
 // --- Autenticacao (funcoes serverless da Vercel, nao do backend no pod -
 // precisa funcionar mesmo com o pod desligado) --------------------------
@@ -172,24 +195,24 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export async function getHealth(): Promise<HealthResponse> {
-  const res = await fetch(`${API_BASE}/health`);
+  const res = await fetch(`${await apiBase()}/health`);
   return handleResponse<HealthResponse>(res);
 }
 
 export async function getModels(): Promise<ModelInfo[]> {
-  const res = await fetch(`${API_BASE}/models`);
+  const res = await fetch(`${await apiBase()}/models`);
   const data = await handleResponse<{ models: ModelInfo[] }>(res);
   return data.models;
 }
 
 export async function getWorkflows(): Promise<WorkflowInfo[]> {
-  const res = await fetch(`${API_BASE}/workflows`);
+  const res = await fetch(`${await apiBase()}/workflows`);
   const data = await handleResponse<{ workflows: WorkflowInfo[] }>(res);
   return data.workflows;
 }
 
 export async function generateImage(body: GenerateRequestBody): Promise<GenerateResponse> {
-  const res = await fetch(`${API_BASE}/generate`, {
+  const res = await fetch(`${await apiBase()}/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -198,13 +221,13 @@ export async function generateImage(body: GenerateRequestBody): Promise<Generate
 }
 
 export async function getPersonas(): Promise<PersonaSummary[]> {
-  const res = await fetch(`${API_BASE}/personas`);
+  const res = await fetch(`${await apiBase()}/personas`);
   const data = await handleResponse<{ personas: PersonaSummary[] }>(res);
   return data.personas;
 }
 
 export async function getPersona(personaId: string): Promise<PersonaDetail> {
-  const res = await fetch(`${API_BASE}/personas/${personaId}`);
+  const res = await fetch(`${await apiBase()}/personas/${personaId}`);
   return handleResponse<PersonaDetail>(res);
 }
 
@@ -212,7 +235,7 @@ export async function updatePersonaIdentity(
   personaId: string,
   body: { fixed?: Record<string, string>; variable_defaults?: Record<string, string> }
 ): Promise<PersonaDetail> {
-  const res = await fetch(`${API_BASE}/personas/${personaId}/identity`, {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/identity`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -224,7 +247,7 @@ export async function updatePersonaGeneration(
   personaId: string,
   body: { model_id?: string; workflow_id?: string }
 ): Promise<PersonaDetail> {
-  const res = await fetch(`${API_BASE}/personas/${personaId}/generation`, {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/generation`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -235,7 +258,7 @@ export async function updatePersonaGeneration(
 export async function uploadPersonaReference(personaId: string, file: File): Promise<PersonaReference> {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${API_BASE}/personas/${personaId}/references`, {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/references`, {
     method: "POST",
     body: formData,
   });
@@ -243,19 +266,19 @@ export async function uploadPersonaReference(personaId: string, file: File): Pro
 }
 
 export async function deletePersonaReference(personaId: string, referenceId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/personas/${personaId}/references/${referenceId}`, {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/references/${referenceId}`, {
     method: "DELETE",
   });
   await handleResponse<{ deleted: string }>(res);
 }
 
 export function personaReferenceFileUrl(personaId: string, referenceId: string): string {
-  return `${API_BASE}/personas/${personaId}/references/${referenceId}/file`;
+  return `${currentApiBase()}/personas/${personaId}/references/${referenceId}/file`;
 }
 
 // --- Chat (assistente de criacao de prompts) --------------------------
 // Roda no backend (pod), diferente do runpod-status/wake que rodam na
-// Vercel - por isso usa API_BASE como as outras chamadas ao backend.
+// Vercel - por isso usa apiBase() como as outras chamadas ao backend.
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -274,7 +297,7 @@ export async function sendChatMessage(
 ): Promise<ChatReply> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}/chat`, {
+    res = await fetch(`${await apiBase()}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ persona_id: personaId || undefined, messages }),
@@ -305,12 +328,19 @@ export async function sendChatMessage(
 
 // --- Status/ligar o pod RunPod --------------------------------------------
 // Essas duas chamam funcoes serverless da propria Vercel (nao o backend no
-// pod), entao usam caminho relativo em vez de API_BASE: precisam responder
+// pod), entao usam caminho relativo em vez de apiBase(): precisam responder
 // mesmo com o pod desligado.
 
 export interface PodStatus {
   running: boolean;
+  // O pod pode estar "running" minutos antes do backend responder (imagem
+  // baixando, autostart sincronizando o volume e subindo Ollama/backend).
+  backendReady: boolean;
   desiredStatus: string;
+  podId: string | null;
+  dataCenterId: string | null;
+  gpu: string | null;
+  apiBase: string | null;
   costPerHr: number;
   uptimeSeconds: number;
   liveSpend: number;
@@ -319,10 +349,23 @@ export interface PodStatus {
 
 export async function getPodStatus(): Promise<PodStatus> {
   const res = await fetch("/api/runpod-status");
-  return handleResponse<PodStatus>(res);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? body.detail ?? `Erro HTTP ${res.status}`);
+  }
+  const status = (await res.json()) as PodStatus;
+  if (status.apiBase) podApiBase = status.apiBase;
+  return status;
 }
 
-export async function wakePod(): Promise<{ alreadyRunning: boolean }> {
+export interface WakeResult {
+  alreadyRunning: boolean;
+  action: "running" | "resumed" | "created";
+  podId: string;
+  dataCenterId: string | null;
+}
+
+export async function wakePod(): Promise<WakeResult> {
   const res = await fetch("/api/runpod-wake", { method: "POST" });
   if (!res.ok) {
     // runpod-wake.ts devolve {error: "..."} (nao {detail: "..."} como o

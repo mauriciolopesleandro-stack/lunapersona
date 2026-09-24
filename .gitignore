@@ -13,6 +13,7 @@ venv/
 
 # --- Setup persistente do pod (fica no Network Volume, nunca no Git) ---
 .venv-persist/
+.venv-sync/
 .ollama-models/
 
 # --- Node / frontend ---

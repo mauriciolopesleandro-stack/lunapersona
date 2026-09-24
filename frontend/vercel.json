@@ -2,6 +2,9 @@
   "functions": {
     "api/runpod-bootstrap.ts": {
       "maxDuration": 60
+    },
+    "api/runpod-wake.ts": {
+      "maxDuration": 60
     }
   }
 }

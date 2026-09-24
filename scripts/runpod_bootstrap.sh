@@ -27,6 +27,22 @@ fi
 export OLLAMA_MODELS="${OLLAMA_MODELS:-$REPO_ROOT/.ollama-models}"
 mkdir -p "$LOG_DIR" "$OLLAMA_MODELS"
 
+# O estudio pode subir em qualquer pod (outra maquina ou o outro volume), e
+# o .env e o mesmo nos dois volumes - entao o ID do pod e a URL publica do
+# ComfyUI vem do proprio pod, nao do .env. A RunPod poe RUNPOD_POD_ID no
+# ambiente do container; numa sessao SSH ele so aparece via /etc/rp_environment
+# (gerado pelo /start.sh da imagem). Variavel de ambiente tem prioridade
+# sobre o .env no pydantic-settings do backend.
+if [ -z "${RUNPOD_POD_ID:-}" ] && [ -f /etc/rp_environment ]; then
+    # shellcheck disable=SC1091
+    source /etc/rp_environment
+fi
+if [ -n "${RUNPOD_POD_ID:-}" ]; then
+    export RUNPOD_POD_ID
+    export COMFYUI_URL="https://${RUNPOD_POD_ID}-8188.proxy.runpod.net"
+    echo "Pod atual: $RUNPOD_POD_ID (ComfyUI em $COMFYUI_URL)"
+fi
+
 echo "== 1/5: zstd + pciutils (necessarios pelo instalador do Ollama) =="
 # pciutils (lspci) e o que o installer do Ollama usa pra detectar a GPU e
 # baixar o backend CUDA; sem ele ele caiu silenciosamente pra modo CPU

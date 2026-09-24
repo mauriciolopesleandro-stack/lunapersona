@@ -1,13 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { Client } from "ssh2";
-import { findSshPort, getPodAndBalance, RunpodConfigError } from "./_runpod.js";
+import { isAuthenticated } from "./_auth.js";
+import { findSshEndpoint, getCurrentPod, RunpodConfigError } from "./_runpod.js";
 
 // POST /api/runpod-bootstrap
-// Roda "git pull && bash scripts/runpod_bootstrap.sh" dentro do pod via SSH,
-// chamado pelo frontend logo depois que o pod acorda de um cold start -
-// substitui o passo manual de abrir o Jupyter e rodar os comandos a mao.
+// Roda "git pull && bash scripts/runpod_bootstrap.sh" dentro do pod via SSH.
+// Os pods criados por wakeStudio ja fazem isso sozinhos no boot
+// (scripts/pod_autostart.sh) - este endpoint ficou como plano B manual,
+// para quando o backend nao subir sozinho.
 //
-// Exige duas variaveis extras na Vercel (alem de RUNPOD_API_KEY/RUNPOD_POD_ID):
+// Exige duas variaveis extras na Vercel (alem de RUNPOD_API_KEY):
 //   RUNPOD_SSH_PRIVATE_KEY - a chave privada gerada para essa automacao
 //   RUNPOD_SSH_USER        - opcional, default "root"
 //
@@ -101,6 +103,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   res.setHeader("Content-Type", "application/json");
+  if (!isAuthenticated(req)) {
+    res.statusCode = 401;
+    res.end(JSON.stringify({ detail: "Sessao expirada. Entre de novo." }));
+    return;
+  }
 
   try {
     const rawKey = process.env.RUNPOD_SSH_PRIVATE_KEY;
@@ -117,21 +124,21 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       : Buffer.from(rawKey, "base64").toString("utf8");
     const username = process.env.RUNPOD_SSH_USER || "root";
 
-    const data = await getPodAndBalance();
-    if (!data.pod || data.pod.desiredStatus !== "RUNNING") {
+    const pod = await getCurrentPod();
+    if (!pod || pod.desiredStatus !== "RUNNING") {
       res.statusCode = 409;
       res.end(JSON.stringify({ detail: "Pod nao esta rodando." }));
       return;
     }
 
-    const sshPort = findSshPort(data.pod.runtime?.ports);
-    if (!sshPort) {
+    const ssh = findSshEndpoint(pod);
+    if (!ssh) {
       res.statusCode = 409;
       res.end(JSON.stringify({ detail: "Porta SSH (22/tcp) ainda nao disponivel - o pod pode estar inicializando." }));
       return;
     }
 
-    const result = await runRemoteCommand(sshPort.ip, sshPort.publicPort, privateKey, username);
+    const result = await runRemoteCommand(ssh.host, ssh.port, privateKey, username);
     res.statusCode = 200;
     res.end(
       JSON.stringify({

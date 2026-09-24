@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import type { GenerateResponse, HealthResponse, ModelInfo, PersonaSummary, WorkflowInfo } from "./api/client";
 import {
-  bootstrapPod,
   generateImage,
   getHealth,
   getModels,
@@ -29,9 +28,8 @@ import { addHistoryEntry, getHistory, type HistoryEntry } from "./lib/history";
 import { getSettings } from "./lib/settings";
 
 const WAKE_POLL_INTERVAL_MS = 5_000;
-const WAKE_MAX_WAIT_MS = 3 * 60_000;
-const BOOTSTRAP_RETRY_INTERVAL_MS = 8_000;
-const BOOTSTRAP_MAX_ATTEMPTS = 5;
+// Pod novo: baixar a imagem, sincronizar o volume e subir Ollama + backend.
+const WAKE_MAX_WAIT_MS = 10 * 60_000;
 const THEME_STORAGE_KEY = "luna_theme";
 
 // fetch rejeita com TypeError ("Failed to fetch") quando nem chega a falar
@@ -48,62 +46,53 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Roda o bootstrap (Ollama + backend) dentro do pod via SSH. Logo apos o pod
-// entrar em "running" a porta SSH ainda pode nao estar mapeada - por isso
-// tenta de novo algumas vezes antes de desistir.
-async function runBootstrapWithRetry(onMessage: (msg: string | null) => void): Promise<void> {
-  for (let attempt = 1; attempt <= BOOTSTRAP_MAX_ATTEMPTS; attempt++) {
-    try {
-      const result = await bootstrapPod();
-      if (result.ok) return;
-      throw new Error(`comando saiu com codigo ${result.exitCode}`);
-    } catch (e) {
-      if (attempt === BOOTSTRAP_MAX_ATTEMPTS) throw e;
-      await sleep(BOOTSTRAP_RETRY_INTERVAL_MS);
-    }
-  }
-}
-
-// Garante que o pod esta ligado antes de gerar. Se ja estiver rodando,
-// retorna na hora; senao, dispara o resume e fica consultando o status ate
-// aparecer "running" (ou desistir apos WAKE_MAX_WAIT_MS).
-// Retorna true se o pod estava desligado e precisou ser ligado agora (ou
-// seja: um "cold start", onde listas de persona/modelo podem ter ficado
-// desatualizadas e vale a pena recarrega-las antes de gerar).
+// Garante que o estudio esta pronto antes de gerar. Se o backend ja
+// responde, retorna na hora; senao, liga (religa um pod parado ou cria um
+// novo onde houver GPU - ver /api/runpod-wake) e fica consultando o status
+// ate o backend responder. O proprio pod sobe Ollama + backend no boot
+// (scripts/pod_autostart.sh), entao aqui so se espera.
+// Retorna true se o estudio precisou ser ligado agora (um "cold start",
+// onde listas de persona/modelo podem ter ficado desatualizadas e vale a
+// pena recarrega-las antes de gerar).
 async function ensurePodAwake(onMessage: (msg: string | null) => void): Promise<boolean> {
   try {
+    const status = await getPodStatus();
+    if (status.running && status.backendReady) return false;
+  } catch {
+    // segue e tenta ligar mesmo assim
+  }
+
+  try {
     const wake = await wakePod();
-    if (wake.alreadyRunning) return false;
+    onMessage(
+      wake.action === "created"
+        ? `Ligando uma GPU nova (${wake.dataCenterId ?? "RunPod"})... pode levar alguns minutos.`
+        : "Ligando o estúdio... pode levar alguns minutos."
+    );
   } catch (e) {
     onMessage(
-      `Não foi possível ligar o pod automaticamente (${e instanceof Error ? e.message : e}). Tentando gerar mesmo assim...`
+      `Não foi possível ligar o estúdio automaticamente (${e instanceof Error ? e.message : e}). Tentando gerar mesmo assim...`
     );
     return false;
   }
 
-  onMessage("Ligando o pod... isso pode levar de 1 a 3 minutos.");
   const deadline = Date.now() + WAKE_MAX_WAIT_MS;
   while (Date.now() < deadline) {
     await sleep(WAKE_POLL_INTERVAL_MS);
     try {
       const status = await getPodStatus();
-      if (status.running) {
-        onMessage("Pod ligado. Disparando preparação do chat e backend (git pull + Ollama)...");
-        try {
-          await runBootstrapWithRetry(onMessage);
-          onMessage("Preparação disparada - chat e geração devem ficar prontos em 1-2 minutos.");
-        } catch (e) {
-          onMessage(
-            `Pod ligado, mas não consegui disparar a preparação automaticamente (${e instanceof Error ? e.message : e}). Chat/geração podem levar mais um pouco para responder.`
-          );
-        }
+      if (status.running && status.backendReady) {
+        onMessage("Estúdio pronto.");
         return true;
+      }
+      if (status.running) {
+        onMessage("GPU ligada. Preparando chat e backend...");
       }
     } catch {
       // ignora falhas de polling isoladas e tenta de novo no proximo ciclo
     }
   }
-  onMessage("O pod demorou mais que o esperado para ligar. Tentando gerar mesmo assim...");
+  onMessage("O estúdio demorou mais que o esperado para ligar. Tentando gerar mesmo assim...");
   return true;
 }
 

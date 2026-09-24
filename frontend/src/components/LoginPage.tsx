@@ -42,12 +42,13 @@ function useStageFit(minHeight: number): { scale: number; height: number } {
   return fit;
 }
 
-// Minutos entre tentativas automaticas de religar quando a RunPod responde
-// "sem instancias disponiveis" - mesmo ritmo usado manualmente ao longo do
-// desenvolvimento, so que agora dentro do proprio app.
-const RETRY_INTERVAL_S = 15 * 60;
+// Minutos entre tentativas automaticas de religar quando nao ha GPU livre
+// (dentro do teto de preco) em nenhum dos dois volumes.
+const RETRY_INTERVAL_S = 5 * 60;
 const POLL_INTERVAL_MS = 4_000;
-const WAKE_TIMEOUT_MS = 3 * 60_000;
+// Um pod novo pode levar alguns minutos ate o backend responder: baixar a
+// imagem na maquina, sincronizar o volume e subir Ollama + backend.
+const WAKE_TIMEOUT_MS = 10 * 60_000;
 
 type Phase = "login" | "starting" | "no-gpu";
 
@@ -114,11 +115,11 @@ export function LoginPage({ onReady }: Props) {
   async function pollUntilRunning(): Promise<boolean> {
     const deadline = Date.now() + WAKE_TIMEOUT_MS;
     while (Date.now() < deadline && !cancelledRef.current) {
-      setLunaPercent((p) => Math.min(92, p + 6));
-      setLunaStatus((s) => (s === "CONECTANDO..." ? "INICIANDO..." : s));
+      setLunaPercent((p) => Math.min(92, p + 3));
       try {
         const status = await getPodStatus();
-        if (status.running) return true;
+        if (status.running && status.backendReady) return true;
+        setLunaStatus(status.running ? "PREPARANDO ESTÚDIO..." : "LIGANDO GPU...");
       } catch {
         // ignora falha isolada de polling e tenta de novo
       }

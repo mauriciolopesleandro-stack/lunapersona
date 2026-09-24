@@ -28,12 +28,27 @@ mutation StopPod($podId: String!) {
 """
 
 
+# Sincronizar os volumes antes de desligar pode demorar se houver modelo
+# novo para copiar - melhor atrasar o desligamento do que perder a copia.
+PRE_STOP_SYNC_TIMEOUT_SECONDS = 3600
+
+
 class IdleShutdownTracker:
-    def __init__(self, api_key: str, pod_id: str, idle_minutes: float, check_interval_seconds: float = 30.0):
+    def __init__(
+        self,
+        api_key: str,
+        pod_id: str,
+        idle_minutes: float,
+        check_interval_seconds: float = 30.0,
+        pre_stop_command: list[str] | None = None,
+    ):
         self.api_key = api_key
         self.pod_id = pod_id
         self.idle_seconds = idle_minutes * 60
         self.check_interval_seconds = check_interval_seconds
+        # Roda antes de desligar (ex: scripts/volume_sync.py all), para o
+        # outro volume ficar com tudo que mudou neste pod.
+        self.pre_stop_command = pre_stop_command
         self.last_activity = time.monotonic()
         self._task: asyncio.Task | None = None
         self._stopped_already = False
@@ -46,7 +61,23 @@ class IdleShutdownTracker:
         self.last_activity = time.monotonic()
         self._stopped_already = False
 
+    async def _run_pre_stop(self) -> None:
+        if not self.pre_stop_command:
+            return
+        try:
+            proc = await asyncio.create_subprocess_exec(*self.pre_stop_command)
+            await asyncio.wait_for(proc.wait(), timeout=PRE_STOP_SYNC_TIMEOUT_SECONDS)
+            logger.info("Comando antes de desligar terminou (codigo %s).", proc.returncode)
+        except Exception:
+            logger.exception("Falha no comando antes de desligar - desligando mesmo assim.")
+
     async def _stop_pod(self) -> None:
+        await self._run_pre_stop()
+        if time.monotonic() - self.last_activity < self.idle_seconds:
+            # Alguem voltou a usar o estudio enquanto sincronizava.
+            logger.info("Atividade durante a sincronizacao - cancelando o desligamento.")
+            self._stopped_already = False
+            return
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 res = await client.post(
