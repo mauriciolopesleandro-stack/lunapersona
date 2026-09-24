@@ -44,6 +44,19 @@ fi
 
 "$SYNC_VENV/bin/python" "$REPO_DIR/scripts/volume_sync.py" small $FIRST_SYNC_FLAGS
 
+# Volume-copia que ainda nao recebeu tudo (sem marcador de pronto): puxa
+# config + modelos do original ANTES de subir o backend - o frontend so
+# entra quando o backend responde, entao o estudio nunca abre vazio.
+if [ "${LUNA_SELF_ORIGINAL:-0}" != "1" ] && [ ! -f /workspace/.luna-sync/ready.json ]; then
+    echo "Volume-copia incompleto - copiando tudo do volume original antes de subir o backend."
+    for _ in $(seq 1 300); do
+        [ -f /workspace/runpod-slim/ComfyUI/main.py ] && break
+        sleep 2
+    done
+    "$SYNC_VENV/bin/python" "$REPO_DIR/scripts/volume_sync.py" all \
+        || echo "AVISO: a copia inicial teve problemas - subindo o backend mesmo assim."
+fi
+
 bash "$REPO_DIR/scripts/runpod_bootstrap.sh" > "$LOG_DIR/bootstrap.log" 2>&1 \
     || echo "AVISO: bootstrap saiu com erro (ver $LOG_DIR/bootstrap.log)."
 

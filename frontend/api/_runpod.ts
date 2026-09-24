@@ -16,7 +16,7 @@
 // Os dois volumes tem o mesmo conteudo: o proprio pod sincroniza um com o
 // outro via API S3 da RunPod (scripts/volume_sync.py), entao tanto faz em
 // qual deles o estudio sobe.
-import { s3ObjectExists } from "./_s3.js";
+import { s3Configured, s3ObjectExists } from "./_s3.js";
 import { storeConfigured, storeDelete, storeSetIfAbsent } from "./_store.js";
 
 const RUNPOD_REST_URL = "https://rest.runpod.io/v1";
@@ -54,6 +54,14 @@ async function volumeIsReady(volume: StudioVolume): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// A copia ainda sem marcador so pode ser usada se o pod conseguir se
+// completar sozinho: com as chaves S3, o autostart puxa tudo do volume
+// original ANTES de subir o backend (o estudio demora mais nessa primeira
+// vez, mas nunca abre vazio). Sem as chaves, nunca.
+async function volumeUsable(volume: StudioVolume): Promise<boolean> {
+  return s3Configured() || (await volumeIsReady(volume));
 }
 
 // Precos por hora da Secure Cloud (a unica que aceita network volume),
@@ -375,8 +383,8 @@ async function wakeStudioUnlocked(): Promise<WakeResult> {
   const stuck: StudioPod[] = [];
   for (const pod of stopped) {
     const volume = VOLUMES.find((v) => v.id === pod.networkVolumeId);
-    if (!volume || !(await volumeIsReady(volume))) {
-      attempts.push(`${pod.id}: volume ${pod.dataCenterId ?? "?"} ainda sem a copia completa`);
+    if (!volume || !(await volumeUsable(volume))) {
+      attempts.push(`${pod.id}: volume ${pod.dataCenterId ?? "?"} ainda sem a copia completa e sem chaves S3`);
       stuck.push(pod);
       continue;
     }
@@ -399,8 +407,8 @@ async function wakeStudioUnlocked(): Promise<WakeResult> {
     .sort((a, b) => a.pricePerHr - b.pricePerHr)
     .map((g) => g.id);
   for (const volume of VOLUMES) {
-    if (!(await volumeIsReady(volume))) {
-      attempts.push(`${volume.dataCenterId}: volume ainda sem a copia completa - pulado`);
+    if (!(await volumeUsable(volume))) {
+      attempts.push(`${volume.dataCenterId}: volume ainda sem a copia completa e sem chaves S3 para completar - pulado`);
       continue;
     }
     try {
