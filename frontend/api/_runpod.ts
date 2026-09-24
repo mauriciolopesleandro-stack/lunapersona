@@ -165,9 +165,10 @@ export interface StudioPod {
   dataCenterId: string | null;
   networkVolumeId: string | null;
   gpuDisplayName: string | null;
-  // Pod criado com as chaves S3 no ambiente (as variaveis de um pod ficam
-  // fixas desde a criacao - religar um pod antigo nao as acrescenta).
-  hasSyncKeys: boolean;
+  // Pod criado com as variaveis que os pods novos recebem (chaves S3 e a
+  // chave da API para o auto-desligamento). As variaveis de um pod ficam
+  // fixas desde a criacao - religar um pod antigo nao as acrescenta.
+  hasCurrentEnv: boolean;
 }
 
 interface RestPod {
@@ -195,7 +196,7 @@ function toStudioPod(p: RestPod): StudioPod {
     dataCenterId: p.networkVolume?.dataCenterId ?? p.machine?.dataCenterId ?? null,
     networkVolumeId: p.networkVolume?.id ?? null,
     gpuDisplayName: p.machine?.gpuDisplayName ?? null,
-    hasSyncKeys: Boolean(p.env?.RUNPOD_S3_ACCESS_KEY),
+    hasCurrentEnv: Boolean(p.env?.RUNPOD_S3_ACCESS_KEY && p.env?.RUNPOD_API_KEY),
   };
 }
 
@@ -306,6 +307,11 @@ function podEnv(volume: StudioVolume): Record<string, string> {
     env.LUNA_PEER_VOLUME_ID = peer.id;
     env.LUNA_PEER_DATACENTER = peer.dataCenterId;
   }
+  // O backend usa a chave da API para se desligar sozinho depois de
+  // IDLE_SHUTDOWN_MINUTES sem uso (idle_shutdown.py). O .env dos volumes
+  // nunca teve essa chave - sem isto o pod ficava ligado ate alguem clicar
+  // em "Desligar".
+  env.RUNPOD_API_KEY = requireEnv("RUNPOD_API_KEY");
   // Credenciais S3 da RunPod para o pod sincronizar os volumes. Sem elas o
   // estudio funciona igual, so nao mantem os dois volumes iguais.
   if (process.env.RUNPOD_S3_ACCESS_KEY && process.env.RUNPOD_S3_SECRET_KEY) {
@@ -393,8 +399,8 @@ async function wakeStudioUnlocked(): Promise<WakeResult> {
       stuck.push(pod);
       continue;
     }
-    if (s3Configured() && !pod.hasSyncKeys) {
-      attempts.push(`${pod.id}: criado sem as chaves S3 - substituido por um pod novo`);
+    if (s3Configured() && !pod.hasCurrentEnv) {
+      attempts.push(`${pod.id}: criado sem as variaveis atuais (S3/auto-desligar) - substituido por um pod novo`);
       stuck.push(pod);
       continue;
     }
