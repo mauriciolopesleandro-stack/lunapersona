@@ -8,12 +8,15 @@ import {
   getPersona,
   getPersonas,
   getPodStatus,
+  getSession,
   getWorkflows,
+  logout,
   personaReferenceFileUrl,
   wakePod,
 } from "./api/client";
 import { useChatSession } from "./components/ChatAssistant";
 import { GalleryPage } from "./components/GalleryPage";
+import { LoginPage } from "./components/LoginPage";
 import { GeneratePanel } from "./components/GeneratePanel";
 import { HistoryPage } from "./components/HistoryPage";
 import { PersonasView } from "./components/PersonasView";
@@ -103,6 +106,8 @@ function loadTheme(): "dark" | "light" {
 }
 
 export default function App() {
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
   const [tab, setTab] = useState<Tab>("gerar");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">(loadTheme);
@@ -137,6 +142,17 @@ export default function App() {
   useEffect(() => {
     setHistory(getHistory());
   }, []);
+
+  useEffect(() => {
+    getSession()
+      .then((s) => setAuthenticated(s.authenticated))
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  async function handleLogout() {
+    await logout();
+    setAuthenticated(false);
+  }
 
   async function handleWakePod() {
     setWaking(true);
@@ -272,6 +288,14 @@ export default function App() {
 
   const settings = getSettings();
 
+  if (!authChecked) {
+    return <div className="shell" style={{ background: "#05040a" }} />;
+  }
+
+  if (!authenticated) {
+    return <LoginPage onReady={() => setAuthenticated(true)} />;
+  }
+
   return (
     <div className="shell">
       {sidebarOpen && (
@@ -289,6 +313,7 @@ export default function App() {
           theme={theme}
           onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
           onOpenSidebar={() => setSidebarOpen(true)}
+          onLogout={handleLogout}
         />
 
         <div className="page">

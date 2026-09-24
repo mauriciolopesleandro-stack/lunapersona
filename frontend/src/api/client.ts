@@ -1,5 +1,30 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 
+// --- Autenticacao (funcoes serverless da Vercel, nao do backend no pod -
+// precisa funcionar mesmo com o pod desligado) --------------------------
+
+export async function getSession(): Promise<{ authenticated: boolean }> {
+  const res = await fetch("/api/session");
+  if (!res.ok) return { authenticated: false };
+  return res.json();
+}
+
+export async function login(password: string, remember: boolean): Promise<void> {
+  const res = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password, remember }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? `Erro HTTP ${res.status}`);
+  }
+}
+
+export async function logout(): Promise<void> {
+  await fetch("/api/logout", { method: "POST" });
+}
+
 export interface HealthResponse {
   backend: string;
   comfyui: {
@@ -274,7 +299,14 @@ export async function getPodStatus(): Promise<PodStatus> {
 
 export async function wakePod(): Promise<{ alreadyRunning: boolean }> {
   const res = await fetch("/api/runpod-wake", { method: "POST" });
-  return handleResponse<{ alreadyRunning: boolean }>(res);
+  if (!res.ok) {
+    // runpod-wake.ts devolve {error: "..."} (nao {detail: "..."} como o
+    // resto da API) - sem isso, a mensagem real da RunPod (ex: "nao ha
+    // instancias disponiveis") virava um generico "Erro HTTP 502".
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? body.detail ?? `Erro HTTP ${res.status}`);
+  }
+  return res.json();
 }
 
 export async function stopPodRequest(): Promise<{ alreadyStopped: boolean }> {

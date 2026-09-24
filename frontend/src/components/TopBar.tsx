@@ -14,9 +14,10 @@ interface Props {
   theme: "dark" | "light";
   onToggleTheme: () => void;
   onOpenSidebar: () => void;
+  onLogout: () => void;
 }
 
-export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar }: Props) {
+export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar, onLogout }: Props) {
   const [status, setStatus] = useState<PodStatus | null>(null);
   const [error, setError] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -159,6 +160,10 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar }: 
         aria-label={theme === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
       >
         {theme === "dark" ? "☀" : "☾"}
+      </button>
+
+      <button type="button" className="icon-btn" onClick={onLogout} aria-label="Sair" title="Sair">
+        ⏏
       </button>
     </div>
   );
