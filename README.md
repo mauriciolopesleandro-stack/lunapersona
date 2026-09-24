@@ -1,5 +1,7 @@
 # Luna AI Studio
 
+> **Estado atual e pendências:** veja [docs/ESTADO_ATUAL.md](docs/ESTADO_ATUAL.md) antes de mexer em pod, GPU ou Vercel.
+
 Aplicação web modular para geração e edição de imagens via ComfyUI, com suporte planejado a personas com identidade visual consistente.
 
 ```
