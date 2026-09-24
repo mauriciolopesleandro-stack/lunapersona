@@ -34,6 +34,16 @@ const BOOTSTRAP_RETRY_INTERVAL_MS = 8_000;
 const BOOTSTRAP_MAX_ATTEMPTS = 5;
 const THEME_STORAGE_KEY = "luna_theme";
 
+// fetch rejeita com TypeError ("Failed to fetch") quando nem chega a falar
+// com o backend - na pratica, o pod desligado ou ainda subindo. Qualquer
+// outro erro (o backend respondeu com erro) passa com a mensagem original.
+function describeLoadError(e: unknown): string {
+  if (e instanceof TypeError) {
+    return "Pod desligado ou ainda ligando: ligue o pod no topo da tela para carregar modelos, workflows e personas.";
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -169,9 +179,10 @@ export default function App() {
   }
 
   async function loadConfig() {
-    getHealth().then(setHealth).catch((e) => setLoadError(String(e)));
-    getModels().then(setModels).catch((e) => setLoadError(String(e)));
-    getWorkflows().then(setWorkflows).catch((e) => setLoadError(String(e)));
+    setLoadError(null);
+    getHealth().then(setHealth).catch((e) => setLoadError(describeLoadError(e)));
+    getModels().then(setModels).catch((e) => setLoadError(describeLoadError(e)));
+    getWorkflows().then(setWorkflows).catch((e) => setLoadError(describeLoadError(e)));
     return getPersonas()
       .then((list) => {
         setPersonas(list);
