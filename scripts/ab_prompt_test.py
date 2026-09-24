@@ -13,13 +13,25 @@ melhor. O teste mede se isso atrapalha a identidade.
       anotacoes (IDENTITY_EN abaixo), enviada sem persona_id.
 
 Cada par usa a mesma seed, entao a unica diferenca e o texto da identidade.
-As chamadas passam pelo backend (e nao direto no ComfyUI) para contarem como
-atividade no auto-desligamento do pod.
 
-Uso (de qualquer maquina com acesso ao pod, ou de dentro dele):
+Dois modos:
 
-    python scripts/ab_prompt_test.py                 # usa RUNPOD_POD_ID do .env
-    python scripts/ab_prompt_test.py --api http://127.0.0.1:8000/api   # dentro do pod
+  --api      passa pelo backend do estudio (/api/generate). A e o caminho de
+             producao de verdade, e as chamadas contam como atividade no
+             auto-desligamento do pod.
+  --comfyui  fala direto com um ComfyUI que tenha os arquivos do Chroma1-HD
+             (ver scripts/setup_temp_comfyui.sh). Nao precisa do backend nem
+             do volume luna-models: serve para rodar num pod temporario em
+             qualquer regiao quando a L4 do estudio estiver sem vaga. O
+             prompt A e montado com o mesmo codigo do backend
+             (identity_prompt_fragment) e o grafo com o mesmo workflow e os
+             mesmos padroes do modelo.
+
+Uso:
+
+    python scripts/ab_prompt_test.py                 # backend do pod do .env
+    python scripts/ab_prompt_test.py --api http://127.0.0.1:8000/api
+    python scripts/ab_prompt_test.py --comfyui http://127.0.0.1:8188
     python scripts/ab_prompt_test.py --dry-run       # so mostra os prompts
 
 Saida: outputs/ab-prompt/<data-hora>/ com as imagens, results.json e
@@ -34,6 +46,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -41,7 +54,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
+from app.model_manager.manager import ModelManager  # noqa: E402
 from app.persona_manager.manager import PersonaManager  # noqa: E402
+from app.workflow_manager.manager import WorkflowManager  # noqa: E402
 
 PERSONA_ID = "luna"
 
@@ -106,9 +121,94 @@ def post_json(url: str, payload: dict, timeout: float) -> dict:
         raise RuntimeError(f"HTTP {exc.code} em {url}: {detail}") from exc
 
 
+def get_json(url: str, timeout: float) -> dict:
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 def download(url: str, dest: Path, timeout: float) -> None:
     with urllib.request.urlopen(url, timeout=timeout) as resp:
         dest.write_bytes(resp.read())
+
+
+class BackendRunner:
+    """A e B pelo /api/generate do estudio."""
+
+    def __init__(self, api: str, timeout: float) -> None:
+        self.api = api.rstrip("/")
+        self.timeout = timeout
+
+    def describe(self) -> str:
+        return f"Backend: {self.api}"
+
+    def generate(self, side: str, scene: str, prompt_a: str, prompt_b: str, seed: int, dest: Path) -> str | None:
+        # A manda so a cena + persona_id: quem monta a identidade e o backend.
+        body = {"prompt": scene, "persona_id": PERSONA_ID} if side == "A" else {"prompt": prompt_b, "persona_id": None}
+        result = post_json(f"{self.api}/generate", {**body, "seed": seed}, self.timeout)
+        images = result.get("images") or []
+        if not images:
+            raise RuntimeError("backend nao devolveu imagem")
+        download(images[0]["url"], dest, self.timeout)
+        return result.get("prompt_id")
+
+
+class ComfyUIRunner:
+    """A e B direto no ComfyUI, com o mesmo workflow e padroes do backend."""
+
+    def __init__(self, base_url: str, timeout: float) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.workflows = WorkflowManager(REPO_ROOT / "workflows")
+        self.models = ModelManager(REPO_ROOT / "models" / "registry.json")
+        config = json.loads((REPO_ROOT / "config" / "default.json").read_text(encoding="utf-8"))
+        self.model_id = config["default_model_id"]
+        self.workflow_id = config["default_workflow_id"]
+
+    def describe(self) -> str:
+        return f"ComfyUI: {self.base_url} (modelo {self.model_id}, workflow {self.workflow_id})"
+
+    def generate(self, side: str, scene: str, prompt_a: str, prompt_b: str, seed: int, dest: Path) -> str:
+        prompt = prompt_a if side == "A" else prompt_b
+        model = self.models.get_model(self.model_id)
+        d = model.defaults
+        params = {
+            "PROMPT": prompt,
+            "WIDTH": d.get("width", 1024),
+            "HEIGHT": d.get("height", 1024),
+            "STEPS": d.get("steps", 20),
+            "GUIDANCE": d.get("guidance", 2.5),
+            "SEED": seed,
+            "SAMPLER_NAME": d.get("sampler_name", "euler"),
+            "SCHEDULER": d.get("scheduler", "simple"),
+            "FILENAME_PREFIX": f"ab_{side}",
+            **self.models.loader_params(self.model_id),
+        }
+        graph = self.workflows.render(self.workflow_id, params)
+        queued = post_json(f"{self.base_url}/prompt", {"prompt": graph}, 60)
+        prompt_id = queued.get("prompt_id")
+        if not prompt_id:
+            raise RuntimeError(f"ComfyUI recusou o grafo: {queued}")
+
+        deadline = time.monotonic() + self.timeout
+        while True:
+            if time.monotonic() > deadline:
+                raise RuntimeError(f"timeout de {self.timeout:.0f}s esperando o ComfyUI")
+            entry = get_json(f"{self.base_url}/history/{prompt_id}", 30).get(prompt_id)
+            status = (entry or {}).get("status", {})
+            if status.get("status_str") == "error":
+                raise RuntimeError(f"ComfyUI falhou: {status.get('messages')}")
+            if status.get("completed"):
+                break
+            time.sleep(2)
+
+        for node_output in entry.get("outputs", {}).values():
+            for img in node_output.get("images", []):
+                query = urllib.parse.urlencode(
+                    {"filename": img["filename"], "subfolder": img.get("subfolder", ""), "type": img.get("type", "output")}
+                )
+                download(f"{self.base_url}/view?{query}", dest, 60)
+                return prompt_id
+        raise RuntimeError("ComfyUI terminou sem imagem")
 
 
 def build_prompts(persona_manager: PersonaManager, scene: str) -> tuple[str, str]:
@@ -173,7 +273,9 @@ def write_report(out_dir: Path, rows: list[dict]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--api", help="Base da API do backend (ex: https://<pod>-8000.proxy.runpod.net/api)")
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--api", help="Base da API do backend (ex: https://<pod>-8000.proxy.runpod.net/api)")
+    target.add_argument("--comfyui", help="URL de um ComfyUI com o Chroma1-HD (ex: http://127.0.0.1:8188)")
     parser.add_argument("--seeds", type=int, nargs="+", default=DEFAULT_SEEDS)
     parser.add_argument("--scenes", type=int, default=len(SCENES), help="Quantas cenas da lista usar")
     parser.add_argument("--timeout", type=float, default=420.0, help="Segundos por geracao")
@@ -189,11 +291,14 @@ def main() -> None:
             print(f"\n=== Cena {i + 1} ===\nA ({len(prompt_a)} caracteres):\n{prompt_a}\n\nB ({len(prompt_b)} caracteres):\n{prompt_b}")
         return
 
-    api = (args.api or default_api_base()).rstrip("/")
+    if args.comfyui:
+        runner = ComfyUIRunner(args.comfyui, args.timeout)
+    else:
+        runner = BackendRunner(args.api or default_api_base(), args.timeout)
     out_dir = REPO_ROOT / "outputs" / "ab-prompt" / datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
     total = len(scenes) * len(args.seeds) * 2
-    print(f"Backend: {api}\nSaida: {out_dir}\n{total} imagens (pode levar ~1 min cada na L4)\n")
+    print(f"{runner.describe()}\nSaida: {out_dir}\n{total} imagens (pode levar ~1 min cada na L4)\n")
 
     rows: list[dict] = []
     done = 0
@@ -201,23 +306,15 @@ def main() -> None:
         prompt_a, prompt_b = build_prompts(persona_manager, scene)
         for seed in args.seeds:
             row = {"scene_index": si, "scene": scene, "seed": seed}
-            variants = {
-                "A": {"prompt": scene, "persona_id": PERSONA_ID},
-                "B": {"prompt": prompt_b, "persona_id": None},
-            }
-            for side, body in variants.items():
+            for side in ("A", "B"):
                 done += 1
                 entry = {"prompt": prompt_a if side == "A" else prompt_b}
                 print(f"[{done}/{total}] cena {si + 1} seed {seed} {side}...", end=" ", flush=True)
                 start = time.monotonic()
                 try:
-                    result = post_json(f"{api}/generate", {**body, "seed": seed}, args.timeout)
-                    images = result.get("images") or []
-                    if not images:
-                        raise RuntimeError("backend nao devolveu imagem")
                     name = f"cena{si + 1}_seed{seed}_{side}.png"
-                    download(images[0]["url"], out_dir / name, args.timeout)
-                    entry.update(file=name, seconds=time.monotonic() - start, prompt_id=result.get("prompt_id"))
+                    prompt_id = runner.generate(side, scene, prompt_a, prompt_b, seed, out_dir / name)
+                    entry.update(file=name, seconds=time.monotonic() - start, prompt_id=prompt_id)
                     print(f"ok ({entry['seconds']:.0f}s)")
                 except Exception as exc:  # um erro nao derruba o resto do teste
                     entry["error"] = str(exc)
