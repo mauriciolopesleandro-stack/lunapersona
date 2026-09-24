@@ -360,8 +360,8 @@ export async function getPodStatus(): Promise<PodStatus> {
 
 export interface WakeResult {
   alreadyRunning: boolean;
-  action: "running" | "resumed" | "created";
-  podId: string;
+  action: "running" | "resumed" | "created" | "pending";
+  podId: string | null;
   dataCenterId: string | null;
 }
 

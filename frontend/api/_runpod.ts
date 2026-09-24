@@ -16,6 +16,8 @@
 // Os dois volumes tem o mesmo conteudo: o proprio pod sincroniza um com o
 // outro via API S3 da RunPod (scripts/volume_sync.py), entao tanto faz em
 // qual deles o estudio sobe.
+import { storeConfigured, storeDelete, storeSetIfAbsent } from "./_store.js";
+
 const RUNPOD_REST_URL = "https://rest.runpod.io/v1";
 const RUNPOD_GRAPHQL_URL = "https://api.runpod.io/graphql";
 
@@ -172,11 +174,51 @@ function volumeRank(pod: StudioPod): number {
   return idx === -1 ? VOLUMES.length : idx;
 }
 
-export async function listStudioPods(): Promise<StudioPod[]> {
+// Todos os pods da conta (menos os ja apagados).
+export async function listAllPods(): Promise<StudioPod[]> {
   const pods = await rest<RestPod[]>("GET", "/pods?includeMachine=true&includeNetworkVolume=true");
-  return pods
-    .map(toStudioPod)
-    .filter((p) => p.name.startsWith(STUDIO_POD_PREFIX) && p.desiredStatus !== "TERMINATED");
+  return pods.map(toStudioPod).filter((p) => p.desiredStatus !== "TERMINATED");
+}
+
+function isStudioPod(pod: StudioPod): boolean {
+  return pod.name.startsWith(STUDIO_POD_PREFIX);
+}
+
+export async function listStudioPods(): Promise<StudioPod[]> {
+  return (await listAllPods()).filter(isStudioPod);
+}
+
+// Regra da conta: NUNCA mais de um pod ligado ao mesmo tempo (cada um cobra
+// por hora). Desliga todos os que estiverem rodando, menos `keepId`.
+// Devolve os IDs desligados.
+export async function stopAllExcept(pods: StudioPod[], keepId: string | null): Promise<string[]> {
+  const extras = pods.filter((p) => p.desiredStatus === "RUNNING" && p.id !== keepId);
+  await Promise.allSettled(extras.map((p) => stopPod(p.id)));
+  return extras.map((p) => p.id);
+}
+
+// Qual pod ligado manter quando ha mais de um: o do estudio que subiu
+// primeiro (e o que tem mais chance de ja estar pronto).
+function podToKeep(pods: StudioPod[]): StudioPod | null {
+  const running = pods
+    .filter((p) => p.desiredStatus === "RUNNING")
+    .sort((a, b) => (a.lastStartedAt ?? "").localeCompare(b.lastStartedAt ?? ""));
+  return running.find(isStudioPod) ?? running[0] ?? null;
+}
+
+// Usado pelo /api/runpod-status (chamado a cada poucos segundos com o site
+// aberto): se por qualquer motivo houver mais de um pod ligado, desliga os
+// extras e devolve o que ficou.
+export async function enforceSingleRunningPod(): Promise<{ pods: StudioPod[]; stopped: string[] }> {
+  const pods = await listAllPods();
+  const running = pods.filter((p) => p.desiredStatus === "RUNNING");
+  if (running.length <= 1) return { pods, stopped: [] };
+  const keep = podToKeep(pods);
+  const stopped = await stopAllExcept(pods, keep?.id ?? null);
+  return {
+    pods: pods.map((p) => (stopped.includes(p.id) ? { ...p, desiredStatus: "EXITED" } : p)),
+    stopped,
+  };
 }
 
 // O pod que o frontend deve usar: o que estiver rodando; senao, o mais
@@ -265,20 +307,47 @@ async function deployPod(volume: StudioVolume, gpuTypeIds: string[]): Promise<St
 
 export interface WakeResult {
   alreadyRunning: boolean;
-  action: "running" | "resumed" | "created";
-  pod: StudioPod;
+  action: "running" | "resumed" | "created" | "pending";
+  pod: StudioPod | null;
   attempts: string[];
 }
 
+// Trava para dois "ligar" simultaneos (duas abas, login + gerar) nao
+// criarem dois pods. Validade curta: se a funcao morrer no meio, a trava
+// some sozinha.
+const WAKE_LOCK_KEY = "luna:runpod-wake-lock";
+const WAKE_LOCK_TTL_S = 90;
+
 export async function wakeStudio(): Promise<WakeResult> {
+  let locked = false;
+  if (storeConfigured()) {
+    locked = await storeSetIfAbsent(WAKE_LOCK_KEY, String(Date.now()), WAKE_LOCK_TTL_S);
+    if (!locked) {
+      // Outro pedido ja esta ligando o estudio - o frontend so acompanha o status.
+      return { alreadyRunning: false, action: "pending", pod: null, attempts: [] };
+    }
+  }
+  try {
+    return await wakeStudioUnlocked();
+  } finally {
+    if (locked) await storeDelete(WAKE_LOCK_KEY).catch(() => undefined);
+  }
+}
+
+async function wakeStudioUnlocked(): Promise<WakeResult> {
   const cap = maxPricePerHr();
-  const pods = await listStudioPods();
+  const allPods = await listAllPods();
+  const pods = allPods.filter(isStudioPod);
   const attempts: string[] = [];
 
   const running = pods.find((p) => p.desiredStatus === "RUNNING");
   if (running) {
+    await stopAllExcept(allPods, running.id);
     return { alreadyRunning: true, action: "running", pod: running, attempts };
   }
+  // Nenhum pod do estudio ligado: qualquer outro pod rodando na conta sai
+  // antes de ligar o do estudio (nunca dois ligados ao mesmo tempo).
+  await stopAllExcept(allPods, null);
 
   // 1. Religar um pod parado (volume preferido primeiro).
   const stopped = pods

@@ -38,3 +38,14 @@ export async function storeGet(key: string): Promise<string | null> {
 export async function storeSet(key: string, value: string): Promise<void> {
   await command(["SET", key, value]);
 }
+
+// Grava so se a chave nao existir, com validade em segundos. Devolve true
+// se gravou - serve de trava simples entre funcoes serverless.
+export async function storeSetIfAbsent(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+  const result = await command(["SET", key, value, "NX", "EX", String(ttlSeconds)]);
+  return result === "OK";
+}
+
+export async function storeDelete(key: string): Promise<void> {
+  await command(["DEL", key]);
+}

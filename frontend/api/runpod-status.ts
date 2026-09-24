@@ -1,6 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
-import { getBalance, getCurrentPod, podApiBase, RunpodConfigError } from "./_runpod.js";
+import {
+  enforceSingleRunningPod,
+  getBalance,
+  pickCurrentPod,
+  podApiBase,
+  RunpodConfigError,
+  STUDIO_POD_PREFIX,
+} from "./_runpod.js";
 
 const HEALTH_TIMEOUT_MS = 4_000;
 
@@ -29,7 +36,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   try {
-    const [pod, balance] = await Promise.all([getCurrentPod(), getBalance()]);
+    // De quebra aplica a regra de nunca ter mais de um pod ligado.
+    const [{ pods, stopped }, balance] = await Promise.all([enforceSingleRunningPod(), getBalance()]);
+    const pod = pickCurrentPod(pods.filter((p) => p.name.startsWith(STUDIO_POD_PREFIX)));
     const running = pod?.desiredStatus === "RUNNING";
     const costPerHr = pod?.costPerHr ?? 0;
     const uptimeSeconds =
@@ -51,6 +60,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         liveSpend: running ? (uptimeSeconds / 3600) * costPerHr : 0,
         balance,
         volumeSync: Boolean(process.env.RUNPOD_S3_ACCESS_KEY && process.env.RUNPOD_S3_SECRET_KEY),
+        stoppedExtraPods: stopped,
       })
     );
   } catch (err) {

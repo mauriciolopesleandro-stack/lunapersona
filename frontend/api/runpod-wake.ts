@@ -28,9 +28,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       JSON.stringify({
         alreadyRunning: result.alreadyRunning,
         action: result.action,
-        podId: result.pod.id,
-        dataCenterId: result.pod.dataCenterId,
-        desiredStatus: result.pod.desiredStatus,
+        podId: result.pod?.id ?? null,
+        dataCenterId: result.pod?.dataCenterId ?? null,
+        desiredStatus: result.pod?.desiredStatus ?? "PENDING",
         attempts: result.attempts,
       })
     );
