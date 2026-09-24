@@ -1,10 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { buildSetCookie, safeEqual } from "./_auth.js";
 
-// POST /api/login { password, remember }
-// Senha unica (conta pessoal, sem multiplos usuarios) guardada em
-// APP_LOGIN_PASSWORD na Vercel. Sucesso -> cookie de sessao assinado
-// (ver _auth.ts). Roda so aqui (Vercel), nunca depende do pod estar ligado.
+// POST /api/login { username, password, remember }
+// Conta unica (sem multiplos usuarios): e-mail em APP_LOGIN_EMAIL e senha
+// em APP_LOGIN_PASSWORD, as duas na Vercel. Sucesso -> cookie de sessao
+// assinado (ver _auth.ts). Roda so aqui (Vercel), nunca depende do pod
+// estar ligado.
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   if (req.method !== "POST") {
     res.statusCode = 405;
@@ -14,17 +15,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   res.setHeader("Content-Type", "application/json");
 
-  const expected = process.env.APP_LOGIN_PASSWORD;
-  if (!expected) {
+  const expectedEmail = process.env.APP_LOGIN_EMAIL;
+  const expectedPassword = process.env.APP_LOGIN_PASSWORD;
+  if (!expectedEmail || !expectedPassword) {
     res.statusCode = 501;
-    res.end(JSON.stringify({ detail: "APP_LOGIN_PASSWORD nao configurada na Vercel." }));
+    res.end(JSON.stringify({ detail: "APP_LOGIN_EMAIL / APP_LOGIN_PASSWORD nao configuradas na Vercel." }));
     return;
   }
 
   let body = "";
   for await (const chunk of req) body += chunk;
 
-  let parsed: { password?: string; remember?: boolean };
+  let parsed: { username?: string; password?: string; remember?: boolean };
   try {
     parsed = JSON.parse(body || "{}");
   } catch {
@@ -33,10 +35,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
+  const username = typeof parsed.username === "string" ? parsed.username.trim().toLowerCase() : "";
   const password = typeof parsed.password === "string" ? parsed.password : "";
-  if (!password || !safeEqual(password, expected)) {
+  const emailOk = username.length > 0 && safeEqual(username, expectedEmail.trim().toLowerCase());
+  const passwordOk = password.length > 0 && safeEqual(password, expectedPassword);
+
+  if (!emailOk || !passwordOk) {
     res.statusCode = 401;
-    res.end(JSON.stringify({ detail: "Senha incorreta." }));
+    res.end(JSON.stringify({ detail: "E-mail ou senha incorretos." }));
     return;
   }
 

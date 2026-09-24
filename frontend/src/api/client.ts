@@ -9,11 +9,11 @@ export async function getSession(): Promise<{ authenticated: boolean }> {
   return res.json();
 }
 
-export async function login(password: string, remember: boolean): Promise<void> {
+export async function login(username: string, password: string, remember: boolean): Promise<void> {
   const res = await fetch("/api/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password, remember }),
+    body: JSON.stringify({ username, password, remember }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

@@ -140,11 +140,11 @@ export function LoginPage({ onReady }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!password.trim()) return;
+    if (!password.trim() || !username.trim()) return;
     setSubmitting(true);
     setLoginError(null);
     try {
-      await login(password, remember);
+      await login(username, password, remember);
       await startStudio();
     } catch (e) {
       setLoginError(e instanceof Error ? e.message : String(e));
@@ -178,11 +178,12 @@ export function LoginPage({ onReady }: Props) {
             <label className="login-field">
               <span>Usuário ou e-mail</span>
               <input
-                type="text"
+                type="email"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Usuário ou e-mail"
                 autoComplete="username"
+                required
               />
             </label>
 
@@ -214,7 +215,7 @@ export function LoginPage({ onReady }: Props) {
               </a>
             </div>
 
-            <button type="submit" className="login-submit" disabled={submitting || !password.trim()}>
+            <button type="submit" className="login-submit" disabled={submitting || !password.trim() || !username.trim()}>
               {submitting ? "Entrando..." : "Entrar →"}
             </button>
           </form>
