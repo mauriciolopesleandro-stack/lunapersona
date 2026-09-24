@@ -119,6 +119,17 @@ export function GeneratePanel({
             </span>
           </button>
         ))}
+        {/* Sem persona: o prompt vai para o modelo sem a identidade de ninguem. */}
+        <button
+          type="button"
+          className={personaId === "" ? "persona-card none active" : "persona-card none"}
+          onClick={() => onPersonaChange("")}
+        >
+          {personaId === "" && <span className="persona-card-check">✓</span>}
+          <span className="persona-card-plus">∅</span>
+          Sem persona
+          <span className="persona-card-hint">só o que você descrever</span>
+        </button>
         <button type="button" className="persona-card add" onClick={onNavigatePersonas}>
           <span className="persona-card-plus">+</span>
           Nova Persona

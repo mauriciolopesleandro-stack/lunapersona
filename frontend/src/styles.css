@@ -601,6 +601,7 @@ button.danger {
 }
 
 .persona-card.add,
+.persona-card.none,
 .persona-card.soon {
   align-items: center;
   justify-content: center;
@@ -614,6 +615,17 @@ button.danger {
 .persona-card.soon {
   opacity: 0.55;
   cursor: default;
+}
+
+.persona-card.none.active {
+  color: var(--text);
+}
+
+.persona-card-hint {
+  font-size: 10.5px;
+  font-weight: 500;
+  opacity: 0.75;
+  padding: 0 8px;
 }
 
 .persona-card-plus {

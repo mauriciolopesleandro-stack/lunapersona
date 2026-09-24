@@ -207,9 +207,11 @@ export default function App() {
       const wasColdStart = await ensurePodAwake(setPodMessage);
       if (wasColdStart) {
         const freshPersonas = await loadConfig();
-        if (!body.persona_id && freshPersonas.length > 0) {
+        // Sem persona com a lista ainda vazia = a pessoa nao teve como
+        // escolher; com a lista ja carregada, "Sem persona" e escolha dela.
+        if (!body.persona_id && personas.length === 0 && freshPersonas.length > 0) {
           setPodMessage(
-            "Pod ligado. A lista de personas acabou de carregar - selecione a Luna acima e clique em Gerar de novo."
+            "Estúdio ligado. A lista de personas acabou de carregar - escolha a Luna (ou \"Sem persona\") acima e clique em Gerar de novo."
           );
           setLoading(false);
           return;
