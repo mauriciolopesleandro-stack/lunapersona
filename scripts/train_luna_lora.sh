@@ -105,25 +105,25 @@ config:
           use_ema: true
           ema_decay: 0.99
         dtype: bf16
+        skip_first_sample: true
       model:
         name_or_path: "lodestones/Chroma1-HD"
         arch: "chroma"
         quantize: true
       sample:
         sampler: "flowmatch"
-        sample_every: 250
+        # Cada imagem de teste leva ~3 min numa L4: poucas e espacadas.
+        sample_every: 500
         width: 832
         height: 1216
         prompts:
           - "close-up portrait photo of lunavox smiling at the camera, soft window light, cafe background"
           - "full body photo of lunavox walking on a beach at sunset, wearing a white summer dress"
-          - "photo of lunavox sitting at a desk with a laptop, wearing a grey hoodie, cozy bedroom at night"
-          - "full body photo of lunavox standing in a city street, wearing a black leather jacket, jeans and boots"
         neg: ""
         seed: 42
-        walk_seed: true
+        walk_seed: false
         guidance_scale: 4
-        sample_steps: 25
+        sample_steps: 20
 meta:
   name: "[name]"
   version: '1.0'
