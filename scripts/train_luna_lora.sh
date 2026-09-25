@@ -31,7 +31,7 @@ fi
 if [ ! -x "$AITK/venv/bin/python" ]; then
   python3 -m venv "$AITK/venv"
   "$AITK/venv/bin/pip" install -q --upgrade pip
-  "$AITK/venv/bin/pip" install -q torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  "$AITK/venv/bin/pip" install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
   "$AITK/venv/bin/pip" install -q -r "$AITK/requirements.txt"
 fi
 
