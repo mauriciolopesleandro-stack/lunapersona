@@ -211,13 +211,44 @@ export async function getWorkflows(): Promise<WorkflowInfo[]> {
   return data.workflows;
 }
 
+const GENERATE_POLL_MS = 3_000;
+const GENERATE_MAX_MS = 15 * 60_000;
+// Falhas de rede seguidas toleradas ao consultar (proxy instavel, celular
+// trocando de rede) antes de desistir.
+const GENERATE_MAX_POLL_FAILURES = 5;
+
+// O proxy da RunPod corta respostas com mais de ~100 s e uma geracao numa L4
+// passa disso: inicia um job no backend e consulta ate ele terminar.
 export async function generateImage(body: GenerateRequestBody): Promise<GenerateResponse> {
-  const res = await fetch(`${await apiBase()}/generate`, {
+  const base = await apiBase();
+  const start = await fetch(`${base}/generate/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  return handleResponse<GenerateResponse>(res);
+  const { job_id } = await handleResponse<{ job_id: string }>(start);
+
+  const deadline = Date.now() + GENERATE_MAX_MS;
+  let failures = 0;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, GENERATE_POLL_MS));
+    let res: Response;
+    try {
+      res = await fetch(`${base}/generate/jobs/${job_id}`);
+    } catch {
+      if (++failures >= GENERATE_MAX_POLL_FAILURES) {
+        throw new Error("Perdi a conexao com o backend durante a geracao. Tente novamente.");
+      }
+      continue;
+    }
+    failures = 0;
+    const job = await handleResponse<
+      { status: "running" } | { status: "done"; result: GenerateResponse } | { status: "error"; detail: string }
+    >(res);
+    if (job.status === "done") return job.result;
+    if (job.status === "error") throw new Error(job.detail);
+  }
+  throw new Error("A geracao passou de 15 minutos. Tente novamente.");
 }
 
 export async function getPersonas(): Promise<PersonaSummary[]> {
