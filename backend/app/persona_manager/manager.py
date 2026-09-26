@@ -75,6 +75,17 @@ class PersonaGeneration:
 
 
 @dataclass
+class PersonaLora:
+    """LoRA treinada da persona. Quando o arquivo existe no ComfyUI, a
+    geracao usa o gatilho + a LoRA em vez do texto de identidade."""
+
+    file: str
+    trigger: str
+    strength: float = 1.0
+    workflow_id: str = ""
+
+
+@dataclass
 class PersonaReference:
     id: str
     filename: str
@@ -91,6 +102,7 @@ class Persona:
     description: str = ""
     identity: PersonaIdentity = field(default_factory=PersonaIdentity)
     generation: PersonaGeneration = field(default_factory=PersonaGeneration)
+    lora: PersonaLora | None = None
     references: list[PersonaReference] = field(default_factory=list)
     identity_methods: dict[str, list[str]] = field(
         default_factory=lambda: {
@@ -150,12 +162,22 @@ class PersonaManager:
             model_id=generation_data.get("model_id", ""),
             workflow_id=generation_data.get("workflow_id", ""),
         )
+        lora_data = data.get("lora")
+        lora = None
+        if lora_data and lora_data.get("file") and lora_data.get("trigger"):
+            lora = PersonaLora(
+                file=lora_data["file"],
+                trigger=lora_data["trigger"],
+                strength=float(lora_data.get("strength", 1.0)),
+                workflow_id=lora_data.get("workflow_id", ""),
+            )
         persona = Persona(
             id=data.get("id", persona_id),
             name=data.get("name", persona_id),
             description=data.get("description", ""),
             identity=identity,
             generation=generation,
+            lora=lora,
             identity_methods=data.get(
                 "identity_methods",
                 {"planned": ["image_prompting", "ip_adapter", "faceid", "lora"], "active": ["image_prompting"]},
@@ -175,6 +197,8 @@ class PersonaManager:
             "generation": asdict(persona.generation),
             "identity_methods": persona.identity_methods,
         }
+        if persona.lora:
+            payload["lora"] = asdict(persona.lora)
         path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def update_identity(

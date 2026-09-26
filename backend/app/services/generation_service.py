@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from app.clients.comfyui_client import ComfyUIClient, GenerationOutputImage
+from app.clients.comfyui_client import ComfyUIClient, ComfyUIError, GenerationOutputImage
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
 from app.workflow_manager.manager import WorkflowManager
@@ -53,6 +53,14 @@ class GenerationService:
         self.model_manager = model_manager
         self.persona_manager = persona_manager
 
+    async def _lora_available(self, filename: str) -> bool:
+        # Se o arquivo ainda nao chegou ao pod, a persona volta para o texto
+        # de identidade em vez de a geracao falhar no ComfyUI.
+        try:
+            return filename in await self.comfyui_client.list_loras()
+        except ComfyUIError:
+            return False
+
     async def generate(self, req: GenerationRequest) -> GenerationResponse:
         model = self.model_manager.get_model(req.model_id)
 
@@ -61,21 +69,30 @@ class GenerationService:
         prompt = req.prompt
         workflow_id = req.workflow_id
         reference_image_name: str | None = None
+        lora_params: dict[str, Any] = {}
         if req.persona_id:
             persona = self.persona_manager.get_persona(req.persona_id)
-            identity_fragment = persona.identity_prompt_fragment()
-            if identity_fragment:
-                prompt = f"{identity_fragment}, {req.prompt}"
+            lora = persona.lora
+            if lora and lora.workflow_id in model.compatible_workflows and await self._lora_available(lora.file):
+                # A LoRA ja carrega rosto, corpo e acessorios: o texto longo de
+                # identidade so competiria com ela (e vira retrato/colagem).
+                prompt = f"photo of {lora.trigger}, {req.prompt}"
+                workflow_id = lora.workflow_id
+                lora_params = {"LORA_NAME": lora.file, "LORA_STRENGTH": lora.strength}
+            else:
+                identity_fragment = persona.identity_prompt_fragment()
+                if identity_fragment:
+                    prompt = f"{identity_fragment}, {req.prompt}"
 
-            # Se a persona tem uma foto de referencia, ancora a identidade
-            # nela via FLUX Kontext (flux-kontext-reference) em vez de so
-            # texto - forca esse workflow independente do que foi pedido,
-            # pra toda geracao com essa persona ficar visualmente consistente.
-            reference = self.persona_manager.get_primary_reference_bytes(req.persona_id)
-            if reference and "flux-kontext-reference" in model.compatible_workflows:
-                filename, content = reference
-                reference_image_name = await self.comfyui_client.upload_image(filename, content)
-                workflow_id = "flux-kontext-reference"
+                # Se a persona tem uma foto de referencia, ancora a identidade
+                # nela via FLUX Kontext (flux-kontext-reference) em vez de so
+                # texto - forca esse workflow independente do que foi pedido,
+                # pra toda geracao com essa persona ficar visualmente consistente.
+                reference = self.persona_manager.get_primary_reference_bytes(req.persona_id)
+                if reference and "flux-kontext-reference" in model.compatible_workflows:
+                    filename, content = reference
+                    reference_image_name = await self.comfyui_client.upload_image(filename, content)
+                    workflow_id = "flux-kontext-reference"
 
         params: dict[str, Any] = {
             "PROMPT": prompt,
@@ -90,6 +107,7 @@ class GenerationService:
         }
         if reference_image_name:
             params["REFERENCE_IMAGE"] = reference_image_name
+        params.update(lora_params)
         params.update(self.model_manager.loader_params(req.model_id))
 
         graph = self.workflow_manager.render(workflow_id, params)

@@ -16,7 +16,7 @@
         "unet_weight_dtype": "default",
         "clip_type": "chroma"
       },
-      "compatible_workflows": ["chroma-txt2img"],
+      "compatible_workflows": ["chroma-txt2img", "chroma-txt2img-lora"],
       "defaults": {
         "width": 1024,
         "height": 1024,

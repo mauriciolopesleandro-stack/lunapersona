@@ -144,15 +144,17 @@ echo "$TRAIN_PID" > "$WORK/train.pid"
       -d '{"prompt":"keepalive","model_id":"__keepalive__"}' || true
     sleep 120
   done
+  # So em output/ (para baixar pelo /view e testar). Nunca em models/loras:
+  # a LoRA em uso la e um arquivo de verdade no volume, e um atalho para o
+  # disco do container quebraria quando o pod desligasse.
   OUT="$WORK/output/$NAME"
-  mkdir -p "$COMFY/models/loras" "$COMFY/output/lora"
+  mkdir -p "$COMFY/output/lora"
   for f in "$OUT"/*.safetensors; do
     [ -e "$f" ] || continue
-    ln -sfn "$f" "$COMFY/models/loras/$(basename "$f")"
     ln -sfn "$f" "$COMFY/output/lora/$(basename "$f")"
   done
   if [ -d "$OUT/samples" ]; then ln -sfn "$OUT/samples" "$COMFY/output/lora/samples"; fi
-  echo "[train_luna_lora] $(date +%H:%M:%S) treino terminou, LoRAs ligadas em models/loras" >> "$LOG"
+  echo "[train_luna_lora] $(date +%H:%M:%S) treino terminou, LoRAs em output/lora" >> "$LOG"
 ) > /dev/null 2>&1 &
 disown
 

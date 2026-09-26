@@ -4,18 +4,18 @@
   "description": "Persona principal do Luna AI Studio. Identity Profile preenchido a partir de analise visual de 4 imagens (de um total de 26) do Google Drive, pasta 'Luna' > 'Dataset aprovado - treino LoRA Lunavox'. IMPORTANTE (ver LEIA-ME.txt dessa pasta): as 26 imagens sao sinteticas, geradas via Flux Kontext a partir de UM unico retrato-base ('Retrato elegante com colares em camadas'), nao sao fotografias de uma pessoa real. O usuario confirmou explicitamente usar esse dataset aprovado como referencia oficial de identidade da Luna. Apenas 4 das 26 imagens foram importadas para personas/luna/references/ (as outras 22 nao foram baixadas para economizar contexto/tokens - ficam disponiveis no Drive para quando o treino de LoRA for implementado).",
   "identity": {
     "fixed": {
-      "formato_rosto": "oval, macas do rosto marcadas, queixo levemente afilado",
-      "caracteristicas_faciais": "traços simetricos e marcantes, expressao direta/confiante nas referencias",
-      "olhos": "castanho-escuros, formato amendoado, olhar direto para a camera na maioria das referencias",
-      "sobrancelhas": "grossas, retas, bem definidas, tom castanho-escuro",
-      "nariz": "reto e fino, ponta levemente arredondada",
-      "boca": "labios cheios, tom nude-rosado natural",
-      "formato_cabelo": "longo (abaixo do busto), ondulado solto, repartido ao meio ou levemente de lado",
-      "cor_cabelo": "castanho bem escuro/quase preto na raiz, com mechas (balaiagem) em tom caramelo-acobreado nas pontas",
-      "textura_cabelo": "ondulado, volumoso, brilho natural",
-      "tom_pele": "oliva/bronzeada, dourada, uniforme",
-      "caracteristicas_corporais": "corpo esguio e tonificado, altura media-alta aparente nas fotos de corpo inteiro",
-      "caracteristicas_visuais_permanentes": ""
+      "formato_rosto": "oval face with full cheeks",
+      "caracteristicas_faciais": "",
+      "olhos": "dark brown eyes",
+      "sobrancelhas": "thick straight dark eyebrows",
+      "nariz": "",
+      "boca": "very full lips",
+      "formato_cabelo": "very long layered hair, straight to slightly wavy",
+      "cor_cabelo": "very dark brown hair with subtle copper highlights",
+      "textura_cabelo": "",
+      "tom_pele": "tanned olive skin",
+      "caracteristicas_corporais": "curvy body, large bust, wide hips",
+      "caracteristicas_visuais_permanentes": "black choker necklace, thin chain with an oval black stone pendant, small tattoo reading LUNA on the inner forearm"
     },
     "variable_defaults": {
       "roupa": "",
@@ -30,8 +30,14 @@
     "model_id": "chroma1-hd-fp8",
     "workflow_id": "chroma-txt2img"
   },
+  "lora": {
+    "file": "luna_chroma_v1.safetensors",
+    "trigger": "lunavox",
+    "strength": 1.2,
+    "workflow_id": "chroma-txt2img-lora"
+  },
   "identity_methods": {
     "planned": ["image_prompting", "ip_adapter", "faceid", "lora"],
-    "active": ["image_prompting"]
+    "active": ["lora", "image_prompting"]
   }
 }

@@ -30,6 +30,9 @@ class WorkflowDefinition:
     required_params: list[str]
     optional_params: dict[str, Any]
     graph_template: dict[str, Any]
+    # Workflows internos (ex.: o de LoRA de persona) nao aparecem para
+    # escolha manual; o backend os seleciona sozinho.
+    hidden: bool = False
 
 
 class WorkflowManager:
@@ -62,6 +65,7 @@ class WorkflowManager:
             required_params=meta.get("required_params", []),
             optional_params=meta.get("optional_params", {}),
             graph_template=data.get("graph", {}),
+            hidden=bool(meta.get("hidden", False)),
         )
 
     def render(self, workflow_id: str, params: dict[str, Any]) -> dict[str, Any]:
