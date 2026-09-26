@@ -232,10 +232,14 @@ export async function generateImage(body: GenerateRequestBody): Promise<Generate
   let failures = 0;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, GENERATE_POLL_MS));
-    let res: Response;
+    let res: Response | null = null;
     try {
       res = await fetch(`${base}/generate/jobs/${job_id}`);
     } catch {
+      // sem resposta: rede do celular ou proxy - tenta de novo abaixo
+    }
+    // 5xx aqui e o proxy da RunPod oscilando, nao o job: tambem tenta de novo.
+    if (!res || res.status >= 500) {
       if (++failures >= GENERATE_MAX_POLL_FAILURES) {
         throw new Error("Perdi a conexao com o backend durante a geracao. Tente novamente.");
       }
