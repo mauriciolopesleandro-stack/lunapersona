@@ -32,6 +32,21 @@ const STYLES: StyleOption[] = [
   { id: "pintura", label: "Pintura artística", suffix: ", pintura digital artística, pinceladas visíveis" },
 ];
 
+export interface ReferenceImage {
+  file: File;
+  previewUrl: string;
+  width: number;
+  height: number;
+}
+
+// Tamanho de saida com a proporcao da foto, ~1 megapixel e multiplo de 16
+// (o Chroma trabalha em blocos de 16 px).
+function referenceOutputSize(width: number, height: number): { width: number; height: number } {
+  const scale = Math.sqrt((1024 * 1024) / (width * height));
+  const snap = (v: number) => Math.max(512, Math.min(1536, Math.round((v * scale) / 16) * 16));
+  return { width: snap(width), height: snap(height) };
+}
+
 interface Props {
   personas: PersonaSummary[];
   personaThumbnails: Record<string, string>;
@@ -54,6 +69,8 @@ interface Props {
     height: number;
     steps: number;
     guidance: number;
+    referenceFile?: File;
+    denoise?: number;
   }) => void;
 }
 
@@ -76,13 +93,42 @@ export function GeneratePanel({
   const [formatId, setFormatId] = useState("16:9");
   const [styleId, setStyleId] = useState("fotografia");
   const [showChat, setShowChat] = useState(false);
+  const [reference, setReference] = useState<ReferenceImage | null>(null);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [denoise, setDenoise] = useState(0.7);
 
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
   const style = STYLES.find((s) => s.id === styleId) ?? STYLES[0];
+  const outputSize = reference ? referenceOutputSize(reference.width, reference.height) : format;
+
+  function handleReferenceChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setReferenceError(null);
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      if (reference) URL.revokeObjectURL(reference.previewUrl);
+      setReference({ file, previewUrl: url, width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      setReferenceError("Não consegui abrir essa imagem. Tente uma foto JPG ou PNG.");
+    };
+    img.src = url;
+  }
+
+  function removeReference() {
+    if (reference) URL.revokeObjectURL(reference.previewUrl);
+    setReference(null);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const finalPrompt = `${prompt.trim()}${ambiente.trim() ? `. Ambiente: ${ambiente.trim()}` : ""}${style.suffix}`;
+    // Com foto de referencia o texto e opcional: a cena vem da foto.
+    const basePrompt = prompt.trim() || (reference ? "same scene, realistic photo" : "");
+    const finalPrompt = `${basePrompt}${ambiente.trim() ? `. Ambiente: ${ambiente.trim()}` : ""}${style.suffix}`;
     onSubmit({
       prompt: finalPrompt,
       // Ignora modelo/workflow salvo no navegador que nao existe mais no
@@ -90,10 +136,12 @@ export function GeneratePanel({
       modelId: models.some((m) => m.id === settings.modelId) ? settings.modelId : models[0]?.id,
       workflowId: workflows.some((w) => w.id === settings.workflowId) ? settings.workflowId : workflows[0]?.id,
       personaId,
-      width: format.width,
-      height: format.height,
+      width: outputSize.width,
+      height: outputSize.height,
       steps: settings.steps,
       guidance: settings.guidance,
+      referenceFile: reference?.file,
+      denoise: reference ? denoise : undefined,
     });
   }
 
@@ -140,13 +188,56 @@ export function GeneratePanel({
         </div>
       </div>
 
-      <div className="step-label">2. Descreva o que deseja</div>
+      <div className="step-label">2. Foto de referência (opcional)</div>
+      <p className="muted small reference-hint">
+        Suba uma foto com a cena que você quer: a IA mantém o cenário, a luz e a pose e coloca a persona escolhida no lugar da
+        pessoa.
+      </p>
+      {reference ? (
+        <div className="reference-box">
+          <img src={reference.previewUrl} alt="Foto de referência" />
+          <div className="reference-controls">
+            <label className="reference-denoise">
+              <span>
+                Quanto mudar: <strong>{Math.round(denoise * 100)}%</strong>
+              </span>
+              <input
+                type="range"
+                min={0.4}
+                max={0.95}
+                step={0.05}
+                value={denoise}
+                onChange={(e) => setDenoise(Number(e.target.value))}
+              />
+              <span className="reference-denoise-scale">
+                <span>mais fiel à foto</span>
+                <span>mais a persona</span>
+              </span>
+            </label>
+            <button type="button" className="danger small" onClick={removeReference}>
+              Remover foto
+            </button>
+          </div>
+        </div>
+      ) : (
+        <label className="reference-upload">
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleReferenceChange} />
+          📷 Escolher foto de referência
+        </label>
+      )}
+      {referenceError && <p className="error small">{referenceError}</p>}
+
+      <div className="step-label">3. Descreva o que deseja{reference ? " (opcional)" : ""}</div>
       <textarea
         rows={3}
         value={prompt}
         onChange={(e) => onPromptChange(e.target.value)}
-        placeholder="Ex: Luna sentada em uma cafeteria tomando um café e olhando para a câmera, sorrindo de forma natural."
-        required
+        placeholder={
+          reference
+            ? "Opcional: o que mudar na foto. Ex: wearing a black dress, smiling at the camera."
+            : "Ex: Luna sentada em uma cafeteria tomando um café e olhando para a câmera, sorrindo de forma natural."
+        }
+        required={!reference}
         maxLength={1000}
       />
       <div className="char-count">{prompt.length}/1000</div>
@@ -157,7 +248,7 @@ export function GeneratePanel({
       </div>
       {showChat && <ChatAssistant chat={chat} personas={personas} personaId={personaId} onUsePrompt={onPromptChange} />}
 
-      <div className="step-label">3. Ambiente (opcional)</div>
+      <div className="step-label">4. Ambiente (opcional)</div>
       <textarea
         rows={2}
         value={ambiente}
@@ -169,7 +260,7 @@ export function GeneratePanel({
 
       <div className="row" style={{ gridTemplateColumns: "1fr 1fr" }}>
         <div>
-          <div className="step-label">4. Tipo de mídia</div>
+          <div className="step-label">5. Tipo de mídia</div>
           <div className="type-row">
             <button type="button" className="pick-btn active">
               Foto
@@ -182,23 +273,29 @@ export function GeneratePanel({
         </div>
 
         <div>
-          <div className="step-label">5. Formato</div>
-          <div className="format-row">
-            {FORMATS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                className={formatId === f.id ? "pick-btn active" : "pick-btn"}
-                onClick={() => setFormatId(f.id)}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <div className="step-label">6. Formato</div>
+          {reference ? (
+            <p className="muted small">
+              Segue a proporção da foto ({outputSize.width}×{outputSize.height}).
+            </p>
+          ) : (
+            <div className="format-row">
+              {FORMATS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={formatId === f.id ? "pick-btn active" : "pick-btn"}
+                  onClick={() => setFormatId(f.id)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="step-label">6. Estilo (opcional)</div>
+      <div className="step-label">7. Estilo (opcional)</div>
       <select value={styleId} onChange={(e) => setStyleId(e.target.value)}>
         {STYLES.map((s) => (
           <option key={s.id} value={s.id}>
@@ -207,7 +304,7 @@ export function GeneratePanel({
         ))}
       </select>
 
-      <button type="submit" className="primary generate-submit" disabled={loading || !prompt.trim()}>
+      <button type="submit" className="primary generate-submit" disabled={loading || (!prompt.trim() && !reference)}>
         {loading ? "Gerando..." : "✨ Gerar imagem"}
       </button>
     </form>

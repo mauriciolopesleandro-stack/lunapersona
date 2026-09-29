@@ -650,6 +650,79 @@ button.danger {
   margin-top: 6px;
 }
 
+.reference-hint {
+  margin: 0 0 10px;
+}
+
+.reference-upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.reference-upload:hover {
+  border-color: var(--accent-1);
+  color: var(--text);
+}
+
+.reference-upload input {
+  display: none;
+}
+
+.reference-box {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.reference-box img {
+  width: 120px;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.reference-controls {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reference-denoise {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.reference-denoise input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent-1);
+}
+
+.reference-denoise-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.reference-controls button {
+  align-self: flex-start;
+}
+
 .type-row,
 .format-row {
   display: flex;

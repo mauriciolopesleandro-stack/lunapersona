@@ -116,6 +116,10 @@ export interface GenerateRequestBody {
   steps?: number;
   guidance?: number;
   seed?: number;
+  // Nome devolvido por uploadGenerationReference: a cena da foto e mantida
+  // e a pessoa vira a persona. denoise = quanto a foto e redesenhada.
+  reference_image?: string;
+  denoise?: number;
 }
 
 export interface GenerateResponse {
@@ -209,6 +213,14 @@ export async function getWorkflows(): Promise<WorkflowInfo[]> {
   const res = await fetch(`${await apiBase()}/workflows`);
   const data = await handleResponse<{ workflows: WorkflowInfo[] }>(res);
   return data.workflows;
+}
+
+export async function uploadGenerationReference(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${await apiBase()}/generate/reference`, { method: "POST", body: formData });
+  const data = await handleResponse<{ name: string }>(res);
+  return data.name;
 }
 
 const GENERATE_POLL_MS = 3_000;

@@ -1,0 +1,235 @@
+{
+  "meta": {
+    "id": "chroma-img2img-lora",
+    "title": "Chroma1-HD - Imagem de referencia com LoRA de persona",
+    "description": "Redesenha uma foto enviada (REFERENCE_IMAGE) mantendo cena, luz e pose. DENOISE e o quanto muda: baixo mantem a foto (a pessoa original pode vazar), alto troca mais a pessoa e o cenario. Com a LoRA da persona aplicada, para trocar a pessoa pela persona.",
+    "compatible_models": [
+      "chroma1-hd-fp8"
+    ],
+    "hidden": true,
+    "required_params": [
+      "PROMPT",
+      "REFERENCE_IMAGE",
+      "LORA_NAME"
+    ],
+    "optional_params": {
+      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, watermark, signature, text",
+      "WIDTH": 1024,
+      "HEIGHT": 1024,
+      "STEPS": 26,
+      "GUIDANCE": 4,
+      "SEED": 0,
+      "SAMPLER_NAME": "euler",
+      "FILENAME_PREFIX": "luna_studio",
+      "LORA_STRENGTH": 1,
+      "DENOISE": 0.7
+    }
+  },
+  "graph": {
+    "1": {
+      "class_type": "UNETLoader",
+      "inputs": {
+        "unet_name": "${UNET_NAME}",
+        "weight_dtype": "${UNET_WEIGHT_DTYPE}"
+      }
+    },
+    "2": {
+      "class_type": "CLIPLoader",
+      "inputs": {
+        "clip_name": "${CLIP_NAME_1}",
+        "type": "${CLIP_TYPE}",
+        "device": "default"
+      }
+    },
+    "3": {
+      "class_type": "VAELoader",
+      "inputs": {
+        "vae_name": "${VAE_NAME}"
+      }
+    },
+    "4": {
+      "class_type": "T5TokenizerOptions",
+      "inputs": {
+        "clip": [
+          "2",
+          0
+        ],
+        "min_padding": 0,
+        "min_length": 0
+      }
+    },
+    "5": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "${PROMPT}",
+        "clip": [
+          "4",
+          0
+        ]
+      }
+    },
+    "6": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "${NEGATIVE_PROMPT}",
+        "clip": [
+          "4",
+          0
+        ]
+      }
+    },
+    "7": {
+      "class_type": "ModelSamplingAuraFlow",
+      "inputs": {
+        "model": [
+          "16",
+          0
+        ],
+        "shift": 1
+      }
+    },
+    "8": {
+      "class_type": "CFGGuider",
+      "inputs": {
+        "model": [
+          "7",
+          0
+        ],
+        "positive": [
+          "5",
+          0
+        ],
+        "negative": [
+          "6",
+          0
+        ],
+        "cfg": "${GUIDANCE}"
+      }
+    },
+    "10": {
+      "class_type": "RandomNoise",
+      "inputs": {
+        "noise_seed": "${SEED}"
+      }
+    },
+    "11": {
+      "class_type": "KSamplerSelect",
+      "inputs": {
+        "sampler_name": "${SAMPLER_NAME}"
+      }
+    },
+    "12": {
+      "class_type": "BetaSamplingScheduler",
+      "inputs": {
+        "model": [
+          "7",
+          0
+        ],
+        "steps": "${STEPS}",
+        "alpha": 0.45,
+        "beta": 0.45
+      }
+    },
+    "13": {
+      "class_type": "SamplerCustomAdvanced",
+      "inputs": {
+        "noise": [
+          "10",
+          0
+        ],
+        "guider": [
+          "8",
+          0
+        ],
+        "sampler": [
+          "11",
+          0
+        ],
+        "sigmas": [
+          "23",
+          1
+        ],
+        "latent_image": [
+          "22",
+          0
+        ]
+      }
+    },
+    "14": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "13",
+          0
+        ],
+        "vae": [
+          "3",
+          0
+        ]
+      }
+    },
+    "15": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "14",
+          0
+        ],
+        "filename_prefix": "${FILENAME_PREFIX}"
+      }
+    },
+    "16": {
+      "class_type": "LoraLoaderModelOnly",
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "lora_name": "${LORA_NAME}",
+        "strength_model": "${LORA_STRENGTH}"
+      }
+    },
+    "20": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "${REFERENCE_IMAGE}"
+      }
+    },
+    "21": {
+      "class_type": "ImageScale",
+      "inputs": {
+        "image": [
+          "20",
+          0
+        ],
+        "upscale_method": "lanczos",
+        "width": "${WIDTH}",
+        "height": "${HEIGHT}",
+        "crop": "center"
+      }
+    },
+    "22": {
+      "class_type": "VAEEncode",
+      "inputs": {
+        "pixels": [
+          "21",
+          0
+        ],
+        "vae": [
+          "3",
+          0
+        ]
+      }
+    },
+    "23": {
+      "class_type": "SplitSigmasDenoise",
+      "inputs": {
+        "sigmas": [
+          "12",
+          0
+        ],
+        "denoise": "${DENOISE}"
+      }
+    }
+  }
+}

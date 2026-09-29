@@ -12,7 +12,7 @@ from typing import Any
 from app.clients.comfyui_client import ComfyUIClient, ComfyUIError, GenerationOutputImage
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
-from app.workflow_manager.manager import WorkflowManager
+from app.workflow_manager.manager import WorkflowManager, WorkflowParamError
 
 
 @dataclass
@@ -28,6 +28,14 @@ class GenerationRequest:
     seed: int | None = None
     sampler_name: str | None = None
     scheduler: str | None = None
+    # Foto enviada pela pessoa (ja no input/ do ComfyUI): a cena e mantida e a
+    # pessoa vira a persona. denoise = quanto a foto e redesenhada.
+    reference_image: str | None = None
+    denoise: float | None = None
+
+
+IMG2IMG_WORKFLOW = "chroma-img2img"
+IMG2IMG_LORA_WORKFLOW = "chroma-img2img-lora"
 
 
 @dataclass
@@ -70,12 +78,14 @@ class GenerationService:
         workflow_id = req.workflow_id
         reference_image_name: str | None = None
         lora_params: dict[str, Any] = {}
+        use_lora = False
         if req.persona_id:
             persona = self.persona_manager.get_persona(req.persona_id)
             lora = persona.lora
             if lora and lora.workflow_id in model.compatible_workflows and await self._lora_available(lora.file):
                 # A LoRA ja carrega rosto, corpo e acessorios: o texto longo de
                 # identidade so competiria com ela (e vira retrato/colagem).
+                use_lora = True
                 prompt = f"photo of {lora.trigger}, {req.prompt}"
                 workflow_id = lora.workflow_id
                 lora_params = {"LORA_NAME": lora.file, "LORA_STRENGTH": lora.strength}
@@ -89,10 +99,16 @@ class GenerationService:
                 # texto - forca esse workflow independente do que foi pedido,
                 # pra toda geracao com essa persona ficar visualmente consistente.
                 reference = self.persona_manager.get_primary_reference_bytes(req.persona_id)
-                if reference and "flux-kontext-reference" in model.compatible_workflows:
+                if not req.reference_image and reference and "flux-kontext-reference" in model.compatible_workflows:
                     filename, content = reference
                     reference_image_name = await self.comfyui_client.upload_image(filename, content)
                     workflow_id = "flux-kontext-reference"
+
+        if req.reference_image:
+            workflow_id = IMG2IMG_LORA_WORKFLOW if use_lora else IMG2IMG_WORKFLOW
+            if workflow_id not in model.compatible_workflows:
+                raise WorkflowParamError(f"O modelo '{req.model_id}' nao aceita imagem de referencia.")
+            reference_image_name = req.reference_image
 
         params: dict[str, Any] = {
             "PROMPT": prompt,
@@ -107,6 +123,8 @@ class GenerationService:
         }
         if reference_image_name:
             params["REFERENCE_IMAGE"] = reference_image_name
+        if req.denoise is not None:
+            params["DENOISE"] = req.denoise
         params.update(lora_params)
         params.update(self.model_manager.loader_params(req.model_id))
 

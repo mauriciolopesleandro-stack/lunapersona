@@ -1,8 +1,9 @@
 import asyncio
 import uuid
 from dataclasses import asdict
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.clients.comfyui_client import ComfyUIError
@@ -35,6 +36,8 @@ class GenerateBody(BaseModel):
     seed: int | None = None
     sampler_name: str | None = None
     scheduler: str | None = None
+    reference_image: str | None = None
+    denoise: float | None = Field(default=None, ge=0.05, le=1.0)
 
 
 def _build_request(body: GenerateBody, request: Request) -> GenerationRequest:
@@ -51,6 +54,8 @@ def _build_request(body: GenerateBody, request: Request) -> GenerationRequest:
         seed=body.seed,
         sampler_name=body.sampler_name,
         scheduler=body.scheduler,
+        reference_image=body.reference_image,
+        denoise=body.denoise,
     )
 
 
@@ -73,6 +78,26 @@ def _payload(result: GenerationResponse) -> dict:
         "duration_seconds": result.duration_seconds,
         "images": [asdict(img) for img in result.images],
     }
+
+
+_REFERENCE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+@router.post("/generate/reference")
+async def upload_generation_reference(request: Request, file: UploadFile = File(...)):
+    """Recebe a foto de referencia de uma geracao e a coloca no input/ do
+    ComfyUI; devolve o nome a ser passado em reference_image."""
+    request.app.state.idle_shutdown.touch()
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in _REFERENCE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Envie uma imagem PNG, JPG ou WEBP.")
+    content = await file.read()
+    try:
+        # Nome unico: o upload do ComfyUI sobrescreve arquivos com o mesmo nome.
+        name = await request.app.state.comfyui_client.upload_image(f"ref_{uuid.uuid4().hex}{ext}", content)
+    except ComfyUIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"name": name}
 
 
 @router.post("/generate")

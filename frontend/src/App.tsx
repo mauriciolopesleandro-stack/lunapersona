@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { GenerateResponse, HealthResponse, ModelInfo, PersonaSummary, WorkflowInfo } from "./api/client";
 import {
   generateImage,
+  uploadGenerationReference,
   getHealth,
   getModels,
   getPersona,
@@ -193,7 +194,11 @@ export default function App() {
     loadConfig();
   }, []);
 
-  async function executeGenerate(body: Parameters<typeof generateImage>[0], displayPrompt: string) {
+  async function executeGenerate(
+    body: Parameters<typeof generateImage>[0],
+    displayPrompt: string,
+    referenceFile?: File
+  ) {
     setLoading(true);
     setError(null);
     setPodMessage(null);
@@ -210,6 +215,11 @@ export default function App() {
           setLoading(false);
           return;
         }
+      }
+      // A foto so pode subir com o pod ligado (vai para o ComfyUI dele); o
+      // nome devolvido fica em body, entao "Gerar novamente" reaproveita.
+      if (referenceFile) {
+        body = { ...body, reference_image: await uploadGenerationReference(referenceFile) };
       }
       setLastGenerateParams(body);
       const res = await generateImage(body);
@@ -243,6 +253,8 @@ export default function App() {
     height: number;
     steps: number;
     guidance: number;
+    referenceFile?: File;
+    denoise?: number;
   }) {
     return executeGenerate(
       {
@@ -254,8 +266,10 @@ export default function App() {
         height: params.height,
         steps: params.steps,
         guidance: params.guidance,
+        denoise: params.denoise,
       },
-      params.prompt
+      params.prompt,
+      params.referenceFile
     );
   }
 
