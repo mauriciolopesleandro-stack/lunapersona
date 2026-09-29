@@ -24,7 +24,7 @@ import { ResultPanel } from "./components/ResultPanel";
 import { SettingsPage } from "./components/SettingsPage";
 import { Sidebar, type Tab } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
-import { addHistoryEntry, getHistory, type HistoryEntry } from "./lib/history";
+import { addHistoryEntry } from "./lib/history";
 import { getSettings } from "./lib/settings";
 
 const WAKE_POLL_INTERVAL_MS = 5_000;
@@ -125,8 +125,6 @@ export default function App() {
   const [waking, setWaking] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [personaId, setPersonaId] = useState("");
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const chat = useChatSession();
   const [lastGenerateParams, setLastGenerateParams] = useState<Parameters<typeof generateImage>[0] | null>(null);
 
@@ -138,10 +136,6 @@ export default function App() {
       // ignora - preferencia nao critica
     }
   }, [theme]);
-
-  useEffect(() => {
-    setHistory(getHistory());
-  }, []);
 
   useEffect(() => {
     getSession()
@@ -224,7 +218,7 @@ export default function App() {
       const image = res.images[0];
       if (image) {
         const personaName = personas.find((p) => p.id === body.persona_id)?.name ?? null;
-        const entry = addHistoryEntry({
+        addHistoryEntry({
           prompt: displayPrompt,
           personaId: body.persona_id || null,
           personaName,
@@ -232,8 +226,6 @@ export default function App() {
           result: res,
           requestBody: body,
         });
-        setHistory(getHistory());
-        setActiveHistoryId(entry.id);
       }
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
@@ -269,18 +261,6 @@ export default function App() {
 
   function handleRegenerate() {
     if (lastGenerateParams) executeGenerate(lastGenerateParams, resultPrompt);
-  }
-
-  function handleSelectHistoryEntry(entry: HistoryEntry) {
-    setResult(entry.result);
-    setResultPrompt(entry.prompt);
-    setActiveHistoryId(entry.id);
-    setLastGenerateParams(entry.requestBody);
-    // Sem isso, o card de persona na tela de Gerar ficava com a Luna
-    // marcada mesmo depois de abrir um item do historico sem persona (ou de
-    // outra persona) - "Gerar novamente" usava o persona_id do historico,
-    // divergindo do que a tela mostrava selecionado.
-    setPersonaId(entry.requestBody.persona_id || "");
   }
 
   useEffect(() => {
@@ -351,11 +331,8 @@ export default function App() {
                 error={error}
                 loading={loading}
                 resultPrompt={resultPrompt}
-                history={history}
-                activeHistoryId={activeHistoryId}
                 onEditPrompt={setPrompt}
                 onRegenerate={handleRegenerate}
-                onSelectHistoryEntry={handleSelectHistoryEntry}
               />
             </div>
           )}

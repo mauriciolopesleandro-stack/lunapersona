@@ -1,29 +1,15 @@
 import type { GenerateResponse } from "../api/client";
-import type { HistoryEntry } from "../lib/history";
 
 interface Props {
   result: GenerateResponse | null;
   error: string | null;
   loading: boolean;
   resultPrompt: string;
-  history: HistoryEntry[];
-  activeHistoryId: string | null;
   onEditPrompt: (prompt: string) => void;
   onRegenerate: () => void;
-  onSelectHistoryEntry: (entry: HistoryEntry) => void;
 }
 
-export function ResultPanel({
-  result,
-  error,
-  loading,
-  resultPrompt,
-  history,
-  activeHistoryId,
-  onEditPrompt,
-  onRegenerate,
-  onSelectHistoryEntry,
-}: Props) {
+export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt, onRegenerate }: Props) {
   const image = result?.images[0];
 
   return (
@@ -72,31 +58,6 @@ export function ResultPanel({
           </dl>
         )}
       </div>
-
-      <div className="history-strip-header">
-        <h3>Histórico recente</h3>
-      </div>
-      {history.length === 0 ? (
-        <p className="muted small">Suas gerações aparecem aqui.</p>
-      ) : (
-        <div className="history-strip">
-          {history.slice(0, 12).map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              className={entry.id === activeHistoryId ? "history-thumb active" : "history-thumb"}
-              onClick={() => onSelectHistoryEntry(entry)}
-              title={entry.prompt}
-            >
-              <img src={entry.imageUrl} alt={entry.prompt} />
-              <div className="history-thumb-meta">
-                <strong>{entry.personaName ?? "Sem persona"}</strong>
-                <span>{new Date(entry.createdAt).toLocaleDateString("pt-BR")}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
