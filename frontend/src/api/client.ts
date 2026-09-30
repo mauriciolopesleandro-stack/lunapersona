@@ -231,40 +231,70 @@ const GENERATE_MAX_POLL_FAILURES = 5;
 
 // O proxy da RunPod corta respostas com mais de ~100 s e uma geracao numa L4
 // passa disso: inicia um job no backend e consulta ate ele terminar.
-export async function generateImage(body: GenerateRequestBody): Promise<GenerateResponse> {
+async function runJob<T>(path: string, body: unknown, maxMs: number, what: string): Promise<T> {
   const base = await apiBase();
-  const start = await fetch(`${base}/generate/jobs`, {
+  const start = await fetch(`${base}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const { job_id } = await handleResponse<{ job_id: string }>(start);
 
-  const deadline = Date.now() + GENERATE_MAX_MS;
+  const deadline = Date.now() + maxMs;
   let failures = 0;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, GENERATE_POLL_MS));
     let res: Response | null = null;
     try {
-      res = await fetch(`${base}/generate/jobs/${job_id}`);
+      res = await fetch(`${base}${path}/${job_id}`);
     } catch {
       // sem resposta: rede do celular ou proxy - tenta de novo abaixo
     }
     // 5xx aqui e o proxy da RunPod oscilando, nao o job: tambem tenta de novo.
     if (!res || res.status >= 500) {
       if (++failures >= GENERATE_MAX_POLL_FAILURES) {
-        throw new Error("Perdi a conexao com o backend durante a geracao. Tente novamente.");
+        throw new Error(`Perdi a conexao com o backend durante ${what}. Tente novamente.`);
       }
       continue;
     }
     failures = 0;
     const job = await handleResponse<
-      { status: "running" } | { status: "done"; result: GenerateResponse } | { status: "error"; detail: string }
+      { status: "running" } | { status: "done"; result: T } | { status: "error"; detail: string }
     >(res);
     if (job.status === "done") return job.result;
     if (job.status === "error") throw new Error(job.detail);
   }
-  throw new Error("A geracao passou de 15 minutos. Tente novamente.");
+  throw new Error(`Passou de ${Math.round(maxMs / 60_000)} minutos esperando ${what}. Tente novamente.`);
+}
+
+export function generateImage(body: GenerateRequestBody): Promise<GenerateResponse> {
+  return runJob<GenerateResponse>("/generate/jobs", body, GENERATE_MAX_MS, "a geracao");
+}
+
+export interface VideoRequestBody {
+  image: string;
+  image_type?: "output" | "input";
+  image_subfolder?: string;
+  prompt: string;
+  seconds: number;
+  quality: "480p" | "720p";
+  source_width?: number;
+  source_height?: number;
+}
+
+export interface VideoResponse {
+  prompt_id: string;
+  seconds: number;
+  width: number;
+  height: number;
+  duration_seconds: number;
+  videos: GenerationImage[];
+}
+
+// Cada 5 s de video levam alguns minutos (mais em 720p).
+export function animateImage(body: VideoRequestBody): Promise<VideoResponse> {
+  const perSegmentMs = (body.quality === "720p" ? 20 : 10) * 60_000;
+  return runJob<VideoResponse>("/video/jobs", body, perSegmentMs * Math.ceil(body.seconds / 5), "o video");
 }
 
 export async function getPersonas(): Promise<PersonaSummary[]> {

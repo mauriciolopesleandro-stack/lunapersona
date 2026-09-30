@@ -197,18 +197,20 @@ class ComfyUIClient:
             raise ComfyUIExecutionError(f"Resposta do ComfyUI sem prompt_id: {data}")
         return prompt_id
 
-    async def wait_for_completion(self, prompt_id: str) -> dict[str, Any]:
-        """Faz polling de /history/{prompt_id} ate a execucao terminar ou estourar timeout."""
+    async def wait_for_completion(self, prompt_id: str, timeout: float | None = None) -> dict[str, Any]:
+        """Faz polling de /history/{prompt_id} ate a execucao terminar ou estourar timeout.
+        timeout substitui o padrao (video demora bem mais que imagem)."""
         start = time.monotonic()
+        timeout = timeout or self.generation_timeout
         poll_interval = 1.5
 
         async with httpx.AsyncClient(timeout=self.connect_timeout) as client:
             while True:
                 elapsed = time.monotonic() - start
-                if elapsed > self.generation_timeout:
+                if elapsed > timeout:
                     raise ComfyUITimeoutError(
                         f"Geracao (prompt_id={prompt_id}) excedeu o timeout de "
-                        f"{self.generation_timeout}s."
+                        f"{timeout}s."
                     )
 
                 try:
@@ -243,7 +245,8 @@ class ComfyUIClient:
         images: list[GenerationOutputImage] = []
         outputs = history_entry.get("outputs", {})
         for node_output in outputs.values():
-            for img in node_output.get("images", []):
+            # SaveVideo devolve o mp4 em "images" ou "videos", conforme a versao.
+            for img in [*node_output.get("images", []), *node_output.get("videos", [])]:
                 filename = img.get("filename", "")
                 subfolder = img.get("subfolder", "")
                 folder_type = img.get("type", "output")

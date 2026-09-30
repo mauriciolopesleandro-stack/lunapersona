@@ -9,9 +9,10 @@ from app.config import get_settings
 from app.idle_shutdown import IdleShutdownTracker
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
-from app.routes import chat, generate, health, models, personas, workflows
+from app.routes import chat, generate, health, models, personas, video, workflows
 from app.services.chat_service import ChatService
 from app.services.generation_service import GenerationService
+from app.services.video_service import VideoService
 from app.workflow_manager.manager import WorkflowManager
 
 settings = get_settings()
@@ -46,6 +47,10 @@ app.state.generation_service = GenerationService(
     persona_manager=app.state.persona_manager,
     llm_client=app.state.llm_client,
 )
+app.state.video_service = VideoService(
+    comfyui_client=app.state.comfyui_client,
+    llm_client=app.state.llm_client,
+)
 app.state.chat_service = ChatService(
     llm_client=app.state.llm_client,
     persona_manager=app.state.persona_manager,
@@ -69,6 +74,7 @@ app.include_router(health.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
 app.include_router(workflows.router, prefix="/api")
 app.include_router(generate.router, prefix="/api")
+app.include_router(video.router, prefix="/api")
 app.include_router(personas.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 

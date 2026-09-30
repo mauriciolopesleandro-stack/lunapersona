@@ -1,4 +1,5 @@
 import type { GenerateResponse } from "../api/client";
+import { AnimatePanel } from "./AnimatePanel";
 
 interface Props {
   result: GenerateResponse | null;
@@ -58,6 +59,7 @@ export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt
           </dl>
         )}
       </div>
+      {image && !loading && <AnimatePanel image={image} />}
     </div>
   );
 }

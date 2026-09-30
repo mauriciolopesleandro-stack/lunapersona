@@ -1,0 +1,181 @@
+"""Anima uma imagem ja gerada da persona (Wan 2.2 Image-to-Video 14B com as
+LoRAs LightX2V de 4 passos). Os modelos sao instalados por
+scripts/setup_wan.sh.
+
+O Wan gera ~5 s por vez (81 quadros a 16 fps). Para videos mais longos o
+grafo encadeia trechos: o ultimo quadro de um trecho e a foto inicial do
+proximo, e os quadros de todos viram um unico mp4. Como tudo parte da foto
+da persona, rosto e corpo continuam os dela sem LoRA de video.
+
+O grafo e montado aqui (e nao num JSON de workflows/) porque o numero de
+trechos varia com a duracao pedida.
+"""
+from __future__ import annotations
+
+import time
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+from app.clients.comfyui_client import ComfyUIClient, GenerationOutputImage
+from app.clients.llm_client import OllamaClient
+from app.services.prompt_translator import to_english
+
+HIGH_NOISE_MODEL = "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
+LOW_NOISE_MODEL = "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
+HIGH_NOISE_LORA = "wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors"
+LOW_NOISE_LORA = "wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors"
+TEXT_ENCODER = "umt5_xxl_fp8_e4m3fn_scaled.safetensors"
+VAE = "wan_2.1_vae.safetensors"
+
+FPS = 16
+SEGMENT_FRAMES = 81  # ~5 s; o Wan pede 4n+1 quadros
+SEGMENT_SECONDS = 5
+MAX_SECONDS = 20
+STEPS = 4  # LightX2V: 2 passos no modelo de ruido alto, 2 no de ruido baixo
+# Area alvo de cada qualidade (a proporcao vem da foto).
+QUALITY_PIXELS = {"480p": 480 * 832, "720p": 720 * 1280}
+# Tempo maximo por trecho de 5 s antes de desistir.
+SEGMENT_TIMEOUT = {"480p": 600.0, "720p": 1200.0}
+
+REALISM_SUFFIX = "realistic video, natural smooth motion, consistent face and body, detailed skin"
+NEGATIVE_PROMPT = (
+    "blurry, low quality, static image, frozen, distorted face, morphing face, deformed, bad anatomy, "
+    "extra limbs, extra legs, extra arms, extra fingers, fused limbs, flickering, jittery motion, "
+    "watermark, text, subtitles, logo, cartoon, cgi, 3d render, oversaturated"
+)
+
+
+@dataclass
+class VideoRequest:
+    image: str  # nome do arquivo no ComfyUI
+    image_type: str  # "output" (imagem gerada) ou "input" (enviada)
+    prompt: str
+    seconds: int = 5
+    quality: str = "480p"
+    source_width: int | None = None
+    source_height: int | None = None
+    image_subfolder: str = ""
+    seed: int | None = None
+
+
+@dataclass
+class VideoResponse:
+    prompt_id: str
+    seconds: int
+    width: int
+    height: int
+    videos: list[GenerationOutputImage]
+    duration_seconds: float
+
+
+def video_size(quality: str, width: int | None, height: int | None) -> tuple[int, int]:
+    """Tamanho do video: a proporcao da foto na area da qualidade, multiplo de 16."""
+    area = QUALITY_PIXELS.get(quality, QUALITY_PIXELS["480p"])
+    if not width or not height:
+        width, height = 9, 16
+    scale = (area / (width * height)) ** 0.5
+    return max(256, round(width * scale / 16) * 16), max(256, round(height * scale / 16) * 16)
+
+
+class VideoService:
+    def __init__(self, comfyui_client: ComfyUIClient, llm_client: OllamaClient | None = None) -> None:
+        self.comfyui_client = comfyui_client
+        self.llm_client = llm_client
+
+    def build_graph(
+        self, req: VideoRequest, prompt: str, width: int, height: int, seed: int, segments: int
+    ) -> dict[str, Any]:
+        image = f"{req.image_subfolder}/{req.image}" if req.image_subfolder else req.image
+        g: dict[str, Any] = {
+            "1": {"class_type": "UNETLoader", "inputs": {"unet_name": HIGH_NOISE_MODEL, "weight_dtype": "default"}},
+            "2": {"class_type": "UNETLoader", "inputs": {"unet_name": LOW_NOISE_MODEL, "weight_dtype": "default"}},
+            "3": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["1", 0], "lora_name": HIGH_NOISE_LORA, "strength_model": 1.0}},
+            "4": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["2", 0], "lora_name": LOW_NOISE_LORA, "strength_model": 1.0}},
+            "5": {"class_type": "ModelSamplingSD3", "inputs": {"model": ["3", 0], "shift": 5.0}},
+            "6": {"class_type": "ModelSamplingSD3", "inputs": {"model": ["4", 0], "shift": 5.0}},
+            "7": {"class_type": "CLIPLoader", "inputs": {"clip_name": TEXT_ENCODER, "type": "wan", "device": "default"}},
+            "8": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["7", 0]}},
+            "9": {"class_type": "CLIPTextEncode", "inputs": {"text": NEGATIVE_PROMPT, "clip": ["7", 0]}},
+            "10": {"class_type": "VAELoader", "inputs": {"vae_name": VAE}},
+            # "nome [output]" faz o LoadImage ler da pasta output/ (imagem gerada).
+            "11": {"class_type": "LoadImage", "inputs": {"image": f"{image} [{req.image_type}]"}},
+            "12": {
+                "class_type": "ImageScale",
+                "inputs": {"image": ["11", 0], "upscale_method": "lanczos", "width": width, "height": height, "crop": "center"},
+            },
+        }
+        next_id = 13
+
+        def add(class_type: str, inputs: dict[str, Any]) -> str:
+            nonlocal next_id
+            node_id = str(next_id)
+            next_id += 1
+            g[node_id] = {"class_type": class_type, "inputs": inputs}
+            return node_id
+
+        start_image = ["12", 0]
+        frames: list[Any] | None = None
+        for k in range(segments):
+            i2v = add(
+                "WanImageToVideo",
+                {
+                    "positive": ["8", 0], "negative": ["9", 0], "vae": ["10", 0], "start_image": start_image,
+                    "width": width, "height": height, "length": SEGMENT_FRAMES, "batch_size": 1,
+                },
+            )
+            common = {
+                "steps": STEPS, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple",
+                "positive": [i2v, 0], "negative": [i2v, 1],
+            }
+            high = add(
+                "KSamplerAdvanced",
+                {
+                    **common, "model": ["5", 0], "add_noise": "enable", "noise_seed": seed + k,
+                    "latent_image": [i2v, 2], "start_at_step": 0, "end_at_step": STEPS // 2,
+                    "return_with_leftover_noise": "enable",
+                },
+            )
+            low = add(
+                "KSamplerAdvanced",
+                {
+                    **common, "model": ["6", 0], "add_noise": "disable", "noise_seed": 0,
+                    "latent_image": [high, 0], "start_at_step": STEPS // 2, "end_at_step": 10000,
+                    "return_with_leftover_noise": "disable",
+                },
+            )
+            decoded = add("VAEDecode", {"samples": [low, 0], "vae": ["10", 0]})
+            if frames is None:
+                frames = [decoded, 0]
+            else:
+                # O 1o quadro deste trecho repete o ultimo do anterior.
+                trimmed = add("ImageFromBatch", {"image": [decoded, 0], "batch_index": 1, "length": SEGMENT_FRAMES - 1})
+                frames = [add("ImageBatch", {"image1": frames, "image2": [trimmed, 0]}), 0]
+            if k < segments - 1:
+                last = add("ImageFromBatch", {"image": [decoded, 0], "batch_index": SEGMENT_FRAMES - 1, "length": 1})
+                start_image = [last, 0]
+
+        video = add("CreateVideo", {"images": frames, "fps": float(FPS)})
+        add("SaveVideo", {"video": [video, 0], "filename_prefix": "video/luna_video", "format": "mp4", "codec": "auto"})
+        return g
+
+    async def generate(self, req: VideoRequest) -> VideoResponse:
+        seconds = max(SEGMENT_SECONDS, min(MAX_SECONDS, req.seconds // SEGMENT_SECONDS * SEGMENT_SECONDS))
+        width, height = video_size(req.quality, req.source_width, req.source_height)
+        seed = req.seed if req.seed is not None else uuid.uuid4().int % (2**32)
+        motion = await to_english(self.llm_client, req.prompt) or "she moves naturally and smiles"
+        prompt = f"{motion}, {REALISM_SUFFIX}"
+
+        graph = self.build_graph(req, prompt, width, height, seed, seconds // SEGMENT_SECONDS)
+        start = time.monotonic()
+        prompt_id = await self.comfyui_client.queue_prompt(graph)
+        timeout = SEGMENT_TIMEOUT.get(req.quality, 600.0) * (seconds // SEGMENT_SECONDS)
+        entry = await self.comfyui_client.wait_for_completion(prompt_id, timeout=timeout)
+        return VideoResponse(
+            prompt_id=prompt_id,
+            seconds=seconds,
+            width=width,
+            height=height,
+            videos=self.comfyui_client.extract_images(entry),
+            duration_seconds=time.monotonic() - start,
+        )
