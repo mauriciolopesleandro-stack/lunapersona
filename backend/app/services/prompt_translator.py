@@ -37,7 +37,8 @@ log = logging.getLogger(__name__)
 _WORD = re.compile(r"[a-zA-ZÀ-ÿ]+")
 # Sem a GPU presa: a imagem e gerada logo em seguida e precisa da VRAM.
 _KEEP_ALIVE = "0"
-_TIMEOUT = 60.0
+# O 1o uso num pod novo carrega o modelo do volume de rede (passa de 1 min).
+_TIMEOUT = 120.0
 
 
 def looks_portuguese(text: str) -> bool:
