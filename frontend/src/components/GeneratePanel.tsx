@@ -42,6 +42,9 @@ export interface ReferenceImage {
 
 // Tamanho de saida com a proporcao da foto, ~1 megapixel e multiplo de 16
 // (o Chroma trabalha em blocos de 16 px).
+// Abaixo disso (ex.: print de video 854x480) a geracao herda o borrado da foto.
+const REFERENCE_MIN_PIXELS = 700_000;
+
 function referenceOutputSize(width: number, height: number): { width: number; height: number } {
   const scale = Math.sqrt((1024 * 1024) / (width * height));
   const snap = (v: number) => Math.max(512, Math.min(1536, Math.round((v * scale) / 16) * 16));
@@ -229,6 +232,12 @@ export function GeneratePanel({
         </label>
       )}
       {referenceError && <p className="error small">{referenceError}</p>}
+      {reference && reference.width * reference.height < REFERENCE_MIN_PIXELS && (
+        <p className="warning small">
+          Foto pequena ({reference.width}×{reference.height}): o borrado dela passa para o resultado. Prefira uma foto
+          com pelo menos 1000 px no lado menor (print de vídeo costuma sair ruim).
+        </p>
+      )}
 
       <div className="step-label">3. Descreva o que deseja{reference ? " (opcional)" : ""}</div>
       <textarea

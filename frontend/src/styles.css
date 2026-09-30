@@ -480,6 +480,17 @@ button[type="submit"].big {
   font-size: 12px;
 }
 
+.warning {
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.warning.small {
+  font-size: 12px;
+}
+
 .muted {
   color: var(--text-faint);
 }
