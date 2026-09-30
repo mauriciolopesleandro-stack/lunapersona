@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
+import { externalApiBase } from "./_external.js";
 import { NoGpuAvailableError, RunpodConfigError, wakeStudio } from "./_runpod.js";
 
 // POST /api/runpod-wake
@@ -18,6 +19,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (!isAuthenticated(req)) {
     res.statusCode = 401;
     res.end(JSON.stringify({ error: "Sessao expirada. Entre de novo." }));
+    return;
+  }
+
+  if (externalApiBase()) {
+    // Servidor fixo: nao ha o que ligar (se estiver fora do ar, o status avisa).
+    res.statusCode = 200;
+    res.end(JSON.stringify({ alreadyRunning: true, action: "external", podId: null, dataCenterId: null, attempts: [] }));
     return;
   }
 

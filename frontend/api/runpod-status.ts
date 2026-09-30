@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
+import { externalApiBase } from "./_external.js";
 import {
   enforceSingleRunningPod,
   getBalance,
@@ -32,6 +33,31 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (!isAuthenticated(req)) {
     res.statusCode = 401;
     res.end(JSON.stringify({ error: "Sessao expirada. Entre de novo." }));
+    return;
+  }
+
+  const external = externalApiBase();
+  if (external) {
+    // Servidor fixo (PC proprio): sempre "ligado"; pronto = /health responde.
+    const ready = await backendIsReady(external);
+    res.statusCode = 200;
+    res.end(
+      JSON.stringify({
+        running: ready,
+        backendReady: ready,
+        desiredStatus: ready ? "RUNNING" : "EXITED",
+        podId: null,
+        dataCenterId: "servidor proprio",
+        gpu: null,
+        apiBase: external,
+        costPerHr: 0,
+        uptimeSeconds: 0,
+        liveSpend: 0,
+        balance: await getBalance().catch(() => 0),
+        volumeSync: false,
+        stoppedExtraPods: [],
+      })
+    );
     return;
   }
 

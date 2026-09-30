@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
+import { externalApiBase } from "./_external.js";
 import { listStudioPods, RunpodConfigError, stopPod } from "./_runpod.js";
 
 // POST /api/runpod-stop
@@ -16,6 +17,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (!isAuthenticated(req)) {
     res.statusCode = 401;
     res.end(JSON.stringify({ error: "Sessao expirada. Entre de novo." }));
+    return;
+  }
+
+  if (externalApiBase()) {
+    // O PC proprio e desligado por quem esta nele, nao pelo site.
+    res.statusCode = 200;
+    res.end(JSON.stringify({ alreadyStopped: true, external: true }));
     return;
   }
 
