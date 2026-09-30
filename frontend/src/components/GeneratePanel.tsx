@@ -103,7 +103,8 @@ export function GeneratePanel({
   const [referenceError, setReferenceError] = useState<string | null>(null);
   // 85%: abaixo disso as cores grandes da foto (cabelo, olhos) costumam
   // continuar as da pessoa original em vez de virar as da persona.
-  const [denoise, setDenoise] = useState(0.85);
+  // 0.8: ainda troca cabelo/corpo pela persona, mas guarda mais da pose e da roupa.
+  const [denoise, setDenoise] = useState(0.8);
 
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
   const style = STYLES.find((s) => s.id === styleId) ?? STYLES[0];
@@ -249,7 +250,7 @@ export function GeneratePanel({
         onChange={(e) => onPromptChange(e.target.value)}
         placeholder={
           reference
-            ? "Opcional: o que mudar na foto. Ex: wearing a black dress, smiling at the camera."
+            ? "Descreva a pose e a roupa da foto com detalhes (a descrição automática não vê mãos e acabamentos). Ex: as duas mãos puxando as alças laterais da calcinha, sutiã de renda marrom com borda preta"
             : "Ex: Luna sentada em uma cafeteria tomando um café e olhando para a câmera, sorrindo de forma natural."
         }
         required={!reference}
