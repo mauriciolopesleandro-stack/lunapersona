@@ -29,6 +29,12 @@ class VideoBody(BaseModel):
     source_width: int | None = None
     source_height: int | None = None
     seed: int | None = None
+    # Continuar um video anterior (historia em partes).
+    continue_video: str = ""
+    continue_last_frame: str = ""
+    continue_width: int | None = None
+    continue_height: int | None = None
+    continue_seconds: int = 0
 
 
 class TalkBody(BaseModel):
@@ -55,6 +61,7 @@ async def _run_job(job_id: str, service, req) -> None:
             "height": result.height,
             "duration_seconds": result.duration_seconds,
             "videos": [asdict(v) for v in result.videos],
+            "last_frame": asdict(result.last_frame) if result.last_frame else None,
         }
         job["status"] = "done"
     except Exception as exc:

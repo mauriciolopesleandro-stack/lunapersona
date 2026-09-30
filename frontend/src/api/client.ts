@@ -280,6 +280,12 @@ export interface VideoRequestBody {
   quality: "480p" | "720p";
   source_width?: number;
   source_height?: number;
+  // Continuar um video anterior: o novo trecho parte do ultimo quadro dele.
+  continue_video?: string;
+  continue_last_frame?: string;
+  continue_width?: number;
+  continue_height?: number;
+  continue_seconds?: number;
 }
 
 export interface VideoResponse {
@@ -289,6 +295,7 @@ export interface VideoResponse {
   height: number;
   duration_seconds: number;
   videos: GenerationImage[];
+  last_frame?: GenerationImage | null;
 }
 
 export interface TalkRequestBody {

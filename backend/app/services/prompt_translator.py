@@ -34,6 +34,7 @@ _PT_WORDS = {
     "sol", "noite", "dia", "casa", "quarto", "cama", "rua", "olhando", "vermelho", "preto", "branco", "azul",
 }
 log = logging.getLogger(__name__)
+_PT_ENDINGS = re.compile(r"(?:[a-z]{2,}(?:ando|endo|indo)|cao|coes|inha|inho|mente)$")
 _WORD = re.compile(r"[a-zA-ZÀ-ÿ]+")
 # Sem a GPU presa: a imagem e gerada logo em seguida e precisa da VRAM.
 _KEEP_ALIVE = "0"
@@ -45,7 +46,11 @@ def looks_portuguese(text: str) -> bool:
     if _ACCENTS.search(text):
         return True
     words = [w.lower() for w in _WORD.findall(text)]
-    return sum(w in _PT_WORDS for w in words) >= 2
+    if sum(w in _PT_WORDS for w in words) >= 2:
+        return True
+    # Texto curto sem acento ("sorrindo", "mexendo no cabelo"): gerundio e
+    # terminacoes tipicas do portugues.
+    return any(_PT_ENDINGS.search(w) for w in words)
 
 
 async def to_english(llm: OllamaClient | None, text: str) -> str:

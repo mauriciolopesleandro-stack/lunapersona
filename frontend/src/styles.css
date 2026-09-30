@@ -1326,3 +1326,16 @@ button.result-download {
   color: var(--text);
   background: var(--bg-panel-2);
 }
+
+.animate-continue {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.animate-continue h4 {
+  margin: 0;
+  font-size: 14px;
+}

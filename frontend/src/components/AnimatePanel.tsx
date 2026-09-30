@@ -28,6 +28,8 @@ export function AnimatePanel({ image, personaId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [video, setVideo] = useState<VideoResponse | null>(null);
+  const [nextMotion, setNextMotion] = useState("");
+  const [nextSeconds, setNextSeconds] = useState(5);
 
   useEffect(() => {
     setVideo(loadLastVideo(image.url));
@@ -57,6 +59,34 @@ export function AnimatePanel({ image, personaId }: Props) {
         : await animateImage({ ...source, prompt: motion.trim(), seconds });
       setVideo(res);
       saveLastVideo(image.url, res);
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Continuar a historia: o novo trecho parte do ultimo quadro (PNG) e o
+  // resultado e o video anterior + o novo, num mp4 so.
+  async function handleContinue() {
+    if (!video?.videos[0] || !video.last_frame) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await animateImage({
+        image: image.filename,
+        prompt: nextMotion.trim(),
+        seconds: nextSeconds,
+        quality,
+        continue_video: video.videos[0].filename,
+        continue_last_frame: video.last_frame.filename,
+        continue_width: video.width,
+        continue_height: video.height,
+        continue_seconds: video.seconds,
+      });
+      setVideo(res);
+      saveLastVideo(image.url, res);
+      setNextMotion("");
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -144,6 +174,32 @@ export function AnimatePanel({ image, personaId }: Props) {
           <video src={clip.url} controls autoPlay loop playsInline />
           <button type="button" className="result-download" onClick={() => downloadFile(clip.url, clip.filename)}>
             ⬇ Baixar vídeo
+          </button>
+        </div>
+      )}
+      {clip && video?.last_frame && (
+        <div className="animate-continue">
+          <h4>➕ Continuar a história ({video.seconds} s até agora)</h4>
+          <textarea
+            rows={2}
+            value={nextMotion}
+            onChange={(e) => setNextMotion(e.target.value)}
+            placeholder="O que acontece depois. Ex: ela termina o sorvete, joga o guardanapo no lixo e sai andando"
+          />
+          <div className="animate-options">
+            <label>
+              Mais
+              <select value={nextSeconds} onChange={(e) => setNextSeconds(Number(e.target.value))}>
+                {DURATIONS.map((d) => (
+                  <option key={d} value={d}>
+                    {d} segundos
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button type="button" className="primary" onClick={handleContinue} disabled={loading || !nextMotion.trim()}>
+            {loading ? "Continuando..." : "Continuar vídeo"}
           </button>
         </div>
       )}

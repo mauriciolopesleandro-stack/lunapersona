@@ -9,6 +9,10 @@ da persona, rosto e corpo continuam os dela sem LoRA de video.
 
 O grafo e montado aqui (e nao num JSON de workflows/) porque o numero de
 trechos varia com a duracao pedida.
+
+Continuar um video (historias maiores que 20 s): o novo trecho parte do
+ultimo quadro salvo em PNG (sem a compressao do mp4) e os quadros do video
+anterior entram antes dos novos, num mp4 unico.
 """
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ from typing import Any
 from app.clients.comfyui_client import ComfyUIClient, GenerationOutputImage
 from app.clients.llm_client import OllamaClient
 from app.services.prompt_translator import to_english
+from app.workflow_manager.manager import WorkflowParamError
 
 HIGH_NOISE_MODEL = "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
 LOW_NOISE_MODEL = "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors"
@@ -27,6 +32,7 @@ HIGH_NOISE_LORA = "wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors"
 LOW_NOISE_LORA = "wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors"
 TEXT_ENCODER = "umt5_xxl_fp8_e4m3fn_scaled.safetensors"
 VAE = "wan_2.1_vae.safetensors"
+VIDEO_SUBFOLDER = "video"
 
 FPS = 16
 SEGMENT_FRAMES = 81  # ~5 s; o Wan pede 4n+1 quadros
@@ -57,6 +63,12 @@ class VideoRequest:
     source_height: int | None = None
     image_subfolder: str = ""
     seed: int | None = None
+    # Continuar: mp4 e ultimo quadro (PNG) do video anterior, em output/video.
+    continue_video: str = ""
+    continue_last_frame: str = ""
+    continue_width: int | None = None
+    continue_height: int | None = None
+    continue_seconds: int = 0
 
 
 @dataclass
@@ -67,6 +79,8 @@ class VideoResponse:
     height: int
     videos: list[GenerationOutputImage]
     duration_seconds: float
+    # Ultimo quadro em PNG: ponto de partida de um "Continuar".
+    last_frame: GenerationOutputImage | None = None
 
 
 def video_size(quality: str, width: int | None, height: int | None) -> tuple[int, int]:
@@ -84,9 +98,20 @@ class VideoService:
         self.llm_client = llm_client
 
     def build_graph(
-        self, req: VideoRequest, prompt: str, width: int, height: int, seed: int, segments: int
+        self,
+        req: VideoRequest,
+        prompt: str,
+        width: int,
+        height: int,
+        seed: int,
+        segments: int,
+        previous_video: str = "",
     ) -> dict[str, Any]:
-        image = f"{req.image_subfolder}/{req.image}" if req.image_subfolder else req.image
+        if req.continue_last_frame:
+            image, image_type = f"{VIDEO_SUBFOLDER}/{req.continue_last_frame}", "output"
+        else:
+            image = f"{req.image_subfolder}/{req.image}" if req.image_subfolder else req.image
+            image_type = req.image_type
         g: dict[str, Any] = {
             "1": {"class_type": "UNETLoader", "inputs": {"unet_name": HIGH_NOISE_MODEL, "weight_dtype": "default"}},
             "2": {"class_type": "UNETLoader", "inputs": {"unet_name": LOW_NOISE_MODEL, "weight_dtype": "default"}},
@@ -99,7 +124,7 @@ class VideoService:
             "9": {"class_type": "CLIPTextEncode", "inputs": {"text": NEGATIVE_PROMPT, "clip": ["7", 0]}},
             "10": {"class_type": "VAELoader", "inputs": {"vae_name": VAE}},
             # "nome [output]" faz o LoadImage ler da pasta output/ (imagem gerada).
-            "11": {"class_type": "LoadImage", "inputs": {"image": f"{image} [{req.image_type}]"}},
+            "11": {"class_type": "LoadImage", "inputs": {"image": f"{image} [{image_type}]"}},
             "12": {
                 "class_type": "ImageScale",
                 "inputs": {"image": ["11", 0], "upscale_method": "lanczos", "width": width, "height": height, "crop": "center"},
@@ -151,31 +176,51 @@ class VideoService:
                 # O 1o quadro deste trecho repete o ultimo do anterior.
                 trimmed = add("ImageFromBatch", {"image": [decoded, 0], "batch_index": 1, "length": SEGMENT_FRAMES - 1})
                 frames = [add("ImageBatch", {"image1": frames, "image2": [trimmed, 0]}), 0]
-            if k < segments - 1:
-                last = add("ImageFromBatch", {"image": [decoded, 0], "batch_index": SEGMENT_FRAMES - 1, "length": 1})
-                start_image = [last, 0]
+            last = add("ImageFromBatch", {"image": [decoded, 0], "batch_index": SEGMENT_FRAMES - 1, "length": 1})
+            start_image = [last, 0]
+        # PNG do ultimo quadro para um proximo "Continuar".
+        add("SaveImage", {"images": start_image, "filename_prefix": f"{VIDEO_SUBFOLDER}/luna_video_fim"})
+
+        if previous_video:
+            # Video anterior + os novos quadros (o 1o novo repete o ultimo antigo).
+            loaded = add("LoadVideo", {"file": previous_video})
+            parts = add("GetVideoComponents", {"video": [loaded, 0]})
+            new = add("ImageFromBatch", {"image": frames, "batch_index": 1, "length": 100000})
+            frames = [add("ImageBatch", {"image1": [parts, 0], "image2": [new, 0]}), 0]
 
         video = add("CreateVideo", {"images": frames, "fps": float(FPS)})
-        add("SaveVideo", {"video": [video, 0], "filename_prefix": "video/luna_video", "format": "mp4", "codec": "auto"})
+        add("SaveVideo", {"video": [video, 0], "filename_prefix": f"{VIDEO_SUBFOLDER}/luna_video", "format": "mp4", "codec": "auto"})
         return g
 
     async def generate(self, req: VideoRequest) -> VideoResponse:
         seconds = max(SEGMENT_SECONDS, min(MAX_SECONDS, req.seconds // SEGMENT_SECONDS * SEGMENT_SECONDS))
         width, height = video_size(req.quality, req.source_width, req.source_height)
+        previous_video = ""
+        if req.continue_video:
+            if not req.continue_last_frame:
+                raise WorkflowParamError("Esse video nao tem o ultimo quadro salvo; gere um video novo para poder continuar.")
+            # Mesmo tamanho do anterior (os quadros sao emendados).
+            width = req.continue_width or width
+            height = req.continue_height or height
+            # O LoadVideo so le da pasta input/: copia o mp4 anterior para la.
+            content = await self.comfyui_client.download_file(req.continue_video, VIDEO_SUBFOLDER, "output")
+            previous_video = await self.comfyui_client.upload_image(f"continuar_{uuid.uuid4().hex[:10]}.mp4", content)
         seed = req.seed if req.seed is not None else uuid.uuid4().int % (2**32)
         motion = await to_english(self.llm_client, req.prompt) or "she moves naturally and smiles"
         prompt = f"{motion}, {REALISM_SUFFIX}"
 
-        graph = self.build_graph(req, prompt, width, height, seed, seconds // SEGMENT_SECONDS)
+        graph = self.build_graph(req, prompt, width, height, seed, seconds // SEGMENT_SECONDS, previous_video)
         start = time.monotonic()
         prompt_id = await self.comfyui_client.queue_prompt(graph)
         timeout = SEGMENT_TIMEOUT.get(req.quality, 600.0) * (seconds // SEGMENT_SECONDS)
         entry = await self.comfyui_client.wait_for_completion(prompt_id, timeout=timeout)
+        outputs = self.comfyui_client.extract_images(entry)
         return VideoResponse(
             prompt_id=prompt_id,
-            seconds=seconds,
+            seconds=req.continue_seconds + seconds if previous_video else seconds,
             width=width,
             height=height,
-            videos=self.comfyui_client.extract_images(entry),
+            videos=[o for o in outputs if o.filename.endswith(".mp4")],
             duration_seconds=time.monotonic() - start,
+            last_frame=next((o for o in outputs if o.filename.endswith(".png")), None),
         )
