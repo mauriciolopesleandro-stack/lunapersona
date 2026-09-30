@@ -48,7 +48,9 @@ REALISM_SUFFIX = "realistic video, natural smooth motion, consistent face and bo
 NEGATIVE_PROMPT = (
     "blurry, low quality, static image, frozen, distorted face, morphing face, deformed, bad anatomy, "
     "extra limbs, extra legs, extra arms, extra fingers, fused limbs, flickering, jittery motion, "
-    "watermark, text, subtitles, logo, cartoon, cgi, 3d render, oversaturated"
+    "watermark, text, subtitles, logo, cartoon, cgi, 3d render, oversaturated, "
+    # Objetos na mao (bafometro, sorvete, celular) deformavam no meio do video.
+    "morphing objects, melting objects, object changing shape, object disappearing, duplicate objects, deformed hands"
 )
 
 
