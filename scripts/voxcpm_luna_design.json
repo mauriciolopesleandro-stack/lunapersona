@@ -1,0 +1,20 @@
+[
+  {
+    "text": "Oi, eu sou a Luna! Que bom te ver por aqui. Hoje eu quero te mostrar um lugar incrível, vem comigo!",
+    "description": "A young Brazilian woman in her mid-twenties, native Brazilian Portuguese speaker from São Paulo, warm and slightly husky voice, relaxed and confident, smiling while talking, natural conversational pace",
+    "seed": 11,
+    "out": "/workspace/runpod-slim/ComfyUI/output/voice/voxcpm_luna_1.wav"
+  },
+  {
+    "text": "Oi, eu sou a Luna! Que bom te ver por aqui. Hoje eu quero te mostrar um lugar incrível, vem comigo!",
+    "description": "A young Brazilian woman in her mid-twenties, native Brazilian Portuguese speaker from São Paulo, warm and slightly husky voice, relaxed and confident, smiling while talking, natural conversational pace",
+    "seed": 22,
+    "out": "/workspace/runpod-slim/ComfyUI/output/voice/voxcpm_luna_2.wav"
+  },
+  {
+    "text": "Oi, eu sou a Luna! Que bom te ver por aqui. Hoje eu quero te mostrar um lugar incrível, vem comigo!",
+    "description": "Jovem mulher brasileira de 25 anos, sotaque paulistano natural, voz suave e um pouco rouca, descontraída e confiante, falando sorrindo, como num vídeo de Instagram",
+    "seed": 33,
+    "out": "/workspace/runpod-slim/ComfyUI/output/voice/voxcpm_luna_3.wav"
+  }
+]
