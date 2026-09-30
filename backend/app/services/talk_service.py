@@ -71,7 +71,7 @@ class TalkService:
         self.llm_client = llm_client
 
     def build_graph(
-        self, image: str, audio: str, prompt: str, width: int, height: int, chunks: int, seed: int
+        self, image: str, audio: str, prompt: str, width: int, height: int, chunks: int, seed: int, frames: int
     ) -> dict[str, Any]:
         g: dict[str, Any] = {
             "1": {"class_type": "UNETLoader", "inputs": {"unet_name": S2V_MODEL, "weight_dtype": "default"}},
@@ -130,8 +130,9 @@ class TalkService:
         first = add("LatentCut", {"samples": latent, "dim": "t", "index": 0, "amount": 1})
         doubled = add("LatentConcat", {"samples1": [first, 0], "samples2": latent, "dim": "t"})
         decoded = add("VAEDecode", {"samples": [doubled, 0], "vae": ["7", 0]})
-        frames = add("ImageFromBatch", {"image": [decoded, 0], "batch_index": chunks, "length": 4096})
-        video = add("CreateVideo", {"images": [frames, 0], "fps": float(FPS), "audio": ["9", 0]})
+        # Corta no tamanho da fala: o ultimo trecho sempre fecha 77 quadros.
+        clip = add("ImageFromBatch", {"image": [decoded, 0], "batch_index": chunks, "length": frames})
+        video = add("CreateVideo", {"images": [clip, 0], "fps": float(FPS), "audio": ["9", 0]})
         add("SaveVideo", {"video": [video, 0], "filename_prefix": "video/luna_fala", "format": "mp4", "codec": "auto"})
         return g
 
@@ -152,7 +153,8 @@ class TalkService:
         image = f"{req.image_subfolder}/{req.image}" if req.image_subfolder else req.image
         seed = req.seed if req.seed is not None else uuid.uuid4().int % (2**32)
         graph = self.build_graph(
-            f"{image} [{req.image_type}]", f"{SUBFOLDER}/{audio_file} [output]", prompt, width, height, chunks, seed
+            f"{image} [{req.image_type}]", f"{SUBFOLDER}/{audio_file} [output]", prompt, width, height, chunks, seed,
+            math.ceil(seconds * FPS) + FPS // 2,
         )
         prompt_id = await self.comfyui_client.queue_prompt(graph)
         entry = await self.comfyui_client.wait_for_completion(
