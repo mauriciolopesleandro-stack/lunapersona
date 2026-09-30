@@ -246,6 +246,7 @@ export default function App() {
 
   function runGenerate(params: {
     prompt: string;
+    displayPrompt: string;
     modelId: string;
     workflowId: string;
     personaId: string;
@@ -268,7 +269,7 @@ export default function App() {
         guidance: params.guidance,
         denoise: params.denoise,
       },
-      params.prompt,
+      params.displayPrompt,
       params.referenceFile
     );
   }

@@ -6,7 +6,7 @@
     "compatible_models": ["chroma1-hd-fp8"],
     "required_params": ["PROMPT"],
     "optional_params": {
-      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, watermark, signature, text",
+      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, extra legs, extra limbs, duplicated legs, three legs, extra arms, extra hands, extra feet, missing limbs, fused limbs, malformed limbs, mutated body, watermark, signature, text",
       "WIDTH": 1024,
       "HEIGHT": 1024,
       "STEPS": 26,

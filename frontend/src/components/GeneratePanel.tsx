@@ -66,6 +66,8 @@ interface Props {
   chat: ChatSession;
   onSubmit: (params: {
     prompt: string;
+    // So o texto digitado (sem ambiente/estilo): e o que volta ao editar.
+    displayPrompt: string;
     modelId: string;
     workflowId: string;
     personaId: string;
@@ -137,6 +139,7 @@ export function GeneratePanel({
     const finalPrompt = `${basePrompt}${ambiente.trim() ? `. Ambiente: ${ambiente.trim()}` : ""}${style.suffix}`;
     onSubmit({
       prompt: finalPrompt,
+      displayPrompt: basePrompt,
       // Ignora modelo/workflow salvo no navegador que nao existe mais no
       // backend (ex: FLUX Kontext depois da troca para o Chroma).
       modelId: models.some((m) => m.id === settings.modelId) ? settings.modelId : models[0]?.id,
