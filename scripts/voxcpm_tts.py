@@ -16,6 +16,7 @@ import os
 import sys
 
 import soundfile as sf
+import torch
 from voxcpm import VoxCPM
 
 MODEL_DIR = os.environ.get("VOXCPM_MODEL", "/root/voxcpm/VoxCPM2")
@@ -30,8 +31,9 @@ def main() -> int:
         kwargs = {
             "cfg_value": float(job.get("cfg", 2.0)),
             "inference_timesteps": int(job.get("steps", 10)),
-            "seed": int(job.get("seed", 0)),
         }
+        # A versao do pip nao aceita seed em generate(): fixa o gerador global.
+        torch.manual_seed(int(job.get("seed", 0)))
         if job.get("ref_wav"):
             # "Ultimate cloning": referencia + transcricao copia timbre, ritmo e sotaque.
             kwargs["reference_wav_path"] = job["ref_wav"]
