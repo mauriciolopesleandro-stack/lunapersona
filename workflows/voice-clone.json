@@ -20,7 +20,7 @@
       }
     },
     "2": {
-      "class_type": "VoiceCloneNode",
+      "class_type": "FB_Qwen3TTSVoiceClone",
       "inputs": {
         "target_text": "${TEXT}",
         "model_choice": "1.7B",

@@ -64,7 +64,7 @@ if [ "$NEW_NODE" = 1 ]; then
   done
 fi
 
-for n in VoiceDesignNode VoiceCloneNode SaveAudioMP3 Florence2Run WanImageToVideo; do
+for n in FB_Qwen3TTSVoiceDesign FB_Qwen3TTSVoiceClone SaveAudioMP3 Florence2Run WanImageToVideo; do
   if curl -sf "localhost:8188/object_info/$n" | grep -q "\"$n\""; then
     log "ok: $n"
   else

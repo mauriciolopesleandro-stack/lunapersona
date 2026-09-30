@@ -14,7 +14,7 @@
   },
   "graph": {
     "1": {
-      "class_type": "VoiceDesignNode",
+      "class_type": "FB_Qwen3TTSVoiceDesign",
       "inputs": {
         "text": "${TEXT}",
         "instruct": "${INSTRUCT}",
