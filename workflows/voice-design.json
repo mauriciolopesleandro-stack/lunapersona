@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "id": "voice-design",
+    "title": "Qwen3-TTS - Criar voz por descricao",
+    "description": "Gera uma fala com uma voz nova descrita em INSTRUCT (em ingles). Usado para criar as opcoes de voz da persona; a escolhida vira a referencia do voice-clone. Precisa de scripts/setup_voice.sh.",
+    "compatible_models": [],
+    "hidden": true,
+    "required_params": ["TEXT", "INSTRUCT"],
+    "optional_params": {
+      "SEED": 0,
+      "LANGUAGE": "Portuguese",
+      "FILENAME_PREFIX": "voice/voice_design"
+    }
+  },
+  "graph": {
+    "1": {
+      "class_type": "VoiceDesignNode",
+      "inputs": {
+        "text": "${TEXT}",
+        "instruct": "${INSTRUCT}",
+        "model_choice": "1.7B",
+        "device": "cuda",
+        "precision": "bf16",
+        "language": "${LANGUAGE}",
+        "seed": "${SEED}",
+        "unload_model_after_generate": true
+      }
+    },
+    "2": {
+      "class_type": "SaveAudioMP3",
+      "inputs": {
+        "audio": ["1", 0],
+        "filename_prefix": "${FILENAME_PREFIX}",
+        "quality": "320k"
+      }
+    }
+  }
+}

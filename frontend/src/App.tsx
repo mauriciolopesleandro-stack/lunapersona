@@ -24,6 +24,7 @@ import { ProfilePage } from "./components/ProfilePage";
 import { ResultPanel } from "./components/ResultPanel";
 import { SettingsPage } from "./components/SettingsPage";
 import { Sidebar, type Tab } from "./components/Sidebar";
+import { VoicePage } from "./components/VoicePage";
 import { TopBar } from "./components/TopBar";
 import { addHistoryEntry } from "./lib/history";
 import { getSettings } from "./lib/settings";
@@ -359,6 +360,7 @@ export default function App() {
               onReferencesChanged={() => loadPersonaThumbnails(personas)}
             />
           )}
+          {tab === "voz" && <VoicePage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
           {tab === "historico" && <HistoryPage />}
           {tab === "galeria" && <GalleryPage />}
           {tab === "configuracoes" && <SettingsPage models={models} workflows={workflows} health={health} />}

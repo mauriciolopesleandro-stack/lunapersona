@@ -231,7 +231,7 @@ const GENERATE_MAX_POLL_FAILURES = 5;
 
 // O proxy da RunPod corta respostas com mais de ~100 s e uma geracao numa L4
 // passa disso: inicia um job no backend e consulta ate ele terminar.
-async function runJob<T>(path: string, body: unknown, maxMs: number, what: string): Promise<T> {
+async function runJob<T>(path: string, body: unknown, maxMs: number, what: string, pollPath = path): Promise<T> {
   const base = await apiBase();
   const start = await fetch(`${base}${path}`, {
     method: "POST",
@@ -246,7 +246,7 @@ async function runJob<T>(path: string, body: unknown, maxMs: number, what: strin
     await new Promise((r) => setTimeout(r, GENERATE_POLL_MS));
     let res: Response | null = null;
     try {
-      res = await fetch(`${base}${path}/${job_id}`);
+      res = await fetch(`${base}${pollPath}/${job_id}`);
     } catch {
       // sem resposta: rede do celular ou proxy - tenta de novo abaixo
     }
@@ -295,6 +295,65 @@ export interface VideoResponse {
 export function animateImage(body: VideoRequestBody): Promise<VideoResponse> {
   const perSegmentMs = (body.quality === "720p" ? 20 : 10) * 60_000;
   return runJob<VideoResponse>("/video/jobs", body, perSegmentMs * Math.ceil(body.seconds / 5), "o video");
+}
+
+export interface PersonaVoice {
+  file: string;
+  text: string;
+  description: string;
+}
+
+export interface VoiceOption extends GenerationImage {
+  seed: number;
+}
+
+export interface VoiceDesignResponse {
+  text: string;
+  instruct: string;
+  options: VoiceOption[];
+  duration_seconds: number;
+}
+
+export interface VoiceSpeakResponse {
+  text: string;
+  audios: GenerationImage[];
+  duration_seconds: number;
+}
+
+// Criar voz gera 3 opcoes (a 1a vez tambem carrega o modelo na GPU).
+export function designVoice(description: string, text: string): Promise<VoiceDesignResponse> {
+  return runJob<VoiceDesignResponse>("/voice/design/jobs", { description, text }, 10 * 60_000, "a voz", "/voice/jobs");
+}
+
+export function speakWithVoice(personaId: string, text: string): Promise<VoiceSpeakResponse> {
+  return runJob<VoiceSpeakResponse>(
+    "/voice/speak/jobs",
+    { persona_id: personaId, text },
+    10 * 60_000,
+    "a fala",
+    "/voice/jobs"
+  );
+}
+
+export async function getPersonaVoice(personaId: string): Promise<PersonaVoice | null> {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/voice`);
+  return (await handleResponse<{ voice: PersonaVoice | null }>(res)).voice;
+}
+
+export async function personaVoiceFileUrl(personaId: string): Promise<string> {
+  return `${await apiBase()}/personas/${personaId}/voice/file`;
+}
+
+export async function savePersonaVoice(
+  personaId: string,
+  body: { filename: string; subfolder: string; text: string; description: string }
+): Promise<PersonaVoice> {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/voice`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return (await handleResponse<{ voice: PersonaVoice }>(res)).voice;
 }
 
 export async function getPersonas(): Promise<PersonaSummary[]> {

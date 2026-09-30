@@ -88,6 +88,17 @@ class PersonaLora:
 
 
 @dataclass
+class PersonaVoice:
+    """Voz oficial da persona: um audio de referencia (escolhido entre as
+    opcoes criadas por descricao) + o texto falado nele. Toda fala nova clona
+    essa referencia, entao a voz nao muda de uma geracao para outra."""
+
+    file: str  # relativo a pasta da persona, ex: voice/reference.flac
+    text: str
+    description: str = ""
+
+
+@dataclass
 class PersonaReference:
     id: str
     filename: str
@@ -105,6 +116,7 @@ class Persona:
     identity: PersonaIdentity = field(default_factory=PersonaIdentity)
     generation: PersonaGeneration = field(default_factory=PersonaGeneration)
     lora: PersonaLora | None = None
+    voice: PersonaVoice | None = None
     references: list[PersonaReference] = field(default_factory=list)
     identity_methods: dict[str, list[str]] = field(
         default_factory=lambda: {
@@ -187,6 +199,14 @@ class PersonaManager:
                 workflow_id=lora_data.get("workflow_id", ""),
                 guidance=float(lora_data["guidance"]) if lora_data.get("guidance") is not None else None,
             )
+        voice_data = data.get("voice")
+        voice = None
+        if voice_data and voice_data.get("file"):
+            voice = PersonaVoice(
+                file=voice_data["file"],
+                text=voice_data.get("text", ""),
+                description=voice_data.get("description", ""),
+            )
         persona = Persona(
             id=data.get("id", persona_id),
             name=data.get("name", persona_id),
@@ -194,6 +214,7 @@ class PersonaManager:
             identity=identity,
             generation=generation,
             lora=lora,
+            voice=voice,
             identity_methods=data.get(
                 "identity_methods",
                 {"planned": ["image_prompting", "ip_adapter", "faceid", "lora"], "active": ["image_prompting"]},
@@ -215,7 +236,29 @@ class PersonaManager:
         }
         if persona.lora:
             payload["lora"] = asdict(persona.lora)
+        if persona.voice:
+            payload["voice"] = asdict(persona.voice)
         path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def set_voice(self, persona_id: str, ext: str, content: bytes, text: str, description: str) -> Persona:
+        """Grava o audio escolhido como a voz da persona (substitui a anterior)."""
+        persona = self.get_persona(persona_id)
+        voice_dir = self._persona_dir(persona_id) / "voice"
+        voice_dir.mkdir(parents=True, exist_ok=True)
+        for old in voice_dir.glob("reference.*"):
+            old.unlink()
+        filename = f"reference{ext}"
+        (voice_dir / filename).write_bytes(content)
+        persona.voice = PersonaVoice(file=f"voice/{filename}", text=text, description=description)
+        self._save_persona(persona)
+        return persona
+
+    def get_voice_path(self, persona_id: str) -> Path | None:
+        voice = self.get_persona(persona_id).voice
+        if not voice:
+            return None
+        path = self._persona_dir(persona_id) / voice.file
+        return path if path.exists() else None
 
     def update_identity(
         self,

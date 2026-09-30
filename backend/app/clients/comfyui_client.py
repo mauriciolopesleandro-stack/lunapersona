@@ -170,6 +170,21 @@ class ComfyUIClient:
         data = resp.json()
         return data.get("name", filename)
 
+    async def download_file(self, filename: str, subfolder: str = "", folder_type: str = "output") -> bytes:
+        """Baixa um arquivo do ComfyUI (ex.: o audio escolhido como voz da persona)."""
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.get(
+                    f"{self.base_url}/view",
+                    params={"filename": filename, "subfolder": subfolder, "type": folder_type},
+                    headers=self._headers(),
+                )
+        except httpx.RequestError as exc:
+            raise ComfyUIConnectionError(str(exc)) from exc
+        if resp.status_code != 200:
+            raise ComfyUIExecutionError(f"Arquivo {filename} nao encontrado no ComfyUI (status {resp.status_code}).")
+        return resp.content
+
     async def queue_prompt(self, graph: dict[str, Any], client_id: str | None = None) -> str:
         """Envia um grafo (formato de API do ComfyUI) para a fila de execucao."""
         client_id = client_id or str(uuid.uuid4())
@@ -245,8 +260,10 @@ class ComfyUIClient:
         images: list[GenerationOutputImage] = []
         outputs = history_entry.get("outputs", {})
         for node_output in outputs.values():
-            # SaveVideo devolve o mp4 em "images" ou "videos", conforme a versao.
-            for img in [*node_output.get("images", []), *node_output.get("videos", [])]:
+            # SaveVideo devolve o mp4 em "images" ou "videos" (conforme a versao);
+            # SaveAudio*, em "audio".
+            files = [*node_output.get("images", []), *node_output.get("videos", []), *node_output.get("audio", [])]
+            for img in files:
                 filename = img.get("filename", "")
                 subfolder = img.get("subfolder", "")
                 folder_type = img.get("type", "output")
