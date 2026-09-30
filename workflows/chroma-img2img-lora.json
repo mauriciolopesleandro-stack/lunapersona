@@ -2,7 +2,7 @@
   "meta": {
     "id": "chroma-img2img-lora",
     "title": "Chroma1-HD - Imagem de referencia com LoRA de persona",
-    "description": "Redesenha uma foto enviada (REFERENCE_IMAGE) mantendo cena, luz e pose. DENOISE e o quanto muda: baixo mantem a foto (a pessoa original pode vazar), alto troca mais a pessoa e o cenario. Com a LoRA da persona aplicada, para trocar a pessoa pela persona.",
+    "description": "Redesenha uma foto enviada (REFERENCE_IMAGE) mantendo cena, luz e pose. DENOISE e o quanto muda: baixo mantem a foto (a pessoa original pode vazar), alto troca mais a pessoa e o cenario. Com a LoRA da persona aplicada, para trocar a pessoa pela persona. Depois faz uma segunda passada em resolucao maior (HIRES_WIDTH x HIRES_HEIGHT, redesenhando HIRES_DENOISE) para textura de pele, cabelo e tecido.",
     "compatible_models": [
       "chroma1-hd-fp8"
     ],
@@ -13,7 +13,7 @@
       "LORA_NAME"
     ],
     "optional_params": {
-      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, watermark, signature, text, logo, brand name, letters, lettering, text overlay, caption, username",
+      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, watermark, signature, text, logo, brand name, letters, lettering, text overlay, caption, username, airbrushed, plastic skin, waxy skin, overly smooth skin, glossy skin, cgi, 3d render, illustration, painting, cartoon, doll, oversaturated, overprocessed, hdr, beauty filter",
       "WIDTH": 1024,
       "HEIGHT": 1024,
       "STEPS": 26,
@@ -22,7 +22,11 @@
       "SAMPLER_NAME": "euler",
       "FILENAME_PREFIX": "luna_studio",
       "LORA_STRENGTH": 1,
-      "DENOISE": 0.85
+      "DENOISE": 0.85,
+      "HIRES_WIDTH": 1536,
+      "HIRES_HEIGHT": 1536,
+      "HIRES_STEPS": 20,
+      "HIRES_DENOISE": 0.4
     }
   },
   "graph": {
@@ -172,7 +176,7 @@
       "class_type": "SaveImage",
       "inputs": {
         "images": [
-          "14",
+          "36",
           0
         ],
         "filename_prefix": "${FILENAME_PREFIX}"
@@ -229,6 +233,92 @@
           0
         ],
         "denoise": "${DENOISE}"
+      }
+    },
+    "30": {
+      "class_type": "ImageScale",
+      "inputs": {
+        "image": [
+          "14",
+          0
+        ],
+        "upscale_method": "lanczos",
+        "width": "${HIRES_WIDTH}",
+        "height": "${HIRES_HEIGHT}",
+        "crop": "disabled"
+      }
+    },
+    "31": {
+      "class_type": "VAEEncode",
+      "inputs": {
+        "pixels": [
+          "30",
+          0
+        ],
+        "vae": [
+          "3",
+          0
+        ]
+      }
+    },
+    "32": {
+      "class_type": "BetaSamplingScheduler",
+      "inputs": {
+        "model": [
+          "7",
+          0
+        ],
+        "steps": "${HIRES_STEPS}",
+        "alpha": 0.45,
+        "beta": 0.45
+      }
+    },
+    "33": {
+      "class_type": "SplitSigmasDenoise",
+      "inputs": {
+        "sigmas": [
+          "32",
+          0
+        ],
+        "denoise": "${HIRES_DENOISE}"
+      }
+    },
+    "35": {
+      "class_type": "SamplerCustomAdvanced",
+      "inputs": {
+        "noise": [
+          "10",
+          0
+        ],
+        "guider": [
+          "8",
+          0
+        ],
+        "sampler": [
+          "11",
+          0
+        ],
+        "sigmas": [
+          "33",
+          1
+        ],
+        "latent_image": [
+          "31",
+          0
+        ]
+      }
+    },
+    "36": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "35",
+          0
+        ],
+        "vae": [
+          "3",
+          0
+        ]
       }
     }
   }

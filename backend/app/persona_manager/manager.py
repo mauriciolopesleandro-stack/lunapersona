@@ -83,6 +83,8 @@ class PersonaLora:
     trigger: str
     strength: float = 1.0
     workflow_id: str = ""
+    # Guidance usado com a LoRA (mais baixo = foto mais natural). None = o do pedido.
+    guidance: float | None = None
 
 
 @dataclass
@@ -178,6 +180,7 @@ class PersonaManager:
                 trigger=lora_data["trigger"],
                 strength=float(lora_data.get("strength", 1.0)),
                 workflow_id=lora_data.get("workflow_id", ""),
+                guidance=float(lora_data["guidance"]) if lora_data.get("guidance") is not None else None,
             )
         persona = Persona(
             id=data.get("id", persona_id),

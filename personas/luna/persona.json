@@ -34,7 +34,8 @@
     "file": "luna_chroma_v1.safetensors",
     "trigger": "lunavox",
     "strength": 1.2,
-    "workflow_id": "chroma-txt2img-lora"
+    "workflow_id": "chroma-txt2img-lora",
+    "guidance": 3.0
   },
   "identity_methods": {
     "planned": ["image_prompting", "ip_adapter", "faceid", "lora"],

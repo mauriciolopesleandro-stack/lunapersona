@@ -24,12 +24,13 @@ interface StyleOption {
   suffix: string;
 }
 
+// Sufixos em ingles: o encoder de texto (T5) entende ingles muito melhor.
 const STYLES: StyleOption[] = [
   { id: "", label: "Nenhum", suffix: "" },
-  { id: "fotografia", label: "Fotografia realista", suffix: ", fotografia realista, hiper-detalhada, iluminação natural" },
-  { id: "cinema", label: "Cinematográfico", suffix: ", estilo cinematográfico, cores dramáticas, profundidade de campo" },
-  { id: "editorial", label: "Editorial de moda", suffix: ", editorial de moda, still de revista, alta produção" },
-  { id: "pintura", label: "Pintura artística", suffix: ", pintura digital artística, pinceladas visíveis" },
+  { id: "fotografia", label: "Fotografia realista", suffix: ", realistic photo, natural lighting" },
+  { id: "cinema", label: "Cinematográfico", suffix: ", cinematic film still, dramatic colors, shallow depth of field" },
+  { id: "editorial", label: "Editorial de moda", suffix: ", fashion editorial, magazine photoshoot, high production" },
+  { id: "pintura", label: "Pintura artística", suffix: ", artistic digital painting, visible brush strokes" },
 ];
 
 export interface ReferenceImage {

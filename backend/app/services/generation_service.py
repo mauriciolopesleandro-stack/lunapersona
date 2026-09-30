@@ -35,6 +35,13 @@ class GenerationRequest:
     denoise: float | None = None
 
 
+# Vai no fim do prompt da persona. Sem palavras de enquadramento (close,
+# poros visiveis): o corpo inteiro precisa continuar possivel.
+REALISM_SUFFIX = "raw candid smartphone photo, natural skin texture, subtle skin imperfections, natural light, sharp focus"
+# Segunda passada (workflows com LoRA): amplia a imagem e redesenha os detalhes.
+HIRES_SCALE = 1.5
+HIRES_MAX_PIXELS = 2_400_000
+
 IMG2IMG_WORKFLOW = "chroma-img2img"
 IMG2IMG_LORA_WORKFLOW = "chroma-img2img-lora"
 DESCRIBE_WORKFLOW = "describe-image"
@@ -62,6 +69,11 @@ class GenerationService:
         self.workflow_manager = workflow_manager
         self.model_manager = model_manager
         self.persona_manager = persona_manager
+
+    @staticmethod
+    def _hires_size(width: int, height: int) -> tuple[int, int]:
+        scale = min(HIRES_SCALE, (HIRES_MAX_PIXELS / (width * height)) ** 0.5)
+        return round(width * scale / 16) * 16, round(height * scale / 16) * 16
 
     async def _lora_available(self, filename: str) -> bool:
         # Se o arquivo ainda nao chegou ao pod, a persona volta para o texto
@@ -106,6 +118,10 @@ class GenerationService:
                 prompt = f"photo of {lora.trigger}, {traits + ', ' if traits else ''}{req.prompt}"
                 workflow_id = lora.workflow_id
                 lora_params = {"LORA_NAME": lora.file, "LORA_STRENGTH": lora.strength}
+                # O site sempre manda o guidance das Configuracoes (4.0); o da
+                # persona vence porque foi calibrado para a LoRA dela.
+                if lora.guidance is not None:
+                    lora_params["GUIDANCE"] = lora.guidance
             else:
                 identity_fragment = persona.identity_prompt_fragment()
                 if identity_fragment:
@@ -135,6 +151,9 @@ class GenerationService:
             if description:
                 prompt = f"{prompt}, {description}"
 
+        if use_lora:
+            prompt = f"{prompt}, {REALISM_SUFFIX}"
+
         params: dict[str, Any] = {
             "PROMPT": prompt,
             "WIDTH": req.width or model.defaults.get("width", 1024),
@@ -150,6 +169,8 @@ class GenerationService:
             params["REFERENCE_IMAGE"] = reference_image_name
         if req.denoise is not None:
             params["DENOISE"] = req.denoise
+        if use_lora:
+            params["HIRES_WIDTH"], params["HIRES_HEIGHT"] = self._hires_size(params["WIDTH"], params["HEIGHT"])
         params.update(lora_params)
         params.update(self.model_manager.loader_params(req.model_id))
 

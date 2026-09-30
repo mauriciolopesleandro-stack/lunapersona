@@ -2,20 +2,29 @@
   "meta": {
     "id": "chroma-txt2img-lora",
     "title": "Chroma1-HD - Texto para Imagem com LoRA de persona",
-    "description": "Igual ao chroma-txt2img, com uma LoRA aplicada ao modelo (LoraLoaderModelOnly) antes do sampler. Usado automaticamente quando a persona tem LoRA treinada (ex.: Luna, gatilho lunavox); o prompt precisa conter o gatilho.",
-    "compatible_models": ["chroma1-hd-fp8"],
+    "description": "Igual ao chroma-txt2img, com uma LoRA aplicada ao modelo (LoraLoaderModelOnly) antes do sampler. Usado automaticamente quando a persona tem LoRA treinada (ex.: Luna, gatilho lunavox); o prompt precisa conter o gatilho. Depois faz uma segunda passada em resolucao maior (HIRES_WIDTH x HIRES_HEIGHT, redesenhando HIRES_DENOISE) para textura de pele, cabelo e tecido.",
+    "compatible_models": [
+      "chroma1-hd-fp8"
+    ],
     "hidden": true,
-    "required_params": ["PROMPT", "LORA_NAME"],
+    "required_params": [
+      "PROMPT",
+      "LORA_NAME"
+    ],
     "optional_params": {
-      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, watermark, signature, text, logo, brand name, letters, lettering, text overlay, caption, username",
+      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, watermark, signature, text, logo, brand name, letters, lettering, text overlay, caption, username, airbrushed, plastic skin, waxy skin, overly smooth skin, glossy skin, cgi, 3d render, illustration, painting, cartoon, doll, oversaturated, overprocessed, hdr, beauty filter",
       "WIDTH": 1024,
       "HEIGHT": 1024,
       "STEPS": 26,
-      "GUIDANCE": 4.0,
+      "GUIDANCE": 4,
       "SEED": 0,
       "SAMPLER_NAME": "euler",
       "FILENAME_PREFIX": "luna_studio",
-      "LORA_STRENGTH": 1.0
+      "LORA_STRENGTH": 1,
+      "HIRES_WIDTH": 1536,
+      "HIRES_HEIGHT": 1536,
+      "HIRES_STEPS": 20,
+      "HIRES_DENOISE": 0.4
     }
   },
   "graph": {
@@ -24,14 +33,6 @@
       "inputs": {
         "unet_name": "${UNET_NAME}",
         "weight_dtype": "${UNET_WEIGHT_DTYPE}"
-      }
-    },
-    "16": {
-      "class_type": "LoraLoaderModelOnly",
-      "inputs": {
-        "model": ["1", 0],
-        "lora_name": "${LORA_NAME}",
-        "strength_model": "${LORA_STRENGTH}"
       }
     },
     "2": {
@@ -51,7 +52,10 @@
     "4": {
       "class_type": "T5TokenizerOptions",
       "inputs": {
-        "clip": ["2", 0],
+        "clip": [
+          "2",
+          0
+        ],
         "min_padding": 0,
         "min_length": 0
       }
@@ -60,29 +64,47 @@
       "class_type": "CLIPTextEncode",
       "inputs": {
         "text": "${PROMPT}",
-        "clip": ["4", 0]
+        "clip": [
+          "4",
+          0
+        ]
       }
     },
     "6": {
       "class_type": "CLIPTextEncode",
       "inputs": {
         "text": "${NEGATIVE_PROMPT}",
-        "clip": ["4", 0]
+        "clip": [
+          "4",
+          0
+        ]
       }
     },
     "7": {
       "class_type": "ModelSamplingAuraFlow",
       "inputs": {
-        "model": ["16", 0],
-        "shift": 1.0
+        "model": [
+          "16",
+          0
+        ],
+        "shift": 1
       }
     },
     "8": {
       "class_type": "CFGGuider",
       "inputs": {
-        "model": ["7", 0],
-        "positive": ["5", 0],
-        "negative": ["6", 0],
+        "model": [
+          "7",
+          0
+        ],
+        "positive": [
+          "5",
+          0
+        ],
+        "negative": [
+          "6",
+          0
+        ],
         "cfg": "${GUIDANCE}"
       }
     },
@@ -109,7 +131,10 @@
     "12": {
       "class_type": "BetaSamplingScheduler",
       "inputs": {
-        "model": ["7", 0],
+        "model": [
+          "7",
+          0
+        ],
         "steps": "${STEPS}",
         "alpha": 0.45,
         "beta": 0.45
@@ -118,25 +143,146 @@
     "13": {
       "class_type": "SamplerCustomAdvanced",
       "inputs": {
-        "noise": ["10", 0],
-        "guider": ["8", 0],
-        "sampler": ["11", 0],
-        "sigmas": ["12", 0],
-        "latent_image": ["9", 0]
+        "noise": [
+          "10",
+          0
+        ],
+        "guider": [
+          "8",
+          0
+        ],
+        "sampler": [
+          "11",
+          0
+        ],
+        "sigmas": [
+          "12",
+          0
+        ],
+        "latent_image": [
+          "9",
+          0
+        ]
       }
     },
     "14": {
       "class_type": "VAEDecode",
       "inputs": {
-        "samples": ["13", 0],
-        "vae": ["3", 0]
+        "samples": [
+          "13",
+          0
+        ],
+        "vae": [
+          "3",
+          0
+        ]
       }
     },
     "15": {
       "class_type": "SaveImage",
       "inputs": {
-        "images": ["14", 0],
+        "images": [
+          "36",
+          0
+        ],
         "filename_prefix": "${FILENAME_PREFIX}"
+      }
+    },
+    "16": {
+      "class_type": "LoraLoaderModelOnly",
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "lora_name": "${LORA_NAME}",
+        "strength_model": "${LORA_STRENGTH}"
+      }
+    },
+    "30": {
+      "class_type": "ImageScale",
+      "inputs": {
+        "image": [
+          "14",
+          0
+        ],
+        "upscale_method": "lanczos",
+        "width": "${HIRES_WIDTH}",
+        "height": "${HIRES_HEIGHT}",
+        "crop": "disabled"
+      }
+    },
+    "31": {
+      "class_type": "VAEEncode",
+      "inputs": {
+        "pixels": [
+          "30",
+          0
+        ],
+        "vae": [
+          "3",
+          0
+        ]
+      }
+    },
+    "32": {
+      "class_type": "BetaSamplingScheduler",
+      "inputs": {
+        "model": [
+          "7",
+          0
+        ],
+        "steps": "${HIRES_STEPS}",
+        "alpha": 0.45,
+        "beta": 0.45
+      }
+    },
+    "33": {
+      "class_type": "SplitSigmasDenoise",
+      "inputs": {
+        "sigmas": [
+          "32",
+          0
+        ],
+        "denoise": "${HIRES_DENOISE}"
+      }
+    },
+    "35": {
+      "class_type": "SamplerCustomAdvanced",
+      "inputs": {
+        "noise": [
+          "10",
+          0
+        ],
+        "guider": [
+          "8",
+          0
+        ],
+        "sampler": [
+          "11",
+          0
+        ],
+        "sigmas": [
+          "33",
+          1
+        ],
+        "latent_image": [
+          "31",
+          0
+        ]
+      }
+    },
+    "36": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "35",
+          0
+        ],
+        "vae": [
+          "3",
+          0
+        ]
       }
     }
   }
