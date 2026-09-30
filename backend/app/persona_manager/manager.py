@@ -130,6 +130,11 @@ class Persona:
         parts = [self.identity.fixed.get(f, "").strip() for f in fields]
         return ", ".join(p for p in parts if p)
 
+    def body_prompt_fragment(self) -> str:
+        """Corpo da persona. Vai em toda geracao com LoRA: so com a LoRA o corpo
+        saia mais magro que o padrao em fotos de corpo inteiro."""
+        return self.identity.fixed.get("caracteristicas_corporais", "").strip()
+
 
 class PersonaManager:
     def __init__(self, personas_dir: Path) -> None:
