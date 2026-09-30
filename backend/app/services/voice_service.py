@@ -39,6 +39,8 @@ DESIGN_OPTIONS = 3
 DEFAULT_SAMPLE_TEXT = "Oi, eu sou a Luna! Que bom te ver por aqui. Hoje eu quero te mostrar um lugar incrível, vem comigo!"
 # Carregar o modelo leva ~30 s; cada frase, alguns segundos.
 VOICE_TIMEOUT = 600.0
+# VRAM livre antes de abrir o VoxCPM2 (~8 GB de pico).
+VOXCPM_VRAM_BYTES = 9 * 1024**3
 
 
 class VoiceService:
@@ -71,7 +73,7 @@ class VoiceService:
         (COMFY_OUTPUT / SUBFOLDER).mkdir(parents=True, exist_ok=True)
         async with self._lock:
             # Descarrega os modelos do ComfyUI: o VoxCPM2 precisa de ~8 GB de VRAM.
-            await self.comfyui_client.free_memory()
+            await self.comfyui_client.free_memory(need_bytes=VOXCPM_VRAM_BYTES)
             with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
                 json.dump(jobs, f, ensure_ascii=False)
                 jobs_path = f.name

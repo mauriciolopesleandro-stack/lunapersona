@@ -170,15 +170,25 @@ class ComfyUIClient:
         data = resp.json()
         return data.get("name", filename)
 
-    async def free_memory(self) -> None:
+    async def free_memory(self, need_bytes: int = 0, wait_seconds: float = 30.0) -> None:
         """Pede ao ComfyUI para descarregar os modelos da GPU (antes da voz, que
-        roda em outro processo). Falha aqui nao impede nada."""
+        roda em outro processo) e espera sobrar need_bytes de VRAM - o /free so
+        age na proxima volta do worker do ComfyUI. So devolve a memoria ao
+        sistema com o ComfyUI iniciado com --disable-cuda-malloc
+        (runpod-slim/comfyui_args.txt). Falha aqui nao impede nada."""
         try:
             async with httpx.AsyncClient(timeout=self.connect_timeout) as client:
                 await client.post(
                     f"{self.base_url}/free", json={"unload_models": True, "free_memory": True}, headers=self._headers()
                 )
-        except httpx.RequestError:
+                deadline = time.monotonic() + wait_seconds
+                while need_bytes and time.monotonic() < deadline:
+                    resp = await client.get(f"{self.base_url}/system_stats", headers=self._headers())
+                    devices = resp.json().get("devices") or [{}]
+                    if devices[0].get("vram_free", 0) >= need_bytes:
+                        return
+                    await asyncio.sleep(1.0)
+        except (httpx.RequestError, ValueError):
             pass
 
     async def download_file(self, filename: str, subfolder: str = "", folder_type: str = "output") -> bytes:
