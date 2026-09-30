@@ -170,6 +170,17 @@ class ComfyUIClient:
         data = resp.json()
         return data.get("name", filename)
 
+    async def free_memory(self) -> None:
+        """Pede ao ComfyUI para descarregar os modelos da GPU (antes da voz, que
+        roda em outro processo). Falha aqui nao impede nada."""
+        try:
+            async with httpx.AsyncClient(timeout=self.connect_timeout) as client:
+                await client.post(
+                    f"{self.base_url}/free", json={"unload_models": True, "free_memory": True}, headers=self._headers()
+                )
+        except httpx.RequestError:
+            pass
+
     async def download_file(self, filename: str, subfolder: str = "", folder_type: str = "output") -> bytes:
         """Baixa um arquivo do ComfyUI (ex.: o audio escolhido como voz da persona)."""
         try:

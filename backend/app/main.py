@@ -54,7 +54,6 @@ app.state.video_service = VideoService(
 )
 app.state.voice_service = VoiceService(
     comfyui_client=app.state.comfyui_client,
-    workflow_manager=app.state.workflow_manager,
     persona_manager=app.state.persona_manager,
     llm_client=app.state.llm_client,
 )

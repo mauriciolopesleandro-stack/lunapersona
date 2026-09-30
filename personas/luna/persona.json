@@ -35,10 +35,23 @@
     "trigger": "lunavox",
     "strength": 1.2,
     "workflow_id": "chroma-txt2img-lora",
-    "guidance": 3.0
+    "guidance": 3
   },
   "identity_methods": {
-    "planned": ["image_prompting", "ip_adapter", "faceid", "lora"],
-    "active": ["lora", "image_prompting"]
+    "planned": [
+      "image_prompting",
+      "ip_adapter",
+      "faceid",
+      "lora"
+    ],
+    "active": [
+      "lora",
+      "image_prompting"
+    ]
+  },
+  "voice": {
+    "file": "voice/reference.wav",
+    "text": "Oi, eu sou a Luna! Que bom te ver por aqui. Hoje eu quero te mostrar um lugar incrível, vem comigo!",
+    "description": "A young Brazilian woman in her mid-twenties, native Brazilian Portuguese speaker from São Paulo, warm and slightly husky voice, relaxed and confident, smiling while talking, natural conversational pace"
   }
 }

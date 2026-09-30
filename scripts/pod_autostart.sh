@@ -60,6 +60,10 @@ fi
 bash "$REPO_DIR/scripts/runpod_bootstrap.sh" > "$LOG_DIR/bootstrap.log" 2>&1 \
     || echo "AVISO: bootstrap saiu com erro (ver $LOG_DIR/bootstrap.log)."
 
+# Voz da persona (VoxCPM2): venv + modelo no disco do container, ~5 min.
+# Em segundo plano - o estudio abre antes; a aba Voz avisa enquanto instala.
+bash "$REPO_DIR/scripts/setup_voxcpm.sh" > "$LOG_DIR/voxcpm-setup.log" 2>&1 &
+
 # Num volume novo, o /start.sh da imagem so copia o ComfyUI para
 # /workspace/runpod-slim/ComfyUI se a pasta ainda NAO existir - baixar os
 # modelos antes criaria a pasta e a instalacao seria pulada.

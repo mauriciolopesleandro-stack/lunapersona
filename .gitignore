@@ -32,6 +32,7 @@ npm-debug.log*
 
 # --- Referências e mídia gerada (grandes, ficam fora do Git) ---
 personas/*/references/*
+personas/*/voice/*
 !personas/*/references/.gitkeep
 outputs/
 generated/

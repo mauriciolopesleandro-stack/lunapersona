@@ -24,7 +24,9 @@ MODEL_DIR = os.environ.get("VOXCPM_MODEL", "/root/voxcpm/VoxCPM2")
 
 def main() -> int:
     jobs = json.load(open(sys.argv[1], encoding="utf-8"))
-    model = VoxCPM.from_pretrained(MODEL_DIR, load_denoiser=False)
+    # optimize=False: sem torch.compile, que levava ~2 min de aquecimento a cada
+    # processo (o backend abre um processo por pedido).
+    model = VoxCPM.from_pretrained(MODEL_DIR, load_denoiser=False, optimize=False)
     rate = model.tts_model.sample_rate
     for job in jobs:
         text = job["text"]

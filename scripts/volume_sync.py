@@ -53,7 +53,7 @@ GROUPS = {
 }
 SKIP_NAMES = {".DS_Store", "__pycache__", ".ipynb_checkpoints"}
 SKIP_SUFFIXES = (".part", ".tmp", ".partial")
-# Modelos de video (scripts/setup_wan.sh, ~38 GB) e de voz (setup_voice.sh,
+# Modelos de video (scripts/setup_wan.sh, ~38 GB) e de voz antigos (Qwen3-TTS,
 # models/qwen-tts, ~10 GB): so cabem no luna-models-ro (90 GB); o outro
 # volume tem 40 GB. ".dl" = download em andamento.
 SKIP_PREFIXES = ("wan2.2_", "wan_2.1_vae", "umt5_xxl_")
