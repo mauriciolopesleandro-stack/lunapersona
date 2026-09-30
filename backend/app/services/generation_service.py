@@ -86,7 +86,8 @@ class GenerationService:
                 # A LoRA ja carrega rosto, corpo e acessorios: o texto longo de
                 # identidade so competiria com ela (e vira retrato/colagem).
                 use_lora = True
-                prompt = f"photo of {lora.trigger}, {req.prompt}"
+                traits = persona.reference_prompt_fragment() if req.reference_image else ""
+                prompt = f"photo of {lora.trigger}, {traits + ', ' if traits else ''}{req.prompt}"
                 workflow_id = lora.workflow_id
                 lora_params = {"LORA_NAME": lora.file, "LORA_STRENGTH": lora.strength}
             else:

@@ -95,7 +95,9 @@ export function GeneratePanel({
   const [showChat, setShowChat] = useState(false);
   const [reference, setReference] = useState<ReferenceImage | null>(null);
   const [referenceError, setReferenceError] = useState<string | null>(null);
-  const [denoise, setDenoise] = useState(0.7);
+  // 85%: abaixo disso as cores grandes da foto (cabelo, olhos) costumam
+  // continuar as da pessoa original em vez de virar as da persona.
+  const [denoise, setDenoise] = useState(0.85);
 
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
   const style = STYLES.find((s) => s.id === styleId) ?? STYLES[0];

@@ -120,6 +120,14 @@ class Persona:
         parts = [v.strip() for v in self.identity.fixed.values() if v and v.strip()]
         return ", ".join(parts)
 
+    def reference_prompt_fragment(self) -> str:
+        """Cabelo, olhos, pele e corpo da persona. Com foto de referencia, as
+        cores e o formato do corpo da pessoa da foto vencem a LoRA; dizer os da
+        persona no prompt e o que faz a troca acontecer."""
+        fields = ("cor_cabelo", "olhos", "tom_pele", "caracteristicas_corporais")
+        parts = [self.identity.fixed.get(f, "").strip() for f in fields]
+        return ", ".join(p for p in parts if p)
+
 
 class PersonaManager:
     def __init__(self, personas_dir: Path) -> None:

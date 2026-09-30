@@ -22,7 +22,7 @@
       "SAMPLER_NAME": "euler",
       "FILENAME_PREFIX": "luna_studio",
       "LORA_STRENGTH": 1,
-      "DENOISE": 0.7
+      "DENOISE": 0.85
     }
   },
   "graph": {
