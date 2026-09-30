@@ -53,6 +53,10 @@ GROUPS = {
 }
 SKIP_NAMES = {".DS_Store", "__pycache__", ".ipynb_checkpoints"}
 SKIP_SUFFIXES = (".part", ".tmp", ".partial")
+# Modelos de video (scripts/setup_wan.sh, ~38 GB): so cabem no luna-models-ro
+# (90 GB); o outro volume tem 40 GB. ".dl" = download em andamento.
+SKIP_PREFIXES = ("wan2.2_", "wan_2.1_vae", "umt5_xxl_")
+SKIP_NAMES.add(".dl")
 # Diferenca de relogio tolerada entre o mtime local e o LastModified do S3.
 MTIME_SLACK = 2.0
 MAX_DELETE_FRACTION = 0.1
@@ -79,7 +83,11 @@ def s3_client(datacenter: str):
 
 def skipped(rel: str) -> bool:
     parts = rel.split("/")
-    return any(p in SKIP_NAMES for p in parts) or rel.endswith(SKIP_SUFFIXES)
+    return (
+        any(p in SKIP_NAMES for p in parts)
+        or rel.endswith(SKIP_SUFFIXES)
+        or parts[-1].startswith(SKIP_PREFIXES)
+    )
 
 
 def list_local(root: str) -> dict[str, tuple[int, float]]:
