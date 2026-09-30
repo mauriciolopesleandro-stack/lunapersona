@@ -291,6 +291,24 @@ export interface VideoResponse {
   videos: GenerationImage[];
 }
 
+export interface TalkRequestBody {
+  persona_id: string;
+  image: string;
+  image_type?: "output" | "input";
+  image_subfolder?: string;
+  text: string;
+  extra_prompt?: string;
+  quality: "480p" | "720p";
+  source_width?: number;
+  source_height?: number;
+}
+
+// Persona falando: voz dela + video com a boca sincronizada (~10 min a cada
+// 5 s de fala). A duracao sai do tamanho do texto.
+export function talkVideo(body: TalkRequestBody): Promise<VideoResponse> {
+  return runJob<VideoResponse>("/video/talk/jobs", body, 60 * 60_000, "o video falado", "/video/jobs");
+}
+
 // Cada 5 s de video levam alguns minutos (mais em 720p).
 export function animateImage(body: VideoRequestBody): Promise<VideoResponse> {
   const perSegmentMs = (body.quality === "720p" ? 20 : 10) * 60_000;

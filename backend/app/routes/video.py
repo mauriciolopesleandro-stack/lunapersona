@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.clients.comfyui_client import ComfyUIError
+from app.services.talk_service import TalkRequest
 from app.services.video_service import MAX_SECONDS, SEGMENT_SECONDS, VideoRequest
 
 router = APIRouter()
@@ -30,7 +31,20 @@ class VideoBody(BaseModel):
     seed: int | None = None
 
 
-async def _run_job(job_id: str, service, req: VideoRequest) -> None:
+class TalkBody(BaseModel):
+    persona_id: str
+    image: str = Field(..., min_length=1)
+    image_type: Literal["output", "input"] = "output"
+    image_subfolder: str = ""
+    text: str = Field(..., min_length=1, max_length=600)
+    extra_prompt: str = ""
+    quality: Literal["480p", "720p"] = "480p"
+    source_width: int | None = None
+    source_height: int | None = None
+    seed: int | None = None
+
+
+async def _run_job(job_id: str, service, req) -> None:
     job = _jobs[job_id]
     try:
         result = await service.generate(req)
@@ -58,6 +72,22 @@ async def start_video_job(body: VideoBody, request: Request):
     job_id = uuid.uuid4().hex
     _jobs[job_id] = {"status": "running"}
     task = asyncio.create_task(_run_job(job_id, request.app.state.video_service, req))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return {"job_id": job_id, "status": "running"}
+
+
+@router.post("/video/talk/jobs")
+async def start_talk_job(body: TalkBody, request: Request):
+    """Persona falando: texto -> voz dela -> video com a boca sincronizada.
+    Consulta pelo mesmo /video/jobs/{job_id}."""
+    request.app.state.idle_shutdown.touch()
+    req = TalkRequest(**body.model_dump())
+    while len(_jobs) >= _MAX_JOBS:
+        _jobs.pop(next(iter(_jobs)))
+    job_id = uuid.uuid4().hex
+    _jobs[job_id] = {"status": "running"}
+    task = asyncio.create_task(_run_job(job_id, request.app.state.talk_service, req))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
     return {"job_id": job_id, "status": "running"}

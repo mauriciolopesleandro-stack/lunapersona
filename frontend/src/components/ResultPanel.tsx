@@ -70,7 +70,7 @@ export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt
           </dl>
         )}
       </div>
-      {image && !broken && !loading && <AnimatePanel image={image} />}
+      {image && !broken && !loading && <AnimatePanel image={image} personaId={result?.persona_id ?? null} />}
     </div>
   );
 }

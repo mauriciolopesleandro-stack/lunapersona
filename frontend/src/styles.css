@@ -1311,3 +1311,18 @@ button.result-download {
   cursor: pointer;
   font: inherit;
 }
+
+.animate-modes {
+  display: flex;
+  gap: 8px;
+}
+
+.animate-modes button {
+  flex: 1;
+}
+
+.animate-modes button.active {
+  border-color: var(--accent-1);
+  color: var(--text);
+  background: var(--bg-panel-2);
+}

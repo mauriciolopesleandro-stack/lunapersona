@@ -12,6 +12,7 @@ from app.persona_manager.manager import PersonaManager
 from app.routes import chat, generate, health, models, personas, video, voice, workflows
 from app.services.chat_service import ChatService
 from app.services.generation_service import GenerationService
+from app.services.talk_service import TalkService
 from app.services.video_service import VideoService
 from app.services.voice_service import VoiceService
 from app.workflow_manager.manager import WorkflowManager
@@ -55,6 +56,11 @@ app.state.video_service = VideoService(
 app.state.voice_service = VoiceService(
     comfyui_client=app.state.comfyui_client,
     persona_manager=app.state.persona_manager,
+    llm_client=app.state.llm_client,
+)
+app.state.talk_service = TalkService(
+    comfyui_client=app.state.comfyui_client,
+    voice_service=app.state.voice_service,
     llm_client=app.state.llm_client,
 )
 app.state.chat_service = ChatService(

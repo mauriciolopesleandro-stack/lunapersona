@@ -24,6 +24,8 @@ FILES=(
   # Luna falando (S2V: foto + audio -> video com a boca sincronizada), ~17 GB
   "diffusion_models|Comfy-Org/Wan_2.2_ComfyUI_Repackaged|split_files/diffusion_models/wan2.2_s2v_14B_fp8_scaled.safetensors"
   "audio_encoders|Comfy-Org/Wan_2.2_ComfyUI_Repackaged|split_files/audio_encoders/wav2vec2_large_english_fp16.safetensors"
+  # 4 passos no S2V (o workflow oficial usa a do T2V; a do I2V nao casa as chaves)
+  "loras|Comfy-Org/Wan_2.2_ComfyUI_Repackaged|split_files/loras/wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors"
 )
 
 df -h /workspace | tail -1
