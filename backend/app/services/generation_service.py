@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.clients.comfyui_client import ComfyUIClient, ComfyUIError, GenerationOutputImage
+from app.clients.llm_client import OllamaClient
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
+from app.services.prompt_translator import to_english
 from app.services.reference_caption import clean_reference_caption
 from app.workflow_manager.manager import WorkflowManager, WorkflowParamError
 
@@ -64,11 +66,14 @@ class GenerationService:
         workflow_manager: WorkflowManager,
         model_manager: ModelManager,
         persona_manager: PersonaManager,
+        llm_client: OllamaClient | None = None,
     ) -> None:
         self.comfyui_client = comfyui_client
         self.workflow_manager = workflow_manager
         self.model_manager = model_manager
         self.persona_manager = persona_manager
+        # Traduz o texto digitado (portugues) para ingles antes de gerar.
+        self.llm_client = llm_client
 
     @staticmethod
     def _hires_size(width: int, height: int) -> tuple[int, int]:
@@ -102,7 +107,8 @@ class GenerationService:
 
         seed = req.seed if req.seed is not None else uuid.uuid4().int % (2**32)
 
-        prompt = req.prompt
+        user_prompt = await to_english(self.llm_client, req.prompt)
+        prompt = user_prompt
         workflow_id = req.workflow_id
         reference_image_name: str | None = None
         lora_params: dict[str, Any] = {}
@@ -115,7 +121,7 @@ class GenerationService:
                 # identidade so competiria com ela (e vira retrato/colagem).
                 use_lora = True
                 traits = persona.reference_prompt_fragment() if req.reference_image else persona.body_prompt_fragment()
-                prompt = f"photo of {lora.trigger}, {traits + ', ' if traits else ''}{req.prompt}"
+                prompt = f"photo of {lora.trigger}, {traits + ', ' if traits else ''}{user_prompt}"
                 workflow_id = lora.workflow_id
                 lora_params = {"LORA_NAME": lora.file, "LORA_STRENGTH": lora.strength}
                 # O site sempre manda o guidance das Configuracoes (4.0); o da
@@ -125,7 +131,7 @@ class GenerationService:
             else:
                 identity_fragment = persona.identity_prompt_fragment()
                 if identity_fragment:
-                    prompt = f"{identity_fragment}, {req.prompt}"
+                    prompt = f"{identity_fragment}, {user_prompt}"
 
                 # Se a persona tem uma foto de referencia, ancora a identidade
                 # nela via FLUX Kontext (flux-kontext-reference) em vez de so

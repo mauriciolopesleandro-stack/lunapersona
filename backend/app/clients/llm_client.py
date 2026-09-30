@@ -76,9 +76,16 @@ class OllamaClient:
             )
         return installed[0]
 
-    async def chat(self, messages: list[ChatMessage]) -> tuple[str, str]:
-        """Retorna (resposta, nome do modelo usado)."""
+    async def chat(
+        self,
+        messages: list[ChatMessage],
+        keep_alive: str | None = None,
+        timeout: float | None = None,
+    ) -> tuple[str, str]:
+        """Retorna (resposta, nome do modelo usado). keep_alive="0" descarrega o
+        modelo da GPU logo depois (usado antes de gerar imagem, que precisa da VRAM)."""
         model = await self.resolve_model()
+        timeout = timeout or self.timeout
         payload = {
             "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
@@ -87,8 +94,10 @@ class OllamaClient:
             # demora bem mais e pode estourar o limite de ~100s do proxy RunPod.
             "think": False,
         }
+        if keep_alive is not None:
+            payload["keep_alive"] = keep_alive
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(f"{self.base_url}/api/chat", json=payload)
                 if resp.status_code == 400 and "think" in resp.text.lower():
                     # Modelo sem suporte a "think" - repete sem o campo.
@@ -96,7 +105,7 @@ class OllamaClient:
                     resp = await client.post(f"{self.base_url}/api/chat", json=payload)
         except httpx.TimeoutException as exc:
             raise LLMTimeoutError(
-                f"O Ollama nao respondeu em {self.timeout:.0f}s (modelo '{model}'). "
+                f"O Ollama nao respondeu em {timeout:.0f}s (modelo '{model}'). "
                 "Na primeira mensagem o modelo ainda esta sendo carregado na memoria - "
                 "tente de novo em alguns segundos. Ajuste LLM_TIMEOUT no .env se precisar."
             ) from exc

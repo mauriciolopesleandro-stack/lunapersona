@@ -36,14 +36,15 @@ app.state.comfyui_client = ComfyUIClient(
 app.state.workflow_manager = WorkflowManager(settings.workflows_dir)
 app.state.model_manager = ModelManager(settings.models_registry_path)
 app.state.persona_manager = PersonaManager(settings.personas_dir)
+app.state.llm_client = OllamaClient(
+    base_url=settings.llm_api_url, model=settings.llm_model, timeout=settings.llm_timeout
+)
 app.state.generation_service = GenerationService(
     comfyui_client=app.state.comfyui_client,
     workflow_manager=app.state.workflow_manager,
     model_manager=app.state.model_manager,
     persona_manager=app.state.persona_manager,
-)
-app.state.llm_client = OllamaClient(
-    base_url=settings.llm_api_url, model=settings.llm_model, timeout=settings.llm_timeout
+    llm_client=app.state.llm_client,
 )
 app.state.chat_service = ChatService(
     llm_client=app.state.llm_client,
