@@ -13,7 +13,7 @@
       "LORA_NAME"
     ],
     "optional_params": {
-      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, watermark, signature, text",
+      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, watermark, signature, text, logo, brand name, letters, lettering, text overlay, caption, username",
       "WIDTH": 1024,
       "HEIGHT": 1024,
       "STEPS": 26,

@@ -12,6 +12,7 @@ from typing import Any
 from app.clients.comfyui_client import ComfyUIClient, ComfyUIError, GenerationOutputImage
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
+from app.services.reference_caption import clean_reference_caption
 from app.workflow_manager.manager import WorkflowManager, WorkflowParamError
 
 
@@ -36,6 +37,7 @@ class GenerationRequest:
 
 IMG2IMG_WORKFLOW = "chroma-img2img"
 IMG2IMG_LORA_WORKFLOW = "chroma-img2img-lora"
+DESCRIBE_WORKFLOW = "describe-image"
 
 
 @dataclass
@@ -68,6 +70,20 @@ class GenerationService:
             return filename in await self.comfyui_client.list_loras()
         except ComfyUIError:
             return False
+
+    async def _describe_reference(self, image_name: str) -> str:
+        """Descricao da foto de referencia (Florence-2). Sem o custom node no
+        pod (ex.: o outro volume), a geracao segue so com o texto digitado."""
+        try:
+            graph = self.workflow_manager.render(DESCRIBE_WORKFLOW, {"IMAGE": image_name})
+            entry = await self.comfyui_client.wait_for_completion(await self.comfyui_client.queue_prompt(graph))
+        except ComfyUIError:
+            return ""
+        for output in entry.get("outputs", {}).values():
+            text = output.get("text")
+            if text:
+                return str(text[0]).strip()
+        return ""
 
     async def generate(self, req: GenerationRequest) -> GenerationResponse:
         model = self.model_manager.get_model(req.model_id)
@@ -110,6 +126,14 @@ class GenerationService:
             if workflow_id not in model.compatible_workflows:
                 raise WorkflowParamError(f"O modelo '{req.model_id}' nao aceita imagem de referencia.")
             reference_image_name = req.reference_image
+            # Com o "Quanto mudar" alto, so o que esta escrito sobrevive da
+            # foto: descreve-la no prompt mantem roupa, pose e cenario. Com
+            # persona, os tracos da pessoa original saem da descricao.
+            description = await self._describe_reference(req.reference_image)
+            if description and req.persona_id:
+                description = clean_reference_caption(description)
+            if description:
+                prompt = f"{prompt}, {description}"
 
         params: dict[str, Any] = {
             "PROMPT": prompt,

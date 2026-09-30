@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "id": "describe-image",
+    "title": "Descrever imagem (Florence-2)",
+    "description": "Descreve uma foto enviada (IMAGE) em texto com o Florence-2-large - usado para a foto de referencia virar prompt (roupa, pose, expressao, cenario). Precisa do custom node ComfyUI-Florence2 (scripts/setup_florence.sh). O texto sai no no PreviewAny.",
+    "compatible_models": [],
+    "hidden": true,
+    "required_params": ["IMAGE"],
+    "optional_params": {}
+  },
+  "graph": {
+    "1": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "${IMAGE}"
+      }
+    },
+    "2": {
+      "class_type": "DownloadAndLoadFlorence2Model",
+      "inputs": {
+        "model": "microsoft/Florence-2-large",
+        "precision": "fp16"
+      }
+    },
+    "3": {
+      "class_type": "Florence2Run",
+      "inputs": {
+        "image": ["1", 0],
+        "florence2_model": ["2", 0],
+        "text_input": "",
+        "task": "more_detailed_caption",
+        "fill_mask": false,
+        "keep_model_loaded": false,
+        "max_new_tokens": 256,
+        "num_beams": 3,
+        "do_sample": false,
+        "output_mask_select": "",
+        "seed": 1
+      }
+    },
+    "4": {
+      "class_type": "PreviewAny",
+      "inputs": {
+        "source": ["3", 2]
+      }
+    }
+  }
+}
