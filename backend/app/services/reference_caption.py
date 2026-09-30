@@ -13,11 +13,19 @@ from __future__ import annotations
 import re
 
 _TEXT_SENTENCE = re.compile(
-    r"\b(text|texts|reads|written|writing|caption|logo|watermark|words?|letters?|font|says|sign that)\b", re.I
+    r"\b(text|texts|reads|written|writing|caption|logos?|watermark|words?|letters?|font|says|sign that)\b", re.I
 )
 _TEXT_CLAUSE = re.compile(
     r"\s*,?\s*\b(?:with|featuring|bearing|showing|that (?:says|reads)|reading)\s+(?:the\s+|a\s+|an\s+)?"
-    r"(?:words?|text|logo|letters?|lettering|brand(?:\s+name)?|writing|name)\b[^,.;]*?(?=\s+and\s|[,.;]|$)",
+    # ate 3 adjetivos antes: "with a gold Gucci logo on the front"
+    r"(?:[\w'-]+\s+){0,3}?(?:words?|text|logos?|letters?|lettering|brand(?:\s+name)?|writing|name)\b"
+    r"[^,.;]*?(?=\s+and\s|[,.;]|$)",
+    re.I,
+)
+# Marca citada vira logo desenhado na roupa (o PromptGen as vezes inventa uma).
+_BRANDS = re.compile(
+    r"\b(?:gucci|dior|chanel|prada|louis vuitton|versace|fendi|balenciaga|givenchy|calvin klein|"
+    r"victoria'?s secret|nike|adidas|puma|supreme|off-white)\b\s*",
     re.I,
 )
 _QUOTED = re.compile(r"\s*[\"“][^\"”]*[\"”]")
@@ -30,6 +38,13 @@ _STYLE = (
     r"(?:styled|pulled|tied|braided|worn|in\s+(?:a|an|two|braids|pigtails|cornrows))\b"
 )
 _BODY = "slim|slender|thin|skinny|petite|muscular|athletic|toned|fit|curvy|voluptuous|chubby|plus-size"
+_BODY_RUN = rf"(?:(?:{_BODY})(?:\s*,\s*|\s+and\s+|\s+)?)+"
+# Frases inteiras sobre a pessoa da foto que sobrariam sem sentido depois de
+# tirar so os adjetivos ("her body is and with...", "are not visible").
+_WHOLE_TRAITS = [
+    re.compile(r"\b(?:her|his|their)\s+eyes\s+(?:are|were)\s+not\s+visible,?\s*(?:but\s+|and\s+)?", re.I),
+    re.compile(rf"\b(?:her|his|their)\s+body\s+is\s+{_BODY_RUN}(?:,?\s*with\s[^.]*)?\.?\s*", re.I),
+]
 _PERSON_TRAITS = [
     re.compile(rf"\b(?:{_NOT_ADJ}[\w-]+,?\s+){{1,4}}(?=hair{_STYLE})", re.I),
     re.compile(
@@ -41,7 +56,7 @@ _PERSON_TRAITS = [
     re.compile(rf"\b(?:{_NOT_ADJ}[\w-]+\s+){{0,2}}(?:skin|complexion|tan|freckles)\b", re.I),
     re.compile(r"\b(?:an?\s+)?(?:small|large|visible)?\s*tattoos?\b(?:\s+on\s+(?:her|his)\s+[\w-]+)?", re.I),
     re.compile(
-        rf"\b(?:an?\s+)?(?:(?:{_BODY})\s*,?\s*)+(?:body|figure|physique|build|waist|legs|stomach)?\b", re.I
+        rf"\b(?:an?\s+)?{_BODY_RUN}(?:body|figure|physique|build|waist|legs|stomach)?\b", re.I
     ),
     re.compile(r"\b(?:blonde|blond|brunette|redhead|red-haired|dark-haired|light-haired)\b", re.I),
 ]
@@ -57,9 +72,11 @@ _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
 
 def clean_reference_caption(caption: str) -> str:
-    caption = _QUOTED.sub("", _TEXT_CLAUSE.sub("", caption.strip()))
+    caption = _BRANDS.sub("", _QUOTED.sub("", _TEXT_CLAUSE.sub("", caption.strip())))
     sentences = [s for s in _SENTENCE_SPLIT.split(caption) if s and not _TEXT_SENTENCE.search(s)]
     text = " ".join(sentences)
+    for pattern in _WHOLE_TRAITS:
+        text = pattern.sub("", text)
     for pattern in _PERSON_TRAITS:
         text = pattern.sub(" ", text)
     text = _PREFIX.sub("", text)
@@ -69,6 +86,7 @@ def clean_reference_caption(caption: str) -> str:
     text = " ".join(s for s in sentences if s and not _EMPTY_SENTENCE.match(s))
     text = re.sub(r"\s+,", ",", text)
     text = re.sub(r",\s*(?:,\s*)+", ", ", text)
+    text = re.sub(r",\s*\.", ".", text)
     text = re.sub(r"\s+\.", ".", text)
     text = re.sub(r"\s{2,}", " ", text)
     return text.strip(" ,.")
