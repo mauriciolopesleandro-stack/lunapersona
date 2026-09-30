@@ -25,6 +25,7 @@ import { ResultPanel } from "./components/ResultPanel";
 import { SettingsPage } from "./components/SettingsPage";
 import { Sidebar, type Tab } from "./components/Sidebar";
 import { VoicePage } from "./components/VoicePage";
+import { loadLastResult, saveLastResult } from "./lib/lastResult";
 import { TopBar } from "./components/TopBar";
 import { addHistoryEntry } from "./lib/history";
 import { getSettings } from "./lib/settings";
@@ -118,8 +119,10 @@ export default function App() {
   const [workflows, setWorkflows] = useState<WorkflowInfo[]>([]);
   const [personas, setPersonas] = useState<PersonaSummary[]>([]);
   const [personaThumbnails, setPersonaThumbnails] = useState<Record<string, string>>({});
-  const [result, setResult] = useState<GenerateResponse | null>(null);
-  const [resultPrompt, setResultPrompt] = useState("");
+  // A ultima imagem volta sozinha se a pagina recarregar (ex.: salvar no celular).
+  const [saved] = useState(() => loadLastResult<Parameters<typeof generateImage>[0]>());
+  const [result, setResult] = useState<GenerateResponse | null>(saved?.result ?? null);
+  const [resultPrompt, setResultPrompt] = useState(saved?.prompt ?? "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -128,7 +131,9 @@ export default function App() {
   const [prompt, setPrompt] = useState("");
   const [personaId, setPersonaId] = useState("");
   const chat = useChatSession();
-  const [lastGenerateParams, setLastGenerateParams] = useState<Parameters<typeof generateImage>[0] | null>(null);
+  const [lastGenerateParams, setLastGenerateParams] = useState<Parameters<typeof generateImage>[0] | null>(
+    saved?.params ?? null
+  );
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -226,6 +231,7 @@ export default function App() {
       const res = await generateImage(body);
       setResult(res);
       setResultPrompt(displayPrompt);
+      saveLastResult({ result: res, prompt: displayPrompt, params: body });
       const image = res.images[0];
       if (image) {
         const personaName = personas.find((p) => p.id === body.persona_id)?.name ?? null;

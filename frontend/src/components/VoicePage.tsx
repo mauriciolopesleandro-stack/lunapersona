@@ -10,6 +10,7 @@ import {
   type PersonaVoice,
   type VoiceDesignResponse,
 } from "../api/client";
+import { downloadFile } from "../lib/download";
 
 interface Props {
   personas: PersonaSummary[];
@@ -173,9 +174,9 @@ export function VoicePage({ personas, ensureAwake }: Props) {
         {spoken && (
           <div className="voice-current">
             <audio src={spoken.url} controls autoPlay />
-            <a href={spoken.url} download={spoken.filename}>
+            <button type="button" onClick={() => downloadFile(spoken.url, spoken.filename)}>
               ⬇ Baixar áudio
-            </a>
+            </button>
           </div>
         )}
       </div>

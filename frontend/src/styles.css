@@ -1304,3 +1304,10 @@ button.danger {
   border-radius: var(--radius-md);
   background: var(--bg-panel-2);
 }
+
+/* "Baixar" virou botao (baixa sem sair do site - ver lib/download.ts) */
+button.result-download {
+  border: none;
+  cursor: pointer;
+  font: inherit;
+}

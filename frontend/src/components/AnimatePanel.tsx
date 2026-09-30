@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { animateImage, type GenerationImage, type VideoResponse } from "../api/client";
+import { downloadFile } from "../lib/download";
+import { loadLastVideo, saveLastVideo } from "../lib/lastResult";
 
 interface Props {
   image: GenerationImage;
@@ -19,7 +21,7 @@ export function AnimatePanel({ image }: Props) {
   const [video, setVideo] = useState<VideoResponse | null>(null);
 
   useEffect(() => {
-    setVideo(null);
+    setVideo(loadLastVideo(image.url));
     setError(null);
     const img = new Image();
     img.onload = () => setSize({ width: img.naturalWidth, height: img.naturalHeight });
@@ -31,18 +33,18 @@ export function AnimatePanel({ image }: Props) {
     setError(null);
     setVideo(null);
     try {
-      setVideo(
-        await animateImage({
-          image: image.filename,
-          image_subfolder: image.subfolder,
-          image_type: image.type === "input" ? "input" : "output",
-          prompt: motion.trim(),
-          seconds,
-          quality,
-          source_width: size?.width,
-          source_height: size?.height,
-        })
-      );
+      const res = await animateImage({
+        image: image.filename,
+        image_subfolder: image.subfolder,
+        image_type: image.type === "input" ? "input" : "output",
+        prompt: motion.trim(),
+        seconds,
+        quality,
+        source_width: size?.width,
+        source_height: size?.height,
+      });
+      setVideo(res);
+      saveLastVideo(image.url, res);
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
@@ -89,9 +91,9 @@ export function AnimatePanel({ image }: Props) {
       {clip && (
         <div className="animate-result">
           <video src={clip.url} controls autoPlay loop playsInline />
-          <a className="result-download" href={clip.url} download={clip.filename}>
+          <button type="button" className="result-download" onClick={() => downloadFile(clip.url, clip.filename)}>
             ⬇ Baixar vídeo
-          </a>
+          </button>
         </div>
       )}
     </div>

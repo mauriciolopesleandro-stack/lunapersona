@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import type { GenerateResponse } from "../api/client";
+import { downloadFile } from "../lib/download";
 import { AnimatePanel } from "./AnimatePanel";
 
 interface Props {
@@ -12,6 +14,9 @@ interface Props {
 
 export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt, onRegenerate }: Props) {
   const image = result?.images[0];
+  // Imagem restaurada de outro pod (desligado/recriado) nao carrega mais.
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [image?.url]);
 
   return (
     <div>
@@ -25,12 +30,18 @@ export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt
               <p className="small">Preencha os passos ao lado e clique em Gerar imagem.</p>
             </div>
           )}
-          {image && (
+          {image && broken && (
+            <div className="result-empty">
+              <p>A última imagem não está mais disponível.</p>
+              <p className="small">Ela ficava no servidor anterior, que foi desligado. Gere de novo.</p>
+            </div>
+          )}
+          {image && !broken && (
             <>
-              <img src={image.url} alt={image.filename} />
-              <a className="result-download" href={image.url} download={image.filename}>
+              <img src={image.url} alt={image.filename} onError={() => setBroken(true)} />
+              <button type="button" className="result-download" onClick={() => downloadFile(image.url, image.filename)}>
                 ⬇ Baixar
-              </a>
+              </button>
             </>
           )}
         </div>
@@ -59,7 +70,7 @@ export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt
           </dl>
         )}
       </div>
-      {image && !loading && <AnimatePanel image={image} />}
+      {image && !broken && !loading && <AnimatePanel image={image} />}
     </div>
   );
 }
