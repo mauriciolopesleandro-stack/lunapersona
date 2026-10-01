@@ -56,7 +56,11 @@ SKIP_SUFFIXES = (".part", ".tmp", ".partial")
 # Modelos de video (scripts/setup_wan.sh, ~38 GB) e de voz antigos (Qwen3-TTS,
 # models/qwen-tts, ~10 GB): so cabem no luna-models-ro (90 GB); o outro
 # volume tem 40 GB. ".dl" = download em andamento.
-SKIP_PREFIXES = ("wan2.2_", "wan_2.1_vae", "umt5_xxl_", "wav2vec2_")
+SKIP_PREFIXES = (
+    "wan2.2_", "wan_2.1_vae", "umt5_xxl_", "wav2vec2_",
+    # troca de personagem (scripts/setup_animate.sh)
+    "Wan2_2-Animate", "WanAnimate_", "lightx2v_I2V", "clip_vision_h", "sam2",
+)
 SKIP_NAMES.update({".dl", "qwen-tts"})
 # Diferenca de relogio tolerada entre o mtime local e o LastModified do S3.
 MTIME_SLACK = 2.0
