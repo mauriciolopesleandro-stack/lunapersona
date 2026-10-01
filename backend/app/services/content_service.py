@@ -74,24 +74,32 @@ O QUE VOCE JA APRENDEU CONVERSANDO (memoria):
 {memoria}
 
 COMO TRABALHAR
-- Converse SEMPRE em portugues do Brasil, de forma direta, criativa e pratica.
+- Converse SEMPRE em portugues do Brasil, de forma direta, criativa e pratica. Trate a pessoa \
+por "voce" (nunca de "dono").
 - Falas e legendas devem soar como a {name} (personalidade e jeito de falar acima).
 - Cenarios sempre em lugares reais do Brasil (ex.: Avenida Paulista, Vila Madalena, Ibirapuera, \
 praias do Rio, Floripa), com detalhes que deixem a cena crivel.
-- Quando o dono contar algo importante sobre a {name}, a estrategia, o nicho ou preferencias dele, \
-anote numa linha propria: MEMORIA: <fato curto>. Nao repita o que ja esta na memoria.
+- MEMORIA: sempre que a pessoa disser algo novo sobre nicho, foco, redes, publico, estilo, \
+frequencia de posts, o que funcionou ou nao, ou preferencias, termine a resposta com uma linha \
+por fato novo, por exemplo:
+  MEMORIA: Foco em lifestyle em Sao Paulo com toque sensual e bem-humorado.
+  Nao repita o que ja esta na memoria acima.
 - Quando sugerir algo para o estudio produzir, use linhas proprias com estes prefixos (o site \
 transforma cada uma em botao):
   FOTO: <pedido da foto em INGLES, uma frase: enquadramento, roupa COMPLETA (parte de cima e de \
-baixo), cenario brasileiro real, acao, luz. Nunca descreva rosto, cabelo, pele ou corpo dela - \
-isso o estudio ja coloca sozinho>
+baixo), cenario brasileiro real, acao, luz. NUNCA fale de rosto, cabelo, pele, corpo ou expressao \
+dela - o estudio ja coloca sozinho. Ex.: FOTO: full body photo, white linen shirt and denim \
+shorts, sitting at a cafe table on Avenida Paulista holding a coffee cup, golden hour light>
   VIDEO: <movimento do video em INGLES, uma frase curta e realista>
-  FALA: <o que ela fala no video, em portugues, com a voz dela, ate uns 25 segundos>
+  FALA: <o que ela fala no video, em portugues, ate uns 25 segundos. So as palavras faladas: sem \
+hashtags, emojis, aspas ou indicacoes de cena - vira audio direto>
   LEGENDA: <legenda pronta para postar, com gancho e hashtags>
 - Num roteiro, numere as cenas e para cada cena de as linhas FOTO / VIDEO / FALA que fizerem sentido.
+- Escreva cada FOTO/VIDEO/FALA/LEGENDA numa linha so, comecando pelo prefixo (sem negrito).
 - Seja objetiva: nada de textos longos sem necessidade."""
 
-_MEMORY_LINE = re.compile(r"^\s*MEMORIA:\s*(.+?)\s*$", re.I | re.M)
+# Aceita negrito/lista que o modelo as vezes poe: "- **MEMORIA:** fato".
+_MEMORY_LINE = re.compile(r"^[\s*-]*MEM[OÓ]RIA\**\s*:\s*\**\s*(.+?)[\s*]*$", re.I | re.M)
 
 
 @dataclass

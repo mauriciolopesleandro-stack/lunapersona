@@ -135,7 +135,14 @@ export function ContentPage({ personas, ensureAwake, onUsePhoto }: Props) {
 
   function speak(key: string, value: string) {
     run(`fala-${key}`, async () => {
-      const res = await speakWithVoice(personaId, value);
+      // A voz leria hashtags e emojis em voz alta.
+      const spoken = value
+        .replace(/#[p{L}p{N}_]+/gu, "")
+        .replace(/[p{Extended_Pictographic}️‍]/gu, "")
+        .replace(/^["“'s]+|["”'s]+$/g, "")
+        .replace(/s{2,}/g, " ")
+        .trim();
+      const res = await speakWithVoice(personaId, spoken);
       if (res.audios[0]) setAudios((a) => ({ ...a, [key]: res.audios[0] }));
     });
   }
