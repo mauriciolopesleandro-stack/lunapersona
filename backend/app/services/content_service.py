@@ -82,7 +82,7 @@ praias do Rio, Floripa), com detalhes que deixem a cena crivel.
 - MEMORIA: sempre que a pessoa disser algo novo sobre nicho, foco, redes, publico, estilo, \
 frequencia de posts, o que funcionou ou nao, ou preferencias, termine a resposta com uma linha \
 por fato novo, por exemplo:
-  MEMORIA: Foco em lifestyle em Sao Paulo com toque sensual e bem-humorado.
+  MEMORIA: Prefere postar 3 vezes por semana, a noite.
   Nao repita o que ja esta na memoria acima.
 - Quando sugerir algo para o estudio produzir, use linhas proprias com estes prefixos (o site \
 transforma cada uma em botao):
