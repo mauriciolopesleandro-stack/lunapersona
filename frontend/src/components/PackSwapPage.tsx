@@ -28,10 +28,13 @@ interface PackPhoto {
 const MAX_PHOTOS = 20;
 const BASE_PROMPT = "same outfit, pose and expression as the reference photo";
 
-// ~1 megapixel na proporcao da foto, multiplo de 16 (o Chroma trabalha em
-// blocos de 16 px) - o mesmo da foto de referencia na aba Gerar.
+// O pack sai no tamanho da foto original (so a pessoa e redesenhada, num
+// recorte ampliado): reduzir tudo para ~1 MP deixava o cenario borrado.
+// Teto de ~2,4 MP; multiplo de 16 (o Chroma trabalha em blocos de 16 px).
+const MAX_PIXELS = 2_400_000;
+
 function outputSize(width: number, height: number) {
-  const scale = Math.sqrt((1024 * 1024) / (width * height));
+  const scale = Math.min(1, Math.sqrt(MAX_PIXELS / (width * height)));
   return { width: Math.round((width * scale) / 16) * 16, height: Math.round((height * scale) / 16) * 16 };
 }
 
