@@ -1,0 +1,66 @@
+{
+  "meta": {
+    "id": "chroma-person-swap-lora",
+    "title": "Chroma1-HD - Trocar a pessoa da foto pela persona (so a pessoa)",
+    "description": "Pack com a persona: na foto enviada (REFERENCE_IMAGE, ja reduzida para WIDTH x HEIGHT), o Florence-2 acha a pessoa (TARGET), o SAM2 recorta o contorno dela e so essa area e redesenhada com a LoRA (DENOISE alto troca rosto, cabelo e corpo; a roupa e a pose vem do PROMPT, que descreve a foto). O resto da foto (cenario, luz, objetos, outras pessoas) volta pixel a pixel por cima (ImageCompositeMasked). Depois passa a correcao de rosto.",
+    "compatible_models": ["chroma1-hd-fp8"],
+    "hidden": true,
+    "required_params": ["PROMPT", "REFERENCE_IMAGE", "LORA_NAME"],
+    "optional_params": {
+      "NEGATIVE_PROMPT": "low quality, ugly, deformed, disfigured, blurry, bad anatomy, extra fingers, extra legs, extra limbs, extra arms, extra hands, missing limbs, fused limbs, malformed limbs, watermark, signature, text, logo, letters, airbrushed, plastic skin, waxy skin, overly smooth skin, cgi, 3d render, illustration, cartoon, doll, oversaturated, beauty filter, two women, duplicate person",
+      "WIDTH": 1024,
+      "HEIGHT": 1024,
+      "STEPS": 28,
+      "GUIDANCE": 3.0,
+      "SEED": 0,
+      "SAMPLER_NAME": "euler",
+      "FILENAME_PREFIX": "luna_studio",
+      "LORA_STRENGTH": 1.0,
+      "DENOISE": 0.9,
+      "TARGET": "woman",
+      "MASK_GROW": 24
+    }
+  },
+  "graph": {
+    "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "${UNET_NAME}", "weight_dtype": "${UNET_WEIGHT_DTYPE}"}},
+    "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "${CLIP_NAME_1}", "type": "${CLIP_TYPE}", "device": "default"}},
+    "3": {"class_type": "VAELoader", "inputs": {"vae_name": "${VAE_NAME}"}},
+    "4": {"class_type": "T5TokenizerOptions", "inputs": {"clip": ["2", 0], "min_padding": 0, "min_length": 0}},
+    "5": {"class_type": "CLIPTextEncode", "inputs": {"text": "${PROMPT}", "clip": ["4", 0]}},
+    "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "${NEGATIVE_PROMPT}", "clip": ["4", 0]}},
+    "16": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["1", 0], "lora_name": "${LORA_NAME}", "strength_model": "${LORA_STRENGTH}"}},
+    "7": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["16", 0], "shift": 1.0}},
+    "8": {"class_type": "CFGGuider", "inputs": {"model": ["7", 0], "positive": ["5", 0], "negative": ["6", 0], "cfg": "${GUIDANCE}"}},
+    "10": {"class_type": "RandomNoise", "inputs": {"noise_seed": "${SEED}"}},
+    "11": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "${SAMPLER_NAME}"}},
+    "12": {"class_type": "BetaSamplingScheduler", "inputs": {"model": ["7", 0], "steps": "${STEPS}", "alpha": 0.45, "beta": 0.45}},
+    "13": {"class_type": "SplitSigmasDenoise", "inputs": {"sigmas": ["12", 0], "denoise": "${DENOISE}"}},
+    "20": {"class_type": "LoadImage", "inputs": {"image": "${REFERENCE_IMAGE}"}},
+    "19": {"class_type": "ImageScale", "inputs": {"image": ["20", 0], "upscale_method": "lanczos", "width": "${WIDTH}", "height": "${HEIGHT}", "crop": "disabled"}},
+    "21": {"class_type": "DownloadAndLoadFlorence2Model", "inputs": {"model": "microsoft/Florence-2-large", "precision": "fp16"}},
+    "22": {
+      "class_type": "Florence2Run",
+      "inputs": {
+        "image": ["19", 0], "florence2_model": ["21", 0], "text_input": "${TARGET}",
+        "task": "caption_to_phrase_grounding", "fill_mask": false, "keep_model_loaded": false,
+        "max_new_tokens": 256, "num_beams": 3, "do_sample": false, "output_mask_select": "", "seed": 1
+      }
+    },
+    "23": {"class_type": "Florence2toCoordinates", "inputs": {"data": ["22", 3], "index": "0", "batch": false}},
+    "24": {"class_type": "DownloadAndLoadSAM2Model", "inputs": {"model": "sam2_hiera_base_plus.safetensors", "segmentor": "single_image", "device": "cuda", "precision": "fp16"}},
+    "25": {
+      "class_type": "Sam2Segmentation",
+      "inputs": {"sam2_model": ["24", 0], "image": ["19", 0], "keep_model_loaded": false, "bboxes": ["23", 1], "individual_objects": false}
+    },
+    "26": {"class_type": "GrowMask", "inputs": {"mask": ["25", 0], "expand": "${MASK_GROW}", "tapered_corners": true}},
+    "27": {"class_type": "VAEEncode", "inputs": {"pixels": ["19", 0], "vae": ["3", 0]}},
+    "28": {"class_type": "SetLatentNoiseMask", "inputs": {"samples": ["27", 0], "mask": ["26", 0]}},
+    "29": {
+      "class_type": "SamplerCustomAdvanced",
+      "inputs": {"noise": ["10", 0], "guider": ["8", 0], "sampler": ["11", 0], "sigmas": ["13", 1], "latent_image": ["28", 0]}
+    },
+    "30": {"class_type": "VAEDecode", "inputs": {"samples": ["29", 0], "vae": ["3", 0]}},
+    "31": {"class_type": "ImageCompositeMasked", "inputs": {"destination": ["19", 0], "source": ["30", 0], "x": 0, "y": 0, "resize_source": false, "mask": ["26", 0]}},
+    "15": {"class_type": "SaveImage", "inputs": {"images": ["31", 0], "filename_prefix": "${FILENAME_PREFIX}"}}
+  }
+}

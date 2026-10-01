@@ -120,6 +120,8 @@ export interface GenerateRequestBody {
   // e a pessoa vira a persona. denoise = quanto a foto e redesenhada.
   reference_image?: string;
   denoise?: number;
+  // Pack: troca so a pessoa da foto de referencia (o resto fica identico).
+  person_swap?: boolean;
 }
 
 export interface GenerateResponse {

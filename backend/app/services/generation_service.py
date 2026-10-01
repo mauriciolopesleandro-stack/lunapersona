@@ -37,6 +37,10 @@ class GenerationRequest:
     # pessoa vira a persona. denoise = quanto a foto e redesenhada.
     reference_image: str | None = None
     denoise: float | None = None
+    # Pack com a persona: com reference_image, troca SO a pessoa da foto
+    # (contorno recortado) e o resto volta identico. Sem isso, img2img da foto
+    # inteira (o cenario tambem muda um pouco).
+    person_swap: bool = False
 
 
 # Vai no fim do prompt da persona. Sem palavras de enquadramento (close,
@@ -57,6 +61,8 @@ _EXPRESSION_WORDS = re.compile(
 )
 # Correcao de rosto depois da geracao com LoRA (workflows/chroma-face-refine.json).
 FACE_REFINE_WORKFLOW = "chroma-face-refine"
+
+PERSON_SWAP_WORKFLOW = "chroma-person-swap-lora"
 
 IMG2IMG_WORKFLOW = "chroma-img2img"
 IMG2IMG_LORA_WORKFLOW = "chroma-img2img-lora"
@@ -144,7 +150,13 @@ class GenerationService:
                 # identidade so competiria com ela (e vira retrato/colagem).
                 use_lora = True
                 traits = persona.reference_prompt_fragment() if req.reference_image else persona.body_prompt_fragment()
-                if not _EXPRESSION_WORDS.search(user_prompt):
+                if req.person_swap:
+                    # Cabelo da pessoa da foto (curto, cacheado) vencia: o
+                    # formato do cabelo da persona entra junto.
+                    hair = persona.identity.fixed.get("formato_cabelo", "").strip()
+                    traits = ", ".join(p for p in (hair, traits) if p)
+                # No pack a expressao e a da foto (a historia continua coerente).
+                if not req.person_swap and not _EXPRESSION_WORDS.search(user_prompt):
                     attitude = persona.attitude_prompt_fragment()
                 lead = ", ".join(p for p in (attitude, traits) if p)
                 prompt = f"photo of {lora.trigger}, {lead + ', ' if lead else ''}{user_prompt}"
@@ -177,6 +189,10 @@ class GenerationService:
 
         if req.reference_image:
             workflow_id = IMG2IMG_LORA_WORKFLOW if use_lora else IMG2IMG_WORKFLOW
+            if req.person_swap:
+                if not use_lora:
+                    raise WorkflowParamError("Trocar a pessoa da foto precisa de uma persona com LoRA.")
+                workflow_id = PERSON_SWAP_WORKFLOW
             if workflow_id not in model.compatible_workflows:
                 raise WorkflowParamError(f"O modelo '{req.model_id}' nao aceita imagem de referencia.")
             reference_image_name = req.reference_image

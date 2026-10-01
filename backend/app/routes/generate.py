@@ -39,6 +39,7 @@ class GenerateBody(BaseModel):
     scheduler: str | None = None
     reference_image: str | None = None
     denoise: float | None = Field(default=None, ge=0.05, le=1.0)
+    person_swap: bool = False
 
 
 def _build_request(body: GenerateBody, request: Request) -> GenerationRequest:
@@ -57,6 +58,7 @@ def _build_request(body: GenerateBody, request: Request) -> GenerationRequest:
         scheduler=body.scheduler,
         reference_image=body.reference_image,
         denoise=body.denoise,
+        person_swap=body.person_swap,
     )
 
 
