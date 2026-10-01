@@ -135,6 +135,13 @@ def sam_points(woman: Box | None, face: Box | None, others: list[Box], width: in
     if not pos:
         pos.append({"x": width // 2, "y": height // 2})
     neg = [{"x": int(_center(f)[0]), "y": int(_center(f)[1])} for f in others]
+    if not neg:
+        # O SAM2 quebra com a lista de negativos vazia: o canto mais longe dela
+        # (fundo) serve de negativo inofensivo.
+        cx, cy = (pos[0]["x"], pos[0]["y"])
+        corners = [(4, 4), (width - 5, 4), (4, height - 5), (width - 5, height - 5)]
+        far = max(corners, key=lambda c: (c[0] - cx) ** 2 + (c[1] - cy) ** 2)
+        neg = [{"x": far[0], "y": far[1]}]
     return json.dumps(pos), json.dumps(neg)
 
 
