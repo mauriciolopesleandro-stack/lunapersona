@@ -2,7 +2,7 @@
   "meta": {
     "id": "chroma-person-swap-lora",
     "title": "Chroma1-HD - Trocar a pessoa da foto pela persona (so a pessoa)",
-    "description": "Pack com a persona: na foto enviada (REFERENCE_IMAGE, ja reduzida para WIDTH x HEIGHT), o Florence-2 acha a pessoa (TARGET), o SAM2 recorta o contorno dela e so essa area e redesenhada com a LoRA (DENOISE alto troca rosto, cabelo e corpo; a roupa e a pose vem do PROMPT, que descreve a foto). O resto da foto (cenario, luz, objetos, outras pessoas) volta pixel a pixel por cima (ImageCompositeMasked). Depois passa a correcao de rosto.",
+    "description": "Pack com a persona: na foto enviada (REFERENCE_IMAGE, ja reduzida para WIDTH x HEIGHT), o Florence-2 acha a pessoa (TARGET), o SAM2 recorta o contorno dela e so essa area e redesenhada com a LoRA (DENOISE 0.75: troca rosto, cabelo e corpo e mantem pose, maos e objetos - 0.9 fazia a persona voltar a posar e largar o que segurava; 0.65 deixava o cabelo da pessoa original voltar). O resto da foto (cenario, luz, objetos, outras pessoas) volta pixel a pixel por cima (ImageCompositeMasked). Depois passa a correcao de rosto.",
     "compatible_models": ["chroma1-hd-fp8"],
     "hidden": true,
     "required_params": ["PROMPT", "REFERENCE_IMAGE", "LORA_NAME"],
@@ -16,7 +16,7 @@
       "SAMPLER_NAME": "euler",
       "FILENAME_PREFIX": "luna_studio",
       "LORA_STRENGTH": 1.0,
-      "DENOISE": 0.9,
+      "DENOISE": 0.75,
       "TARGET": "woman",
       "MASK_GROW": 24
     }
