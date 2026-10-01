@@ -41,7 +41,10 @@ class GenerationRequest:
 
 # Vai no fim do prompt da persona. Sem palavras de enquadramento (close,
 # poros visiveis): o corpo inteiro precisa continuar possivel.
-REALISM_SUFFIX = "raw candid smartphone photo, natural skin texture, subtle skin imperfections, natural light, sharp focus"
+REALISM_SUFFIX = (
+    "candid amateur smartphone photo, unposed, real everyday place, background in focus, "
+    "natural skin texture, subtle skin imperfections, natural light"
+)
 # Segunda passada (workflows com LoRA): amplia a imagem e redesenha os detalhes.
 HIRES_SCALE = 1.5
 HIRES_MAX_PIXELS = 2_400_000

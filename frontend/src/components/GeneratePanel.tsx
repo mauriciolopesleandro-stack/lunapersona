@@ -27,7 +27,7 @@ interface StyleOption {
 // Sufixos em ingles: o encoder de texto (T5) entende ingles muito melhor.
 const STYLES: StyleOption[] = [
   { id: "", label: "Nenhum", suffix: "" },
-  { id: "fotografia", label: "Fotografia realista", suffix: ", realistic photo, natural lighting" },
+  { id: "fotografia", label: "Fotografia realista", suffix: ", candid smartphone photo, natural lighting, background in focus" },
   { id: "cinema", label: "Cinematográfico", suffix: ", cinematic film still, dramatic colors, shallow depth of field" },
   { id: "editorial", label: "Editorial de moda", suffix: ", fashion editorial, magazine photoshoot, high production" },
   { id: "pintura", label: "Pintura artística", suffix: ", artistic digital painting, visible brush strokes" },

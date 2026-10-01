@@ -13,7 +13,7 @@
       "LORA_NAME"
     ],
     "optional_params": {
-      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, extra legs, extra limbs, duplicated legs, three legs, extra arms, extra hands, extra feet, missing limbs, fused limbs, malformed limbs, mutated body, watermark, signature, text, logo, brand name, letters, lettering, text overlay, caption, username, airbrushed, plastic skin, waxy skin, overly smooth skin, glossy skin, cgi, 3d render, illustration, painting, cartoon, doll, oversaturated, overprocessed, hdr, beauty filter, jpeg artifacts, compression artifacts, low resolution, motion blur, video frame, screenshot",
+      "NEGATIVE_PROMPT": "low quality, ugly, unfinished, out of focus, deformed, disfigured, blurry, smudged, restricted palette, flat colors, bad anatomy, extra fingers, extra legs, extra limbs, duplicated legs, three legs, extra arms, extra hands, extra feet, missing limbs, fused limbs, malformed limbs, mutated body, watermark, signature, text, logo, brand name, letters, lettering, text overlay, caption, username, airbrushed, plastic skin, waxy skin, overly smooth skin, glossy skin, cgi, 3d render, illustration, painting, cartoon, doll, oversaturated, overprocessed, hdr, beauty filter, jpeg artifacts, compression artifacts, low resolution, motion blur, video frame, screenshot, professional photoshoot, studio lighting, overly polished, perfect symmetry, artificial look",
       "WIDTH": 1024,
       "HEIGHT": 1024,
       "STEPS": 26,

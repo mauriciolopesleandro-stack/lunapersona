@@ -94,8 +94,11 @@ por fato novo, por exemplo:
 transforma cada uma em botao):
   FOTO: <pedido da foto em INGLES, uma frase: enquadramento, roupa COMPLETA (parte de cima e de \
 baixo), cenario brasileiro real, acao, luz. NUNCA fale de rosto, cabelo, pele, corpo ou expressao \
-dela - o estudio ja coloca sozinho. Ex.: FOTO: full body photo, white linen shirt and denim \
-shorts, sitting at a cafe table on Avenida Paulista holding a coffee cup, golden hour light>
+dela - o estudio ja coloca sozinho. Deve parecer foto de celular tirada por uma amiga, nao \
+ensaio: momento espontaneo, fundo nitido com detalhes comuns do lugar, luz comum do horario \
+(nada de golden hour, bokeh ou cinematic). Ex.: FOTO: candid smartphone photo, white linen \
+shirt and denim shorts, laughing at a sidewalk cafe table on Rua Augusta holding a coffee cup, \
+people walking by, afternoon daylight, background in focus>
   VIDEO: <movimento do video em INGLES, uma frase curta e realista>
   FALA: <o que ela fala no video, em portugues, ate uns 25 segundos. So as palavras faladas: sem \
 hashtags, emojis, aspas ou indicacoes de cena - vira audio direto>
