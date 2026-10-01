@@ -593,3 +593,75 @@ export async function bootstrapPod(): Promise<BootstrapResult> {
   const res = await fetch("/api/runpod-bootstrap", { method: "POST" });
   return handleResponse<BootstrapResult>(res);
 }
+
+// Assistente de conteudo da persona (aba Conteudo).
+export interface ContentProfile {
+  bio: string;
+  personalidade: string;
+  jeito_de_falar: string;
+  publico: string;
+  redes: string;
+  nicho: string;
+  limites: string;
+}
+
+export interface ContentMemory {
+  text: string;
+  at: number;
+}
+
+export interface ContentMessage {
+  role: "user" | "assistant";
+  content: string;
+  at: number;
+}
+
+export interface ContentReply {
+  reply: string;
+  model: string;
+  memory_added: string[];
+}
+
+export async function getContentProfile(personaId: string): Promise<ContentProfile> {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/content/profile`);
+  return (await handleResponse<{ profile: ContentProfile }>(res)).profile;
+}
+
+export async function saveContentProfile(personaId: string, profile: ContentProfile): Promise<ContentProfile> {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/content/profile`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(profile),
+  });
+  return (await handleResponse<{ profile: ContentProfile }>(res)).profile;
+}
+
+export async function getContentMemory(personaId: string): Promise<ContentMemory[]> {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/content/memory`);
+  return (await handleResponse<{ memory: ContentMemory[] }>(res)).memory;
+}
+
+export async function deleteContentMemory(personaId: string, index: number): Promise<ContentMemory[]> {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/content/memory/${index}`, { method: "DELETE" });
+  return (await handleResponse<{ memory: ContentMemory[] }>(res)).memory;
+}
+
+export async function getContentConversation(personaId: string): Promise<ContentMessage[]> {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/content/conversation`);
+  return (await handleResponse<{ messages: ContentMessage[] }>(res)).messages;
+}
+
+export async function clearContentConversation(personaId: string): Promise<void> {
+  const res = await fetch(`${await apiBase()}/personas/${personaId}/content/conversation`, { method: "DELETE" });
+  await handleResponse<unknown>(res);
+}
+
+export function sendContentMessage(personaId: string, text: string): Promise<ContentReply> {
+  return runJob<ContentReply>(
+    `/personas/${personaId}/content/jobs`,
+    { text },
+    5 * 60_000,
+    "a resposta",
+    "/content/jobs"
+  );
+}

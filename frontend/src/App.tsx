@@ -25,6 +25,7 @@ import { ResultPanel } from "./components/ResultPanel";
 import { SettingsPage } from "./components/SettingsPage";
 import { Sidebar, type Tab } from "./components/Sidebar";
 import { VoicePage } from "./components/VoicePage";
+import { ContentPage } from "./components/ContentPage";
 import { loadLastResult, saveLastResult } from "./lib/lastResult";
 import { TopBar } from "./components/TopBar";
 import { addHistoryEntry } from "./lib/history";
@@ -364,6 +365,17 @@ export default function App() {
               models={models}
               workflows={workflows}
               onReferencesChanged={() => loadPersonaThumbnails(personas)}
+            />
+          )}
+          {tab === "conteudo" && (
+            <ContentPage
+              personas={personas}
+              ensureAwake={() => ensurePodAwake(setPodMessage)}
+              onUsePhoto={(id, photoPrompt) => {
+                setPersonaId(id);
+                setPrompt(photoPrompt);
+                setTab("gerar");
+              }}
             />
           )}
           {tab === "voz" && <VoicePage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
