@@ -60,6 +60,8 @@ SKIP_PREFIXES = (
     "wan2.2_", "wan_2.1_vae", "umt5_xxl_", "wav2vec2_",
     # troca de personagem (scripts/setup_animate.sh)
     "Wan2_2-Animate", "WanAnimate_", "lightx2v_I2V", "clip_vision_h", "sam2",
+    # pack com a persona (scripts/setup_qwen_edit.sh)
+    "qwen_image_edit_", "Qwen-Image-Edit-", "qwen_2.5_vl_", "qwen_image_vae",
 )
 SKIP_NAMES.update({".dl", "qwen-tts"})
 # Diferenca de relogio tolerada entre o mtime local e o LastModified do S3.
