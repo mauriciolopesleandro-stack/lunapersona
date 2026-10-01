@@ -98,6 +98,11 @@ hashtags, emojis, aspas ou indicacoes de cena - vira audio direto>
 - Escreva cada FOTO/VIDEO/FALA/LEGENDA numa linha so, comecando pelo prefixo (sem negrito).
 - Seja objetiva: nada de textos longos sem necessidade."""
 
+_MEMORY_REMINDER = (
+    "(Lembrete: se nesta mensagem eu contei algo novo sobre nicho, foco, redes, publico, estilo ou "
+    "preferencias, termine sua resposta com uma linha 'MEMORIA: <fato>' para cada fato novo.)"
+)
+
 # Aceita negrito/lista que o modelo as vezes poe: "- **MEMORIA:** fato".
 _MEMORY_LINE = re.compile(r"^[\s*-]*MEM[OÓ]RIA\**\s*:\s*\**\s*(.+?)[\s*]*$", re.I | re.M)
 
@@ -186,6 +191,9 @@ class ContentService:
         conversation = self.get_conversation(persona_id)
         conversation.append(asdict(ContentMessage("user", text.strip())))
         history = [ChatMessage(m["role"], m["content"]) for m in conversation[-CONTEXT_MESSAGES:]]
+        # Lembrete so na ultima mensagem (nao fica salvo): so no prompt de
+        # sistema o modelo quase nunca escrevia as linhas MEMORIA.
+        history[-1] = ChatMessage("user", f"{history[-1].content}\n\n{_MEMORY_REMINDER}")
         reply, model = await self.llm_client.chat(
             [ChatMessage("system", self._system_prompt(persona_id)), *history]
         )
