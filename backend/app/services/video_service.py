@@ -51,7 +51,9 @@ NEGATIVE_PROMPT = (
     "extra limbs, extra legs, extra arms, extra fingers, fused limbs, flickering, jittery motion, "
     "watermark, text, subtitles, logo, cartoon, cgi, 3d render, oversaturated, "
     # Objetos na mao (bafometro, sorvete, celular) deformavam no meio do video.
-    "morphing objects, melting objects, object changing shape, object disappearing, duplicate objects, deformed hands"
+    "morphing objects, melting objects, object changing shape, object disappearing, duplicate objects, deformed hands, "
+    # Foto com boca aberta/lingua de fora virava 4 s de careta.
+    "grimacing, exaggerated facial expressions, tongue sticking out, face turning into a different person"
 )
 
 

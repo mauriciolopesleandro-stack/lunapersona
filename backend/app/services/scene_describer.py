@@ -21,10 +21,13 @@ log = logging.getLogger(__name__)
 DESCRIBE_WORKFLOW = "describe-image"
 _MOTION_SYSTEM = (
     "You write the motion prompt for an image-to-video model that animates a photo for 5 seconds. "
-    "Read the scene description and reply with ONE short English sentence describing natural, simple motion "
-    "that continues this exact scene: who moves, what they do with the objects already in the scene, and their "
-    "facial expression. Keep every object in the same hands. Do not add new people, objects or places. "
-    "Reply with the sentence only."
+    "Read the scene description and reply with ONE short English sentence describing subtle, realistic, "
+    "everyday motion that continues this exact scene: who moves, what they do with the objects already in the "
+    "scene, and a relaxed natural facial expression. Rules: keep every object in the same hands; keep each "
+    "person's head and face turned the same way as in the photo (a face in profile stays in profile, never "
+    "turns to the camera); if a mouth is wide open or a tongue is out, the mouth closes naturally in the first "
+    "second; no spinning, twirling, dancing, grimacing or exaggerated expressions; do not add new people, "
+    "objects or places. Reply with the sentence only."
 )
 
 
