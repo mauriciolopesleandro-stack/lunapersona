@@ -135,7 +135,7 @@ export function AnimatePanel({ image, personaId }: Props) {
           rows={2}
           value={motion}
           onChange={(e) => setMotion(e.target.value)}
-          placeholder="O que ela faz no vídeo. Ex: ela sorri, joga o cabelo para o lado e caminha em direção à câmera"
+          placeholder="Opcional: o que ela faz. Se deixar vazio, a IA olha a foto e cria um movimento natural para a cena."
         />
       )}
       <div className="animate-options">
@@ -172,6 +172,7 @@ export function AnimatePanel({ image, personaId }: Props) {
       {clip && (
         <div className="animate-result">
           <video src={clip.url} controls autoPlay loop playsInline />
+          {video?.motion && <p className="muted small">Movimento: {video.motion}</p>}
           <button type="button" className="result-download" onClick={() => downloadFile(clip.url, clip.filename)}>
             ⬇ Baixar vídeo
           </button>
@@ -184,7 +185,7 @@ export function AnimatePanel({ image, personaId }: Props) {
             rows={2}
             value={nextMotion}
             onChange={(e) => setNextMotion(e.target.value)}
-            placeholder="O que acontece depois. Ex: ela termina o sorvete, joga o guardanapo no lixo e sai andando"
+            placeholder="O que acontece depois (opcional - vazio, a IA continua a cena sozinha). Ex: ela termina o sorvete e sai andando"
           />
           <div className="animate-options">
             <label>
@@ -198,7 +199,7 @@ export function AnimatePanel({ image, personaId }: Props) {
               </select>
             </label>
           </div>
-          <button type="button" className="primary" onClick={handleContinue} disabled={loading || !nextMotion.trim()}>
+          <button type="button" className="primary" onClick={handleContinue} disabled={loading}>
             {loading ? "Continuando..." : "Continuar vídeo"}
           </button>
         </div>

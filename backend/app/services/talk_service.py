@@ -19,6 +19,7 @@ from typing import Any
 from app.clients.comfyui_client import ComfyUIClient
 from app.clients.llm_client import OllamaClient
 from app.services.prompt_translator import to_english
+from app.services.scene_describer import SceneDescriber
 from app.services.video_service import FPS, TEXT_ENCODER, VAE, VideoResponse, video_size
 from app.services.voice_service import COMFY_OUTPUT, SUBFOLDER, VoiceService
 from app.workflow_manager.manager import WorkflowParamError
@@ -64,11 +65,16 @@ def _wav_seconds(path) -> float:
 
 class TalkService:
     def __init__(
-        self, comfyui_client: ComfyUIClient, voice_service: VoiceService, llm_client: OllamaClient | None = None
+        self,
+        comfyui_client: ComfyUIClient,
+        voice_service: VoiceService,
+        llm_client: OllamaClient | None = None,
+        scene_describer: SceneDescriber | None = None,
     ) -> None:
         self.comfyui_client = comfyui_client
         self.voice_service = voice_service
         self.llm_client = llm_client
+        self.scene_describer = scene_describer
 
     def build_graph(
         self, image: str, audio: str, prompt: str, width: int, height: int, chunks: int, seed: int, frames: int
@@ -151,6 +157,11 @@ class TalkService:
         prompt = f"{TALK_PROMPT}, {extra}" if extra else TALK_PROMPT
         width, height = video_size(req.quality, req.source_width, req.source_height)
         image = f"{req.image_subfolder}/{req.image}" if req.image_subfolder else req.image
+        # Cena da foto no prompt: o cenario e os objetos ficam no lugar.
+        if self.scene_describer:
+            scene = await self.scene_describer.describe(f"{image} [{req.image_type}]")
+            if scene:
+                prompt = f"{prompt}. Scene: {scene}"
         seed = req.seed if req.seed is not None else uuid.uuid4().int % (2**32)
         graph = self.build_graph(
             f"{image} [{req.image_type}]", f"{SUBFOLDER}/{audio_file} [output]", prompt, width, height, chunks, seed,

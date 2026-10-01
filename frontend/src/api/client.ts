@@ -296,6 +296,8 @@ export interface VideoResponse {
   duration_seconds: number;
   videos: GenerationImage[];
   last_frame?: GenerationImage | null;
+  // Movimento usado: o digitado (traduzido) ou o criado pela IA olhando a foto.
+  motion?: string;
 }
 
 export interface TalkRequestBody {

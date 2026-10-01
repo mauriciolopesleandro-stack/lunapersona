@@ -62,6 +62,7 @@ async def _run_job(job_id: str, service, req) -> None:
             "duration_seconds": result.duration_seconds,
             "videos": [asdict(v) for v in result.videos],
             "last_frame": asdict(result.last_frame) if result.last_frame else None,
+            "motion": result.motion,
         }
         job["status"] = "done"
     except Exception as exc:

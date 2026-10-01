@@ -15,6 +15,7 @@ from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
 from app.services.prompt_translator import to_english
 from app.services.reference_caption import clean_reference_caption
+from app.services.scene_describer import describe_image
 from app.workflow_manager.manager import WorkflowManager, WorkflowParamError
 
 
@@ -46,7 +47,6 @@ HIRES_MAX_PIXELS = 2_400_000
 
 IMG2IMG_WORKFLOW = "chroma-img2img"
 IMG2IMG_LORA_WORKFLOW = "chroma-img2img-lora"
-DESCRIBE_WORKFLOW = "describe-image"
 
 
 @dataclass
@@ -91,16 +91,7 @@ class GenerationService:
     async def _describe_reference(self, image_name: str) -> str:
         """Descricao da foto de referencia (Florence-2). Sem o custom node no
         pod (ex.: o outro volume), a geracao segue so com o texto digitado."""
-        try:
-            graph = self.workflow_manager.render(DESCRIBE_WORKFLOW, {"IMAGE": image_name})
-            entry = await self.comfyui_client.wait_for_completion(await self.comfyui_client.queue_prompt(graph))
-        except ComfyUIError:
-            return ""
-        for output in entry.get("outputs", {}).values():
-            text = output.get("text")
-            if text:
-                return str(text[0]).strip()
-        return ""
+        return await describe_image(self.comfyui_client, self.workflow_manager, image_name)
 
     async def generate(self, req: GenerationRequest) -> GenerationResponse:
         model = self.model_manager.get_model(req.model_id)

@@ -24,6 +24,7 @@ from typing import Any
 from app.clients.comfyui_client import ComfyUIClient, GenerationOutputImage
 from app.clients.llm_client import OllamaClient
 from app.services.prompt_translator import to_english
+from app.services.scene_describer import SceneDescriber
 from app.workflow_manager.manager import WorkflowParamError
 
 HIGH_NOISE_MODEL = "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors"
@@ -83,6 +84,8 @@ class VideoResponse:
     duration_seconds: float
     # Ultimo quadro em PNG: ponto de partida de um "Continuar".
     last_frame: GenerationOutputImage | None = None
+    # Movimento usado (o digitado, traduzido, ou o criado pela IA).
+    motion: str = ""
 
 
 def video_size(quality: str, width: int | None, height: int | None) -> tuple[int, int]:
@@ -95,9 +98,15 @@ def video_size(quality: str, width: int | None, height: int | None) -> tuple[int
 
 
 class VideoService:
-    def __init__(self, comfyui_client: ComfyUIClient, llm_client: OllamaClient | None = None) -> None:
+    def __init__(
+        self,
+        comfyui_client: ComfyUIClient,
+        llm_client: OllamaClient | None = None,
+        scene_describer: SceneDescriber | None = None,
+    ) -> None:
         self.comfyui_client = comfyui_client
         self.llm_client = llm_client
+        self.scene_describer = scene_describer
 
     def build_graph(
         self,
@@ -208,8 +217,20 @@ class VideoService:
             content = await self.comfyui_client.download_file(req.continue_video, VIDEO_SUBFOLDER, "output")
             previous_video = await self.comfyui_client.upload_image(f"continuar_{uuid.uuid4().hex[:10]}.mp4", content)
         seed = req.seed if req.seed is not None else uuid.uuid4().int % (2**32)
-        motion = await to_english(self.llm_client, req.prompt) or "she moves naturally and smiles"
-        prompt = f"{motion}, {REALISM_SUFFIX}"
+        # A IA olha a foto de onde o video parte (ou o ultimo quadro, ao
+        # continuar): a cena descrita mantem objetos e pessoas no lugar, e sem
+        # movimento digitado ela propoe um natural para a cena.
+        if req.continue_last_frame:
+            start_image = f"{VIDEO_SUBFOLDER}/{req.continue_last_frame} [output]"
+        else:
+            name = f"{req.image_subfolder}/{req.image}" if req.image_subfolder else req.image
+            start_image = f"{name} [{req.image_type}]"
+        scene = await self.scene_describer.describe(start_image) if self.scene_describer else ""
+        motion = await to_english(self.llm_client, req.prompt)
+        if not motion and self.scene_describer:
+            motion = await self.scene_describer.suggest_motion(scene)
+        motion = motion or "she moves naturally and smiles"
+        prompt = f"{motion}. Scene: {scene}, {REALISM_SUFFIX}" if scene else f"{motion}, {REALISM_SUFFIX}"
 
         graph = self.build_graph(req, prompt, width, height, seed, seconds // SEGMENT_SECONDS, previous_video)
         start = time.monotonic()
@@ -225,4 +246,5 @@ class VideoService:
             videos=[o for o in outputs if o.filename.endswith(".mp4")],
             duration_seconds=time.monotonic() - start,
             last_frame=next((o for o in outputs if o.filename.endswith(".png")), None),
+            motion=motion,
         )
