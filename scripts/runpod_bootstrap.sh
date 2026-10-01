@@ -43,6 +43,12 @@ if [ -n "${RUNPOD_POD_ID:-}" ]; then
     echo "Pod atual: $RUNPOD_POD_ID (ComfyUI em $COMFYUI_URL)"
 fi
 
+# Enquanto atualiza (pip, Ollama), o backend antigo continua contando
+# inatividade e desligava o pod no meio: /api/busy conta como uso.
+( while sleep 60; do curl -s -m 5 http://127.0.0.1:8000/api/busy > /dev/null || true; done ) &
+KEEPALIVE_PID=$!
+trap 'kill "$KEEPALIVE_PID" 2>/dev/null || true' EXIT
+
 echo "== 1/5: zstd + pciutils (necessarios pelo instalador do Ollama) =="
 # pciutils (lspci) e o que o installer do Ollama usa pra detectar a GPU e
 # baixar o backend CUDA; sem ele ele caiu silenciosamente pra modo CPU
