@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.clients.comfyui_client import ComfyUIError
+from app.jobs import register_tasks
 from app.model_manager.manager import ModelNotFoundError
 from app.persona_manager.manager import PersonaNotFoundError
 from app.services.generation_service import GenerationRequest, GenerationResponse
@@ -18,7 +19,7 @@ router = APIRouter()
 # O proxy da RunPod corta respostas com mais de ~100 s, e uma geracao numa
 # L4 passa disso: o site inicia o job e consulta ate terminar.
 _jobs: dict[str, dict] = {}
-_tasks: set[asyncio.Task] = set()
+_tasks: set[asyncio.Task] = register_tasks(set())
 _MAX_JOBS = 50
 
 

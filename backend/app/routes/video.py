@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from app.clients.comfyui_client import ComfyUIError
-from app.jobs import JobRegistry
+from app.jobs import JobRegistry, register_tasks
 from app.persona_manager.manager import PersonaNotFoundError
 from app.services.swap_service import COMFY_ROOT, MAX_SECONDS as SWAP_MAX_SECONDS, SwapRequest
 from app.services.talk_service import TalkRequest
@@ -20,7 +20,7 @@ router = APIRouter()
 # Mesmo esquema de /generate/jobs: um video leva minutos, bem mais que o
 # limite de ~100 s do proxy da RunPod, entao o site inicia e consulta.
 _jobs: dict[str, dict] = {}
-_tasks: set[asyncio.Task] = set()
+_tasks: set[asyncio.Task] = register_tasks(set())
 _MAX_JOBS = 20
 _reference_jobs = JobRegistry()
 

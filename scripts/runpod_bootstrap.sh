@@ -95,6 +95,13 @@ pip install -q -r "$BACKEND_DIR/requirements.txt"
 
 echo "== 5/5: backend FastAPI =="
 if pgrep -f "uvicorn app.main:app" >/dev/null 2>&1; then
+    # Nao corta geracao/video em andamento (inclusive as etapas fora da fila
+    # do ComfyUI: upload, descricao da foto, traducao). Espera ate 30 min.
+    for _ in $(seq 1 180); do
+        curl -s -m 5 http://127.0.0.1:8000/api/busy | grep -q '"busy":true' || break
+        echo "Backend ocupado (geracao em andamento) - esperando para reiniciar..."
+        sleep 10
+    done
     echo "Backend ja rodando - reiniciando para pegar mudancas."
     pkill -f "uvicorn app.main:app" || true
     sleep 2

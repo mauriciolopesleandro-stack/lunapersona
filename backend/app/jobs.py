@@ -16,6 +16,21 @@ from fastapi import HTTPException
 from app.clients.comfyui_client import ComfyUIError
 
 
+# Tarefas das rotas que ainda nao usam JobRegistry (geracao, video): o
+# reinicio do backend e o auto-desligar precisam saber delas tambem.
+_TASK_SETS: list[set[asyncio.Task]] = []
+
+
+def register_tasks(tasks: set[asyncio.Task]) -> set[asyncio.Task]:
+    _TASK_SETS.append(tasks)
+    return tasks
+
+
+def running_jobs() -> int:
+    """Tarefas longas em andamento (geracao, video, voz, chat, conteudo)."""
+    return JobRegistry.running + sum(len(s) for s in _TASK_SETS)
+
+
 class JobRegistry:
     # Jobs rodando em todas as rotas: o auto-desligamento espera eles acabarem.
     running = 0

@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.idle_shutdown import IdleShutdownTracker
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
-from app.jobs import JobRegistry
+from app.jobs import running_jobs
 from app.routes import chat, content, generate, health, models, personas, video, voice, workflows
 from app.services.chat_service import ChatService
 from app.services.generation_service import GenerationService
@@ -97,7 +97,7 @@ repo_root = settings.workflows_dir.parent
 
 
 async def _studio_busy() -> bool:
-    return JobRegistry.running > 0 or await app.state.comfyui_client.is_busy()
+    return running_jobs() > 0 or await app.state.comfyui_client.is_busy()
 
 
 sync_python = repo_root / ".venv-sync" / "bin" / "python"
