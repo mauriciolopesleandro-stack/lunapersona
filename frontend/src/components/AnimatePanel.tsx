@@ -9,6 +9,7 @@ import {
 } from "../api/client";
 import { downloadFile } from "../lib/download";
 import { loadLastVideo, saveLastVideo } from "../lib/lastResult";
+import { SWAP_MAX_SECONDS, swapSecondsFor, videoDuration } from "../lib/videoDuration";
 
 interface Props {
   image: GenerationImage;
@@ -19,7 +20,6 @@ interface Props {
 const DURATIONS = [5, 10, 15, 20];
 // Fala media em portugues: ~15 caracteres por segundo.
 const CHARS_PER_SECOND = 15;
-const SWAP_DURATIONS = [5, 10, 15];
 
 // Anima a imagem gerada (Wan 2.2 no pod). O video parte da propria foto,
 // entao a persona continua a mesma. Dois modos: movimento (o texto descreve o
@@ -29,7 +29,12 @@ const SWAP_DURATIONS = [5, 10, 15];
 export function AnimatePanel({ image, personaId }: Props) {
   const [mode, setMode] = useState<"motion" | "talk" | "swap">("motion");
   const [swapFile, setSwapFile] = useState<File | null>(null);
-  const [swapSeconds, setSwapSeconds] = useState(10);
+  // Duracao real do video escolhido: a troca usa ele inteiro.
+  const [swapDuration, setSwapDuration] = useState(0);
+  const swapSeconds = swapSecondsFor(swapDuration);
+  // Padrao: a Luna e criada a partir do video (mesma roupa e pose); a outra
+  // opcao usa esta foto como ela e.
+  const [swapAuto, setSwapAuto] = useState(true);
   const [motion, setMotion] = useState("");
   const [speech, setSpeech] = useState("");
   const [gesture, setGesture] = useState("");
@@ -71,9 +76,10 @@ export function AnimatePanel({ image, personaId }: Props) {
         const uploaded = await uploadSwapVideo(swapFile!);
         res = await swapVideo({
           video: uploaded,
-          image: source.image,
+          image: swapAuto ? "" : source.image,
           image_subfolder: source.image_subfolder,
           image_type: source.image_type,
+          persona_id: personaId!,
           prompt: motion.trim(),
           quality,
           max_seconds: swapSeconds,
@@ -123,7 +129,7 @@ export function AnimatePanel({ image, personaId }: Props) {
   const clip = video?.videos[0];
   const talkSeconds = Math.max(5, Math.ceil(speech.trim().length / CHARS_PER_SECOND));
   const minutes = swapping
-    ? (quality === "720p" ? 25 : 12) * Math.ceil(swapSeconds / 5)
+    ? (quality === "720p" ? 25 : 12) * Math.ceil(swapSeconds / 5) + (swapAuto ? 2 : 0)
     : talking
     ? (quality === "720p" ? 20 : 10) * Math.ceil(talkSeconds / 5)
     : (quality === "720p" ? 5 : 3) * (seconds / 5);
@@ -147,17 +153,37 @@ export function AnimatePanel({ image, personaId }: Props) {
       {swapping ? (
         <>
           <p className="muted small">
-            Suba um vídeo (seu ou com autorização): a pessoa dele vira a Luna desta foto, com o mesmo movimento,
-            cenário e áudio. Funciona melhor com uma pessoa só, de corpo visível.
+            Suba um vídeo (seu ou com autorização): a pessoa dele vira a Luna, com o mesmo movimento, cenário e
+            áudio. Funciona melhor com uma pessoa só, de corpo visível.
           </p>
+          <div className="animate-modes">
+            <button type="button" className={swapAuto ? "active" : ""} onClick={() => setSwapAuto(true)}>
+              Roupa do vídeo
+            </button>
+            <button type="button" className={!swapAuto ? "active" : ""} onClick={() => setSwapAuto(false)}>
+              Luna desta foto
+            </button>
+          </div>
           <label className="reference-upload">
             <input
               type="file"
               accept="video/mp4,video/quicktime,video/webm"
-              onChange={(e) => setSwapFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                const picked = e.target.files?.[0] ?? null;
+                setSwapFile(picked);
+                setSwapDuration(0);
+                if (picked) videoDuration(picked).then(setSwapDuration);
+              }}
             />
             🎞 {swapFile ? swapFile.name : "Escolher vídeo"}
           </label>
+          {swapFile && swapDuration > 0 && (
+            <p className="muted small">
+              {swapDuration > SWAP_MAX_SECONDS
+                ? `O vídeo tem ${Math.round(swapDuration)} s: a troca usa os primeiros ${SWAP_MAX_SECONDS} s (máximo).`
+                : `Vídeo de ${swapDuration.toFixed(1)} s: a troca usa ele inteiro.`}
+            </p>
+          )}
           <input
             type="text"
             value={motion}
@@ -191,18 +217,6 @@ export function AnimatePanel({ image, personaId }: Props) {
         />
       )}
       <div className="animate-options">
-        {swapping && (
-          <label>
-            Usar até
-            <select value={swapSeconds} onChange={(e) => setSwapSeconds(Number(e.target.value))}>
-              {SWAP_DURATIONS.map((d) => (
-                <option key={d} value={d}>
-                  {d} segundos do vídeo
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         {!talking && !swapping && (
           <label>
             Duração
@@ -237,6 +251,14 @@ export function AnimatePanel({ image, personaId }: Props) {
         <div className="animate-result">
           <video src={clip.url} controls autoPlay loop playsInline />
           {video?.motion && <p className="muted small">Movimento: {video.motion}</p>}
+          {video?.reference && (
+            <p className="muted small">
+              Luna usada na troca:{" "}
+              <a href={video.reference.url} target="_blank" rel="noreferrer">
+                ver foto
+              </a>
+            </p>
+          )}
           <button type="button" className="result-download" onClick={() => downloadFile(clip.url, clip.filename)}>
             ⬇ Baixar vídeo
           </button>

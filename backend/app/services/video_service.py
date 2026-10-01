@@ -88,6 +88,8 @@ class VideoResponse:
     last_frame: GenerationOutputImage | None = None
     # Movimento usado (o digitado, traduzido, ou o criado pela IA).
     motion: str = ""
+    # Troca de personagem sem foto: a persona gerada a partir do video.
+    reference: GenerationOutputImage | None = None
 
 
 def video_size(quality: str, width: int | None, height: int | None) -> tuple[int, int]:

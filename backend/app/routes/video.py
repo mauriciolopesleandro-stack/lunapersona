@@ -54,13 +54,14 @@ class TalkBody(BaseModel):
 
 class SwapBody(BaseModel):
     video: str = Field(..., min_length=1)
-    image: str = Field(..., min_length=1)
+    image: str = ""
     image_type: Literal["output", "input"] = "output"
     image_subfolder: str = ""
     prompt: str = ""
     quality: Literal["480p", "720p"] = "480p"
     max_seconds: int = Field(10, ge=2, le=SWAP_MAX_SECONDS)
     seed: int | None = None
+    persona_id: str | None = None
 
 
 _VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".m4v"}
@@ -80,6 +81,7 @@ async def _run_job(job_id: str, service, req) -> None:
             "videos": [asdict(v) for v in result.videos],
             "last_frame": asdict(result.last_frame) if result.last_frame else None,
             "motion": result.motion,
+            "reference": asdict(result.reference) if result.reference else None,
         }
         job["status"] = "done"
     except Exception as exc:

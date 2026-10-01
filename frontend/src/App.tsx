@@ -26,6 +26,7 @@ import { SettingsPage } from "./components/SettingsPage";
 import { Sidebar, type Tab } from "./components/Sidebar";
 import { VoicePage } from "./components/VoicePage";
 import { ContentPage } from "./components/ContentPage";
+import { SwapPage } from "./components/SwapPage";
 import { loadLastResult, saveLastResult } from "./lib/lastResult";
 import { TopBar } from "./components/TopBar";
 import { addHistoryEntry } from "./lib/history";
@@ -367,6 +368,7 @@ export default function App() {
               onReferencesChanged={() => loadPersonaThumbnails(personas)}
             />
           )}
+          {tab === "trocar" && <SwapPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
           {tab === "conteudo" && (
             <ContentPage
               personas={personas}

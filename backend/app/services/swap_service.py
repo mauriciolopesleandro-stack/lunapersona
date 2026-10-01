@@ -26,6 +26,7 @@ from typing import Any
 
 from app.clients.comfyui_client import ComfyUIClient, ComfyUIError
 from app.clients.llm_client import OllamaClient
+from app.services.generation_service import GenerationRequest, GenerationService
 from app.services.prompt_translator import to_english
 from app.services.video_service import QUALITY_PIXELS, TEXT_ENCODER, VAE, VideoResponse
 from app.workflow_manager.manager import WorkflowParamError
@@ -42,7 +43,7 @@ SAM2_MODEL = "sam2_hiera_base_plus.safetensors"
 FPS = 16
 CHUNK_FRAMES = 77
 STEPS = 6
-MAX_SECONDS = 15
+MAX_SECONDS = 30
 CHUNK_TIMEOUT = {"480p": 900.0, "720p": 1800.0}
 
 DEFAULT_PROMPT = "a young woman moving naturally, realistic video, consistent face and body, detailed skin"
@@ -56,13 +57,23 @@ NEGATIVE_PROMPT = (
 @dataclass
 class SwapRequest:
     video: str  # mp4 enviado, ja no input/ do ComfyUI
-    image: str  # foto da persona (referencia)
+    # Foto da persona (referencia). Vazia: a persona e gerada a partir do 1o
+    # quadro do video, com a mesma roupa e pose (precisa de persona_id).
+    image: str = ""
     image_type: str = "output"
     image_subfolder: str = ""
     prompt: str = ""
     quality: str = "480p"
     max_seconds: int = 10
     seed: int | None = None
+    persona_id: str | None = None
+
+
+# Pedido da foto automatica: o resto (roupa, pose, cenario) vem da descricao
+# do 1o quadro, como numa foto de referencia enviada no site.
+AUTO_REFERENCE_PROMPT = "same outfit, pose and setting as the reference photo"
+AUTO_REFERENCE_DENOISE = 0.8
+AUTO_REFERENCE_PIXELS = 1024 * 1024
 
 
 def _person_points(data_text: str, width: int, height: int) -> str:
@@ -90,9 +101,38 @@ def _person_points(data_text: str, width: int, height: int) -> str:
 
 
 class SwapService:
-    def __init__(self, comfyui_client: ComfyUIClient, llm_client: OllamaClient | None = None) -> None:
+    def __init__(
+        self,
+        comfyui_client: ComfyUIClient,
+        llm_client: OllamaClient | None = None,
+        generation_service: GenerationService | None = None,
+    ) -> None:
         self.comfyui_client = comfyui_client
         self.llm_client = llm_client
+        self.generation_service = generation_service
+
+    async def _auto_reference(self, persona_id: str | None, first: str, width: int, height: int) -> str:
+        """Gera a persona no 1o quadro do video (img2img com a LoRA): a troca
+        sai com a roupa e a pose da pessoa do video, sem precisar de foto."""
+        if not persona_id or self.generation_service is None:
+            raise WorkflowParamError("Escolha uma foto da persona ou a persona para gerar uma automaticamente.")
+        persona = self.generation_service.persona_manager.get_persona(persona_id)
+        scale = (AUTO_REFERENCE_PIXELS / (width * height)) ** 0.5
+        result = await self.generation_service.generate(
+            GenerationRequest(
+                prompt=AUTO_REFERENCE_PROMPT,
+                model_id=persona.generation.model_id,
+                workflow_id=persona.generation.workflow_id,
+                persona_id=persona_id,
+                width=round(width * scale / 16) * 16,
+                height=round(height * scale / 16) * 16,
+                reference_image=first,
+                denoise=AUTO_REFERENCE_DENOISE,
+            )
+        )
+        if not result.images:
+            raise WorkflowParamError("Nao consegui criar a persona a partir do video.")
+        return result.images[0]
 
     async def _prep(self, video: str, quality: str, max_seconds: int) -> tuple[str, str, dict[str, Any]]:
         stem = f"troca_{uuid.uuid4().hex[:10]}"
@@ -237,6 +277,10 @@ class SwapService:
         seconds = max(2, min(MAX_SECONDS, req.max_seconds))
         video, first, info = await self._prep(req.video, req.quality, seconds)
         width, height, frames = info["width"], info["height"], info["frames"]
+        reference = None
+        if not req.image:
+            reference = await self._auto_reference(req.persona_id, first, width, height)
+            req.image, req.image_type, req.image_subfolder = reference.filename, "output", reference.subfolder
         points = await self._find_person(first, width, height)
         extra = await to_english(self.llm_client, req.prompt) if req.prompt.strip() else ""
         prompt = f"{extra}, {DEFAULT_PROMPT}" if extra else DEFAULT_PROMPT
@@ -255,4 +299,5 @@ class SwapService:
             height=height,
             videos=[o for o in outputs if o.filename.endswith(".mp4")],
             duration_seconds=time.monotonic() - start,
+            reference=reference,
         )

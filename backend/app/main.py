@@ -77,6 +77,7 @@ app.state.talk_service = TalkService(
 app.state.swap_service = SwapService(
     comfyui_client=app.state.comfyui_client,
     llm_client=app.state.llm_client,
+    generation_service=app.state.generation_service,
 )
 app.state.content_service = ContentService(
     llm_client=app.state.llm_client,

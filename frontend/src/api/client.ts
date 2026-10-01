@@ -298,6 +298,8 @@ export interface VideoResponse {
   last_frame?: GenerationImage | null;
   // Movimento usado: o digitado (traduzido) ou o criado pela IA olhando a foto.
   motion?: string;
+  // Troca sem foto: a persona criada a partir do 1o quadro do video.
+  reference?: GenerationImage | null;
 }
 
 export interface TalkRequestBody {
@@ -328,7 +330,9 @@ export async function uploadSwapVideo(file: File): Promise<string> {
 
 export interface SwapRequestBody {
   video: string;
+  // Vazio: a persona e criada a partir do video (com persona_id).
   image: string;
+  persona_id?: string;
   image_type?: "output" | "input";
   image_subfolder?: string;
   prompt?: string;
@@ -336,9 +340,11 @@ export interface SwapRequestBody {
   max_seconds: number;
 }
 
-// ~10-20 min para 5-10 s de video.
+// ~12 min (480p) a 25 min (720p) a cada 5 s de video, mais a foto automatica.
 export function swapVideo(body: SwapRequestBody): Promise<VideoResponse> {
-  return runJob<VideoResponse>("/video/swap/jobs", body, 90 * 60_000, "a troca de personagem", "/video/jobs");
+  const perFiveMs = (body.quality === "720p" ? 30 : 15) * 60_000;
+  const maxMs = perFiveMs * Math.ceil(body.max_seconds / 5) + 15 * 60_000;
+  return runJob<VideoResponse>("/video/swap/jobs", body, maxMs, "a troca de personagem", "/video/jobs");
 }
 
 // Cada 5 s de video levam alguns minutos (mais em 720p).
