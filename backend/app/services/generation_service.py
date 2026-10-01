@@ -55,8 +55,8 @@ HIRES_MAX_PIXELS = 2_400_000
 
 # Se o pedido ja fala de expressao/olhar, a atitude padrao da persona nao entra.
 _EXPRESSION_WORDS = re.compile(
-    r"\b(?:smilw*|laughw*|grinw*|expression|surprisw*|shockw*|mouth|winkw*|poutw*|serious|sad|angry|"
-    r"cryw*|tongue|screamw*|gaze|frownw*|kissw*|looking)\b",
+    r"\b(?:smil\w*|laugh\w*|grin\w*|expression|surpris\w*|shock\w*|mouth|wink\w*|pout\w*|serious|sad|angry|"
+    r"cry\w*|tongue|scream\w*|gaze|frown\w*|kiss\w*|looking)\b",
     re.I,
 )
 # Frases da descricao sobre outra pessoa (no pack so a mulher e redesenhada).
