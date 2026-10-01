@@ -21,8 +21,17 @@ export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt
   return (
     <div>
       <div className="panel result-stage">
+        {/* A foto anterior nunca pode parecer o resultado novo: some durante a
+            geracao e, se a nova falhar, o erro aparece em cima dela. */}
+        {!loading && error && image && (
+          <p className="error result-error">
+            A nova imagem não foi gerada: {error}
+            <br />
+            <span className="small">Abaixo continua a imagem anterior.</span>
+          </p>
+        )}
         <div className="result-image-wrap">
-          {loading && !image && <p className="muted">Gerando imagem...</p>}
+          {loading && <p className="muted">Gerando nova imagem...</p>}
           {!loading && error && !image && <p className="error" style={{ padding: 24 }}>{error}</p>}
           {!loading && !error && !image && (
             <div className="result-empty">
@@ -30,13 +39,13 @@ export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt
               <p className="small">Preencha os passos ao lado e clique em Gerar imagem.</p>
             </div>
           )}
-          {image && broken && (
+          {!loading && image && broken && (
             <div className="result-empty">
               <p>A última imagem não está mais disponível.</p>
               <p className="small">Ela ficava no servidor anterior, que foi desligado. Gere de novo.</p>
             </div>
           )}
-          {image && !broken && (
+          {!loading && image && !broken && (
             <>
               <img src={image.url} alt={image.filename} onError={() => setBroken(true)} />
               <button type="button" className="result-download" onClick={() => downloadFile(image.url, image.filename)}>
@@ -46,7 +55,7 @@ export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt
           )}
         </div>
 
-        {image && (
+        {!loading && image && (
           <div className="result-actions">
             <button type="button" onClick={onRegenerate} disabled={loading}>
               ↻ Gerar novamente
@@ -57,7 +66,7 @@ export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt
           </div>
         )}
 
-        {result && (
+        {!loading && result && (
           <dl className="meta" style={{ padding: image ? "0 18px 16px" : 0 }}>
             {result.persona_id && (
               <>

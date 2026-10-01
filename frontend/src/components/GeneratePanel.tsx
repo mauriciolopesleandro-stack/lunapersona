@@ -321,8 +321,15 @@ export function GeneratePanel({
       </select>
 
       <button type="submit" className="primary generate-submit" disabled={loading || (!prompt.trim() && !reference)}>
-        {loading ? "Gerando..." : "✨ Gerar imagem"}
+        {loading ? "Gerando..." : reference ? "✨ Gerar imagem (com a foto de referência)" : "✨ Gerar imagem"}
       </button>
+      {/* A foto de referencia continua valendo nas proximas geracoes ate ser
+          removida - sem esse aviso parecia que o site "pegava a foto anterior". */}
+      {reference && !loading && (
+        <p className="muted small">
+          A foto de referência do passo 2 continua sendo usada. Para gerar sem ela, clique em remover lá em cima.
+        </p>
+      )}
     </form>
   );
 }

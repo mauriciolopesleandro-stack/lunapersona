@@ -1527,3 +1527,9 @@ button.result-download {
 .swap-check.warn {
   color: var(--warning);
 }
+
+/* Erro da geracao nova acima da imagem anterior (ResultPanel) */
+.result-error {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+}
