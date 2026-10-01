@@ -228,9 +228,14 @@ class SwapService:
             raise WorkflowParamError("Escolha uma foto da persona ou a persona para gerar uma automaticamente.")
         persona = self.generation_service.persona_manager.get_persona(persona_id)
         scale = (AUTO_REFERENCE_PIXELS / (width * height)) ** 0.5
+        # O comprimento do cabelo da pessoa do video vencia (Luna de cabelo
+        # curto): o formato do cabelo da persona entra no pedido. A foto vira a
+        # aparencia dela no video todo, entao a identidade precisa estar certa.
+        hair = persona.identity.fixed.get("formato_cabelo", "").strip()
+        parts = [extra.strip(), hair, AUTO_REFERENCE_PROMPT]
         result = await self.generation_service.generate(
             GenerationRequest(
-                prompt=f"{extra.strip()}, {AUTO_REFERENCE_PROMPT}" if extra.strip() else AUTO_REFERENCE_PROMPT,
+                prompt=", ".join(p for p in parts if p),
                 model_id=persona.generation.model_id,
                 workflow_id=persona.generation.workflow_id,
                 persona_id=persona_id,
