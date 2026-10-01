@@ -59,6 +59,9 @@ _EXPRESSION_WORDS = re.compile(
     r"cryw*|tongue|screamw*|gaze|frownw*|kissw*|looking)",
     re.I,
 )
+# Frases da descricao sobre outra pessoa (no pack so a mulher e redesenhada).
+_OTHER_PERSON = re.compile(r"(?:man|men|he|his|him|husband|boyfriend|guy|male|beard)", re.I)
+
 # Correcao de rosto depois da geracao com LoRA (workflows/chroma-face-refine.json).
 FACE_REFINE_WORKFLOW = "chroma-face-refine"
 
@@ -202,6 +205,12 @@ class GenerationService:
             description = await self._describe_reference(req.reference_image)
             if description and req.persona_id:
                 description = clean_reference_caption(description, keep_expression=not attitude)
+            if description and req.person_swap:
+                # So a area dela e redesenhada: frases sobre o homem da foto
+                # faziam o modelo desenhar um rosto masculino no lugar do dela.
+                description = " ".join(
+                    s for s in re.split(r"(?<=[.!?])\s+", description) if not _OTHER_PERSON.search(s)
+                )
             if description:
                 prompt = f"{prompt}, {description}"
 

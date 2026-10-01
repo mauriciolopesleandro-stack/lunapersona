@@ -13,7 +13,7 @@
       "LORA_NAME"
     ],
     "optional_params": {
-      "NEGATIVE_PROMPT": "low quality, ugly, deformed, disfigured, blurry, bad anatomy, extra fingers, extra legs, extra limbs, extra arms, extra hands, missing limbs, fused limbs, malformed limbs, watermark, signature, text, logo, letters, airbrushed, plastic skin, waxy skin, overly smooth skin, cgi, 3d render, illustration, cartoon, doll, oversaturated, beauty filter, two women, duplicate person",
+      "NEGATIVE_PROMPT": "low quality, ugly, deformed, disfigured, blurry, bad anatomy, extra fingers, extra legs, extra limbs, extra arms, extra hands, missing limbs, fused limbs, malformed limbs, watermark, signature, text, logo, letters, airbrushed, plastic skin, waxy skin, overly smooth skin, cgi, 3d render, illustration, cartoon, doll, oversaturated, beauty filter, two women, duplicate person, man, male face, beard, mustache, masculine, second person, extra head",
       "WIDTH": 1024,
       "HEIGHT": 1024,
       "STEPS": 28,
