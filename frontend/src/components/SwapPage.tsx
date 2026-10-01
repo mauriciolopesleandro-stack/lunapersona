@@ -201,10 +201,10 @@ export function SwapPage({ personas, ensureAwake }: Props) {
         <div className="panel">
           <h3>2. Escolha como {personaName} vai ficar</h3>
           <p className="muted small">
-            A IA criou {personaName} em cada momento do vídeo e conferiu roupa, pose e cenário (se achou erro, já
-            gerou de novo com a correção). Confira e escolha uma; se ainda tiver algo errado, escreva a correção e gere
-            de novo. Mãos e dedos a IA não confere tão bem - olhe com atenção. A foto escolhida define a aparência
-            dela no vídeo todo.
+            A IA criou {personaName} em cada momento do vídeo e conferiu a roupa (se achou erro, já gerou de novo com
+            a correção). Cenário, luz e movimento vêm do próprio vídeo; da foto escolhida vêm o rosto, o cabelo e a
+            roupa dela no vídeo todo. Confira e escolha uma; se algo estiver errado, escreva a correção e gere de novo.
+            Mãos e dedos a IA não confere tão bem - olhe com atenção.
           </p>
           <div className="swap-options">
             {frames.frames.map((frame, i) => {
@@ -228,11 +228,11 @@ export function SwapPage({ personas, ensureAwake }: Props) {
                   {option?.check && !option.busy && (
                     <p className={option.check.coherent === false ? "swap-check warn" : "swap-check"}>
                       {option.check.coherent === true
-                        ? `✓ A IA conferiu: roupa, pose e cenário batem com o vídeo${
+                        ? `✓ A IA conferiu: a roupa bate com o vídeo${
                             (option.check.attempts ?? 1) > 1 ? " (corrigiu sozinha 1 vez)" : ""
                           }.`
                         : option.check.coherent === false
-                        ? `⚠ A IA ainda vê diferença: ${option.check.problems_pt || "confira a roupa e a pose"}`
+                        ? `⚠ A IA ainda vê diferença: ${option.check.problems_pt || "confira a roupa"}`
                         : "A IA não conseguiu conferir esta foto - confira você."}
                     </p>
                   )}

@@ -46,16 +46,21 @@ LLM_VRAM_BYTES = 10 * 1024**3
 
 log = logging.getLogger(__name__)
 
+# Na troca, cenario, luz e pose vem do proprio video: da foto so a roupa e a
+# aparencia importam. Conferir fundo/moveis so gerava alarme falso
+# ("armario" x "comoda") e uma segunda tentativa a toa.
 _CHECK_SYSTEM = (
-    "You compare two image descriptions. VIDEO describes a frame of a video. GENERATED describes a photo that "
-    "must recreate that frame with a different woman. The woman's identity is SUPPOSED to change: ignore any "
-    "difference in face, hair, skin, eyes, body shape, age, tattoos, jewelry, makeup and facial expression, and "
-    "ignore text or logos. Check only: clothing (type, color, pattern, top and bottom), pose and body position, "
-    "objects in her hands, the setting/background, number of people, and anatomy problems (extra or missing "
-    "limbs, hands or fingers, deformed body). Small wording differences are fine. Reply with JSON only: "
-    '{"coherent": true or false, "problems_pt": "short list of real problems in Brazilian Portuguese, empty if '
-    'coherent", "fix_en": "short English phrase describing what the photo must show to fix it (e.g. green '
-    'leopard print bikini with chain straps), empty if coherent"}'
+    "You compare two image descriptions. VIDEO describes a frame of a video. GENERATED describes a photo of a "
+    "DIFFERENT woman that will replace her in that video; the video keeps its own background, lighting and "
+    "motion. So compare ONLY her clothing: each garment (top, bottom, dress, shoes if visible), its type, color "
+    "and pattern, and clearly visible details such as chains, straps or cutouts. Also flag more than one person "
+    "and clear anatomy problems (extra or missing limbs, hands or fingers). IGNORE: background, furniture, "
+    "objects, pose, camera angle, face, hair, skin, body shape, makeup, jewelry, glasses, expression, text. "
+    "Synonyms are the same thing (bikini bottom = panties = briefs; cabinet = dresser). Only report a problem "
+    "you are sure about. Reply with JSON only: "
+    '{"coherent": true or false, "problems_pt": "one short sentence in Brazilian Portuguese, empty if '
+    'coherent", "fix_en": "short English phrase with the correct clothing (e.g. teal leopard print bikini with '
+    'gold chain straps), empty if coherent"}'
 )
 
 ANIMATE_MODEL = "Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors"
@@ -207,11 +212,13 @@ class SwapService:
             data = {}
         if not isinstance(data.get("coherent"), bool):
             return unknown
-        return {
-            "coherent": data["coherent"],
-            "problems_pt": str(data.get("problems_pt") or "").strip(),
-            "fix_en": str(data.get("fix_en") or "").strip(),
-        }
+        def text(value: Any) -> str:
+            # O modelo as vezes devolve lista em vez de frase.
+            if isinstance(value, list):
+                return "; ".join(str(v).strip() for v in value if str(v).strip())
+            return str(value or "").strip()
+
+        return {"coherent": data["coherent"], "problems_pt": text(data.get("problems_pt")), "fix_en": text(data.get("fix_en"))}
 
     async def _auto_reference(
         self,
