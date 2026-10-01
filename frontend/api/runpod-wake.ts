@@ -5,7 +5,7 @@ import { NoGpuAvailableError, RunpodConfigError, wakeStudio } from "./_runpod.js
 
 // POST /api/runpod-wake
 // Liga o estudio: usa o pod que ja estiver rodando, senao religa um parado,
-// senao cria um novo com a GPU mais barata livre em um dos volumes (ver
+// senao cria um novo com a GPU de menor custo por video livre em um dos volumes (ver
 // wakeStudio em _runpod.ts). Nao espera o backend ficar pronto (funcoes
 // serverless tem timeout curto) - o frontend e quem faz o polling em
 // /api/runpod-status ate aparecer backendReady.

@@ -10,7 +10,7 @@
 //   1. se ja existe um pod do estudio rodando, usa ele;
 //   2. tenta religar os pods do estudio parados (mais rapido: imagem ja
 //      baixada na maquina);
-//   3. cria um pod novo, com a GPU mais barata livre, em cada volume da
+//   3. cria um pod novo, com a GPU de menor custo por video livre, em cada volume da
 //      lista VOLUMES, na ordem (primeiro o US-MO-2, depois o EU-RO-1).
 //
 // Os dois volumes tem o mesmo conteudo: o proprio pod sincroniza um com o
@@ -64,20 +64,23 @@ async function volumeUsable(volume: StudioVolume): Promise<boolean> {
   return s3Configured() || (await volumeIsReady(volume));
 }
 
-// Precos por hora da Secure Cloud (a unica que aceita network volume),
-// usados so para filtrar pelo teto e ordenar da mais barata para a mais cara.
-// Todas com 24 GB+ de VRAM: Chroma1-HD fp8 + T5 (~15 GB) e o modelo do chat
-// no Ollama precisam caber juntos.
-const GPU_OPTIONS: Array<{ id: string; pricePerHr: number }> = [
-  { id: "NVIDIA RTX A5000", pricePerHr: 0.27 },
-  { id: "NVIDIA L4", pricePerHr: 0.49 },
-  { id: "NVIDIA A40", pricePerHr: 0.49 },
-  { id: "NVIDIA GeForce RTX 3090", pricePerHr: 0.5 },
-  { id: "NVIDIA RTX A6000", pricePerHr: 0.53 },
-  { id: "NVIDIA RTX PRO 4000 Blackwell", pricePerHr: 0.57 },
-  { id: "NVIDIA GeForce RTX 4090", pricePerHr: 0.74 },
-  { id: "NVIDIA L40", pricePerHr: 0.82 },
-  { id: "NVIDIA RTX 6000 Ada Generation", pricePerHr: 0.84 },
+// Precos por hora da Secure Cloud (a unica que aceita network volume) e
+// velocidade relativa a L4 nos videos (Wan 2.2 fp8). Todas com 24 GB+ de VRAM:
+// Chroma1-HD fp8 + T5 (~15 GB) e o modelo do chat no Ollama precisam caber.
+// A ordem e pelo custo de cada video (preco / velocidade), nao pelo preco da
+// hora: a RTX PRO 4000 fez a troca de 11 s em ~15 min contra ~35 min na L4
+// (medido em 2026-10-01) - mais cara por hora, metade do custo por video.
+// As outras velocidades sao estimativas (Ampere nao tem fp8 nativo).
+const GPU_OPTIONS: Array<{ id: string; pricePerHr: number; speed: number }> = [
+  { id: "NVIDIA RTX PRO 4000 Blackwell", pricePerHr: 0.57, speed: 2.3 },
+  { id: "NVIDIA L4", pricePerHr: 0.49, speed: 1 },
+  { id: "NVIDIA A40", pricePerHr: 0.49, speed: 1.2 },
+  { id: "NVIDIA GeForce RTX 3090", pricePerHr: 0.5, speed: 1.1 },
+  { id: "NVIDIA RTX A6000", pricePerHr: 0.53, speed: 1.2 },
+  { id: "NVIDIA RTX A5000", pricePerHr: 0.27, speed: 0.5 },
+  { id: "NVIDIA GeForce RTX 4090", pricePerHr: 0.74, speed: 2.5 },
+  { id: "NVIDIA L40", pricePerHr: 0.82, speed: 2 },
+  { id: "NVIDIA RTX 6000 Ada Generation", pricePerHr: 0.84, speed: 2.4 },
 ];
 
 const DEFAULT_MAX_PRICE_PER_HR = 0.6;
@@ -418,9 +421,9 @@ async function wakeStudioUnlocked(): Promise<WakeResult> {
     }
   }
 
-  // 2. Criar um pod novo, GPU mais barata primeiro, em cada volume.
+  // 2. Criar um pod novo, GPU de menor custo por video primeiro, em cada volume.
   const gpuTypeIds = GPU_OPTIONS.filter((g) => g.pricePerHr <= cap)
-    .sort((a, b) => a.pricePerHr - b.pricePerHr)
+    .sort((a, b) => a.pricePerHr / a.speed - b.pricePerHr / b.speed)
     .map((g) => g.id);
   for (const volume of VOLUMES) {
     if (!(await volumeUsable(volume))) {
