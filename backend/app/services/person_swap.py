@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -29,9 +30,11 @@ log = logging.getLogger(__name__)
 FLORENCE = "microsoft/Florence-2-large"
 PROMPTGEN = "MiaoshouAI/Florence-2-large-PromptGen-v2.0"
 # Cabeca: caixa do rosto alargada para caber o cabelo longo da persona.
-HEAD_SIDE = 0.9  # largura do rosto a mais de cada lado
-HEAD_TOP = 0.7  # altura do rosto acima dele
-HEAD_BOTTOM = 1.6  # abaixo (pescoco e cabelo nos ombros)
+# Maior que isso pegava peito e maos (forca cheia: o gesto mudava).
+HEAD_SIDE = 0.6  # largura do rosto a mais de cada lado
+HEAD_TOP = 0.5  # altura do rosto acima dele
+HEAD_BOTTOM = 0.8  # abaixo (pescoco; o cabelo longo desce pelo corpo, que e redesenhado de leve)
+FEMALE = re.compile(r"\b(?:woman|women|girl|lady|female|she|her)\b", re.I)
 
 Box = tuple[float, float, float, float]
 
@@ -85,16 +88,21 @@ def _center(b: Box) -> tuple[float, float]:
     return (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
 
 
-def plan_regions(woman_boxes: list[Box], face_boxes: list[Box], width: int, height: int) -> tuple[Box | None, Box | None, list[Box]]:
-    """(caixa dela, rosto dela, rostos dos outros)."""
+def plan_regions(
+    woman_boxes: list[Box], face_boxes: list[Box], female_faces: set[int] | None = None
+) -> tuple[Box | None, Box | None, list[Box]]:
+    """(caixa dela, rosto dela, rostos dos outros). female_faces = indices dos
+    rostos que a descricao do recorte diz ser de mulher (abraco: a caixa dela
+    tambem pega o rosto dele)."""
     woman = max(woman_boxes, key=_area) if woman_boxes else None
     if woman is None:
         return None, None, face_boxes
-    mine = [f for f in face_boxes if _inside(_center(f), woman)]
-    # Dois rostos dentro da caixa dela (abraco): o mais alto e o dela? Nao da
-    # para saber - fica o maior, o outro vira negativo.
-    face = max(mine, key=_area) if mine else None
-    others = [f for f in face_boxes if f is not face]
+    mine = [i for i, f in enumerate(face_boxes) if _inside(_center(f), woman)]
+    if female_faces is not None and len(mine) > 1:
+        mine = [i for i in mine if i in female_faces] or mine
+    face_i = max(mine, key=lambda i: _area(face_boxes[i])) if mine else None
+    face = face_boxes[face_i] if face_i is not None else None
+    others = [f for i, f in enumerate(face_boxes) if i != face_i]
     return woman, face, others
 
 
@@ -159,7 +167,27 @@ async def plan_person_swap(comfyui: ComfyUIClient, image: str, width: int, heigh
     except ComfyUIError as exc:
         log.warning("Deteccao do pack falhou: %s", exc)
 
-    woman, face, others = plan_regions(woman_boxes, face_boxes, width, height)
+    # Mais de um rosto na caixa dela: o Florence descreve cada um e fica o de mulher.
+    female_faces: set[int] | None = None
+    woman_box = max(woman_boxes, key=_area) if woman_boxes else None
+    candidates = [i for i, f in enumerate(face_boxes) if woman_box and _inside(_center(f), woman_box)]
+    if len(candidates) > 1:
+        graph: dict[str, Any] = {**base, "2": {"class_type": "DownloadAndLoadFlorence2Model", "inputs": {"model": FLORENCE, "precision": "fp16"}}}
+        for i in candidates:
+            fx1, fy1, fx2, fy2 = face_boxes[i]
+            pw, ph = (fx2 - fx1) * 0.3, (fy2 - fy1) * 0.3
+            x1, y1 = max(0, int(fx1 - pw)), max(0, int(fy1 - ph))
+            x2, y2 = min(width, int(fx2 + pw)), min(height, int(fy2 + ph))
+            graph[f"c{i}"] = {"class_type": "ImageCrop", "inputs": {"image": ["10", 0], "width": max(16, x2 - x1), "height": max(16, y2 - y1), "x": x1, "y": y1}}
+            graph[f"f{i}"] = _florence([f"c{i}", 0], "", task="caption")
+            graph[f"p{i}"] = {"class_type": "PreviewAny", "inputs": {"source": [f"f{i}", 2]}}
+        try:
+            texts = await _run_texts(comfyui, graph)
+            female_faces = {i for i in candidates if FEMALE.search(texts.get(f"p{i}", ""))}
+        except ComfyUIError as exc:
+            log.warning("Descricao dos rostos do pack falhou: %s", exc)
+
+    woman, face, others = plan_regions(woman_boxes, face_boxes, female_faces)
     pos, neg = sam_points(woman, face, others, width, height)
     head = head_box(woman, face, width, height)
 

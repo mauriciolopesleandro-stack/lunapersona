@@ -60,6 +60,13 @@ _PERSON_TRAITS = [
     ),
     re.compile(r"\b(?:blonde|blond|brunette|redhead|red-haired|dark-haired|light-haired)\b", re.I),
 ]
+# Idade da pessoa da foto: a persona tem a dela ("late 30s" envelhecia a Luna).
+_AGE = [
+    re.compile(r"\s*,?\s*(?:who\s+)?(?:appears|seems)\s+to\s+be\s+in\s+(?:her|his|their)\s+(?:early\s+|mid-?\s*|late\s+)?(?:teens|twenties|thirties|forties|fifties|sixties|seventies|\d0s)\b", re.I),
+    re.compile(r"\s*,?\s*in\s+(?:her|his|their)\s+(?:early\s+|mid-?\s*|late\s+)?(?:teens|twenties|thirties|forties|fifties|sixties|seventies|\d0s)\b", re.I),
+    re.compile(r"\b(?:an?\s+)?\d{1,2}-year-old\s+", re.I),
+    re.compile(r"\b(?:elderly|middle-aged|older|aged|mature)\s+", re.I),
+]
 _PREFIX = re.compile(r"^(?:the image (?:shows|is|features|depicts)|in (?:this|the) image,?|this is)\s+", re.I)
 # Conectivos que ficaram orfaos ("she has and is wearing", "with and").
 _ORPHANS = [
@@ -104,6 +111,8 @@ def clean_reference_caption(caption: str, keep_expression: bool = True) -> str:
     if not keep_expression:
         for pattern in _EXPRESSION:
             text = pattern.sub(r"\1" if pattern.groups else "", text)
+    for pattern in _AGE:
+        text = pattern.sub(" " if pattern.pattern.startswith(r"\b") else "", text)
     for pattern in _WHOLE_TRAITS:
         text = pattern.sub("", text)
     for pattern in _PERSON_TRAITS:
