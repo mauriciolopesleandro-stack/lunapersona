@@ -15,6 +15,8 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime
+from pathlib import Path
 
 import httpx
 
@@ -34,6 +36,18 @@ mutation StopPod($podId: String!) {
 PRE_STOP_SYNC_TIMEOUT_SECONDS = 3600
 # Ocupado ha mais que isso sem ninguem chamar o site: provavelmente travou.
 MAX_BUSY_SECONDS = 90 * 60
+# Registro no volume (o /tmp some quando o pod para): da para saber depois se
+# foi o auto-desligar que parou o pod, e por que.
+STOP_LOG = Path("/workspace/luna-idle-stops.log")
+
+
+def _record(message: str) -> None:
+    try:
+        if STOP_LOG.parent.exists():
+            with STOP_LOG.open("a", encoding="utf-8") as fh:
+                fh.write(f"{datetime.now().isoformat(timespec='seconds')} {message}\n")
+    except OSError:
+        pass
 
 
 class IdleShutdownTracker:
@@ -109,6 +123,7 @@ class IdleShutdownTracker:
                     if busy:
                         continue
                 logger.info("Pod ocioso ha %.0fs (limite %.0fs) - desligando.", idle_for, self.idle_seconds)
+                _record(f"pod {self.pod_id}: ocioso ha {idle_for:.0f}s (limite {self.idle_seconds:.0f}s) - desligando")
                 self._stopped_already = True
                 await self._stop_pod()
 
