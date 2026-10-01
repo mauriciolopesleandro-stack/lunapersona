@@ -30,6 +30,7 @@ import { SwapPage } from "./components/SwapPage";
 import { loadLastResult, saveLastResult } from "./lib/lastResult";
 import { TopBar } from "./components/TopBar";
 import { addHistoryEntry } from "./lib/history";
+import { loadPack, rehostPack, savePack, type PackItem } from "./lib/pack";
 import { getSettings } from "./lib/settings";
 
 const WAKE_POLL_INTERVAL_MS = 5_000;
@@ -125,6 +126,16 @@ export default function App() {
   const [saved] = useState(() => loadLastResult<Parameters<typeof generateImage>[0]>());
   const [result, setResult] = useState<GenerateResponse | null>(saved?.result ?? null);
   const [resultPrompt, setResultPrompt] = useState(saved?.prompt ?? "");
+  const [pack, setPack] = useState<PackItem[]>(loadPack);
+
+  // Funcional: a geracao termina minutos depois e o pack pode ter mudado.
+  function updatePack(change: (items: PackItem[]) => PackItem[]) {
+    setPack((items) => {
+      const next = change(items);
+      savePack(next);
+      return next;
+    });
+  }
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -236,6 +247,8 @@ export default function App() {
       saveLastResult({ result: res, prompt: displayPrompt, params: body });
       const image = res.images[0];
       if (image) {
+        const item = { id: res.prompt_id || String(Date.now()), result: res, prompt: displayPrompt, at: Date.now() };
+        updatePack((items) => rehostPack([...items, item], image.url));
         const personaName = personas.find((p) => p.id === body.persona_id)?.name ?? null;
         addHistoryEntry({
           prompt: displayPrompt,
@@ -357,6 +370,14 @@ export default function App() {
                 resultPrompt={resultPrompt}
                 onEditPrompt={setPrompt}
                 onRegenerate={handleRegenerate}
+                pack={pack}
+                onSelectPack={(item) => {
+                  setResult(item.result);
+                  setResultPrompt(item.prompt);
+                  setError(null);
+                }}
+                onRemovePack={(id) => updatePack((items) => items.filter((p) => p.id !== id))}
+                onClearPack={() => updatePack(() => [])}
               />
             </div>
           )}

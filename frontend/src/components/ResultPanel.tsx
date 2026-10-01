@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { GenerateResponse } from "../api/client";
 import { downloadFile } from "../lib/download";
+import type { PackItem } from "../lib/pack";
 import { AnimatePanel } from "./AnimatePanel";
 
 interface Props {
@@ -10,9 +11,25 @@ interface Props {
   resultPrompt: string;
   onEditPrompt: (prompt: string) => void;
   onRegenerate: () => void;
+  // Sequencia da historia: as fotos anteriores ficam visiveis embaixo.
+  pack: PackItem[];
+  onSelectPack: (item: PackItem) => void;
+  onRemovePack: (id: string) => void;
+  onClearPack: () => void;
 }
 
-export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt, onRegenerate }: Props) {
+export function ResultPanel({
+  result,
+  error,
+  loading,
+  resultPrompt,
+  onEditPrompt,
+  onRegenerate,
+  pack,
+  onSelectPack,
+  onRemovePack,
+  onClearPack,
+}: Props) {
   const image = result?.images[0];
   // Imagem restaurada de outro pod (desligado/recriado) nao carrega mais.
   const [broken, setBroken] = useState(false);
@@ -79,6 +96,64 @@ export function ResultPanel({ result, error, loading, resultPrompt, onEditPrompt
           </dl>
         )}
       </div>
+      {pack.length > 0 && (
+        <div className="panel pack-panel">
+          <div className="pack-header">
+            <h3>📚 Sequência ({pack.length})</h3>
+            <div className="pack-actions">
+              <button
+                type="button"
+                className="small"
+                onClick={async () => {
+                  for (const [i, item] of pack.entries()) {
+                    const img = item.result.images[0];
+                    if (img) await downloadFile(img.url, `pack_${String(i + 1).padStart(2, "0")}_${img.filename}`);
+                  }
+                }}
+              >
+                ⬇ Baixar todas
+              </button>
+              <button
+                type="button"
+                className="small"
+                onClick={() => {
+                  if (window.confirm("Começar um pack novo? A sequência atual sai daqui (as fotos continuam no Histórico).")) {
+                    onClearPack();
+                  }
+                }}
+              >
+                Novo pack
+              </button>
+            </div>
+          </div>
+          <p className="muted small">Cada foto nova entra no fim. Clique numa para ver grande.</p>
+          <div className="pack-strip">
+            {pack.map((item, i) => {
+              const img = item.result.images[0];
+              if (!img) return null;
+              const current = !loading && image?.url === img.url;
+              return (
+                <div key={item.id} className={current ? "pack-item current" : "pack-item"}>
+                  <button type="button" className="pack-thumb" title={item.prompt} onClick={() => onSelectPack(item)}>
+                    <img src={img.url} alt="" loading="lazy" />
+                    <span className="pack-number">{i + 1}</span>
+                  </button>
+                  <button type="button" className="pack-remove" title="Tirar da sequência" onClick={() => onRemovePack(item.id)}>
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
+            {loading && (
+              <div className="pack-item">
+                <div className="pack-thumb pack-pending">
+                  <span>Gerando {pack.length + 1}...</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {image && !broken && !loading && <AnimatePanel image={image} personaId={result?.persona_id ?? null} />}
     </div>
   );
