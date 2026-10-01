@@ -67,14 +67,43 @@ _ORPHANS = [
     re.compile(r"\b(?:has|with)\s+(?=(?:is|in|,|\.|$))", re.I),
     re.compile(r"\band\s+(?=(?:and|,|\.|$))", re.I),
 ]
-_EMPTY_SENTENCE = re.compile(r"^(?:she|he|they)(?:\s+(?:has|have|is|are))?\s*[.!?]?$", re.I)
+_EMPTY_SENTENCE = re.compile(r"^(?:(?:she|he|they)(?:\s+(?:has|have|is|are))?)?\s*[.!?]?$", re.I)
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
 
-def clean_reference_caption(caption: str) -> str:
+# Expressao da pessoa da foto ("surprised expression", "mouth open"): sai
+# quando a persona usa a atitude dela no lugar.
+_EXPRESSION = [
+    # "is smiling at the camera and wearing" -> "is wearing"
+    re.compile(
+        r"\b(is\s+)(?:smiling|grinning|laughing|frowning|pouting|smirking)\b(?:\s+(?:at|towards|to)\s+the\s+camera)?\s+and\s+",
+        re.I,
+    ),
+    re.compile(
+        r"\s*,?\s*(?:and\s+)?(?:with\s+)?\b(?:a|an|her|his)\s+(?:[\w-]+,?\s+){0,3}"
+        r"(?:expression|smile|grin|look on (?:her|his) face)\b(?:\s+on\s+(?:her|his)\s+face)?",
+        re.I,
+    ),
+    re.compile(
+        r"\s*,?\s*(?:and\s+)?(?:with\s+)?\b(?:her|his)\s+(?:mouth|lips)\s+(?:is\s+|are\s+)?"
+        r"(?:slightly\s+|wide\s+)?(?:open|agape|parted|pursed|closed)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\s*,?\s*(?:and\s+)?\b(?:she\s+|he\s+)?(?:is\s+)?(?:smiling|grinning|laughing|frowning|pouting|smirking)\b"
+        r"(?:\s+(?:at|towards|to)\s+the\s+camera)?",
+        re.I,
+    ),
+]
+
+
+def clean_reference_caption(caption: str, keep_expression: bool = True) -> str:
     caption = _BRANDS.sub("", _QUOTED.sub("", _TEXT_CLAUSE.sub("", caption.strip())))
     sentences = [s for s in _SENTENCE_SPLIT.split(caption) if s and not _TEXT_SENTENCE.search(s)]
     text = " ".join(sentences)
+    if not keep_expression:
+        for pattern in _EXPRESSION:
+            text = pattern.sub(r"\1" if pattern.groups else "", text)
     for pattern in _WHOLE_TRAITS:
         text = pattern.sub("", text)
     for pattern in _PERSON_TRAITS:

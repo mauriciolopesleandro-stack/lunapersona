@@ -4,6 +4,7 @@ onde ComfyUIClient, WorkflowManager e ModelManager se encontram.
 """
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -44,6 +45,15 @@ REALISM_SUFFIX = "raw candid smartphone photo, natural skin texture, subtle skin
 # Segunda passada (workflows com LoRA): amplia a imagem e redesenha os detalhes.
 HIRES_SCALE = 1.5
 HIRES_MAX_PIXELS = 2_400_000
+
+# Se o pedido ja fala de expressao/olhar, a atitude padrao da persona nao entra.
+_EXPRESSION_WORDS = re.compile(
+    r"(?:smilw*|laughw*|grinw*|expression|surprisw*|shockw*|mouth|winkw*|poutw*|serious|sad|angry|"
+    r"cryw*|tongue|screamw*|gaze|frownw*|kissw*|looking)",
+    re.I,
+)
+# Correcao de rosto depois da geracao com LoRA (workflows/chroma-face-refine.json).
+FACE_REFINE_WORKFLOW = "chroma-face-refine"
 
 IMG2IMG_WORKFLOW = "chroma-img2img"
 IMG2IMG_LORA_WORKFLOW = "chroma-img2img-lora"
@@ -93,6 +103,23 @@ class GenerationService:
         pod (ex.: o outro volume), a geracao segue so com o texto digitado."""
         return await describe_image(self.comfyui_client, self.workflow_manager, image_name)
 
+    async def _refine_faces(
+        self, images: list[GenerationOutputImage], params: dict[str, Any]
+    ) -> list[GenerationOutputImage]:
+        """Redesenha o rosto em alta resolucao com a LoRA e cola de volta. Sem
+        rosto na imagem (ou sem os nos no pod), fica a imagem original."""
+        refined: list[GenerationOutputImage] = []
+        for image in images:
+            name = f"{image.subfolder}/{image.filename}" if image.subfolder else image.filename
+            try:
+                graph = self.workflow_manager.render(FACE_REFINE_WORKFLOW, {**params, "IMAGE": f"{name} [output]"})
+                prompt_id = await self.comfyui_client.queue_prompt(graph)
+                entry = await self.comfyui_client.wait_for_completion(prompt_id)
+                refined.extend(self.comfyui_client.extract_images(entry) or [image])
+            except (ComfyUIError, WorkflowParamError):
+                refined.append(image)
+        return refined
+
     async def generate(self, req: GenerationRequest) -> GenerationResponse:
         model = self.model_manager.get_model(req.model_id)
 
@@ -104,6 +131,8 @@ class GenerationService:
         reference_image_name: str | None = None
         lora_params: dict[str, Any] = {}
         use_lora = False
+        attitude = ""
+        face_params: dict[str, Any] = {}
         if req.persona_id:
             persona = self.persona_manager.get_persona(req.persona_id)
             lora = persona.lora
@@ -112,7 +141,16 @@ class GenerationService:
                 # identidade so competiria com ela (e vira retrato/colagem).
                 use_lora = True
                 traits = persona.reference_prompt_fragment() if req.reference_image else persona.body_prompt_fragment()
-                prompt = f"photo of {lora.trigger}, {traits + ', ' if traits else ''}{user_prompt}"
+                if not _EXPRESSION_WORDS.search(user_prompt):
+                    attitude = persona.attitude_prompt_fragment()
+                lead = ", ".join(p for p in (attitude, traits) if p)
+                prompt = f"photo of {lora.trigger}, {lead + ', ' if lead else ''}{user_prompt}"
+                face_params = {
+                    "FACE_PROMPT": ", ".join(
+                        p for p in (f"close-up portrait photo of {lora.trigger}", attitude, REALISM_SUFFIX) if p
+                    ),
+                    "LORA_NAME": lora.file,
+                }
                 workflow_id = lora.workflow_id
                 lora_params = {"LORA_NAME": lora.file, "LORA_STRENGTH": lora.strength}
                 # O site sempre manda o guidance das Configuracoes (4.0); o da
@@ -144,7 +182,7 @@ class GenerationService:
             # persona, os tracos da pessoa original saem da descricao.
             description = await self._describe_reference(req.reference_image)
             if description and req.persona_id:
-                description = clean_reference_caption(description)
+                description = clean_reference_caption(description, keep_expression=not attitude)
             if description:
                 prompt = f"{prompt}, {description}"
 
@@ -176,9 +214,11 @@ class GenerationService:
         start = time.monotonic()
         prompt_id = await self.comfyui_client.queue_prompt(graph)
         history_entry = await self.comfyui_client.wait_for_completion(prompt_id)
-        duration = time.monotonic() - start
 
         images = self.comfyui_client.extract_images(history_entry)
+        if face_params and images and FACE_REFINE_WORKFLOW in model.compatible_workflows:
+            images = await self._refine_faces(images, {**params, **face_params})
+        duration = time.monotonic() - start
 
         return GenerationResponse(
             prompt_id=prompt_id,

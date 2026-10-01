@@ -142,6 +142,12 @@ class Persona:
         parts = [self.identity.fixed.get(f, "").strip() for f in fields]
         return ", ".join(p for p in parts if p)
 
+    def attitude_prompt_fragment(self) -> str:
+        """Expressao padrao da persona (variable_defaults.expressao). Sem ela a
+        LoRA copia a expressao da foto de referencia (boca aberta, surpresa)
+        e a persona perde a personalidade."""
+        return self.identity.variable_defaults.get("expressao", "").strip()
+
     def body_prompt_fragment(self) -> str:
         """Corpo da persona. Vai em toda geracao com LoRA: so com a LoRA o corpo
         saia mais magro que o padrao em fotos de corpo inteiro."""
