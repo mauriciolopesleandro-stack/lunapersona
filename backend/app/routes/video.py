@@ -1,12 +1,14 @@
 import asyncio
 import uuid
 from dataclasses import asdict
+from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from app.clients.comfyui_client import ComfyUIError
+from app.services.swap_service import COMFY_ROOT, MAX_SECONDS as SWAP_MAX_SECONDS, SwapRequest
 from app.services.talk_service import TalkRequest
 from app.services.video_service import MAX_SECONDS, SEGMENT_SECONDS, VideoRequest
 
@@ -48,6 +50,21 @@ class TalkBody(BaseModel):
     source_width: int | None = None
     source_height: int | None = None
     seed: int | None = None
+
+
+class SwapBody(BaseModel):
+    video: str = Field(..., min_length=1)
+    image: str = Field(..., min_length=1)
+    image_type: Literal["output", "input"] = "output"
+    image_subfolder: str = ""
+    prompt: str = ""
+    quality: Literal["480p", "720p"] = "480p"
+    max_seconds: int = Field(10, ge=2, le=SWAP_MAX_SECONDS)
+    seed: int | None = None
+
+
+_VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".m4v"}
+_MAX_VIDEO_BYTES = 500 * 1024 * 1024
 
 
 async def _run_job(job_id: str, service, req) -> None:
@@ -96,6 +113,43 @@ async def start_talk_job(body: TalkBody, request: Request):
     job_id = uuid.uuid4().hex
     _jobs[job_id] = {"status": "running"}
     task = asyncio.create_task(_run_job(job_id, request.app.state.talk_service, req))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return {"job_id": job_id, "status": "running"}
+
+
+@router.post("/video/swap/upload")
+async def upload_swap_video(request: Request, file: UploadFile = File(...)):
+    """Recebe o video da troca de personagem e grava direto no input/ do
+    ComfyUI (mesma maquina) - o upload do ComfyUI recusa mais de 100 MB."""
+    request.app.state.idle_shutdown.touch()
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in _VIDEO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Envie um video MP4, MOV ou WEBM.")
+    name = f"troca_src_{uuid.uuid4().hex}{ext}"
+    dest = COMFY_ROOT / "input" / name
+    size = 0
+    with dest.open("wb") as out:
+        while chunk := await file.read(4 * 1024 * 1024):
+            size += len(chunk)
+            if size > _MAX_VIDEO_BYTES:
+                out.close()
+                dest.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail="Video grande demais (maximo 500 MB).")
+            out.write(chunk)
+    return {"name": name}
+
+
+@router.post("/video/swap/jobs")
+async def start_swap_job(body: SwapBody, request: Request):
+    """Troca a pessoa do video pela persona. Consulta em /video/jobs/{job_id}."""
+    request.app.state.idle_shutdown.touch()
+    req = SwapRequest(**body.model_dump())
+    while len(_jobs) >= _MAX_JOBS:
+        _jobs.pop(next(iter(_jobs)))
+    job_id = uuid.uuid4().hex
+    _jobs[job_id] = {"status": "running"}
+    task = asyncio.create_task(_run_job(job_id, request.app.state.swap_service, req))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
     return {"job_id": job_id, "status": "running"}

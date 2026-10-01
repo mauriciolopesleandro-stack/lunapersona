@@ -318,6 +318,29 @@ export function talkVideo(body: TalkRequestBody): Promise<VideoResponse> {
   return runJob<VideoResponse>("/video/talk/jobs", body, 60 * 60_000, "o video falado", "/video/jobs");
 }
 
+// Troca de personagem: o video vai direto para o pod (pode ter centenas de MB).
+export async function uploadSwapVideo(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${await apiBase()}/video/swap/upload`, { method: "POST", body: formData });
+  return (await handleResponse<{ name: string }>(res)).name;
+}
+
+export interface SwapRequestBody {
+  video: string;
+  image: string;
+  image_type?: "output" | "input";
+  image_subfolder?: string;
+  prompt?: string;
+  quality: "480p" | "720p";
+  max_seconds: number;
+}
+
+// ~10-20 min para 5-10 s de video.
+export function swapVideo(body: SwapRequestBody): Promise<VideoResponse> {
+  return runJob<VideoResponse>("/video/swap/jobs", body, 90 * 60_000, "a troca de personagem", "/video/jobs");
+}
+
 // Cada 5 s de video levam alguns minutos (mais em 720p).
 export function animateImage(body: VideoRequestBody): Promise<VideoResponse> {
   const perSegmentMs = (body.quality === "720p" ? 20 : 10) * 60_000;

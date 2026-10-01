@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { animateImage, talkVideo, type GenerationImage, type VideoResponse } from "../api/client";
+import {
+  animateImage,
+  swapVideo,
+  talkVideo,
+  uploadSwapVideo,
+  type GenerationImage,
+  type VideoResponse,
+} from "../api/client";
 import { downloadFile } from "../lib/download";
 import { loadLastVideo, saveLastVideo } from "../lib/lastResult";
 
@@ -12,13 +19,17 @@ interface Props {
 const DURATIONS = [5, 10, 15, 20];
 // Fala media em portugues: ~15 caracteres por segundo.
 const CHARS_PER_SECOND = 15;
+const SWAP_DURATIONS = [5, 10, 15];
 
 // Anima a imagem gerada (Wan 2.2 no pod). O video parte da propria foto,
 // entao a persona continua a mesma. Dois modos: movimento (o texto descreve o
 // que ela faz) ou falando (o texto e o que ela fala, com a voz dela e a boca
-// sincronizada).
+// sincronizada). Troca de personagem: um video enviado tem a pessoa trocada
+// pela persona desta foto (movimento, cenario e audio do video original).
 export function AnimatePanel({ image, personaId }: Props) {
-  const [mode, setMode] = useState<"motion" | "talk">("motion");
+  const [mode, setMode] = useState<"motion" | "talk" | "swap">("motion");
+  const [swapFile, setSwapFile] = useState<File | null>(null);
+  const [swapSeconds, setSwapSeconds] = useState(10);
   const [motion, setMotion] = useState("");
   const [speech, setSpeech] = useState("");
   const [gesture, setGesture] = useState("");
@@ -40,6 +51,7 @@ export function AnimatePanel({ image, personaId }: Props) {
   }, [image.url]);
 
   const talking = mode === "talk" && !!personaId;
+  const swapping = mode === "swap" && !!personaId;
 
   async function handleAnimate() {
     setLoading(true);
@@ -54,9 +66,23 @@ export function AnimatePanel({ image, personaId }: Props) {
       source_height: size?.height,
     };
     try {
-      const res = talking
-        ? await talkVideo({ ...source, persona_id: personaId!, text: speech.trim(), extra_prompt: gesture.trim() })
-        : await animateImage({ ...source, prompt: motion.trim(), seconds });
+      let res: VideoResponse;
+      if (swapping) {
+        const uploaded = await uploadSwapVideo(swapFile!);
+        res = await swapVideo({
+          video: uploaded,
+          image: source.image,
+          image_subfolder: source.image_subfolder,
+          image_type: source.image_type,
+          prompt: motion.trim(),
+          quality,
+          max_seconds: swapSeconds,
+        });
+      } else if (talking) {
+        res = await talkVideo({ ...source, persona_id: personaId!, text: speech.trim(), extra_prompt: gesture.trim() });
+      } else {
+        res = await animateImage({ ...source, prompt: motion.trim(), seconds });
+      }
       setVideo(res);
       saveLastVideo(image.url, res);
     } catch (e) {
@@ -96,7 +122,9 @@ export function AnimatePanel({ image, personaId }: Props) {
 
   const clip = video?.videos[0];
   const talkSeconds = Math.max(5, Math.ceil(speech.trim().length / CHARS_PER_SECOND));
-  const minutes = talking
+  const minutes = swapping
+    ? (quality === "720p" ? 25 : 12) * Math.ceil(swapSeconds / 5)
+    : talking
     ? (quality === "720p" ? 20 : 10) * Math.ceil(talkSeconds / 5)
     : (quality === "720p" ? 5 : 3) * (seconds / 5);
 
@@ -111,9 +139,33 @@ export function AnimatePanel({ image, personaId }: Props) {
           <button type="button" className={mode === "talk" ? "active" : ""} onClick={() => setMode("talk")}>
             🗣 Falando
           </button>
+          <button type="button" className={mode === "swap" ? "active" : ""} onClick={() => setMode("swap")}>
+            🔁 Trocar em vídeo
+          </button>
         </div>
       )}
-      {talking ? (
+      {swapping ? (
+        <>
+          <p className="muted small">
+            Suba um vídeo (seu ou com autorização): a pessoa dele vira a Luna desta foto, com o mesmo movimento,
+            cenário e áudio. Funciona melhor com uma pessoa só, de corpo visível.
+          </p>
+          <label className="reference-upload">
+            <input
+              type="file"
+              accept="video/mp4,video/quicktime,video/webm"
+              onChange={(e) => setSwapFile(e.target.files?.[0] ?? null)}
+            />
+            🎞 {swapFile ? swapFile.name : "Escolher vídeo"}
+          </label>
+          <input
+            type="text"
+            value={motion}
+            onChange={(e) => setMotion(e.target.value)}
+            placeholder="Opcional: detalhe da cena. Ex: ela está sorrindo"
+          />
+        </>
+      ) : talking ? (
         <>
           <textarea
             rows={3}
@@ -139,7 +191,19 @@ export function AnimatePanel({ image, personaId }: Props) {
         />
       )}
       <div className="animate-options">
-        {!talking && (
+        {swapping && (
+          <label>
+            Usar até
+            <select value={swapSeconds} onChange={(e) => setSwapSeconds(Number(e.target.value))}>
+              {SWAP_DURATIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d} segundos do vídeo
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {!talking && !swapping && (
           <label>
             Duração
             <select value={seconds} onChange={(e) => setSeconds(Number(e.target.value))}>
@@ -163,9 +227,9 @@ export function AnimatePanel({ image, personaId }: Props) {
         type="button"
         className="primary"
         onClick={handleAnimate}
-        disabled={loading || (talking && !speech.trim())}
+        disabled={loading || (talking && !speech.trim()) || (swapping && !swapFile)}
       >
-        {loading ? "Gerando vídeo..." : talking ? "Gerar vídeo falando" : "Gerar vídeo"}
+        {loading ? "Gerando vídeo..." : swapping ? "Trocar pela Luna" : talking ? "Gerar vídeo falando" : "Gerar vídeo"}
       </button>
       {loading && <p className="muted small">Leva uns {minutes} minutos. Pode deixar a página aberta.</p>}
       {error && <p className="error small">{error}</p>}

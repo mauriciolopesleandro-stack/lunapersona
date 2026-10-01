@@ -13,6 +13,7 @@ from app.routes import chat, generate, health, models, personas, video, voice, w
 from app.services.chat_service import ChatService
 from app.services.generation_service import GenerationService
 from app.services.scene_describer import SceneDescriber
+from app.services.swap_service import SwapService
 from app.services.talk_service import TalkService
 from app.services.video_service import VideoService
 from app.services.voice_service import VoiceService
@@ -70,6 +71,10 @@ app.state.talk_service = TalkService(
     voice_service=app.state.voice_service,
     llm_client=app.state.llm_client,
     scene_describer=app.state.scene_describer,
+)
+app.state.swap_service = SwapService(
+    comfyui_client=app.state.comfyui_client,
+    llm_client=app.state.llm_client,
 )
 app.state.chat_service = ChatService(
     llm_client=app.state.llm_client,
