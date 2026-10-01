@@ -256,12 +256,35 @@ def qwen_prompt(plan: PersonSwapPlan, width: int) -> str:
     desc, clothes = describe_her(plan.caption)
     keep_clothes = f" She keeps the same clothes ({clothes}) from image 1." if clothes else " She keeps the same clothes from image 1."
     return (
-        f"Replace the {desc}{side} with the woman from image 2. Take only her face, long dark brown hair and "
-        "tanned skin from image 2, not her clothes. The new woman keeps exactly the same pose, arms, hands, "
-        f"gesture, head direction and expression as the original woman in image 1.{keep_clothes} Do not change "
-        "any other person in image 1. Keep the background, objects, lighting and framing exactly the same. "
-        "Photorealistic photo."
+        f"Replace the {desc} inside the red rectangle{side} with the woman from image 2, and remove the red "
+        "rectangle. Take only her face, long dark brown hair and tanned skin from image 2, not her clothes. The "
+        "new woman keeps exactly the same pose, arms, hands, gesture, head direction and expression as the "
+        f"original woman in image 1.{keep_clothes} Do not change any person outside the red rectangle. Keep the "
+        "background, objects, lighting and framing exactly the same. Photorealistic photo."
     )
+
+
+RING_MARGIN = 96  # maior que o HAIR_ROOM da colagem: a linha nunca entra no que volta
+RING_THICKNESS = 8
+
+
+def ring_params(plan: PersonSwapPlan, width: int, height: int) -> dict[str, int]:
+    """Retangulo vermelho em volta dela no image 1 do Qwen: em abraco, so a
+    descricao nao bastava e ele trocava o homem. Fica fora da area colada de
+    volta, entao nao aparece no resultado."""
+    if plan.woman is None:
+        x1, y1, x2, y2 = 0, 0, width, height
+    else:
+        x1 = max(0, int(plan.woman[0]) - RING_MARGIN)
+        y1 = max(0, int(plan.woman[1]) - RING_MARGIN)
+        x2 = min(width, int(plan.woman[2]) + RING_MARGIN)
+        y2 = min(height, int(plan.woman[3]) + RING_MARGIN)
+    t = RING_THICKNESS
+    w, h = max(2 * t + 2, x2 - x1), max(2 * t + 2, y2 - y1)
+    return {
+        "RING_X": x1, "RING_Y": y1, "RING_W": w, "RING_H": h,
+        "RING_IX": x1 + t, "RING_IY": y1 + t, "RING_IW": w - 2 * t, "RING_IH": h - 2 * t,
+    }
 
 
 # Ultimas deteccoes no volume: da para desenhar as caixas e conferir por que
