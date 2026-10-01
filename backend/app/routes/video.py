@@ -8,9 +8,12 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from app.clients.comfyui_client import ComfyUIError
+from app.jobs import JobRegistry
+from app.persona_manager.manager import PersonaNotFoundError
 from app.services.swap_service import COMFY_ROOT, MAX_SECONDS as SWAP_MAX_SECONDS, SwapRequest
 from app.services.talk_service import TalkRequest
 from app.services.video_service import MAX_SECONDS, SEGMENT_SECONDS, VideoRequest
+from app.workflow_manager.manager import WorkflowParamError
 
 router = APIRouter()
 
@@ -19,6 +22,7 @@ router = APIRouter()
 _jobs: dict[str, dict] = {}
 _tasks: set[asyncio.Task] = set()
 _MAX_JOBS = 20
+_reference_jobs = JobRegistry()
 
 
 class VideoBody(BaseModel):
@@ -169,3 +173,58 @@ async def get_video_job(job_id: str, request: Request):
     if job["status"] == "done":
         return {"status": "done", "result": job["result"]}
     return {"status": "running"}
+
+
+class KeyframesBody(BaseModel):
+    video: str = Field(..., min_length=1)
+    max_seconds: int = Field(SWAP_MAX_SECONDS, ge=2, le=SWAP_MAX_SECONDS)
+
+
+class FramePersonaBody(BaseModel):
+    persona_id: str
+    frame: str = Field(..., min_length=1)
+    width: int = Field(..., ge=64)
+    height: int = Field(..., ge=64)
+    extra: str = ""
+    seed: int | None = None
+
+
+@router.post("/video/swap/keyframes")
+async def swap_keyframes(body: KeyframesBody, request: Request):
+    """Quadros principais do video (inicio, meio, fim) - leva segundos."""
+    request.app.state.idle_shutdown.touch()
+    try:
+        result = await request.app.state.swap_service.keyframes(body.video, body.max_seconds)
+    except WorkflowParamError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    comfy = request.app.state.comfyui_client
+    result["frames"] = [
+        {"filename": name, "subfolder": "", "type": "input", "url": comfy.build_image_url(name, "", "input")}
+        for name in result["frames"]
+    ]
+    return result
+
+
+@router.post("/video/swap/reference/jobs")
+async def start_frame_persona(body: FramePersonaBody, request: Request):
+    """A persona num quadro do video, para aprovar antes da troca."""
+    request.app.state.idle_shutdown.touch()
+    service = request.app.state.swap_service
+    try:
+        request.app.state.persona_manager.get_persona(body.persona_id)
+    except PersonaNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    async def work():
+        image, check = await service.persona_in_frame(
+            body.persona_id, body.frame, body.width, body.height, body.extra, body.seed
+        )
+        return {"image": asdict(image), "check": check}
+
+    return _reference_jobs.start(work)
+
+
+@router.get("/video/swap/reference/jobs/{job_id}")
+async def get_frame_persona(job_id: str, request: Request):
+    request.app.state.idle_shutdown.touch()
+    return _reference_jobs.get(job_id)

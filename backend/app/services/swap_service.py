@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
+import re
 import os
 import time
 import uuid
@@ -24,16 +26,37 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.clients.comfyui_client import ComfyUIClient, ComfyUIError
-from app.clients.llm_client import OllamaClient
+from app.clients.comfyui_client import ComfyUIClient, ComfyUIError, GenerationOutputImage
+from app.clients.llm_client import ChatMessage, LLMError, OllamaClient
 from app.services.generation_service import GenerationRequest, GenerationService
 from app.services.prompt_translator import to_english
+from app.services.scene_describer import describe_image
 from app.services.video_service import QUALITY_PIXELS, TEXT_ENCODER, VAE, VideoResponse
 from app.workflow_manager.manager import WorkflowParamError
 
 COMFY_ROOT = Path(os.environ.get("COMFYUI_DIR", "/workspace/runpod-slim/ComfyUI"))
 COMFY_PYTHON = COMFY_ROOT / ".venv-cu128" / "bin" / "python"
 PREP_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "prep_video.py"
+KEYFRAMES_SCRIPT = PREP_SCRIPT.parent / "video_keyframes.py"
+KEYFRAMES = 3
+# Foto da persona num quadro: a IA confere e, se nao bater, gera de novo
+# com a correcao dela (tentativas no total).
+FRAME_ATTEMPTS = 2
+LLM_VRAM_BYTES = 10 * 1024**3
+
+log = logging.getLogger(__name__)
+
+_CHECK_SYSTEM = (
+    "You compare two image descriptions. VIDEO describes a frame of a video. GENERATED describes a photo that "
+    "must recreate that frame with a different woman. The woman's identity is SUPPOSED to change: ignore any "
+    "difference in face, hair, skin, eyes, body shape, age, tattoos, jewelry, makeup and facial expression, and "
+    "ignore text or logos. Check only: clothing (type, color, pattern, top and bottom), pose and body position, "
+    "objects in her hands, the setting/background, number of people, and anatomy problems (extra or missing "
+    "limbs, hands or fingers, deformed body). Small wording differences are fine. Reply with JSON only: "
+    '{"coherent": true or false, "problems_pt": "short list of real problems in Brazilian Portuguese, empty if '
+    'coherent", "fix_en": "short English phrase describing what the photo must show to fix it (e.g. green '
+    'leopard print bikini with chain straps), empty if coherent"}'
+)
 
 ANIMATE_MODEL = "Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors"
 LIGHTX2V_LORA = "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors"
@@ -111,7 +134,94 @@ class SwapService:
         self.llm_client = llm_client
         self.generation_service = generation_service
 
-    async def _auto_reference(self, persona_id: str | None, first: str, width: int, height: int) -> str:
+    async def keyframes(self, video: str, max_seconds: int) -> dict[str, Any]:
+        """Quadros principais (inicio, meio, fim) do trecho que vai ser trocado,
+        salvos no input/ do ComfyUI: neles a persona e gerada para aprovar
+        antes do video."""
+        if not COMFY_PYTHON.exists():
+            raise WorkflowParamError("O ComfyUI deste servidor nao esta no lugar esperado.")
+        prefix = f"troca_quadro_{uuid.uuid4().hex[:10]}"
+        proc = await asyncio.create_subprocess_exec(
+            str(COMFY_PYTHON), str(KEYFRAMES_SCRIPT), str(COMFY_ROOT / "input" / video),
+            prefix, str(KEYFRAMES), str(max(2, min(MAX_SECONDS, max_seconds))),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+        if proc.returncode != 0:
+            tail = stderr.decode(errors="replace").strip().splitlines()[-2:]
+            raise WorkflowParamError("Nao consegui ler esse video: " + " | ".join(tail))
+        return json.loads(stdout.decode().strip().splitlines()[-1])
+
+    async def persona_in_frame(
+        self, persona_id: str, frame: str, width: int, height: int, extra: str = "", seed: int | None = None
+    ) -> tuple[GenerationOutputImage, dict[str, Any]]:
+        """A persona num quadro do video (mesma roupa, pose e cenario). extra =
+        correcao digitada (ex.: a cor certa do biquini). A IA confere a foto
+        contra o quadro e, se nao bater, gera de novo com a correcao dela."""
+        video_desc = await describe_image(self.comfyui_client, self.generation_service.workflow_manager, frame)
+        image, check = None, {"coherent": True, "problems_pt": "", "fix_en": ""}
+        fix = ""
+        for attempt in range(FRAME_ATTEMPTS):
+            correction = ", ".join(p for p in (extra.strip(), fix) if p)
+            image = await self._auto_reference(
+                persona_id, frame, width, height, correction, seed if attempt == 0 else None
+            )
+            check = await self._check_frame(video_desc, image)
+            check["attempts"] = attempt + 1
+            if check["coherent"] or not check.get("fix_en"):
+                break
+            fix = check["fix_en"]
+        return image, check
+
+    async def _check_frame(self, video_desc: str, image: GenerationOutputImage) -> dict[str, Any]:
+        """Compara a descricao do quadro com a da foto gerada (Florence-2 + o
+        modelo de chat). Nao ve dedos/anatomia tao bem quanto um olho humano,
+        mas pega roupa, cor, pose e cenario trocados. Falha = sem veredito."""
+        unknown = {"coherent": None, "problems_pt": "", "fix_en": ""}
+        if not self.llm_client or not video_desc:
+            return unknown
+        name = f"{image.subfolder}/{image.filename}" if image.subfolder else image.filename
+        generated_desc = await describe_image(
+            self.comfyui_client, self.generation_service.workflow_manager, f"{name} [output]"
+        )
+        if not generated_desc:
+            return unknown
+        # O modelo de imagem ainda ocupa a GPU: sem liberar, o de chat nao carrega.
+        await self.comfyui_client.free_memory(need_bytes=LLM_VRAM_BYTES)
+        try:
+            answer, _ = await self.llm_client.chat(
+                [
+                    ChatMessage("system", _CHECK_SYSTEM),
+                    ChatMessage("user", f"VIDEO: {video_desc}\n\nGENERATED: {generated_desc}"),
+                ],
+                keep_alive="0",
+                timeout=120.0,
+            )
+        except LLMError as exc:
+            log.warning("Conferencia da foto falhou: %s", exc)
+            return unknown
+        match = re.search(r"\{.*\}", answer, re.S)
+        try:
+            data = json.loads(match.group(0)) if match else {}
+        except ValueError:
+            data = {}
+        if not isinstance(data.get("coherent"), bool):
+            return unknown
+        return {
+            "coherent": data["coherent"],
+            "problems_pt": str(data.get("problems_pt") or "").strip(),
+            "fix_en": str(data.get("fix_en") or "").strip(),
+        }
+
+    async def _auto_reference(
+        self,
+        persona_id: str | None,
+        first: str,
+        width: int,
+        height: int,
+        extra: str = "",
+        seed: int | None = None,
+    ) -> GenerationOutputImage:
         """Gera a persona no 1o quadro do video (img2img com a LoRA): a troca
         sai com a roupa e a pose da pessoa do video, sem precisar de foto."""
         if not persona_id or self.generation_service is None:
@@ -120,7 +230,7 @@ class SwapService:
         scale = (AUTO_REFERENCE_PIXELS / (width * height)) ** 0.5
         result = await self.generation_service.generate(
             GenerationRequest(
-                prompt=AUTO_REFERENCE_PROMPT,
+                prompt=f"{extra.strip()}, {AUTO_REFERENCE_PROMPT}" if extra.strip() else AUTO_REFERENCE_PROMPT,
                 model_id=persona.generation.model_id,
                 workflow_id=persona.generation.workflow_id,
                 persona_id=persona_id,
@@ -128,6 +238,7 @@ class SwapService:
                 height=round(height * scale / 16) * 16,
                 reference_image=first,
                 denoise=AUTO_REFERENCE_DENOISE,
+                seed=seed,
             )
         )
         if not result.images:

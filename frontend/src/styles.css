@@ -1467,3 +1467,63 @@ button.result-download {
 .content-input textarea {
   resize: vertical;
 }
+
+/* Aba Trocar video: opcoes da persona por quadro */
+.swap-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.swap-option {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+}
+
+.swap-option.selected {
+  border-color: var(--success);
+  box-shadow: 0 0 0 1px var(--success);
+}
+
+.swap-option-images {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.swap-option-images figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.swap-option-images img,
+.swap-placeholder {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+}
+
+.swap-option-images figcaption {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.swap-check {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--success);
+}
+
+.swap-check.warn {
+  color: var(--warning);
+}

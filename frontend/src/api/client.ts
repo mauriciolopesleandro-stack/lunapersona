@@ -340,6 +340,49 @@ export interface SwapRequestBody {
   max_seconds: number;
 }
 
+// Troca em etapas: quadros principais do video -> a persona em cada um
+// (aprovar/corrigir) -> so entao o video, com a foto escolhida.
+export interface SwapKeyframes {
+  frames: GenerationImage[];
+  seconds: number;
+  width: number;
+  height: number;
+}
+
+export async function swapKeyframes(video: string, maxSeconds: number): Promise<SwapKeyframes> {
+  const res = await fetch(`${await apiBase()}/video/swap/keyframes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ video, max_seconds: maxSeconds }),
+  });
+  return handleResponse<SwapKeyframes>(res);
+}
+
+// Conferencia da IA: a foto bate com o quadro (roupa, pose, cenario)?
+// coherent null = nao deu para conferir.
+export interface FrameCheck {
+  coherent: boolean | null;
+  problems_pt: string;
+  fix_en: string;
+  attempts?: number;
+}
+
+export async function personaInFrame(body: {
+  persona_id: string;
+  frame: string;
+  width: number;
+  height: number;
+  extra?: string;
+  seed?: number;
+}): Promise<{ image: GenerationImage; check: FrameCheck }> {
+  return runJob<{ image: GenerationImage; check: FrameCheck }>(
+    "/video/swap/reference/jobs",
+    body,
+    20 * 60_000,
+    "a foto da persona"
+  );
+}
+
 // ~12 min (480p) a 25 min (720p) a cada 5 s de video, mais a foto automatica.
 export function swapVideo(body: SwapRequestBody): Promise<VideoResponse> {
   const perFiveMs = (body.quality === "720p" ? 30 : 15) * 60_000;
