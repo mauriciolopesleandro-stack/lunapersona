@@ -2,18 +2,23 @@
   "meta": {
     "id": "qwen-person-swap",
     "title": "Qwen-Image-Edit 2511 - Trocar a pessoa da foto pela persona",
-    "description": "Pack com a persona por edicao com instrucao (como o Magnific): IMAGE (a cena) e PERSONA_IMAGE (foto da persona) entram juntas no Qwen2.5-VL e o PROMPT pede a troca mantendo pose, maos, roupa e o resto da foto. Mesmo grafo do template oficial image_qwen_image_edit_2511 (FluxKontextImageScale, FluxKontextMultiReferenceLatentMethod index_timestep_zero, CFGNorm, shift 3.1) com a LoRA Lightning de 8 passos (cfg 1). Modelos: scripts/setup_qwen_edit.sh. Sai em ~1 MP; a correcao de rosto com a LoRA da persona vem depois.",
-    "compatible_models": [],
+    "description": "Pack com a persona por edicao com instrucao (como o Magnific): IMAGE (a cena) e PERSONA_IMAGE (so rosto e cabelo da persona - com roupa ele copiava a roupa) entram juntas no Qwen2.5-VL e o PROMPT diz QUEM trocar (posicao + cabelo/roupa dela, do services/person_swap.py; sem isso ele trocava o homem). Grafo do template oficial image_qwen_image_edit_2511 (FluxKontextImageScale, FluxKontextMultiReferenceLatentMethod index_timestep_zero, CFGNorm, shift 3.1) com a LoRA Lightning de 8 passos (cfg 1). Depois so a area dela (SAM2 com POINTS_POS/NEG + cabeca HEAD_X/Y/W/H para o cabelo) volta por cima da foto original no tamanho WIDTH x HEIGHT: o resto fica identico e nitido mesmo se o Qwen mexer em outra coisa. Modelos: scripts/setup_qwen_edit.sh.",
+    "compatible_models": ["chroma1-hd-fp8"],
     "hidden": true,
-    "required_params": ["IMAGE", "PERSONA_IMAGE", "PROMPT"],
+    "required_params": ["REFERENCE_IMAGE", "PERSONA_IMAGE", "PROMPT", "POINTS_POS", "HEAD_X", "HEAD_Y", "HEAD_W", "HEAD_H"],
     "optional_params": {
+      "WIDTH": 1024,
+      "HEIGHT": 1024,
       "SEED": 0,
-      "STEPS": 8,
-      "CFG": 1.0,
+      "QWEN_STEPS": 8,
+      "QWEN_CFG": 1.0,
       "SHIFT": 3.1,
       "LIGHTNING_LORA": "Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors",
       "LIGHTNING_STRENGTH": 1.0,
-      "FILENAME_PREFIX": "luna_pack"
+      "POINTS_NEG": "[]",
+      "MASK_GROW": 20,
+      "HAIR_ROOM": 72,
+      "FILENAME_PREFIX": "luna_studio"
     }
   },
   "graph": {
@@ -23,7 +28,7 @@
     "4": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["1", 0], "shift": "${SHIFT}"}},
     "5": {"class_type": "CFGNorm", "inputs": {"model": ["4", 0], "strength": 1.0, "pre_cfg": false}},
     "6": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["5", 0], "lora_name": "${LIGHTNING_LORA}", "strength_model": "${LIGHTNING_STRENGTH}"}},
-    "10": {"class_type": "LoadImage", "inputs": {"image": "${IMAGE}"}},
+    "10": {"class_type": "LoadImage", "inputs": {"image": "${REFERENCE_IMAGE}"}},
     "11": {"class_type": "LoadImage", "inputs": {"image": "${PERSONA_IMAGE}"}},
     "12": {"class_type": "FluxKontextImageScale", "inputs": {"image": ["10", 0]}},
     "20": {
@@ -41,10 +46,35 @@
       "class_type": "KSampler",
       "inputs": {
         "model": ["6", 0], "positive": ["22", 0], "negative": ["23", 0], "latent_image": ["30", 0],
-        "seed": "${SEED}", "steps": "${STEPS}", "cfg": "${CFG}", "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0
+        "seed": "${SEED}", "steps": "${QWEN_STEPS}", "cfg": "${QWEN_CFG}", "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0
       }
     },
     "32": {"class_type": "VAEDecode", "inputs": {"samples": ["31", 0], "vae": ["3", 0]}},
-    "33": {"class_type": "SaveImage", "inputs": {"images": ["32", 0], "filename_prefix": "${FILENAME_PREFIX}"}}
+    "40": {"class_type": "ImageScale", "inputs": {"image": ["32", 0], "upscale_method": "lanczos", "width": "${WIDTH}", "height": "${HEIGHT}", "crop": "disabled"}},
+    "19": {"class_type": "ImageScale", "inputs": {"image": ["10", 0], "upscale_method": "lanczos", "width": "${WIDTH}", "height": "${HEIGHT}", "crop": "disabled"}},
+    "24": {"class_type": "DownloadAndLoadSAM2Model", "inputs": {"model": "sam2_hiera_base_plus.safetensors", "segmentor": "single_image", "device": "cuda", "precision": "fp16"}},
+    "25": {
+      "class_type": "Sam2Segmentation",
+      "inputs": {
+        "sam2_model": ["24", 0], "image": ["19", 0], "keep_model_loaded": false,
+        "coordinates_positive": "${POINTS_POS}", "coordinates_negative": "${POINTS_NEG}", "individual_objects": false
+      }
+    },
+    "26": {"class_type": "GrowMask", "inputs": {"mask": ["25", 0], "expand": "${MASK_GROW}", "tapered_corners": true}},
+    "70": {"class_type": "SolidMask", "inputs": {"value": 0.0, "width": "${WIDTH}", "height": "${HEIGHT}"}},
+    "71": {"class_type": "SolidMask", "inputs": {"value": 1.0, "width": "${HEAD_W}", "height": "${HEAD_H}"}},
+    "72": {"class_type": "MaskComposite", "inputs": {"destination": ["70", 0], "source": ["71", 0], "x": "${HEAD_X}", "y": "${HEAD_Y}", "operation": "add"}},
+    "61": {"class_type": "GrowMask", "inputs": {"mask": ["26", 0], "expand": "${HAIR_ROOM}", "tapered_corners": true}},
+    "63": {"class_type": "MaskComposite", "inputs": {"destination": ["72", 0], "source": ["61", 0], "x": 0, "y": 0, "operation": "multiply"}},
+    "67": {"class_type": "MaskComposite", "inputs": {"destination": ["26", 0], "source": ["63", 0], "x": 0, "y": 0, "operation": "add"}},
+    "68": {
+      "class_type": "GrowMaskWithBlur",
+      "inputs": {
+        "mask": ["67", 0], "expand": 0, "incremental_expandrate": 0.0, "tapered_corners": true,
+        "flip_input": false, "blur_radius": 8.0, "lerp_alpha": 1.0, "decay_factor": 1.0
+      }
+    },
+    "41": {"class_type": "ImageCompositeMasked", "inputs": {"destination": ["19", 0], "source": ["40", 0], "x": 0, "y": 0, "resize_source": false, "mask": ["68", 0]}},
+    "33": {"class_type": "SaveImage", "inputs": {"images": ["41", 0], "filename_prefix": "${FILENAME_PREFIX}"}}
   }
 }

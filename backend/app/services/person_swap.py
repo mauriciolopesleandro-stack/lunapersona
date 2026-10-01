@@ -220,6 +220,30 @@ async def plan_person_swap(comfyui: ComfyUIClient, image: str, width: int, heigh
     return plan
 
 
+_ABOUT = re.compile(r"\babout\s+(?:a|an|the)\s+(.+?)(?:\.|$)", re.I)
+
+
+def qwen_prompt(plan: PersonSwapPlan, width: int) -> str:
+    """Instrucao do Qwen-Image-Edit: diz QUEM trocar (lado da foto + como ela
+    e, pelo recorte) - so com "the woman" ele trocava o homem - e que so o
+    rosto, o cabelo e a pele vem da persona (senao vinha a roupa da foto 2)."""
+    side = ""
+    if plan.woman is not None:
+        cx = (plan.woman[0] + plan.woman[2]) / 2 / max(1, width)
+        side = " on the left side of image 1" if cx < 0.4 else " on the right side of image 1" if cx > 0.6 else " in the middle of image 1"
+    match = _ABOUT.search(plan.caption or "")
+    desc = match.group(1).strip()[:160] if match else "woman"
+    if not re.search(r"\b(?:woman|girl|lady)\b", desc, re.I):
+        desc = f"woman ({desc})"
+    return (
+        f"Replace the {desc}{side} with the woman from image 2. Use only her face, long dark brown hair, "
+        "tanned skin and black choker necklace from image 2. The new woman keeps exactly the same pose, arms, "
+        "hands, gesture, head direction, expression and clothing as the original woman in image 1. Do not change "
+        "any other person in image 1. Keep the background, objects, lighting and framing exactly the same. "
+        "Photorealistic photo."
+    )
+
+
 # Ultimas deteccoes no volume: da para desenhar as caixas e conferir por que
 # uma foto saiu errada.
 DEBUG_LOG = Path("/workspace/luna-pack-debug.jsonl")
