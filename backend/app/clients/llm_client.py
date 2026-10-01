@@ -81,19 +81,27 @@ class OllamaClient:
         messages: list[ChatMessage],
         keep_alive: str | None = None,
         timeout: float | None = None,
+        think: bool = False,
+        num_ctx: int | None = None,
     ) -> tuple[str, str]:
         """Retorna (resposta, nome do modelo usado). keep_alive="0" descarrega o
-        modelo da GPU logo depois (usado antes de gerar imagem, que precisa da VRAM)."""
+        modelo da GPU logo depois (usado antes de gerar imagem, que precisa da VRAM).
+        think=True deixa o qwen3 raciocinar antes (bem melhor para entender
+        pedidos longos, mais lento - so em rotas com job). num_ctx = tamanho da
+        conversa que o modelo enxerga: sem ele o Ollama usa ~4 mil tokens e corta
+        o comeco em silencio (inclusive as instrucoes)."""
         model = await self.resolve_model()
         timeout = timeout or self.timeout
         payload = {
             "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": False,
-            # Desliga o "raciocinio" de modelos como qwen3: sem isso a resposta
-            # demora bem mais e pode estourar o limite de ~100s do proxy RunPod.
-            "think": False,
+            # Raciocinio desligado por padrao: a resposta demora bem mais e pode
+            # estourar o limite de ~100s do proxy RunPod nas rotas sem job.
+            "think": think,
         }
+        if num_ctx:
+            payload["options"] = {"num_ctx": num_ctx}
         if keep_alive is not None:
             payload["keep_alive"] = keep_alive
         try:

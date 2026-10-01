@@ -18,12 +18,18 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.clients.comfyui_client import ComfyUIClient
 from app.clients.llm_client import ChatMessage, OllamaClient
 from app.persona_manager.manager import PersonaManager
 
 MAX_MEMORY = 120
 MAX_CONVERSATION = 80
 CONTEXT_MESSAGES = 30
+# Conversa inteira + manual + memoria cabem (o padrao do Ollama, ~4 mil
+# tokens, cortava o comeco e o modelo "esquecia" o que foi pedido).
+CONTEXT_TOKENS = 16384
+# Modelo de chat + conversa longa na GPU: o ComfyUI solta a placa antes.
+LLM_VRAM_BYTES = 13 * 1024**3
 
 
 @dataclass
@@ -115,9 +121,15 @@ class ContentMessage:
 
 
 class ContentService:
-    def __init__(self, llm_client: OllamaClient, persona_manager: PersonaManager) -> None:
+    def __init__(
+        self,
+        llm_client: OllamaClient,
+        persona_manager: PersonaManager,
+        comfyui_client: ComfyUIClient | None = None,
+    ) -> None:
         self.llm_client = llm_client
         self.persona_manager = persona_manager
+        self.comfyui_client = comfyui_client
 
     def _dir(self, persona_id: str) -> Path:
         self.persona_manager.get_persona(persona_id)  # 404 se nao existir
@@ -194,8 +206,13 @@ class ContentService:
         # Lembrete so na ultima mensagem (nao fica salvo): so no prompt de
         # sistema o modelo quase nunca escrevia as linhas MEMORIA.
         history[-1] = ChatMessage("user", f"{history[-1].content}\n\n{_MEMORY_REMINDER}")
+        if self.comfyui_client is not None:
+            await self.comfyui_client.free_memory(need_bytes=LLM_VRAM_BYTES)
         reply, model = await self.llm_client.chat(
-            [ChatMessage("system", self._system_prompt(persona_id)), *history]
+            [ChatMessage("system", self._system_prompt(persona_id)), *history],
+            think=True,
+            num_ctx=CONTEXT_TOKENS,
+            timeout=600.0,
         )
         added = self._add_memory(persona_id, _MEMORY_LINE.findall(reply))
         conversation.append(asdict(ContentMessage("assistant", reply)))

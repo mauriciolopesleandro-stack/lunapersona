@@ -82,10 +82,12 @@ app.state.swap_service = SwapService(
 app.state.content_service = ContentService(
     llm_client=app.state.llm_client,
     persona_manager=app.state.persona_manager,
+    comfyui_client=app.state.comfyui_client,
 )
 app.state.chat_service = ChatService(
     llm_client=app.state.llm_client,
     persona_manager=app.state.persona_manager,
+    comfyui_client=app.state.comfyui_client,
 )
 
 config_path = settings.workflows_dir.parent / "config" / "default.json"

@@ -2,9 +2,11 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.clients.llm_client import ChatMessage, LLMConnectionError, LLMError, LLMTimeoutError
+from app.jobs import JobRegistry
 from app.persona_manager.manager import PersonaNotFoundError
 
 router = APIRouter()
+_jobs = JobRegistry()
 
 
 class ChatMessageBody(BaseModel):
@@ -39,3 +41,29 @@ async def chat(body: ChatBody, request: Request):
 
     request.app.state.idle_shutdown.touch()
     return {"role": "assistant", "content": reply, "model": model}
+
+
+@router.post("/chat/jobs")
+async def start_chat_job(body: ChatBody, request: Request):
+    """Mesmo chat, raciocinando antes de responder (entende melhor pedidos
+    longos). Demora mais que o limite do proxy: consulta em /chat/jobs/{id}."""
+    chat_service = request.app.state.chat_service
+    request.app.state.idle_shutdown.touch()
+    if body.persona_id:
+        try:
+            request.app.state.persona_manager.get_persona(body.persona_id)
+        except PersonaNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    history = [ChatMessage(role=m.role, content=m.content) for m in body.messages]
+
+    async def work():
+        reply, model = await chat_service.reply(body.persona_id, history, think=True)
+        return {"role": "assistant", "content": reply, "model": model}
+
+    return _jobs.start(work)
+
+
+@router.get("/chat/jobs/{job_id}")
+async def get_chat_job(job_id: str, request: Request):
+    request.app.state.idle_shutdown.touch()
+    return _jobs.get(job_id)

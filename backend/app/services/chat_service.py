@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.clients.comfyui_client import ComfyUIClient
 from app.clients.llm_client import ChatMessage, OllamaClient
 from app.persona_manager.manager import Persona, PersonaManager
 
@@ -37,17 +38,36 @@ Foque a conversa apenas nos elementos variaveis: roupa, cenario, pose, iluminaca
 expressao, camera."""
 
 
+# Conversa inteira cabe no que o modelo enxerga (o padrao do Ollama, ~4 mil
+# tokens, cortava o comeco - inclusive estas instrucoes).
+CONTEXT_TOKENS = 16384
+LLM_VRAM_BYTES = 13 * 1024**3
+
+
 class ChatService:
-    def __init__(self, llm_client: OllamaClient, persona_manager: PersonaManager) -> None:
+    def __init__(
+        self,
+        llm_client: OllamaClient,
+        persona_manager: PersonaManager,
+        comfyui_client: ComfyUIClient | None = None,
+    ) -> None:
         self.llm_client = llm_client
         self.persona_manager = persona_manager
+        self.comfyui_client = comfyui_client
 
     def _system_prompt(self, persona: Persona | None) -> str:
         if persona is None:
             return BASE_SYSTEM_PROMPT
         return BASE_SYSTEM_PROMPT + PERSONA_SYSTEM_PROMPT_SUFFIX.format(name=persona.name)
 
-    async def reply(self, persona_id: str | None, history: list[ChatMessage]) -> tuple[str, str]:
+    async def reply(
+        self, persona_id: str | None, history: list[ChatMessage], think: bool = False
+    ) -> tuple[str, str]:
+        """think=True so pela rota com job (raciocinar passa dos ~100 s do proxy)."""
         persona = self.persona_manager.get_persona(persona_id) if persona_id else None
         system = ChatMessage(role="system", content=self._system_prompt(persona))
-        return await self.llm_client.chat([system, *history])
+        if self.comfyui_client is not None:
+            await self.comfyui_client.free_memory(need_bytes=LLM_VRAM_BYTES)
+        return await self.llm_client.chat(
+            [system, *history], think=think, num_ctx=CONTEXT_TOKENS, timeout=600.0 if think else None
+        )
