@@ -220,25 +220,45 @@ async def plan_person_swap(comfyui: ComfyUIClient, image: str, width: int, heigh
     return plan
 
 
-_ABOUT = re.compile(r"\babout\s+(?:a|an|the)\s+(.+?)(?:\.|$)", re.I)
+# Da descricao do recorte, so o trecho sobre ELA ("woman with short blonde
+# hair, wearing a beige sweater") - a frase "about ..." descrevia a cena
+# ("a happy couple", "a smiling waiter") e o Qwen trocava a pessoa errada.
+_HER_PHRASE = re.compile(
+    r"\b(?:a|an|the)\s+((?:young\s+|elderly\s+|older\s+|middle-aged\s+)?woman\b[^.]*?)"
+    r"(?=,?\s+(?:and|while|as|who\s+is\s+looking\s+at)\s+(?:a|an|the|his|her)\s+man\b|[.;]|$)",
+    re.I,
+)
+_WEARING = re.compile(
+    r"\bwearing\s+([^.;]+?)"
+    r"(?=,?\s+(?:and\s+)?(?:she|her|is|has|with)\b|,?\s+and\s+(?:a|an|the|his)\b|\s+\w+ing\b|[.;,]|$)",
+    re.I,
+)
+_AGE_WORDS = re.compile(r"\b(?:young|elderly|older|middle-aged)\s+", re.I)
+
+
+def describe_her(caption: str) -> tuple[str, str]:
+    """(como ela e, a roupa) a partir da descricao do recorte."""
+    match = _HER_PHRASE.search(caption or "")
+    desc = _AGE_WORDS.sub("", match.group(1)).strip(" ,")[:140] if match else "woman"
+    wearing = _WEARING.search(caption or "")
+    clothes = wearing.group(1).strip(" ,")[:120] if wearing else ""
+    return desc, clothes
 
 
 def qwen_prompt(plan: PersonSwapPlan, width: int) -> str:
     """Instrucao do Qwen-Image-Edit: diz QUEM trocar (lado da foto + como ela
-    e, pelo recorte) - so com "the woman" ele trocava o homem - e que so o
-    rosto, o cabelo e a pele vem da persona (senao vinha a roupa da foto 2)."""
+    e) - so com "the woman" ele trocava o homem - e que do image 2 so vem
+    rosto, cabelo e pele; a roupa e a dela no image 1 (vinha a da foto 2)."""
     side = ""
     if plan.woman is not None:
         cx = (plan.woman[0] + plan.woman[2]) / 2 / max(1, width)
         side = " on the left side of image 1" if cx < 0.4 else " on the right side of image 1" if cx > 0.6 else " in the middle of image 1"
-    match = _ABOUT.search(plan.caption or "")
-    desc = match.group(1).strip()[:160] if match else "woman"
-    if not re.search(r"\b(?:woman|girl|lady)\b", desc, re.I):
-        desc = f"woman ({desc})"
+    desc, clothes = describe_her(plan.caption)
+    keep_clothes = f" She keeps the same clothes ({clothes}) from image 1." if clothes else " She keeps the same clothes from image 1."
     return (
-        f"Replace the {desc}{side} with the woman from image 2. Use only her face, long dark brown hair, "
-        "tanned skin and black choker necklace from image 2. The new woman keeps exactly the same pose, arms, "
-        "hands, gesture, head direction, expression and clothing as the original woman in image 1. Do not change "
+        f"Replace the {desc}{side} with the woman from image 2. Take only her face, long dark brown hair and "
+        "tanned skin from image 2, not her clothes. The new woman keeps exactly the same pose, arms, hands, "
+        f"gesture, head direction and expression as the original woman in image 1.{keep_clothes} Do not change "
         "any other person in image 1. Keep the background, objects, lighting and framing exactly the same. "
         "Photorealistic photo."
     )

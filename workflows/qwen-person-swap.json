@@ -2,7 +2,7 @@
   "meta": {
     "id": "qwen-person-swap",
     "title": "Qwen-Image-Edit 2511 - Trocar a pessoa da foto pela persona",
-    "description": "Pack com a persona por edicao com instrucao (como o Magnific): IMAGE (a cena) e PERSONA_IMAGE (so rosto e cabelo da persona - com roupa ele copiava a roupa) entram juntas no Qwen2.5-VL e o PROMPT diz QUEM trocar (posicao + cabelo/roupa dela, do services/person_swap.py; sem isso ele trocava o homem). Grafo do template oficial image_qwen_image_edit_2511 (FluxKontextImageScale, FluxKontextMultiReferenceLatentMethod index_timestep_zero, CFGNorm, shift 3.1) com a LoRA Lightning de 8 passos (cfg 1). Depois so a area dela (SAM2 com POINTS_POS/NEG + cabeca HEAD_X/Y/W/H para o cabelo) volta por cima da foto original no tamanho WIDTH x HEIGHT: o resto fica identico e nitido mesmo se o Qwen mexer em outra coisa. Modelos: scripts/setup_qwen_edit.sh.",
+    "description": "Pack com a persona por edicao com instrucao (como o Magnific): IMAGE (a cena) e PERSONA_IMAGE (so rosto e cabelo da persona - com roupa ele copiava a roupa) entram juntas no Qwen2.5-VL e o PROMPT diz QUEM trocar (posicao + cabelo/roupa dela, do services/person_swap.py; sem isso ele trocava o homem). Grafo do template oficial image_qwen_image_edit_2511 (FluxKontextImageScale, FluxKontextMultiReferenceLatentMethod index_timestep_zero, CFGNorm, shift 3.1) com a LoRA Lightning de 8 passos (cfg 1). Depois so a area dela - contorno antigo (SAM2 com POINTS_POS/NEG) + o novo na saida do Qwen (ele mexe um pouco o braco; so o antigo deixava buraco) + cabeca HEAD_X/Y/W/H para o cabelo - volta por cima da foto original no tamanho WIDTH x HEIGHT: o resto fica identico e nitido mesmo se o Qwen mexer em outra coisa. Modelos: scripts/setup_qwen_edit.sh.",
     "compatible_models": ["chroma1-hd-fp8"],
     "hidden": true,
     "required_params": ["REFERENCE_IMAGE", "PERSONA_IMAGE", "PROMPT", "POINTS_POS", "HEAD_X", "HEAD_Y", "HEAD_W", "HEAD_H"],
@@ -67,10 +67,19 @@
     "61": {"class_type": "GrowMask", "inputs": {"mask": ["26", 0], "expand": "${HAIR_ROOM}", "tapered_corners": true}},
     "63": {"class_type": "MaskComposite", "inputs": {"destination": ["72", 0], "source": ["61", 0], "x": 0, "y": 0, "operation": "multiply"}},
     "67": {"class_type": "MaskComposite", "inputs": {"destination": ["26", 0], "source": ["63", 0], "x": 0, "y": 0, "operation": "add"}},
+    "80": {
+      "class_type": "Sam2Segmentation",
+      "inputs": {
+        "sam2_model": ["24", 0], "image": ["40", 0], "keep_model_loaded": false,
+        "coordinates_positive": "${POINTS_POS}", "coordinates_negative": "${POINTS_NEG}", "individual_objects": false
+      }
+    },
+    "81": {"class_type": "GrowMask", "inputs": {"mask": ["80", 0], "expand": "${MASK_GROW}", "tapered_corners": true}},
+    "82": {"class_type": "MaskComposite", "inputs": {"destination": ["67", 0], "source": ["81", 0], "x": 0, "y": 0, "operation": "add"}},
     "68": {
       "class_type": "GrowMaskWithBlur",
       "inputs": {
-        "mask": ["67", 0], "expand": 0, "incremental_expandrate": 0.0, "tapered_corners": true,
+        "mask": ["82", 0], "expand": 0, "incremental_expandrate": 0.0, "tapered_corners": true,
         "flip_input": false, "blur_radius": 8.0, "lerp_alpha": 1.0, "decay_factor": 1.0
       }
     },
