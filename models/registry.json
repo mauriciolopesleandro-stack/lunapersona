@@ -16,7 +16,7 @@
         "unet_weight_dtype": "default",
         "clip_type": "chroma"
       },
-      "compatible_workflows": ["chroma-txt2img", "chroma-txt2img-lora", "chroma-img2img", "chroma-img2img-lora", "chroma-face-refine", "chroma-person-swap-lora"],
+      "compatible_workflows": ["chroma-txt2img", "chroma-txt2img-lora", "chroma-img2img", "chroma-img2img-lora", "chroma-face-refine", "chroma-person-swap-lora", "qwen-person-swap"],
       "defaults": {
         "width": 1024,
         "height": 1024,

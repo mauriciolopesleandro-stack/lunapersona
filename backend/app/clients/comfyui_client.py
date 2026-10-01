@@ -158,6 +158,19 @@ class ComfyUIClient:
         options = node.get("input", {}).get("required", {}).get("lora_name", [[]])[0]
         return list(options) if isinstance(options, list) else []
 
+    async def list_diffusion_models(self) -> list[str]:
+        """Arquivos que o UNETLoader enxerga em models/diffusion_models."""
+        try:
+            async with httpx.AsyncClient(timeout=self.connect_timeout) as client:
+                resp = await client.get(f"{self.base_url}/object_info/UNETLoader", headers=self._headers())
+        except httpx.RequestError as exc:
+            raise ComfyUIConnectionError(str(exc)) from exc
+        if resp.status_code != 200:
+            raise ComfyUIConnectionError(f"/object_info/UNETLoader retornou status {resp.status_code}")
+        node = resp.json().get("UNETLoader", {})
+        options = node.get("input", {}).get("required", {}).get("unet_name", [[]])[0]
+        return list(options) if isinstance(options, list) else []
+
     async def upload_image(self, filename: str, content: bytes) -> str:
         """Envia uma imagem para o ComfyUI (pasta input/) para uso em nos como
         LoadImage. Retorna o nome de arquivo real usado pelo ComfyUI (pode

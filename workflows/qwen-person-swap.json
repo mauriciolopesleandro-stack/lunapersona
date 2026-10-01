@@ -2,7 +2,7 @@
   "meta": {
     "id": "qwen-person-swap",
     "title": "Qwen-Image-Edit 2511 - Trocar a pessoa da foto pela persona",
-    "description": "Pack com a persona por edicao com instrucao (como o Magnific): IMAGE (a cena) e PERSONA_IMAGE (so rosto e cabelo da persona - com roupa ele copiava a roupa) entram juntas no Qwen2.5-VL e o PROMPT diz QUEM trocar - ela vai marcada com um retangulo vermelho (RING_*, so no image 1 do Qwen; em abraco so a descricao nao bastava) (posicao + cabelo/roupa dela, do services/person_swap.py; sem isso ele trocava o homem). Grafo do template oficial image_qwen_image_edit_2511 (FluxKontextImageScale, FluxKontextMultiReferenceLatentMethod index_timestep_zero, CFGNorm, shift 3.1) com a LoRA Lightning de 8 passos (cfg 1). Depois so a area dela - contorno antigo (SAM2 com POINTS_POS/NEG) + o novo na saida do Qwen (ele mexe um pouco o braco; so o antigo deixava buraco) + cabeca HEAD_X/Y/W/H para o cabelo - volta por cima da foto original no tamanho WIDTH x HEIGHT: o resto fica identico e nitido mesmo se o Qwen mexer em outra coisa. Modelos: scripts/setup_qwen_edit.sh.",
+    "description": "Pack com a persona por edicao com instrucao (como o Magnific): IMAGE (a cena) e PERSONA_IMAGE (cortada em PERSONA_W x PERSONA_H: so rosto e cabelo da persona - com roupa ele copiava a roupa) entram juntas no Qwen2.5-VL e o PROMPT diz QUEM trocar - ela vai marcada com um retangulo vermelho (RING_*, so no image 1 do Qwen; em abraco so a descricao nao bastava) (posicao + cabelo/roupa dela, do services/person_swap.py; sem isso ele trocava o homem). Grafo do template oficial image_qwen_image_edit_2511 (FluxKontextImageScale, FluxKontextMultiReferenceLatentMethod index_timestep_zero, CFGNorm, shift 3.1) com a LoRA Lightning de 8 passos (cfg 1). Depois so a area dela - contorno antigo (SAM2 com POINTS_POS/NEG) + o novo na saida do Qwen (ele mexe um pouco o braco; so o antigo deixava buraco) + cabeca HEAD_X/Y/W/H para o cabelo - volta por cima da foto original no tamanho WIDTH x HEIGHT: o resto fica identico e nitido mesmo se o Qwen mexer em outra coisa. Modelos: scripts/setup_qwen_edit.sh.",
     "compatible_models": [
       "chroma1-hd-fp8"
     ],
@@ -23,7 +23,9 @@
       "RING_IX",
       "RING_IY",
       "RING_IW",
-      "RING_IH"
+      "RING_IH",
+      "PERSONA_W",
+      "PERSONA_H"
     ],
     "optional_params": {
       "WIDTH": 1024,
@@ -115,6 +117,19 @@
         ]
       }
     },
+    "13": {
+      "class_type": "ImageCrop",
+      "inputs": {
+        "image": [
+          "11",
+          0
+        ],
+        "width": "${PERSONA_W}",
+        "height": "${PERSONA_H}",
+        "x": 0,
+        "y": 0
+      }
+    },
     "19": {
       "class_type": "ImageScale",
       "inputs": {
@@ -145,7 +160,7 @@
           0
         ],
         "image2": [
-          "11",
+          "13",
           0
         ]
       }
@@ -167,7 +182,7 @@
           0
         ],
         "image2": [
-          "11",
+          "13",
           0
         ]
       }

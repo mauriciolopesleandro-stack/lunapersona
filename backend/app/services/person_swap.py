@@ -264,6 +264,36 @@ def qwen_prompt(plan: PersonSwapPlan, width: int) -> str:
     )
 
 
+QWEN_MODEL = "qwen_image_edit_2511_fp8mixed.safetensors"
+# Foto da persona para o Qwen: so a parte de cima (rosto e cabelo) - com a
+# roupa ele vestia a pessoa com ela.
+PERSONA_HEAD_FRACTION = 0.47
+
+
+def image_size(content: bytes) -> tuple[int, int] | None:
+    """(largura, altura) de um PNG ou JPEG sem abrir a imagem (o backend nao tem Pillow)."""
+    if content[:8] == b"\x89PNG\r\n\x1a\n" and len(content) >= 24:
+        return int.from_bytes(content[16:20], "big"), int.from_bytes(content[20:24], "big")
+    if content[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(content):
+            if content[i] != 0xFF:
+                i += 1
+                continue
+            marker = content[i + 1]
+            if marker in (0xC0, 0xC1, 0xC2):
+                return int.from_bytes(content[i + 7:i + 9], "big"), int.from_bytes(content[i + 5:i + 7], "big")
+            i += 2 + int.from_bytes(content[i + 2:i + 4], "big")
+    return None
+
+
+async def qwen_available(comfyui: ComfyUIClient) -> bool:
+    try:
+        return QWEN_MODEL in await comfyui.list_diffusion_models()
+    except ComfyUIError:
+        return False
+
+
 RING_MARGIN = 96  # maior que o HAIR_ROOM da colagem: a linha nunca entra no que volta
 RING_THICKNESS = 8
 

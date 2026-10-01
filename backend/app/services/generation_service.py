@@ -14,7 +14,15 @@ from app.clients.comfyui_client import ComfyUIClient, ComfyUIError, GenerationOu
 from app.clients.llm_client import OllamaClient
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
-from app.services.person_swap import PersonSwapPlan, plan_person_swap
+from app.services.person_swap import (
+    PERSONA_HEAD_FRACTION,
+    PersonSwapPlan,
+    image_size,
+    plan_person_swap,
+    qwen_available,
+    qwen_prompt,
+    ring_params,
+)
 from app.services.prompt_translator import to_english
 from app.services.reference_caption import clean_reference_caption
 from app.services.scene_describer import describe_image
@@ -70,6 +78,7 @@ _OTHER_PERSON = re.compile(r"\b(?:man|men|he|his|him|husband|boyfriend|guy|male|
 FACE_REFINE_WORKFLOW = "chroma-face-refine"
 
 PERSON_SWAP_WORKFLOW = "chroma-person-swap-lora"
+QWEN_SWAP_WORKFLOW = "qwen-person-swap"
 
 IMG2IMG_WORKFLOW = "chroma-img2img"
 IMG2IMG_LORA_WORKFLOW = "chroma-img2img-lora"
@@ -252,6 +261,17 @@ class GenerationService:
         if swap_plan is not None:
             params["POINTS_POS"], params["POINTS_NEG"] = swap_plan.points_pos, swap_plan.points_neg
             params["HEAD_X"], params["HEAD_Y"], params["HEAD_W"], params["HEAD_H"] = swap_plan.head
+            # Qwen-Image-Edit instalado: ele faz a troca (cena + foto da
+            # persona + instrucao) - o Chroma redesenhando a regiao dela
+            # perdia abraco, rosto de perfil e gestos. Sem ele, fica o Chroma.
+            persona_ref = self.persona_manager.get_primary_reference_bytes(req.persona_id) if req.persona_id else None
+            size = image_size(persona_ref[1]) if persona_ref else None
+            if persona_ref and size and await qwen_available(self.comfyui_client):
+                workflow_id = QWEN_SWAP_WORKFLOW
+                params["PERSONA_IMAGE"] = await self.comfyui_client.upload_image(*persona_ref)
+                params["PERSONA_W"], params["PERSONA_H"] = size[0], int(size[1] * PERSONA_HEAD_FRACTION)
+                params["PROMPT"] = qwen_prompt(swap_plan, params["WIDTH"])
+                params.update(ring_params(swap_plan, params["WIDTH"], params["HEIGHT"]))
         if req.denoise is not None:
             params["DENOISE"] = req.denoise
         if use_lora:
