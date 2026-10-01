@@ -55,12 +55,12 @@ HIRES_MAX_PIXELS = 2_400_000
 
 # Se o pedido ja fala de expressao/olhar, a atitude padrao da persona nao entra.
 _EXPRESSION_WORDS = re.compile(
-    r"(?:smilw*|laughw*|grinw*|expression|surprisw*|shockw*|mouth|winkw*|poutw*|serious|sad|angry|"
-    r"cryw*|tongue|screamw*|gaze|frownw*|kissw*|looking)",
+    r"\b(?:smilw*|laughw*|grinw*|expression|surprisw*|shockw*|mouth|winkw*|poutw*|serious|sad|angry|"
+    r"cryw*|tongue|screamw*|gaze|frownw*|kissw*|looking)\b",
     re.I,
 )
 # Frases da descricao sobre outra pessoa (no pack so a mulher e redesenhada).
-_OTHER_PERSON = re.compile(r"(?:man|men|he|his|him|husband|boyfriend|guy|male|beard)", re.I)
+_OTHER_PERSON = re.compile(r"\b(?:man|men|he|his|him|husband|boyfriend|guy|male|beard)\b", re.I)
 
 # Correcao de rosto depois da geracao com LoRA (workflows/chroma-face-refine.json).
 FACE_REFINE_WORKFLOW = "chroma-face-refine"
