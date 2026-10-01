@@ -2,627 +2,92 @@
   "meta": {
     "id": "chroma-person-swap-lora",
     "title": "Chroma1-HD - Trocar a pessoa da foto pela persona (so a pessoa)",
-    "description": "Pack com a persona: na foto enviada (REFERENCE_IMAGE, no tamanho WIDTH x HEIGHT - o original, ate ~2,4 MP) o Florence-2 acha a pessoa (TARGET) e o SAM2 recorta o contorno. Um recorte em volta dela, ampliado para CROP_RES no lado maior, e redesenhado com a LoRA numa passada so com forca diferente por regiao (DifferentialDiffusion): rosto dela (Florence FACE_TARGET) ampliado por HAIR_ROOM para caber o cabelo com DENOISE cheio (vira a persona, com espaco para o cabelo dela), corpo e roupa com BODY_STRENGTH (mantem postura, abraco, roupa) e maos com HANDS_STRENGTH (gesto e objetos iguais). Redesenhar a pessoa inteira com forca fazia ela soltar o abraco e inventar objetos. O recorte volta para a foto original com a borda suave (ImageUncropByMask): o cenario nao e tocado. Depois passa a correcao de rosto.",
-    "compatible_models": [
-      "chroma1-hd-fp8"
-    ],
+    "description": "Pack com a persona. O backend (services/person_swap.py) acha antes a mulher e o rosto dela (Florence-2) e manda POINTS_POS/POINTS_NEG (SAM2: ela sim, o rosto do outro nao), HEAD_X/Y/W/H (rosto dela alargado para caber o cabelo da persona) e o PROMPT com a descricao so dela. Aqui: a foto no tamanho de trabalho (WIDTH x HEIGHT, ate ~2,4 MP - reduzir para 1 MP borrava), SAM2 recorta o contorno dela e o redesenho com a LoRA e numa passada so com forca por regiao (DifferentialDiffusion): cabeca com DENOISE cheio (vira a persona), corpo e roupa com BODY_STRENGTH (mantem postura, abraco, roupa), maos com HANDS_STRENGTH (gesto e objetos iguais). A cabeca so cresce perto do contorno dela (HAIR_ROOM). O resultado volta por cima da foto so no contorno dela + cabeca, com a borda suave: o resto fica identico. Depois passa a correcao de rosto.",
+    "compatible_models": ["chroma1-hd-fp8"],
     "hidden": true,
-    "required_params": [
-      "PROMPT",
-      "REFERENCE_IMAGE",
-      "LORA_NAME"
-    ],
+    "required_params": ["PROMPT", "REFERENCE_IMAGE", "LORA_NAME", "POINTS_POS", "HEAD_X", "HEAD_Y", "HEAD_W", "HEAD_H"],
     "optional_params": {
-      "NEGATIVE_PROMPT": "low quality, ugly, deformed, disfigured, blurry, bad anatomy, extra fingers, extra legs, extra limbs, extra arms, extra hands, missing limbs, fused limbs, malformed limbs, watermark, signature, text, logo, letters, airbrushed, plastic skin, waxy skin, overly smooth skin, cgi, 3d render, illustration, cartoon, doll, oversaturated, beauty filter, two women, duplicate person, male face, beard, mustache",
+      "NEGATIVE_PROMPT": "low quality, ugly, deformed, disfigured, blurry, bad anatomy, extra fingers, extra legs, extra limbs, extra arms, extra hands, missing limbs, fused limbs, malformed limbs, watermark, signature, text, logo, letters, airbrushed, plastic skin, waxy skin, overly smooth skin, cgi, 3d render, illustration, cartoon, doll, oversaturated, beauty filter, male face, beard, mustache",
       "WIDTH": 1024,
       "HEIGHT": 1024,
       "STEPS": 28,
-      "GUIDANCE": 3,
+      "GUIDANCE": 3.0,
       "SEED": 0,
       "SAMPLER_NAME": "euler",
       "FILENAME_PREFIX": "luna_studio",
-      "LORA_STRENGTH": 1,
+      "LORA_STRENGTH": 1.0,
       "DENOISE": 0.85,
-      "TARGET": "woman",
-      "MASK_GROW": 24,
-      "HANDS_STRENGTH": 0.35,
-      "CROP_RES": 1344,
-      "CROP_PADDING": 48,
       "BODY_STRENGTH": 0.5,
-      "HAIR_ROOM": 56,
-      "FACE_TARGET": "woman's face"
+      "HANDS_STRENGTH": 0.35,
+      "MASK_GROW": 16,
+      "HAIR_ROOM": 64,
+      "POINTS_NEG": "[]"
     }
   },
   "graph": {
-    "1": {
-      "class_type": "UNETLoader",
-      "inputs": {
-        "unet_name": "${UNET_NAME}",
-        "weight_dtype": "${UNET_WEIGHT_DTYPE}"
-      }
-    },
-    "2": {
-      "class_type": "CLIPLoader",
-      "inputs": {
-        "clip_name": "${CLIP_NAME_1}",
-        "type": "${CLIP_TYPE}",
-        "device": "default"
-      }
-    },
-    "3": {
-      "class_type": "VAELoader",
-      "inputs": {
-        "vae_name": "${VAE_NAME}"
-      }
-    },
-    "4": {
-      "class_type": "T5TokenizerOptions",
-      "inputs": {
-        "clip": [
-          "2",
-          0
-        ],
-        "min_padding": 0,
-        "min_length": 0
-      }
-    },
-    "5": {
-      "class_type": "CLIPTextEncode",
-      "inputs": {
-        "text": "${PROMPT}",
-        "clip": [
-          "4",
-          0
-        ]
-      }
-    },
-    "6": {
-      "class_type": "CLIPTextEncode",
-      "inputs": {
-        "text": "${NEGATIVE_PROMPT}",
-        "clip": [
-          "4",
-          0
-        ]
-      }
-    },
-    "7": {
-      "class_type": "ModelSamplingAuraFlow",
-      "inputs": {
-        "model": [
-          "16",
-          0
-        ],
-        "shift": 1
-      }
-    },
-    "8": {
-      "class_type": "CFGGuider",
-      "inputs": {
-        "model": [
-          "9",
-          0
-        ],
-        "positive": [
-          "5",
-          0
-        ],
-        "negative": [
-          "6",
-          0
-        ],
-        "cfg": "${GUIDANCE}"
-      }
-    },
-    "9": {
-      "class_type": "DifferentialDiffusion",
-      "inputs": {
-        "model": [
-          "7",
-          0
-        ]
-      }
-    },
-    "10": {
-      "class_type": "RandomNoise",
-      "inputs": {
-        "noise_seed": "${SEED}"
-      }
-    },
-    "11": {
-      "class_type": "KSamplerSelect",
-      "inputs": {
-        "sampler_name": "${SAMPLER_NAME}"
-      }
-    },
-    "12": {
-      "class_type": "BetaSamplingScheduler",
-      "inputs": {
-        "model": [
-          "7",
-          0
-        ],
-        "steps": "${STEPS}",
-        "alpha": 0.45,
-        "beta": 0.45
-      }
-    },
-    "13": {
-      "class_type": "SplitSigmasDenoise",
-      "inputs": {
-        "sigmas": [
-          "12",
-          0
-        ],
-        "denoise": "${DENOISE}"
-      }
-    },
-    "15": {
-      "class_type": "SaveImage",
-      "inputs": {
-        "images": [
-          "32",
-          0
-        ],
-        "filename_prefix": "${FILENAME_PREFIX}"
-      }
-    },
-    "16": {
-      "class_type": "LoraLoaderModelOnly",
-      "inputs": {
-        "model": [
-          "1",
-          0
-        ],
-        "lora_name": "${LORA_NAME}",
-        "strength_model": "${LORA_STRENGTH}"
-      }
-    },
-    "19": {
-      "class_type": "ImageScale",
-      "inputs": {
-        "image": [
-          "20",
-          0
-        ],
-        "upscale_method": "lanczos",
-        "width": "${WIDTH}",
-        "height": "${HEIGHT}",
-        "crop": "disabled"
-      }
-    },
-    "20": {
-      "class_type": "LoadImage",
-      "inputs": {
-        "image": "${REFERENCE_IMAGE}"
-      }
-    },
-    "21": {
-      "class_type": "DownloadAndLoadFlorence2Model",
-      "inputs": {
-        "model": "microsoft/Florence-2-large",
-        "precision": "fp16"
-      }
-    },
-    "22": {
-      "class_type": "Florence2Run",
-      "inputs": {
-        "image": [
-          "19",
-          0
-        ],
-        "florence2_model": [
-          "21",
-          0
-        ],
-        "text_input": "${TARGET}",
-        "task": "caption_to_phrase_grounding",
-        "fill_mask": false,
-        "keep_model_loaded": false,
-        "max_new_tokens": 256,
-        "num_beams": 3,
-        "do_sample": false,
-        "output_mask_select": "",
-        "seed": 1
-      }
-    },
-    "23": {
-      "class_type": "Florence2toCoordinates",
-      "inputs": {
-        "data": [
-          "22",
-          3
-        ],
-        "index": "0",
-        "batch": false
-      }
-    },
-    "24": {
-      "class_type": "DownloadAndLoadSAM2Model",
-      "inputs": {
-        "model": "sam2_hiera_base_plus.safetensors",
-        "segmentor": "single_image",
-        "device": "cuda",
-        "precision": "fp16"
-      }
-    },
+    "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "${UNET_NAME}", "weight_dtype": "${UNET_WEIGHT_DTYPE}"}},
+    "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "${CLIP_NAME_1}", "type": "${CLIP_TYPE}", "device": "default"}},
+    "3": {"class_type": "VAELoader", "inputs": {"vae_name": "${VAE_NAME}"}},
+    "4": {"class_type": "T5TokenizerOptions", "inputs": {"clip": ["2", 0], "min_padding": 0, "min_length": 0}},
+    "5": {"class_type": "CLIPTextEncode", "inputs": {"text": "${PROMPT}", "clip": ["4", 0]}},
+    "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "${NEGATIVE_PROMPT}", "clip": ["4", 0]}},
+    "16": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["1", 0], "lora_name": "${LORA_NAME}", "strength_model": "${LORA_STRENGTH}"}},
+    "7": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["16", 0], "shift": 1.0}},
+    "9": {"class_type": "DifferentialDiffusion", "inputs": {"model": ["7", 0]}},
+    "8": {"class_type": "CFGGuider", "inputs": {"model": ["9", 0], "positive": ["5", 0], "negative": ["6", 0], "cfg": "${GUIDANCE}"}},
+    "10": {"class_type": "RandomNoise", "inputs": {"noise_seed": "${SEED}"}},
+    "11": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "${SAMPLER_NAME}"}},
+    "12": {"class_type": "BetaSamplingScheduler", "inputs": {"model": ["7", 0], "steps": "${STEPS}", "alpha": 0.45, "beta": 0.45}},
+    "13": {"class_type": "SplitSigmasDenoise", "inputs": {"sigmas": ["12", 0], "denoise": "${DENOISE}"}},
+    "20": {"class_type": "LoadImage", "inputs": {"image": "${REFERENCE_IMAGE}"}},
+    "19": {"class_type": "ImageScale", "inputs": {"image": ["20", 0], "upscale_method": "lanczos", "width": "${WIDTH}", "height": "${HEIGHT}", "crop": "disabled"}},
+    "24": {"class_type": "DownloadAndLoadSAM2Model", "inputs": {"model": "sam2_hiera_base_plus.safetensors", "segmentor": "single_image", "device": "cuda", "precision": "fp16"}},
     "25": {
       "class_type": "Sam2Segmentation",
       "inputs": {
-        "sam2_model": [
-          "24",
-          0
-        ],
-        "image": [
-          "19",
-          0
-        ],
-        "keep_model_loaded": false,
-        "bboxes": [
-          "23",
-          1
-        ],
-        "individual_objects": false
+        "sam2_model": ["24", 0], "image": ["19", 0], "keep_model_loaded": false,
+        "coordinates_positive": "${POINTS_POS}", "coordinates_negative": "${POINTS_NEG}", "individual_objects": false
       }
     },
-    "26": {
-      "class_type": "GrowMask",
-      "inputs": {
-        "mask": [
-          "25",
-          0
-        ],
-        "expand": "${MASK_GROW}",
-        "tapered_corners": true
-      }
-    },
-    "27": {
-      "class_type": "VAEEncode",
-      "inputs": {
-        "pixels": [
-          "50",
-          0
-        ],
-        "vae": [
-          "3",
-          0
-        ]
-      }
-    },
-    "28": {
-      "class_type": "SetLatentNoiseMask",
-      "inputs": {
-        "samples": [
-          "27",
-          0
-        ],
-        "mask": [
-          "44",
-          0
-        ]
-      }
-    },
-    "29": {
-      "class_type": "SamplerCustomAdvanced",
-      "inputs": {
-        "noise": [
-          "10",
-          0
-        ],
-        "guider": [
-          "8",
-          0
-        ],
-        "sampler": [
-          "11",
-          0
-        ],
-        "sigmas": [
-          "13",
-          1
-        ],
-        "latent_image": [
-          "28",
-          0
-        ]
-      }
-    },
-    "30": {
-      "class_type": "VAEDecode",
-      "inputs": {
-        "samples": [
-          "29",
-          0
-        ],
-        "vae": [
-          "3",
-          0
-        ]
-      }
-    },
-    "31": {
-      "class_type": "ImageCompositeMasked",
-      "inputs": {
-        "destination": [
-          "50",
-          0
-        ],
-        "source": [
-          "30",
-          0
-        ],
-        "x": 0,
-        "y": 0,
-        "resize_source": false,
-        "mask": [
-          "67",
-          0
-        ]
-      }
-    },
-    "32": {
-      "class_type": "ImageUncropByMask",
-      "inputs": {
-        "destination": [
-          "19",
-          0
-        ],
-        "source": [
-          "31",
-          0
-        ],
-        "mask": [
-          "67",
-          0
-        ],
-        "bbox": [
-          "50",
-          2
-        ]
-      }
-    },
+    "26": {"class_type": "GrowMask", "inputs": {"mask": ["25", 0], "expand": "${MASK_GROW}", "tapered_corners": true}},
+    "70": {"class_type": "SolidMask", "inputs": {"value": 0.0, "width": "${WIDTH}", "height": "${HEIGHT}"}},
+    "71": {"class_type": "SolidMask", "inputs": {"value": 1.0, "width": "${HEAD_W}", "height": "${HEAD_H}"}},
+    "72": {"class_type": "MaskComposite", "inputs": {"destination": ["70", 0], "source": ["71", 0], "x": "${HEAD_X}", "y": "${HEAD_Y}", "operation": "add"}},
+    "61": {"class_type": "GrowMask", "inputs": {"mask": ["26", 0], "expand": "${HAIR_ROOM}", "tapered_corners": true}},
+    "63": {"class_type": "MaskComposite", "inputs": {"destination": ["72", 0], "source": ["61", 0], "x": 0, "y": 0, "operation": "multiply"}},
+    "64": {"class_type": "SolidMask", "inputs": {"value": "${BODY_STRENGTH}", "width": "${WIDTH}", "height": "${HEIGHT}"}},
+    "65": {"class_type": "MaskComposite", "inputs": {"destination": ["26", 0], "source": ["64", 0], "x": 0, "y": 0, "operation": "multiply"}},
+    "66": {"class_type": "MaskComposite", "inputs": {"destination": ["65", 0], "source": ["63", 0], "x": 0, "y": 0, "operation": "add"}},
+    "21": {"class_type": "DownloadAndLoadFlorence2Model", "inputs": {"model": "microsoft/Florence-2-large", "precision": "fp16"}},
     "40": {
       "class_type": "Florence2Run",
       "inputs": {
-        "image": [
-          "50",
-          0
-        ],
-        "florence2_model": [
-          "21",
-          0
-        ],
-        "text_input": "hands",
-        "task": "caption_to_phrase_grounding",
-        "fill_mask": true,
-        "keep_model_loaded": false,
-        "max_new_tokens": 256,
-        "num_beams": 3,
-        "do_sample": false,
-        "output_mask_select": "",
-        "seed": 1
+        "image": ["19", 0], "florence2_model": ["21", 0], "text_input": "hands",
+        "task": "caption_to_phrase_grounding", "fill_mask": true, "keep_model_loaded": false,
+        "max_new_tokens": 256, "num_beams": 3, "do_sample": false, "output_mask_select": "", "seed": 1
       }
     },
-    "41": {
-      "class_type": "GrowMask",
+    "41": {"class_type": "GrowMask", "inputs": {"mask": ["40", 1], "expand": 8, "tapered_corners": true}},
+    "45": {"class_type": "SolidMask", "inputs": {"value": "${HANDS_STRENGTH}", "width": "${WIDTH}", "height": "${HEIGHT}"}},
+    "46": {"class_type": "MaskComposite", "inputs": {"destination": ["64", 0], "source": ["45", 0], "x": 0, "y": 0, "operation": "subtract"}},
+    "43": {"class_type": "MaskComposite", "inputs": {"destination": ["41", 0], "source": ["46", 0], "x": 0, "y": 0, "operation": "multiply"}},
+    "44": {"class_type": "MaskComposite", "inputs": {"destination": ["66", 0], "source": ["43", 0], "x": 0, "y": 0, "operation": "subtract"}},
+    "67": {"class_type": "MaskComposite", "inputs": {"destination": ["26", 0], "source": ["63", 0], "x": 0, "y": 0, "operation": "add"}},
+    "68": {
+      "class_type": "GrowMaskWithBlur",
       "inputs": {
-        "mask": [
-          "40",
-          1
-        ],
-        "expand": 8,
-        "tapered_corners": true
+        "mask": ["67", 0], "expand": 0, "incremental_expandrate": 0.0, "tapered_corners": true,
+        "flip_input": false, "blur_radius": 6.0, "lerp_alpha": 1.0, "decay_factor": 1.0
       }
     },
-    "43": {
-      "class_type": "MaskComposite",
-      "inputs": {
-        "destination": [
-          "41",
-          0
-        ],
-        "source": [
-          "46",
-          0
-        ],
-        "x": 0,
-        "y": 0,
-        "operation": "multiply"
-      }
+    "27": {"class_type": "VAEEncode", "inputs": {"pixels": ["19", 0], "vae": ["3", 0]}},
+    "28": {"class_type": "SetLatentNoiseMask", "inputs": {"samples": ["27", 0], "mask": ["44", 0]}},
+    "29": {
+      "class_type": "SamplerCustomAdvanced",
+      "inputs": {"noise": ["10", 0], "guider": ["8", 0], "sampler": ["11", 0], "sigmas": ["13", 1], "latent_image": ["28", 0]}
     },
-    "44": {
-      "class_type": "MaskComposite",
-      "inputs": {
-        "destination": [
-          "66",
-          0
-        ],
-        "source": [
-          "43",
-          0
-        ],
-        "x": 0,
-        "y": 0,
-        "operation": "subtract"
-      }
-    },
-    "45": {
-      "class_type": "SolidMask",
-      "inputs": {
-        "value": "${HANDS_STRENGTH}",
-        "width": [
-          "53",
-          0
-        ],
-        "height": [
-          "53",
-          1
-        ]
-      }
-    },
-    "46": {
-      "class_type": "MaskComposite",
-      "inputs": {
-        "destination": [
-          "64",
-          0
-        ],
-        "source": [
-          "45",
-          0
-        ],
-        "x": 0,
-        "y": 0,
-        "operation": "subtract"
-      }
-    },
-    "50": {
-      "class_type": "ImageCropByMaskAndResize",
-      "inputs": {
-        "image": [
-          "19",
-          0
-        ],
-        "mask": [
-          "26",
-          0
-        ],
-        "base_resolution": "${CROP_RES}",
-        "padding": "${CROP_PADDING}",
-        "min_crop_resolution": 256,
-        "max_crop_resolution": 8192
-      }
-    },
-    "53": {
-      "class_type": "GetImageSize",
-      "inputs": {
-        "image": [
-          "50",
-          0
-        ]
-      }
-    },
-    "60": {
-      "class_type": "Florence2Run",
-      "inputs": {
-        "image": [
-          "50",
-          0
-        ],
-        "florence2_model": [
-          "21",
-          0
-        ],
-        "text_input": "${FACE_TARGET}",
-        "task": "caption_to_phrase_grounding",
-        "fill_mask": true,
-        "keep_model_loaded": false,
-        "max_new_tokens": 256,
-        "num_beams": 3,
-        "do_sample": false,
-        "output_mask_select": "",
-        "seed": 1
-      }
-    },
-    "61": {
-      "class_type": "GrowMask",
-      "inputs": {
-        "mask": [
-          "50",
-          1
-        ],
-        "expand": 48,
-        "tapered_corners": true
-      }
-    },
-    "62": {
-      "class_type": "MaskComposite",
-      "inputs": {
-        "destination": [
-          "60",
-          1
-        ],
-        "source": [
-          "61",
-          0
-        ],
-        "x": 0,
-        "y": 0,
-        "operation": "multiply"
-      }
-    },
-    "63": {
-      "class_type": "GrowMask",
-      "inputs": {
-        "mask": [
-          "62",
-          0
-        ],
-        "expand": "${HAIR_ROOM}",
-        "tapered_corners": true
-      }
-    },
-    "64": {
-      "class_type": "SolidMask",
-      "inputs": {
-        "value": "${BODY_STRENGTH}",
-        "width": [
-          "53",
-          0
-        ],
-        "height": [
-          "53",
-          1
-        ]
-      }
-    },
-    "65": {
-      "class_type": "MaskComposite",
-      "inputs": {
-        "destination": [
-          "50",
-          1
-        ],
-        "source": [
-          "64",
-          0
-        ],
-        "x": 0,
-        "y": 0,
-        "operation": "multiply"
-      }
-    },
-    "66": {
-      "class_type": "MaskComposite",
-      "inputs": {
-        "destination": [
-          "65",
-          0
-        ],
-        "source": [
-          "63",
-          0
-        ],
-        "x": 0,
-        "y": 0,
-        "operation": "add"
-      }
-    },
-    "67": {
-      "class_type": "MaskComposite",
-      "inputs": {
-        "destination": [
-          "50",
-          1
-        ],
-        "source": [
-          "63",
-          0
-        ],
-        "x": 0,
-        "y": 0,
-        "operation": "add"
-      }
-    }
+    "30": {"class_type": "VAEDecode", "inputs": {"samples": ["29", 0], "vae": ["3", 0]}},
+    "31": {"class_type": "ImageCompositeMasked", "inputs": {"destination": ["19", 0], "source": ["30", 0], "x": 0, "y": 0, "resize_source": false, "mask": ["68", 0]}},
+    "15": {"class_type": "SaveImage", "inputs": {"images": ["31", 0], "filename_prefix": "${FILENAME_PREFIX}"}}
   }
 }

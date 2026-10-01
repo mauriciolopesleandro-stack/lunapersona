@@ -14,6 +14,7 @@ from app.clients.comfyui_client import ComfyUIClient, ComfyUIError, GenerationOu
 from app.clients.llm_client import OllamaClient
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
+from app.services.person_swap import PersonSwapPlan, plan_person_swap
 from app.services.prompt_translator import to_english
 from app.services.reference_caption import clean_reference_caption
 from app.services.scene_describer import describe_image
@@ -148,6 +149,7 @@ class GenerationService:
         use_lora = False
         attitude = ""
         face_params: dict[str, Any] = {}
+        swap_plan: PersonSwapPlan | None = None
         if req.persona_id:
             persona = self.persona_manager.get_persona(req.persona_id)
             lora = persona.lora
@@ -203,15 +205,26 @@ class GenerationService:
             if workflow_id not in model.compatible_workflows:
                 raise WorkflowParamError(f"O modelo '{req.model_id}' nao aceita imagem de referencia.")
             reference_image_name = req.reference_image
-            # Com o "Quanto mudar" alto, so o que esta escrito sobrevive da
-            # foto: descreve-la no prompt mantem roupa, pose e cenario. Com
-            # persona, os tracos da pessoa original saem da descricao.
-            description = await self._describe_reference(req.reference_image)
+            if req.person_swap:
+                # Onde ela e o rosto dela estao e a descricao SO dela (recorte):
+                # a da foto inteira falava do homem e ele aparecia no lugar dela.
+                swap_plan = await plan_person_swap(
+                    self.comfyui_client,
+                    req.reference_image,
+                    req.width or model.defaults.get("width", 1024),
+                    req.height or model.defaults.get("height", 1024),
+                )
+                description = swap_plan.caption
+            else:
+                # Com o "Quanto mudar" alto, so o que esta escrito sobrevive
+                # da foto: descreve-la no prompt mantem roupa, pose e cenario.
+                description = await self._describe_reference(req.reference_image)
+            # Com persona, os tracos da pessoa original saem da descricao.
             if description and req.persona_id:
                 description = clean_reference_caption(description, keep_expression=not attitude)
             if description and req.person_swap:
-                # So a area dela e redesenhada: frases sobre o homem da foto
-                # faziam o modelo desenhar um rosto masculino no lugar do dela.
+                # O recorte as vezes pega um pedaco do outro: frase so sobre
+                # ele sai (a que fala dela tambem fica).
                 description = " ".join(
                     s
                     for s in re.split(r"(?<=[.!?])\s+", description)
@@ -236,6 +249,9 @@ class GenerationService:
         }
         if reference_image_name:
             params["REFERENCE_IMAGE"] = reference_image_name
+        if swap_plan is not None:
+            params["POINTS_POS"], params["POINTS_NEG"] = swap_plan.points_pos, swap_plan.points_neg
+            params["HEAD_X"], params["HEAD_Y"], params["HEAD_W"], params["HEAD_H"] = swap_plan.head
         if req.denoise is not None:
             params["DENOISE"] = req.denoise
         if use_lora:
