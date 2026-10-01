@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.idle_shutdown import IdleShutdownTracker
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
+from app.jobs import JobRegistry
 from app.routes import chat, content, generate, health, models, personas, video, voice, workflows
 from app.services.chat_service import ChatService
 from app.services.generation_service import GenerationService
@@ -90,11 +91,18 @@ config_path = settings.workflows_dir.parent / "config" / "default.json"
 app.state.default_config = json.loads(config_path.read_text(encoding="utf-8"))
 
 repo_root = settings.workflows_dir.parent
+
+
+async def _studio_busy() -> bool:
+    return JobRegistry.running > 0 or await app.state.comfyui_client.is_busy()
+
+
 sync_python = repo_root / ".venv-sync" / "bin" / "python"
 app.state.idle_shutdown = IdleShutdownTracker(
     api_key=settings.runpod_api_key,
     pod_id=settings.runpod_pod_id,
     idle_minutes=settings.idle_shutdown_minutes,
+    busy_check=_studio_busy,
     pre_stop_command=(
         [str(sync_python), str(repo_root / "scripts" / "volume_sync.py"), "all"] if sync_python.exists() else None
     ),

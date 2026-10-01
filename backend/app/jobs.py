@@ -17,6 +17,9 @@ from app.clients.comfyui_client import ComfyUIError
 
 
 class JobRegistry:
+    # Jobs rodando em todas as rotas: o auto-desligamento espera eles acabarem.
+    running = 0
+
     def __init__(self, max_jobs: int = 30) -> None:
         self._jobs: dict[str, dict[str, Any]] = {}
         self._tasks: set[asyncio.Task] = set()
@@ -34,6 +37,7 @@ class JobRegistry:
 
     async def _run(self, job_id: str, work: Callable[[], Awaitable[dict[str, Any]]]) -> None:
         job = self._jobs[job_id]
+        JobRegistry.running += 1
         try:
             job["result"] = await work()
             job["status"] = "done"
@@ -41,6 +45,8 @@ class JobRegistry:
             job["status"] = "error"
             job["error_status"] = 502 if isinstance(exc, ComfyUIError) else 500
             job["detail"] = str(exc) or exc.__class__.__name__
+        finally:
+            JobRegistry.running -= 1
 
     def get(self, job_id: str) -> dict[str, Any]:
         job = self._jobs.get(job_id)

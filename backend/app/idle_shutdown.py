@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -31,6 +32,8 @@ mutation StopPod($podId: String!) {
 # Sincronizar os volumes antes de desligar pode demorar se houver modelo
 # novo para copiar - melhor atrasar o desligamento do que perder a copia.
 PRE_STOP_SYNC_TIMEOUT_SECONDS = 3600
+# Ocupado ha mais que isso sem ninguem chamar o site: provavelmente travou.
+MAX_BUSY_SECONDS = 90 * 60
 
 
 class IdleShutdownTracker:
@@ -41,6 +44,7 @@ class IdleShutdownTracker:
         idle_minutes: float,
         check_interval_seconds: float = 30.0,
         pre_stop_command: list[str] | None = None,
+        busy_check: Callable[[], Awaitable[bool]] | None = None,
     ):
         self.api_key = api_key
         self.pod_id = pod_id
@@ -49,6 +53,9 @@ class IdleShutdownTracker:
         # Roda antes de desligar (ex: scripts/volume_sync.py all), para o
         # outro volume ficar com tudo que mudou neste pod.
         self.pre_stop_command = pre_stop_command
+        # Geracao/video em andamento conta como uso: sem isso a 1a geracao de
+        # um pod recem-ligado (modelos carregando do volume) passava do limite.
+        self.busy_check = busy_check
         self.last_activity = time.monotonic()
         self._task: asyncio.Task | None = None
         self._stopped_already = False
@@ -94,6 +101,13 @@ class IdleShutdownTracker:
             await asyncio.sleep(self.check_interval_seconds)
             idle_for = time.monotonic() - self.last_activity
             if idle_for >= self.idle_seconds and not self._stopped_already:
+                if self.busy_check is not None and idle_for < MAX_BUSY_SECONDS:
+                    try:
+                        busy = await self.busy_check()
+                    except Exception:
+                        busy = False
+                    if busy:
+                        continue
                 logger.info("Pod ocioso ha %.0fs (limite %.0fs) - desligando.", idle_for, self.idle_seconds)
                 self._stopped_already = True
                 await self._stop_pod()

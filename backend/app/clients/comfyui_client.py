@@ -130,6 +130,16 @@ class ComfyUIClient:
             )
         return resp.json()
 
+    async def is_busy(self) -> bool:
+        """True se o ComfyUI tem algo rodando ou na fila."""
+        try:
+            async with httpx.AsyncClient(timeout=self.connect_timeout) as client:
+                resp = await client.get(f"{self.base_url}/queue", headers=self._headers())
+            data = resp.json()
+        except (httpx.RequestError, ValueError):
+            return False
+        return bool(data.get("queue_running") or data.get("queue_pending"))
+
     async def list_loras(self) -> list[str]:
         """Nomes das LoRAs que o ComfyUI enxerga em models/loras."""
         try:
