@@ -2,7 +2,7 @@
   "meta": {
     "id": "chroma-person-swap-lora",
     "title": "Chroma1-HD - Trocar a pessoa da foto pela persona (so a pessoa)",
-    "description": "Pack com a persona: na foto enviada (REFERENCE_IMAGE, no tamanho WIDTH x HEIGHT - o original, ate ~2,4 MP) o Florence-2 acha a pessoa (TARGET) e o SAM2 recorta o contorno. Um recorte em volta dela, ampliado para CROP_RES no lado maior, e redesenhado com a LoRA numa passada so com forca diferente por regiao (DifferentialDiffusion): cabeca e cabelo com DENOISE cheio (vira a persona, com espaco para o cabelo dela), corpo e roupa com BODY_STRENGTH (mantem postura, abraco, roupa) e maos com HANDS_STRENGTH (gesto e objetos iguais). Redesenhar a pessoa inteira com forca fazia ela soltar o abraco e inventar objetos. O recorte volta para a foto original com a borda suave (ImageUncropByMask): o cenario nao e tocado. Depois passa a correcao de rosto.",
+    "description": "Pack com a persona: na foto enviada (REFERENCE_IMAGE, no tamanho WIDTH x HEIGHT - o original, ate ~2,4 MP) o Florence-2 acha a pessoa (TARGET) e o SAM2 recorta o contorno. Um recorte em volta dela, ampliado para CROP_RES no lado maior, e redesenhado com a LoRA numa passada so com forca diferente por regiao (DifferentialDiffusion): rosto dela (Florence FACE_TARGET) ampliado por HAIR_ROOM para caber o cabelo com DENOISE cheio (vira a persona, com espaco para o cabelo dela), corpo e roupa com BODY_STRENGTH (mantem postura, abraco, roupa) e maos com HANDS_STRENGTH (gesto e objetos iguais). Redesenhar a pessoa inteira com forca fazia ela soltar o abraco e inventar objetos. O recorte volta para a foto original com a borda suave (ImageUncropByMask): o cenario nao e tocado. Depois passa a correcao de rosto.",
     "compatible_models": [
       "chroma1-hd-fp8"
     ],
@@ -13,7 +13,7 @@
       "LORA_NAME"
     ],
     "optional_params": {
-      "NEGATIVE_PROMPT": "low quality, ugly, deformed, disfigured, blurry, bad anatomy, extra fingers, extra legs, extra limbs, extra arms, extra hands, missing limbs, fused limbs, malformed limbs, watermark, signature, text, logo, letters, airbrushed, plastic skin, waxy skin, overly smooth skin, cgi, 3d render, illustration, cartoon, doll, oversaturated, beauty filter, two women, duplicate person, man, male face, beard, mustache, masculine, second person, extra head",
+      "NEGATIVE_PROMPT": "low quality, ugly, deformed, disfigured, blurry, bad anatomy, extra fingers, extra legs, extra limbs, extra arms, extra hands, missing limbs, fused limbs, malformed limbs, watermark, signature, text, logo, letters, airbrushed, plastic skin, waxy skin, overly smooth skin, cgi, 3d render, illustration, cartoon, doll, oversaturated, beauty filter, two women, duplicate person, male face, beard, mustache",
       "WIDTH": 1024,
       "HEIGHT": 1024,
       "STEPS": 28,
@@ -29,7 +29,8 @@
       "CROP_RES": 1344,
       "CROP_PADDING": 48,
       "BODY_STRENGTH": 0.5,
-      "HAIR_ROOM": 40
+      "HAIR_ROOM": 56,
+      "FACE_TARGET": "woman's face"
     }
   },
   "graph": {
@@ -512,7 +513,7 @@
           "21",
           0
         ],
-        "text_input": "head",
+        "text_input": "${FACE_TARGET}",
         "task": "caption_to_phrase_grounding",
         "fill_mask": true,
         "keep_model_loaded": false,

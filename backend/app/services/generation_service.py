@@ -60,6 +60,9 @@ _EXPRESSION_WORDS = re.compile(
     re.I,
 )
 # Frases da descricao sobre outra pessoa (no pack so a mulher e redesenhada).
+# ...mas frase que tambem fala dela fica (sem isso sumia a descricao dela e o
+# modelo pintava fundo no lugar da cabeca).
+_HER = re.compile(r"\b(?:she|her|woman|women|girl|lady|wife|girlfriend)\b", re.I)
 _OTHER_PERSON = re.compile(r"\b(?:man|men|he|his|him|husband|boyfriend|guy|male|beard)\b", re.I)
 
 # Correcao de rosto depois da geracao com LoRA (workflows/chroma-face-refine.json).
@@ -162,7 +165,8 @@ class GenerationService:
                 if not req.person_swap and not _EXPRESSION_WORDS.search(user_prompt):
                     attitude = persona.attitude_prompt_fragment()
                 lead = ", ".join(p for p in (attitude, traits) if p)
-                prompt = f"photo of {lora.trigger}, {lead + ', ' if lead else ''}{user_prompt}"
+                who = "a young woman, " if req.person_swap else ""
+                prompt = f"photo of {lora.trigger}, {who}{lead + ', ' if lead else ''}{user_prompt}"
                 face_params = {
                     "FACE_PROMPT": ", ".join(
                         p for p in (f"close-up portrait photo of {lora.trigger}", attitude, REALISM_SUFFIX) if p
@@ -209,7 +213,9 @@ class GenerationService:
                 # So a area dela e redesenhada: frases sobre o homem da foto
                 # faziam o modelo desenhar um rosto masculino no lugar do dela.
                 description = " ".join(
-                    s for s in re.split(r"(?<=[.!?])\s+", description) if not _OTHER_PERSON.search(s)
+                    s
+                    for s in re.split(r"(?<=[.!?])\s+", description)
+                    if not _OTHER_PERSON.search(s) or _HER.search(s)
                 )
             if description:
                 prompt = f"{prompt}, {description}"
