@@ -17,6 +17,7 @@ from app.persona_manager.manager import PersonaManager
 from app.services.person_swap import (
     PersonSwapPlan,
     image_size,
+    pack_correction,
     plan_person_swap,
     qwen_available,
     qwen_swap_params,
@@ -350,7 +351,11 @@ class GenerationService:
             if persona_image_name and persona_size:
                 workflow_id = QWEN_SWAP_WORKFLOW
                 params["PERSONA_IMAGE"] = persona_image_name
-                params.update(qwen_swap_params(swap_plan, params["WIDTH"], params["HEIGHT"], persona_size))
+                # A correcao escrita no "refazer" da foto entra na instrucao do
+                # Qwen (antes a instrucao era montada so pela foto e ela sumia).
+                params.update(qwen_swap_params(
+                    swap_plan, params["WIDTH"], params["HEIGHT"], persona_size, pack_correction(user_prompt)
+                ))
         if req.denoise is not None:
             params["DENOISE"] = req.denoise
         if use_lora:

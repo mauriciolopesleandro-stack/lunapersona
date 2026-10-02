@@ -416,10 +416,12 @@ def describe_her(caption: str) -> tuple[str, str]:
     return desc, clothes
 
 
-def qwen_prompt(plan: PersonSwapPlan, crop: tuple[int, int, int, int]) -> str:
+def qwen_prompt(plan: PersonSwapPlan, crop: tuple[int, int, int, int], correction: str = "") -> str:
     """Instrucao do Qwen-Image-Edit: diz QUEM trocar (lado do recorte + como
     ela e) - so com "the woman" ele trocava o homem - e que do image 2 so vem
-    rosto, cabelo e pele; a roupa e a dela no image 1 (vinha a da foto 2)."""
+    rosto, cabelo e pele; a roupa e a dela no image 1 (vinha a da foto 2).
+    correction = o que a pessoa escreveu no "refazer" da foto (ja em ingles):
+    vai no fim e vence o resto (ex.: "smiling more" contra "same expression")."""
     side = ""
     if plan.woman is not None:
         cx = ((plan.woman[0] + plan.woman[2]) / 2 - crop[0]) / max(1, crop[2])
@@ -440,7 +442,17 @@ def qwen_prompt(plan: PersonSwapPlan, crop: tuple[int, int, int, int]) -> str:
         f"pose, arms, hands and gesture, holding the same objects.{expression}{keep_clothes} Do not change anyone outside the red "
         "rectangle. Keep the background, objects, lighting and framing exactly the same. Sharp, detailed, "
         "photorealistic photo."
+        + (f" Most important, this change has priority over everything above: {correction.strip().rstrip('.')}." if correction.strip() else "")
     )
+
+
+# Texto fixo que o site manda junto com a correcao (frontend PackSwapPage.tsx).
+_PACK_BASE = re.compile(r",?\s*same outfit, pose and expression as (?:in )?the reference photo\.?", re.I)
+
+
+def pack_correction(prompt: str) -> str:
+    """So a correcao que a pessoa escreveu, sem o texto fixo do pack."""
+    return _PACK_BASE.sub("", prompt or "").strip(" ,.")
 
 
 # Expressao dela na descricao: com a cabeca escondida o Qwen nao ve o sorriso.
@@ -597,7 +609,9 @@ def hair_and_face_params(
     }
 
 
-def qwen_swap_params(plan: PersonSwapPlan, width: int, height: int, persona_size: tuple[int, int]) -> dict[str, Any]:
+def qwen_swap_params(
+    plan: PersonSwapPlan, width: int, height: int, persona_size: tuple[int, int], correction: str = ""
+) -> dict[str, Any]:
     """Parametros do workflows/qwen-person-swap.json alem da cena e do prompt."""
     crop = crop_box(plan, width, height)
     cx, cy, cw, ch = crop
@@ -609,7 +623,7 @@ def qwen_swap_params(plan: PersonSwapPlan, width: int, height: int, persona_size
         "QWEN_W": qw, "QWEN_H": qh,
         "ZONE_X": zx, "ZONE_Y": zy, "ZONE_W": zw, "ZONE_H": zh,
         "PERSONA_X": px, "PERSONA_Y": py, "PERSONA_W": pw, "PERSONA_H": ph,
-        "PROMPT": qwen_prompt(plan, crop),
+        "PROMPT": qwen_prompt(plan, crop, correction),
         **ring_params(plan, crop),
     }
     params.update(hair_and_face_params(plan, width, height, crop))
