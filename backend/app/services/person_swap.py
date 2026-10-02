@@ -433,10 +433,11 @@ def qwen_prompt(plan: PersonSwapPlan, crop: tuple[int, int, int, int]) -> str:
     expression = " She is " + " and ".join(p.lower() for p in (mood[:1] + gaze[:1])) + "." if mood or gaze else ""
     return (
         f"Replace the woman inside the red rectangle{side} with the woman from image 2, and remove the red "
-        "rectangle. Her head and hair in image 1 are covered by a gray blur: paint there the head of the woman "
-        "from image 2, with her face, her long dark brown hair and her tanned skin - clearly the same person as "
-        "image 2. Not her clothes. Same pose, arms, hands, gesture, head position and head angle as the woman in "
-        f"image 1, holding the same objects.{expression}{keep_clothes} Do not change anyone outside the red "
+        "rectangle. Her hair in image 1 is covered by gray and her face is slightly blurred: paint there the "
+        "face of the woman from image 2, with her long dark brown hair (dark from the roots to the tips) and her "
+        "tanned skin - clearly the same person as image 2. Not her clothes. Keep exactly the head angle, the "
+        "gaze direction (where her eyes look) and the expression of the blurred face in image 1, and the same "
+        f"pose, arms, hands and gesture, holding the same objects.{expression}{keep_clothes} Do not change anyone outside the red "
         "rectangle. Keep the background, objects, lighting and framing exactly the same. Sharp, detailed, "
         "photorealistic photo."
     )
@@ -475,6 +476,11 @@ FULL_CROP = 0.8  # recorte maior que isso da foto: usa a foto inteira
 ZONE_SIDE = 0.9
 ZONE_TOP = 0.5
 ZONE_DROP = 2.6  # abaixo do queixo: cabelo longo da persona ate o peito
+# Onde procurar o cabelo dela inteiro (larguras/alturas do rosto): cabelo
+# longo e solto passa da zona da cabeca e as pontas loiras ficavam.
+HAIR_SIDE = 1.6
+HAIR_DROP = 6.0
+HAIR_TOP = 1.0  # acima da testa (0.5 cortava o topo do cabelo novo reto)
 # Caixa da mao alargada para levar junto o que ela segura (celular, copo).
 HAND_PAD = 0.35
 MAX_HANDS = 4
@@ -566,6 +572,31 @@ def swap_face_box(plan: PersonSwapPlan, width: int, height: int) -> tuple[int, i
     return _clamp_box(fx1 - fw * 0.15, fy1 - fh * 0.15, fx2 + fw * 0.15, fy2 + fh * 0.1, width, height)
 
 
+def hair_and_face_params(
+    plan: PersonSwapPlan, width: int, height: int, crop: tuple[int, int, int, int]
+) -> dict[str, Any]:
+    """HERBOX_*: onde o cabelo dela pode estar (a caixa dela, ja cortada antes
+    do rosto do outro, ate o meio do corpo) - o "hair" do Florence pega o
+    cabelo dele tambem. FACEC_*: o rosto dela no recorte do Qwen, escondido so
+    de leve para ele ver o olhar e a direcao da cabeca."""
+    if plan.face is None or plan.woman is None:
+        return {"HAIR_ON": 0, "FACE_SOFT": 0}
+    fx1, fy1, fx2, fy2 = plan.face
+    fw, fh = fx2 - fx1, fy2 - fy1
+    hx, hy, hw, hh = _clamp_box(
+        min(plan.woman[0], fx1 - fw * HAIR_SIDE), fy1 - fh * HAIR_TOP,
+        max(plan.woman[2], fx2 + fw * HAIR_SIDE), fy2 + fh * HAIR_DROP, width, height,
+    )
+    # o lado do outro continua cortado no rosto dele
+    tx1, _, tx2, _ = trim_to_her((hx, hy, hx + hw, hy + hh), plan.face, plan.others)
+    cx, cy, cw, ch = crop
+    gx, gy, gw, gh = _clamp_box(fx1 - fw * 0.1 - cx, fy1 - fh * 0.1 - cy, fx2 + fw * 0.1 - cx, fy2 + fh * 0.05 - cy, cw, ch)
+    return {
+        "HAIR_ON": 1, "HERBOX_X": int(tx1), "HERBOX_Y": hy, "HERBOX_W": max(16, int(tx2 - tx1)), "HERBOX_H": hh,
+        "FACE_SOFT": 1, "FACEC_X": gx, "FACEC_Y": gy, "FACEC_W": gw, "FACEC_H": gh,
+    }
+
+
 def qwen_swap_params(plan: PersonSwapPlan, width: int, height: int, persona_size: tuple[int, int]) -> dict[str, Any]:
     """Parametros do workflows/qwen-person-swap.json alem da cena e do prompt."""
     crop = crop_box(plan, width, height)
@@ -581,6 +612,7 @@ def qwen_swap_params(plan: PersonSwapPlan, width: int, height: int, persona_size
         "PROMPT": qwen_prompt(plan, crop),
         **ring_params(plan, crop),
     }
+    params.update(hair_and_face_params(plan, width, height, crop))
     others = sorted(plan.others, key=_area, reverse=True)
     for i in range(MAX_OTHERS):
         n = i + 1

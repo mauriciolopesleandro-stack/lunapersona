@@ -176,19 +176,25 @@ class GenerationService:
         params: dict[str, Any],
     ) -> GenerationOutputImage | None:
         """Passada do InstantID no rosto dela (workflows/sdxl-instantid-face.json).
-        None sem os modelos/nos no pod ou sem rosto achado no recorte."""
+        Os pontos do rosto (angulo da cabeca) vem da foto original; sem rosto
+        achado nela (olhando para baixo), vem da propria troca. None sem os
+        modelos/nos no pod ou sem rosto nenhum."""
         x, y, w, h = face_box
-        try:
-            graph = self.workflow_manager.render(INSTANTID_FACE_WORKFLOW, {
-                "IMAGE": _output_name(image), "PERSONA_IMAGE": persona_image,
-                "FACE_X": x, "FACE_Y": y, "FACE_W": w, "FACE_H": h,
-                "WIDTH": params["WIDTH"], "HEIGHT": params["HEIGHT"], "SEED": params["SEED"],
-            })
-            entry = await self.comfyui_client.wait_for_completion(await self.comfyui_client.queue_prompt(graph))
-        except (ComfyUIError, WorkflowParamError):
-            return None
-        out = self.comfyui_client.extract_images(entry)
-        return out[0] if out else None
+        for kps_source in (params["REFERENCE_IMAGE"], _output_name(image)):
+            try:
+                graph = self.workflow_manager.render(INSTANTID_FACE_WORKFLOW, {
+                    "IMAGE": _output_name(image), "PERSONA_IMAGE": persona_image, "ORIGINAL": kps_source,
+                    "FACE_X": x, "FACE_Y": y, "FACE_W": w, "FACE_H": h,
+                    "WIDTH": params["WIDTH"], "HEIGHT": params["HEIGHT"], "SEED": params["SEED"],
+                })
+                entry = await self.comfyui_client.wait_for_completion(await self.comfyui_client.queue_prompt(graph))
+            except WorkflowParamError:
+                return None
+            except ComfyUIError:
+                continue
+            out = self.comfyui_client.extract_images(entry)
+            return out[0] if out else None
+        return None
 
     async def _finish_swap(
         self,
