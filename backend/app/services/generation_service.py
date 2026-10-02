@@ -15,13 +15,12 @@ from app.clients.llm_client import OllamaClient
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
 from app.services.person_swap import (
-    PERSONA_HEAD_FRACTION,
     PersonSwapPlan,
     image_size,
     plan_person_swap,
     qwen_available,
-    qwen_prompt,
-    ring_params,
+    qwen_swap_params,
+    swap_face_box,
 )
 from app.services.prompt_translator import to_english
 from app.services.reference_caption import clean_reference_caption
@@ -129,15 +128,28 @@ class GenerationService:
         return await describe_image(self.comfyui_client, self.workflow_manager, image_name)
 
     async def _refine_faces(
-        self, images: list[GenerationOutputImage], params: dict[str, Any]
+        self,
+        images: list[GenerationOutputImage],
+        params: dict[str, Any],
+        face_box: tuple[int, int, int, int] | None = None,
     ) -> list[GenerationOutputImage]:
         """Redesenha o rosto em alta resolucao com a LoRA e cola de volta. Sem
-        rosto na imagem (ou sem os nos no pod), fica a imagem original."""
+        rosto na imagem (ou sem os nos no pod), fica a imagem original.
+        face_box (x, y, largura, altura): no pack o rosto dela ja e conhecido -
+        o Florence com "woman's face" pegava o rosto do homem e o deformava."""
         refined: list[GenerationOutputImage] = []
         for image in images:
             name = f"{image.subfolder}/{image.filename}" if image.subfolder else image.filename
             try:
                 graph = self.workflow_manager.render(FACE_REFINE_WORKFLOW, {**params, "IMAGE": f"{name} [output]"})
+                if face_box is not None:
+                    x, y, w, h = face_box
+                    graph["f0"] = {"class_type": "SolidMask", "inputs": {"value": 0, "width": params["WIDTH"], "height": params["HEIGHT"]}}
+                    graph["f1"] = {"class_type": "SolidMask", "inputs": {"value": 1, "width": w, "height": h}}
+                    graph["f2"] = {"class_type": "MaskComposite", "inputs": {"destination": ["f0", 0], "source": ["f1", 0], "x": x, "y": y, "operation": "add"}}
+                    graph["23"]["inputs"]["mask"] = ["f2", 0]
+                    graph.pop("22", None)
+                    graph.pop("21", None)
                 prompt_id = await self.comfyui_client.queue_prompt(graph)
                 entry = await self.comfyui_client.wait_for_completion(prompt_id)
                 refined.extend(self.comfyui_client.extract_images(entry) or [image])
@@ -159,6 +171,8 @@ class GenerationService:
         attitude = ""
         face_params: dict[str, Any] = {}
         swap_plan: PersonSwapPlan | None = None
+        persona_image_name: str | None = None
+        persona_size: tuple[int, int] | None = None
         if req.persona_id:
             persona = self.persona_manager.get_persona(req.persona_id)
             lora = persona.lora
@@ -215,13 +229,22 @@ class GenerationService:
                 raise WorkflowParamError(f"O modelo '{req.model_id}' nao aceita imagem de referencia.")
             reference_image_name = req.reference_image
             if req.person_swap:
-                # Onde ela e o rosto dela estao e a descricao SO dela (recorte):
-                # a da foto inteira falava do homem e ele aparecia no lugar dela.
+                # Qwen-Image-Edit instalado: ele faz a troca (cena + foto da
+                # persona + instrucao) - o Chroma redesenhando a regiao dela
+                # perdia abraco, rosto de perfil e gestos. Sem ele, fica o Chroma.
+                persona_ref = self.persona_manager.get_primary_reference_bytes(req.persona_id) if req.persona_id else None
+                persona_size = image_size(persona_ref[1]) if persona_ref else None
+                if persona_ref and persona_size and await qwen_available(self.comfyui_client):
+                    persona_image_name = await self.comfyui_client.upload_image(*persona_ref)
+                # Onde ela, o rosto e as maos dela estao e a descricao SO dela
+                # (recorte): a da foto inteira falava do homem e ele aparecia
+                # no lugar dela.
                 swap_plan = await plan_person_swap(
                     self.comfyui_client,
                     req.reference_image,
                     req.width or model.defaults.get("width", 1024),
                     req.height or model.defaults.get("height", 1024),
+                    persona_image_name,
                 )
                 description = swap_plan.caption
             else:
@@ -261,17 +284,10 @@ class GenerationService:
         if swap_plan is not None:
             params["POINTS_POS"], params["POINTS_NEG"] = swap_plan.points_pos, swap_plan.points_neg
             params["HEAD_X"], params["HEAD_Y"], params["HEAD_W"], params["HEAD_H"] = swap_plan.head
-            # Qwen-Image-Edit instalado: ele faz a troca (cena + foto da
-            # persona + instrucao) - o Chroma redesenhando a regiao dela
-            # perdia abraco, rosto de perfil e gestos. Sem ele, fica o Chroma.
-            persona_ref = self.persona_manager.get_primary_reference_bytes(req.persona_id) if req.persona_id else None
-            size = image_size(persona_ref[1]) if persona_ref else None
-            if persona_ref and size and await qwen_available(self.comfyui_client):
+            if persona_image_name and persona_size:
                 workflow_id = QWEN_SWAP_WORKFLOW
-                params["PERSONA_IMAGE"] = await self.comfyui_client.upload_image(*persona_ref)
-                params["PERSONA_W"], params["PERSONA_H"] = size[0], int(size[1] * PERSONA_HEAD_FRACTION)
-                params["PROMPT"] = qwen_prompt(swap_plan, params["WIDTH"])
-                params.update(ring_params(swap_plan, params["WIDTH"], params["HEIGHT"]))
+                params["PERSONA_IMAGE"] = persona_image_name
+                params.update(qwen_swap_params(swap_plan, params["WIDTH"], params["HEIGHT"], persona_size))
         if req.denoise is not None:
             params["DENOISE"] = req.denoise
         if use_lora:
@@ -286,8 +302,12 @@ class GenerationService:
         history_entry = await self.comfyui_client.wait_for_completion(prompt_id)
 
         images = self.comfyui_client.extract_images(history_entry)
-        if face_params and images and FACE_REFINE_WORKFLOW in model.compatible_workflows:
-            images = await self._refine_faces(images, {**params, **face_params})
+        face_box = swap_face_box(swap_plan, params["WIDTH"], params["HEIGHT"]) if swap_plan is not None else None
+        # Pack sem o rosto dela achado (de costas): nao corrige rosto nenhum -
+        # o unico rosto que sobra e o do outro.
+        skip_refine = swap_plan is not None and face_box is None
+        if face_params and images and not skip_refine and FACE_REFINE_WORKFLOW in model.compatible_workflows:
+            images = await self._refine_faces(images, {**params, **face_params}, face_box)
         duration = time.monotonic() - start
 
         return GenerationResponse(

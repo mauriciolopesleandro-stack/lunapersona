@@ -2,7 +2,7 @@
   "meta": {
     "id": "qwen-person-swap",
     "title": "Qwen-Image-Edit 2511 - Trocar a pessoa da foto pela persona",
-    "description": "Pack com a persona por edicao com instrucao (como o Magnific): IMAGE (a cena) e PERSONA_IMAGE (cortada em PERSONA_W x PERSONA_H: so rosto e cabelo da persona - com roupa ele copiava a roupa) entram juntas no Qwen2.5-VL e o PROMPT diz QUEM trocar - ela vai marcada com um retangulo vermelho (RING_*, so no image 1 do Qwen; em abraco so a descricao nao bastava) (posicao + cabelo/roupa dela, do services/person_swap.py; sem isso ele trocava o homem). Grafo do template oficial image_qwen_image_edit_2511 (FluxKontextImageScale, FluxKontextMultiReferenceLatentMethod index_timestep_zero, CFGNorm, shift 3.1) com a LoRA Lightning de 8 passos (cfg 1). Depois so a area dela - contorno antigo (SAM2 com POINTS_POS/NEG) + o novo na saida do Qwen (ele mexe um pouco o braco; so o antigo deixava buraco) + cabeca HEAD_X/Y/W/H para o cabelo - volta por cima da foto original no tamanho WIDTH x HEIGHT: o resto fica identico e nitido mesmo se o Qwen mexer em outra coisa. Modelos: scripts/setup_qwen_edit.sh.",
+    "description": "Pack com a persona por edicao com instrucao (como o Magnific). So um recorte em volta dela (CROP_X/Y/W/H, no tamanho cheio da foto) vai para o Qwen, em QWEN_W x QWEN_H (~1 MP, mesma proporcao): com a foto inteira o rosto dela chegava pequeno (identidade fraca) e voltava ampliado e borrado. O image 2 e a foto da persona recortada no rosto e cabelo (PERSONA_X/Y/W/H; com roupa ele copiava a roupa). No image 1 a cabeca e o cabelo dela vao escondidos (HIDE_*: contorno SAM2 na zona da cabeca, menos as maos, borrado e acinzentado em HIDE_GRAY) - visivel, o Qwen copiava o cabelo e o rosto da original e a persona nao assumia. O PROMPT diz QUEM trocar - ela vai marcada com um retangulo vermelho (RING_*, coordenadas do recorte; em abraco so a descricao nao bastava). Grafo do template oficial image_qwen_image_edit_2511 (FluxKontextMultiReferenceLatentMethod index_timestep_zero, CFGNorm, shift 3.1) com a LoRA Lightning de 8 passos (cfg 1). Do resultado so volta a cabeca e o cabelo: contorno antigo (SAM2 com POINTS_POS/NEG) + o novo, alargado em HAIR_ROOM, dentro da zona ZONE_X/Y/W/H (cabeca ate o peito), menos as maos dela (HAND1..4, alargadas para levar o que ela segura; HANDn_V 0 = sem mao). Corpo, roupa, maos, objetos e cenario ficam os pixels da foto original no tamanho WIDTH x HEIGHT. Modelos: scripts/setup_qwen_edit.sh.",
     "compatible_models": [
       "chroma1-hd-fp8"
     ],
@@ -12,10 +12,16 @@
       "PERSONA_IMAGE",
       "PROMPT",
       "POINTS_POS",
-      "HEAD_X",
-      "HEAD_Y",
-      "HEAD_W",
-      "HEAD_H",
+      "CROP_X",
+      "CROP_Y",
+      "CROP_W",
+      "CROP_H",
+      "QWEN_W",
+      "QWEN_H",
+      "ZONE_X",
+      "ZONE_Y",
+      "ZONE_W",
+      "ZONE_H",
       "RING_X",
       "RING_Y",
       "RING_W",
@@ -24,6 +30,8 @@
       "RING_IY",
       "RING_IW",
       "RING_IH",
+      "PERSONA_X",
+      "PERSONA_Y",
       "PERSONA_W",
       "PERSONA_H"
     ],
@@ -39,6 +47,31 @@
       "POINTS_NEG": "[]",
       "MASK_GROW": 20,
       "HAIR_ROOM": 72,
+      "EDGE_BLUR": 10,
+      "HAND1_X": 0,
+      "HAND1_Y": 0,
+      "HAND1_W": 16,
+      "HAND1_H": 16,
+      "HAND1_V": 0,
+      "HAND2_X": 0,
+      "HAND2_Y": 0,
+      "HAND2_W": 16,
+      "HAND2_H": 16,
+      "HAND2_V": 0,
+      "HAND3_X": 0,
+      "HAND3_Y": 0,
+      "HAND3_W": 16,
+      "HAND3_H": 16,
+      "HAND3_V": 0,
+      "HAND4_X": 0,
+      "HAND4_Y": 0,
+      "HAND4_W": 16,
+      "HAND4_H": 16,
+      "HAND4_V": 0,
+      "HIDE_HEAD": 1,
+      "HIDE_GROW": 40,
+      "HIDE_BLUR": 10,
+      "HIDE_GRAY": 0.9,
       "FILENAME_PREFIX": "luna_studio"
     }
   },
@@ -109,12 +142,16 @@
       }
     },
     "12": {
-      "class_type": "FluxKontextImageScale",
+      "class_type": "ImageScale",
       "inputs": {
         "image": [
-          "96",
+          "h8",
           0
-        ]
+        ],
+        "upscale_method": "lanczos",
+        "width": "${QWEN_W}",
+        "height": "${QWEN_H}",
+        "crop": "disabled"
       }
     },
     "13": {
@@ -126,8 +163,21 @@
         ],
         "width": "${PERSONA_W}",
         "height": "${PERSONA_H}",
-        "x": 0,
-        "y": 0
+        "x": "${PERSONA_X}",
+        "y": "${PERSONA_Y}"
+      }
+    },
+    "14": {
+      "class_type": "ImageCrop",
+      "inputs": {
+        "image": [
+          "19",
+          0
+        ],
+        "width": "${CROP_W}",
+        "height": "${CROP_H}",
+        "x": "${CROP_X}",
+        "y": "${CROP_Y}"
       }
     },
     "19": {
@@ -315,8 +365,8 @@
           0
         ],
         "upscale_method": "lanczos",
-        "width": "${WIDTH}",
-        "height": "${HEIGHT}",
+        "width": "${CROP_W}",
+        "height": "${CROP_H}",
         "crop": "disabled"
       }
     },
@@ -328,7 +378,7 @@
           0
         ],
         "source": [
-          "40",
+          "42",
           0
         ],
         "x": 0,
@@ -340,11 +390,43 @@
         ]
       }
     },
+    "42": {
+      "class_type": "ImageCompositeMasked",
+      "inputs": {
+        "destination": [
+          "19",
+          0
+        ],
+        "source": [
+          "40",
+          0
+        ],
+        "x": "${CROP_X}",
+        "y": "${CROP_Y}",
+        "resize_source": false
+      }
+    },
+    "50": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "26",
+          0
+        ],
+        "source": [
+          "81",
+          0
+        ],
+        "x": 0,
+        "y": 0,
+        "operation": "add"
+      }
+    },
     "61": {
       "class_type": "GrowMask",
       "inputs": {
         "mask": [
-          "26",
+          "50",
           0
         ],
         "expand": "${HAIR_ROOM}",
@@ -355,11 +437,11 @@
       "class_type": "MaskComposite",
       "inputs": {
         "destination": [
-          "72",
+          "61",
           0
         ],
         "source": [
-          "61",
+          "72",
           0
         ],
         "x": 0,
@@ -367,34 +449,18 @@
         "operation": "multiply"
       }
     },
-    "67": {
-      "class_type": "MaskComposite",
-      "inputs": {
-        "destination": [
-          "26",
-          0
-        ],
-        "source": [
-          "63",
-          0
-        ],
-        "x": 0,
-        "y": 0,
-        "operation": "add"
-      }
-    },
     "68": {
       "class_type": "GrowMaskWithBlur",
       "inputs": {
         "mask": [
-          "82",
+          "114",
           0
         ],
         "expand": 0,
         "incremental_expandrate": 0,
         "tapered_corners": true,
         "flip_input": false,
-        "blur_radius": 8,
+        "blur_radius": "${EDGE_BLUR}",
         "lerp_alpha": 1,
         "decay_factor": 1
       }
@@ -411,8 +477,8 @@
       "class_type": "SolidMask",
       "inputs": {
         "value": 1,
-        "width": "${HEAD_W}",
-        "height": "${HEAD_H}"
+        "width": "${ZONE_W}",
+        "height": "${ZONE_H}"
       }
     },
     "72": {
@@ -426,8 +492,8 @@
           "71",
           0
         ],
-        "x": "${HEAD_X}",
-        "y": "${HEAD_Y}",
+        "x": "${ZONE_X}",
+        "y": "${ZONE_Y}",
         "operation": "add"
       }
     },
@@ -439,7 +505,7 @@
           0
         ],
         "image": [
-          "40",
+          "42",
           0
         ],
         "keep_model_loaded": false,
@@ -459,28 +525,12 @@
         "tapered_corners": true
       }
     },
-    "82": {
-      "class_type": "MaskComposite",
-      "inputs": {
-        "destination": [
-          "67",
-          0
-        ],
-        "source": [
-          "81",
-          0
-        ],
-        "x": 0,
-        "y": 0,
-        "operation": "add"
-      }
-    },
     "90": {
       "class_type": "SolidMask",
       "inputs": {
         "value": 0,
-        "width": "${WIDTH}",
-        "height": "${HEIGHT}"
+        "width": "${CROP_W}",
+        "height": "${CROP_H}"
       }
     },
     "91": {
@@ -534,8 +584,8 @@
     "95": {
       "class_type": "EmptyImage",
       "inputs": {
-        "width": "${WIDTH}",
-        "height": "${HEIGHT}",
+        "width": "${CROP_W}",
+        "height": "${CROP_H}",
         "batch_size": 1,
         "color": 16711680
       }
@@ -544,7 +594,7 @@
       "class_type": "ImageCompositeMasked",
       "inputs": {
         "destination": [
-          "19",
+          "14",
           0
         ],
         "source": [
@@ -558,6 +608,290 @@
           "94",
           0
         ]
+      }
+    },
+    "101": {
+      "class_type": "SolidMask",
+      "inputs": {
+        "value": "${HAND1_V}",
+        "width": "${HAND1_W}",
+        "height": "${HAND1_H}"
+      }
+    },
+    "102": {
+      "class_type": "SolidMask",
+      "inputs": {
+        "value": "${HAND2_V}",
+        "width": "${HAND2_W}",
+        "height": "${HAND2_H}"
+      }
+    },
+    "103": {
+      "class_type": "SolidMask",
+      "inputs": {
+        "value": "${HAND3_V}",
+        "width": "${HAND3_W}",
+        "height": "${HAND3_H}"
+      }
+    },
+    "104": {
+      "class_type": "SolidMask",
+      "inputs": {
+        "value": "${HAND4_V}",
+        "width": "${HAND4_W}",
+        "height": "${HAND4_H}"
+      }
+    },
+    "111": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "63",
+          0
+        ],
+        "source": [
+          "101",
+          0
+        ],
+        "x": "${HAND1_X}",
+        "y": "${HAND1_Y}",
+        "operation": "subtract"
+      }
+    },
+    "112": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "111",
+          0
+        ],
+        "source": [
+          "102",
+          0
+        ],
+        "x": "${HAND2_X}",
+        "y": "${HAND2_Y}",
+        "operation": "subtract"
+      }
+    },
+    "113": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "112",
+          0
+        ],
+        "source": [
+          "103",
+          0
+        ],
+        "x": "${HAND3_X}",
+        "y": "${HAND3_Y}",
+        "operation": "subtract"
+      }
+    },
+    "114": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "113",
+          0
+        ],
+        "source": [
+          "104",
+          0
+        ],
+        "x": "${HAND4_X}",
+        "y": "${HAND4_Y}",
+        "operation": "subtract"
+      }
+    },
+    "h0": {
+      "class_type": "SolidMask",
+      "inputs": {
+        "value": "${HIDE_HEAD}",
+        "width": "${WIDTH}",
+        "height": "${HEIGHT}"
+      }
+    },
+    "h1": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "26",
+          0
+        ],
+        "source": [
+          "72",
+          0
+        ],
+        "x": 0,
+        "y": 0,
+        "operation": "multiply"
+      }
+    },
+    "h2": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "h1",
+          0
+        ],
+        "source": [
+          "h0",
+          0
+        ],
+        "x": 0,
+        "y": 0,
+        "operation": "multiply"
+      }
+    },
+    "h3": {
+      "class_type": "GrowMaskWithBlur",
+      "inputs": {
+        "mask": [
+          "h2",
+          0
+        ],
+        "expand": "${HIDE_GROW}",
+        "incremental_expandrate": 0,
+        "tapered_corners": true,
+        "flip_input": false,
+        "blur_radius": 6,
+        "lerp_alpha": 1,
+        "decay_factor": 1
+      }
+    },
+    "h4": {
+      "class_type": "CropMask",
+      "inputs": {
+        "mask": [
+          "hs4",
+          0
+        ],
+        "x": "${CROP_X}",
+        "y": "${CROP_Y}",
+        "width": "${CROP_W}",
+        "height": "${CROP_H}"
+      }
+    },
+    "h5": {
+      "class_type": "ImageBlur",
+      "inputs": {
+        "image": [
+          "96",
+          0
+        ],
+        "blur_radius": 31,
+        "sigma": "${HIDE_BLUR}"
+      }
+    },
+    "h6": {
+      "class_type": "EmptyImage",
+      "inputs": {
+        "width": "${CROP_W}",
+        "height": "${CROP_H}",
+        "batch_size": 1,
+        "color": 8421504
+      }
+    },
+    "h7": {
+      "class_type": "ImageBlend",
+      "inputs": {
+        "image1": [
+          "h5",
+          0
+        ],
+        "image2": [
+          "h6",
+          0
+        ],
+        "blend_factor": "${HIDE_GRAY}",
+        "blend_mode": "normal"
+      }
+    },
+    "h8": {
+      "class_type": "ImageCompositeMasked",
+      "inputs": {
+        "destination": [
+          "96",
+          0
+        ],
+        "source": [
+          "h7",
+          0
+        ],
+        "x": 0,
+        "y": 0,
+        "resize_source": false,
+        "mask": [
+          "h4",
+          0
+        ]
+      }
+    },
+    "hs1": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "h3",
+          0
+        ],
+        "source": [
+          "101",
+          0
+        ],
+        "x": "${HAND1_X}",
+        "y": "${HAND1_Y}",
+        "operation": "subtract"
+      }
+    },
+    "hs2": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "hs1",
+          0
+        ],
+        "source": [
+          "102",
+          0
+        ],
+        "x": "${HAND2_X}",
+        "y": "${HAND2_Y}",
+        "operation": "subtract"
+      }
+    },
+    "hs3": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "hs2",
+          0
+        ],
+        "source": [
+          "103",
+          0
+        ],
+        "x": "${HAND3_X}",
+        "y": "${HAND3_Y}",
+        "operation": "subtract"
+      }
+    },
+    "hs4": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "hs3",
+          0
+        ],
+        "source": [
+          "104",
+          0
+        ],
+        "x": "${HAND4_X}",
+        "y": "${HAND4_Y}",
+        "operation": "subtract"
       }
     }
   }
