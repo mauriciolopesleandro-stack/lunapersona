@@ -480,6 +480,7 @@ PERSONA_SIDE, PERSONA_TOP, PERSONA_BOTTOM = 1.0, 0.6, 1.0
 # fraca) e voltava ampliado (borrado no meio de uma foto nitida).
 CROP_PAD = 0.3  # da caixa dela, de cada lado
 QWEN_PIXELS = 1024 * 1024
+RECREATE_PIXELS = 1536 * 1024  # foto inteira: um pouco mais que o recorte
 FULL_CROP = 0.8  # recorte maior que isso da foto: usa a foto inteira
 
 # Do que o Qwen devolve so a cabeca e o cabelo voltam (zona em larguras e
@@ -558,11 +559,11 @@ def crop_box(plan: PersonSwapPlan, width: int, height: int) -> tuple[int, int, i
     return crop
 
 
-def qwen_size(w: int, h: int) -> tuple[int, int]:
+def qwen_size(w: int, h: int, pixels: int = QWEN_PIXELS) -> tuple[int, int]:
     """Tamanho de trabalho do Qwen com a mesma proporcao do recorte (o
     FluxKontextImageScale arredondava para outra proporcao e a colagem
     voltava esticada)."""
-    scale = (QWEN_PIXELS / (w * h)) ** 0.5
+    scale = (pixels / (w * h)) ** 0.5
     return max(256, round(w * scale / 16) * 16), max(256, round(h * scale / 16) * 16)
 
 
@@ -610,12 +611,19 @@ def hair_and_face_params(
 
 
 def qwen_swap_params(
-    plan: PersonSwapPlan, width: int, height: int, persona_size: tuple[int, int], correction: str = ""
+    plan: PersonSwapPlan,
+    width: int,
+    height: int,
+    persona_size: tuple[int, int],
+    correction: str = "",
+    recreate: bool = False,
 ) -> dict[str, Any]:
-    """Parametros do workflows/qwen-person-swap.json alem da cena e do prompt."""
-    crop = crop_box(plan, width, height)
+    """Parametros do workflows/qwen-person-swap.json alem da cena e do prompt.
+    recreate: a foto inteira vai para o Qwen (e sai dele inteira), maior que o
+    recorte da troca para nao perder tanta nitidez."""
+    crop = (0, 0, width, height) if recreate else crop_box(plan, width, height)
     cx, cy, cw, ch = crop
-    qw, qh = qwen_size(cw, ch)
+    qw, qh = qwen_size(cw, ch, RECREATE_PIXELS if recreate else QWEN_PIXELS)
     zx, zy, zw, zh = zone_box(plan, width, height)
     px, py, pw, ph = persona_crop(plan, persona_size)
     params: dict[str, Any] = {

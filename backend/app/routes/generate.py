@@ -40,6 +40,9 @@ class GenerateBody(BaseModel):
     reference_image: str | None = None
     denoise: float | None = Field(default=None, ge=0.05, le=1.0)
     person_swap: bool = False
+    # Pack: "recreate" redesenha a foto inteira (sem colagem); "swap" troca so
+    # a pessoa e o resto volta identico.
+    pack_mode: str = Field(default="swap", pattern="^(swap|recreate)$")
 
 
 def _build_request(body: GenerateBody, request: Request) -> GenerationRequest:
@@ -59,6 +62,7 @@ def _build_request(body: GenerateBody, request: Request) -> GenerationRequest:
         reference_image=body.reference_image,
         denoise=body.denoise,
         person_swap=body.person_swap,
+        pack_mode=body.pack_mode,
     )
 
 

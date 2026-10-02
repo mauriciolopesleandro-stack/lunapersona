@@ -122,6 +122,8 @@ export interface GenerateRequestBody {
   denoise?: number;
   // Pack: troca so a pessoa da foto de referencia (o resto fica identico).
   person_swap?: boolean;
+  // Pack: "recreate" redesenha a foto inteira; "swap" troca so a pessoa.
+  pack_mode?: "recreate" | "swap";
 }
 
 export interface GenerateResponse {

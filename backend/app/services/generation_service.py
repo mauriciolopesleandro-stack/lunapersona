@@ -51,6 +51,9 @@ class GenerationRequest:
     # (contorno recortado) e o resto volta identico. Sem isso, img2img da foto
     # inteira (o cenario tambem muda um pouco).
     person_swap: bool = False
+    # Pack com Qwen: "recreate" = a foto inteira sai do Qwen (sem colagem, sem
+    # emendas; o cenario pode mudar um pouco); "swap" = so a area dela volta.
+    pack_mode: str = "swap"
 
 
 # Vai no fim do prompt da persona. Sem palavras de enquadramento (close,
@@ -168,6 +171,15 @@ class GenerationService:
             except (ComfyUIError, WorkflowParamError):
                 refined.append(image)
         return refined
+
+    def _render(self, workflow_id: str, params: dict[str, Any], recreate: bool = False) -> dict[str, Any]:
+        """Grafo do workflow. recreate (pack "recriar a foto inteira"): salva a
+        saida do Qwen inteira (no 40) em vez de colar so a area dela na foto
+        original - sem emendas, mechas soltas nem cabelo misturado."""
+        graph = self.workflow_manager.render(workflow_id, params)
+        if recreate:
+            graph["33"]["inputs"]["images"] = ["40", 0]
+        return graph
 
     async def _instantid_face(
         self,
@@ -354,7 +366,8 @@ class GenerationService:
                 # A correcao escrita no "refazer" da foto entra na instrucao do
                 # Qwen (antes a instrucao era montada so pela foto e ela sumia).
                 params.update(qwen_swap_params(
-                    swap_plan, params["WIDTH"], params["HEIGHT"], persona_size, pack_correction(user_prompt)
+                    swap_plan, params["WIDTH"], params["HEIGHT"], persona_size, pack_correction(user_prompt),
+                    recreate=req.pack_mode == "recreate",
                 ))
         if req.denoise is not None:
             params["DENOISE"] = req.denoise
@@ -363,7 +376,8 @@ class GenerationService:
         params.update(lora_params)
         params.update(self.model_manager.loader_params(req.model_id))
 
-        graph = self.workflow_manager.render(workflow_id, params)
+        recreate = workflow_id == QWEN_SWAP_WORKFLOW and req.pack_mode == "recreate"
+        graph = self._render(workflow_id, params, recreate)
 
         start = time.monotonic()
         prompt_id = await self.comfyui_client.queue_prompt(graph)
@@ -383,7 +397,7 @@ class GenerationService:
             for attempt in range(1, SWAP_ATTEMPTS):
                 if best_sim is None or best_sim >= SWAP_GOOD_SIM:
                     break
-                retry = self.workflow_manager.render(workflow_id, {**params, "SEED": (seed + attempt * 7919) % (2**32)})
+                retry = self._render(workflow_id, {**params, "SEED": (seed + attempt * 7919) % (2**32)}, recreate)
                 retry_id = await self.comfyui_client.queue_prompt(retry)
                 retry_images = self.comfyui_client.extract_images(await self.comfyui_client.wait_for_completion(retry_id))
                 if not retry_images:

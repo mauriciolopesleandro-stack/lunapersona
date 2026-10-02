@@ -61,6 +61,9 @@ export function PackSwapPage({ personas, ensureAwake }: Props) {
   const [photos, setPhotos] = useState<PackPhoto[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // "recreate": a foto inteira e redesenhada (sem emendas; o cenario pode mudar
+  // um pouco). "swap": so a pessoa e trocada e o resto fica identico.
+  const [mode, setMode] = useState<"recreate" | "swap">("recreate");
 
   useEffect(() => {
     if (!personaId && personas[0]) setPersonaId(personas[0].id);
@@ -113,6 +116,7 @@ export function PackSwapPage({ personas, ensureAwake }: Props) {
         height: size.height,
         reference_image: uploaded,
         person_swap: true,
+        pack_mode: mode,
         seed,
       });
       patch(photo.id, { uploaded, result: res.images[0] ?? null, status: "done" });
@@ -156,10 +160,17 @@ export function PackSwapPage({ personas, ensureAwake }: Props) {
       <div className="panel">
         <h2>🖼 Pack com {personaName}</h2>
         <p className="muted small">
-          Suba uma sequência de fotos (até {MAX_PHOTOS}). Em cada uma só a pessoa vira {personaName}: cenário, luz,
-          objetos, ângulo e a ordem das fotos ficam iguais; roupa e pose seguem a foto. Use fotos suas, de ensaios
-          contratados ou de bancos de imagem com licença livre. Cada foto leva uns 2-4 minutos.
+          Suba uma sequência de fotos (até {MAX_PHOTOS}). Em cada uma a mulher vira {personaName}: a cena, a pose,
+          os objetos, o outro e a ordem das fotos seguem o original. Use fotos suas, de ensaios contratados ou de
+          bancos de imagem com licença livre. Cada foto leva uns 5-7 minutos.
         </p>
+        <label className="voice-field">
+          Modo
+          <select value={mode} onChange={(e) => setMode(e.target.value as "recreate" | "swap")} disabled={running}>
+            <option value="recreate">Recriar a foto inteira (mais natural, cenário pode mudar um pouco)</option>
+            <option value="swap">Trocar só a pessoa (cenário idêntico à foto)</option>
+          </select>
+        </label>
         {personas.length > 1 && (
           <label className="voice-field">
             Persona
