@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "id": "sdxl-instantid-face",
+    "title": "InstantID (SDXL) - Rosto da persona depois da troca",
+    "description": "Passo final do pack com a persona: o rosto dela (FACE_X/Y/W/H, achado pelo services/person_swap.py) na imagem ja trocada (IMAGE, 'nome [output]') e recortado e ampliado (FACE_RES), redesenhado no RealVisXL V5 com o InstantID - identidade da foto da persona (PERSONA_IMAGE) e os pontos do rosto (direcao da cabeca, olhos, boca) do proprio recorte, entao a expressao e o angulo ficam os da foto - e colado de volta com borda suave. Modelos: scripts/setup_instantid.sh.",
+    "compatible_models": ["chroma1-hd-fp8"],
+    "hidden": true,
+    "required_params": ["IMAGE", "PERSONA_IMAGE", "FACE_X", "FACE_Y", "FACE_W", "FACE_H", "WIDTH", "HEIGHT"],
+    "optional_params": {
+      "FACE_PROMPT": "photo of a young woman, long dark brown hair, tanned olive skin, dark brown eyes, thick dark eyebrows, full lips, natural skin texture, sharp focus",
+      "NEGATIVE_PROMPT": "blurry, deformed face, asymmetric eyes, plastic skin, airbrushed, cgi, 3d render, cartoon, text, watermark, blonde hair",
+      "FACE_RES": 1024,
+      "FACE_PAD": 96,
+      "ID_WEIGHT": 0.8,
+      "FACE_DENOISE": 0.5,
+      "FACE_STEPS": 30,
+      "FACE_CFG": 4.0,
+      "EDGE_BLUR": 24,
+      "SEED": 0,
+      "FILENAME_PREFIX": "luna_studio"
+    }
+  },
+  "graph": {
+    "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "RealVisXL_V5.0_fp16.safetensors"}},
+    "2": {"class_type": "InstantIDModelLoader", "inputs": {"instantid_file": "instantid_ip-adapter.bin"}},
+    "3": {"class_type": "InstantIDFaceAnalysis", "inputs": {"provider": "CPU"}},
+    "4": {"class_type": "ControlNetLoader", "inputs": {"control_net_name": "instantid_controlnet.safetensors"}},
+    "5": {"class_type": "CLIPTextEncode", "inputs": {"text": "${FACE_PROMPT}", "clip": ["1", 1]}},
+    "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "${NEGATIVE_PROMPT}", "clip": ["1", 1]}},
+    "10": {"class_type": "LoadImage", "inputs": {"image": "${IMAGE}"}},
+    "11": {"class_type": "LoadImage", "inputs": {"image": "${PERSONA_IMAGE}"}},
+    "20": {"class_type": "SolidMask", "inputs": {"value": 0, "width": "${WIDTH}", "height": "${HEIGHT}"}},
+    "21": {"class_type": "SolidMask", "inputs": {"value": 1, "width": "${FACE_W}", "height": "${FACE_H}"}},
+    "22": {"class_type": "MaskComposite", "inputs": {"destination": ["20", 0], "source": ["21", 0], "x": "${FACE_X}", "y": "${FACE_Y}", "operation": "add"}},
+    "23": {"class_type": "GrowMaskWithBlur", "inputs": {"mask": ["22", 0], "expand": 0, "incremental_expandrate": 0, "tapered_corners": true, "flip_input": false, "blur_radius": "${EDGE_BLUR}", "lerp_alpha": 1, "decay_factor": 1}},
+    "24": {"class_type": "ImageCropByMaskAndResize", "inputs": {"image": ["10", 0], "mask": ["23", 0], "base_resolution": "${FACE_RES}", "padding": "${FACE_PAD}", "min_crop_resolution": 128, "max_crop_resolution": 2048}},
+    "30": {"class_type": "ApplyInstantID", "inputs": {"instantid": ["2", 0], "insightface": ["3", 0], "control_net": ["4", 0], "image": ["11", 0], "model": ["1", 0], "positive": ["5", 0], "negative": ["6", 0], "weight": "${ID_WEIGHT}", "start_at": 0.0, "end_at": 1.0, "image_kps": ["24", 0]}},
+    "31": {"class_type": "VAEEncode", "inputs": {"pixels": ["24", 0], "vae": ["1", 2]}},
+    "32": {"class_type": "KSampler", "inputs": {"model": ["30", 0], "positive": ["30", 1], "negative": ["30", 2], "latent_image": ["31", 0], "seed": "${SEED}", "steps": "${FACE_STEPS}", "cfg": "${FACE_CFG}", "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": "${FACE_DENOISE}"}},
+    "33": {"class_type": "VAEDecode", "inputs": {"samples": ["32", 0], "vae": ["1", 2]}},
+    "34": {"class_type": "ImageUncropByMask", "inputs": {"destination": ["10", 0], "source": ["33", 0], "mask": ["24", 1], "bbox": ["24", 2]}},
+    "35": {"class_type": "SaveImage", "inputs": {"images": ["34", 0], "filename_prefix": "${FILENAME_PREFIX}"}}
+  }
+}

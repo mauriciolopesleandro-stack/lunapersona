@@ -133,12 +133,22 @@ def plan_regions(
     male_faces: set[int] | None = None,
     width: int = 0,
     height: int = 0,
+    scores: dict[int, float] | None = None,
 ) -> tuple[Box | None, Box | None, list[Box]]:
     """(caixa dela, rosto dela, rostos dos outros). female_faces/male_faces =
-    indices dos rostos que sao dela/dele (ver face_genders)."""
+    indices dos rostos que sao dela/dele (ver face_genders); scores = certeza
+    do InsightFace de que e rosto."""
     female = female_faces or set()
     male = male_faces or set()
     woman = max(woman_boxes, key=_area) if woman_boxes else None
+    if scores and female:
+        # Com o InsightFace: o rosto de mulher mais certo (o focinho do
+        # cachorro virava "rosto de mulher" com certeza menor que o dela).
+        her = max(female, key=lambda i: (scores.get(i, 0.0), _area(face_boxes[i])))
+        if woman is None or not _inside(_center(face_boxes[her]), woman):
+            woman = _box_from_face(face_boxes[her], width or 10**6, height or 10**6)
+        others = [f for i, f in enumerate(face_boxes) if i != her]
+        return trim_to_her(woman, face_boxes[her], others), face_boxes[her], others
     if woman is not None:
         mine = [i for i, f in enumerate(face_boxes) if _inside(_center(f), woman) and i not in male]
         if female and not any(i in female for i in mine):
@@ -229,6 +239,43 @@ async def _run_texts(comfyui: ComfyUIClient, graph: dict[str, Any]) -> dict[str,
     return out
 
 
+async def luna_faces(
+    comfyui: ComfyUIClient, graph: dict[str, Any], image: list, reference: list | None = None
+) -> list[dict[str, Any]] | None:
+    """Rostos pelo no LunaFaces (comfyui_nodes/luna_faces), do maior para o
+    menor. None sem o no no pod (volume sem scripts/setup_instantid.sh)."""
+    node: dict[str, Any] = {"class_type": "LunaFaces", "inputs": {"image": image, "det_size": 1024}}
+    if reference is not None:
+        node["inputs"]["reference"] = reference
+    try:
+        texts = await _run_texts(comfyui, {**graph, "lf": node})
+        return json.loads(texts.get("lf", "null"))
+    except (ComfyUIError, ValueError) as exc:
+        log.warning("LunaFaces indisponivel: %s", exc)
+        return None
+
+
+async def swap_similarity(
+    comfyui: ComfyUIClient, result: str, persona_image: str, face: Box | None
+) -> float | None:
+    """Quanto o rosto dela no resultado ('nome [output]') parece a persona
+    (cosseno do ArcFace; acima de ~0.35 e a mesma pessoa). O rosto dela e o
+    mais perto de onde ela estava na foto."""
+    faces = await luna_faces(
+        comfyui,
+        {"1": {"class_type": "LoadImage", "inputs": {"image": result}},
+         "2": {"class_type": "LoadImage", "inputs": {"image": persona_image}}},
+        ["1", 0], ["2", 0],
+    )
+    if not faces:
+        return None if faces is None else 0.0
+    if face is None:
+        return max(float(f.get("sim", 0.0)) for f in faces)
+    cx, cy = _center(face)
+    near = min(faces, key=lambda f: (_center(tuple(f["bbox"]))[0] - cx) ** 2 + (_center(tuple(f["bbox"]))[1] - cy) ** 2)
+    return float(near.get("sim", 0.0))
+
+
 async def plan_person_swap(
     comfyui: ComfyUIClient, image: str, width: int, height: int, persona_image: str | None = None
 ) -> PersonSwapPlan:
@@ -265,13 +312,28 @@ async def plan_person_swap(
     except ComfyUIError as exc:
         log.warning("Deteccao do pack falhou: %s", exc)
 
-    # De quem e cada rosto. Casal colado (beijo, rosto com rosto): o Florence
-    # dava a caixa "woman" no homem e o rosto dele virava o dela (o Qwen
-    # trocava o homem). Dois sinais: a descricao de um recorte JUSTO no rosto
-    # (com folga o recorte pegava os dois e dizia "a man and a woman") e a
-    # caixa "man" quando ela tem um rosto so.
-    female_faces, male_faces = face_genders(man_boxes, face_boxes, {})
-    if face_boxes:
+    # Rostos pelo InsightFace (no LunaFaces, scripts/setup_instantid.sh): acha
+    # o rosto dela olhando para baixo, de perfil e no beijo, e diz homem/mulher.
+    # Sem o no, ficam os rostos do Florence.
+    insight = await luna_faces(comfyui, base, ["10", 0])
+    if insight:
+        face_boxes = [tuple(f["bbox"]) for f in insight]  # type: ignore[misc]
+        if persona_image:
+            mine = await luna_faces(comfyui, {"20": {"class_type": "LoadImage", "inputs": {"image": persona_image}}}, ["20", 0])
+            if mine:
+                persona_faces = [tuple(mine[0]["bbox"])]  # type: ignore[list-item]
+    female_faces = {i for i, f in enumerate(insight or []) if f.get("sex") == "F"}
+    male_faces = {i for i, f in enumerate(insight or []) if f.get("sex") == "M"}
+
+    # Sem rosto de mulher pelo InsightFace (ou sem ele): de quem e cada rosto
+    # pelo Florence. Casal colado (beijo, rosto com rosto): o Florence dava a
+    # caixa "woman" no homem e o rosto dele virava o dela (o Qwen trocava o
+    # homem). Dois sinais: a descricao de um recorte JUSTO no rosto (com folga
+    # o recorte pegava os dois e dizia "a man and a woman") e a caixa "man"
+    # quando ela tem um rosto so.
+    if not female_faces:
+        female_faces, male_faces = face_genders(man_boxes, face_boxes, {})
+    if face_boxes and not (insight and any(f.get("sex") == "F" for f in insight)):
         graph: dict[str, Any] = {**base, "2": {"class_type": "DownloadAndLoadFlorence2Model", "inputs": {"model": FLORENCE, "precision": "fp16"}}}
         for i, (fx1, fy1, fx2, fy2) in enumerate(face_boxes):
             pw, ph = (fx2 - fx1) * 0.05, (fy2 - fy1) * 0.05
@@ -288,7 +350,8 @@ async def plan_person_swap(
         except ComfyUIError as exc:
             log.warning("Descricao dos rostos do pack falhou: %s", exc)
 
-    woman, face, others = plan_regions(woman_boxes, face_boxes, female_faces, male_faces, width, height)
+    scores = {i: float(f.get("score", 0.0)) for i, f in enumerate(insight)} if insight and any(f.get("sex") == "F" for f in insight) else None
+    woman, face, others = plan_regions(woman_boxes, face_boxes, female_faces, male_faces, width, height, scores)
     pos, neg = sam_points(woman, face, others, width, height)
     head = head_box(woman, face, width, height)
 
@@ -415,6 +478,10 @@ ZONE_DROP = 2.6  # abaixo do queixo: cabelo longo da persona ate o peito
 # Caixa da mao alargada para levar junto o que ela segura (celular, copo).
 HAND_PAD = 0.35
 MAX_HANDS = 4
+# Rostos dos outros ficam os originais (rosto com rosto, o cabelo novo dela
+# borrava o dele); folga pequena para nao comer o rosto dela ao lado.
+OTHER_PAD = 0.08
+MAX_OTHERS = 2
 
 
 def her_hands(hands: list[Box], woman: Box | None, face: Box | None) -> list[Box]:
@@ -514,6 +581,16 @@ def qwen_swap_params(plan: PersonSwapPlan, width: int, height: int, persona_size
         "PROMPT": qwen_prompt(plan, crop),
         **ring_params(plan, crop),
     }
+    others = sorted(plan.others, key=_area, reverse=True)
+    for i in range(MAX_OTHERS):
+        n = i + 1
+        if i < len(others):
+            ox1, oy1, ox2, oy2 = others[i]
+            pad_w, pad_h = (ox2 - ox1) * OTHER_PAD, (oy2 - oy1) * OTHER_PAD
+            ox, oy, ow, oh = _clamp_box(ox1 - pad_w, oy1 - pad_h, ox2 + pad_w, oy2 + pad_h, width, height)
+            params.update({f"OTHER{n}_X": ox, f"OTHER{n}_Y": oy, f"OTHER{n}_W": ow, f"OTHER{n}_H": oh, f"OTHER{n}_V": 1.0})
+        else:
+            params.update({f"OTHER{n}_X": 0, f"OTHER{n}_Y": 0, f"OTHER{n}_W": 16, f"OTHER{n}_H": 16, f"OTHER{n}_V": 0.0})
     for i in range(MAX_HANDS):
         n = i + 1
         if i < len(plan.hands):

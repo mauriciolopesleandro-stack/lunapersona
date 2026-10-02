@@ -21,6 +21,7 @@ from app.services.person_swap import (
     qwen_available,
     qwen_swap_params,
     swap_face_box,
+    swap_similarity,
 )
 from app.services.prompt_translator import to_english
 from app.services.reference_caption import clean_reference_caption
@@ -78,6 +79,16 @@ FACE_REFINE_WORKFLOW = "chroma-face-refine"
 
 PERSON_SWAP_WORKFLOW = "chroma-person-swap-lora"
 QWEN_SWAP_WORKFLOW = "qwen-person-swap"
+# Pack com Qwen: ate 3 sementes enquanto o rosto dela no resultado nao parecer
+# a persona (cosseno do ArcFace: a original da ~0.0-0.13, a persona ~0.5).
+SWAP_ATTEMPTS = 3
+SWAP_GOOD_SIM = 0.35
+INSTANTID_FACE_WORKFLOW = "sdxl-instantid-face"
+
+
+def _output_name(image: GenerationOutputImage) -> str:
+    name = f"{image.subfolder}/{image.filename}" if image.subfolder else image.filename
+    return f"{name} [output]"
 
 IMG2IMG_WORKFLOW = "chroma-img2img"
 IMG2IMG_LORA_WORKFLOW = "chroma-img2img-lora"
@@ -156,6 +167,52 @@ class GenerationService:
             except (ComfyUIError, WorkflowParamError):
                 refined.append(image)
         return refined
+
+    async def _instantid_face(
+        self,
+        image: GenerationOutputImage,
+        persona_image: str,
+        face_box: tuple[int, int, int, int],
+        params: dict[str, Any],
+    ) -> GenerationOutputImage | None:
+        """Passada do InstantID no rosto dela (workflows/sdxl-instantid-face.json).
+        None sem os modelos/nos no pod ou sem rosto achado no recorte."""
+        x, y, w, h = face_box
+        try:
+            graph = self.workflow_manager.render(INSTANTID_FACE_WORKFLOW, {
+                "IMAGE": _output_name(image), "PERSONA_IMAGE": persona_image,
+                "FACE_X": x, "FACE_Y": y, "FACE_W": w, "FACE_H": h,
+                "WIDTH": params["WIDTH"], "HEIGHT": params["HEIGHT"], "SEED": params["SEED"],
+            })
+            entry = await self.comfyui_client.wait_for_completion(await self.comfyui_client.queue_prompt(graph))
+        except (ComfyUIError, WorkflowParamError):
+            return None
+        out = self.comfyui_client.extract_images(entry)
+        return out[0] if out else None
+
+    async def _finish_swap(
+        self,
+        images: list[GenerationOutputImage],
+        persona_image: str,
+        plan: PersonSwapPlan,
+        face_box: tuple[int, int, int, int] | None,
+        params: dict[str, Any],
+    ) -> tuple[list[GenerationOutputImage], float | None, bool]:
+        """Rosto da persona pelo InstantID na troca do Qwen (identidade da foto
+        dela, pontos do rosto da propria troca): a semelhanca subiu de ~0.55
+        (correcao com a LoRA) para ~0.85. Fica a mais parecida - com o Qwen ja
+        acertando (~0.9) o InstantID as vezes baixava um pouco.
+        (imagens, semelhanca, se o InstantID rodou - ai a LoRA nao entra)."""
+        sim = await swap_similarity(self.comfyui_client, _output_name(images[0]), persona_image, plan.face)
+        if face_box is None:
+            return images, sim, False
+        iid = await self._instantid_face(images[0], persona_image, face_box, params)
+        if iid is None:
+            return images, sim, False
+        iid_sim = await swap_similarity(self.comfyui_client, _output_name(iid), persona_image, plan.face)
+        if sim is None or iid_sim is None or iid_sim >= sim:
+            return [iid], iid_sim, True
+        return images, sim, True
 
     async def generate(self, req: GenerationRequest) -> GenerationResponse:
         model = self.model_manager.get_model(req.model_id)
@@ -306,6 +363,25 @@ class GenerationService:
         # Pack sem o rosto dela achado (de costas): nao corrige rosto nenhum -
         # o unico rosto que sobra e o do outro.
         skip_refine = swap_plan is not None and face_box is None
+        if workflow_id == QWEN_SWAP_WORKFLOW and images and persona_image_name and swap_plan is not None:
+            # Confere se a persona "pegou" (rosto dela no resultado FINAL, ja com
+            # o InstantID, parecido com a foto da persona) e, se nao, tenta outras
+            # sementes - fica a melhor. Conferir antes do InstantID refazia a
+            # troca a toa (ele sozinho ja levava 0.25 para 0.75).
+            best_images, best_sim, used_iid = await self._finish_swap(images, persona_image_name, swap_plan, face_box, params)
+            for attempt in range(1, SWAP_ATTEMPTS):
+                if best_sim is None or best_sim >= SWAP_GOOD_SIM:
+                    break
+                retry = self.workflow_manager.render(workflow_id, {**params, "SEED": (seed + attempt * 7919) % (2**32)})
+                retry_id = await self.comfyui_client.queue_prompt(retry)
+                retry_images = self.comfyui_client.extract_images(await self.comfyui_client.wait_for_completion(retry_id))
+                if not retry_images:
+                    continue
+                cand_images, sim, cand_iid = await self._finish_swap(retry_images, persona_image_name, swap_plan, face_box, params)
+                if sim is not None and sim > best_sim:
+                    best_images, best_sim, used_iid, prompt_id = cand_images, sim, cand_iid, retry_id
+            images = best_images
+            skip_refine = skip_refine or used_iid
         if face_params and images and not skip_refine and FACE_REFINE_WORKFLOW in model.compatible_workflows:
             images = await self._refine_faces(images, {**params, **face_params}, face_box)
         duration = time.monotonic() - start

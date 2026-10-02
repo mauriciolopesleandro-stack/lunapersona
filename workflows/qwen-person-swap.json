@@ -2,7 +2,7 @@
   "meta": {
     "id": "qwen-person-swap",
     "title": "Qwen-Image-Edit 2511 - Trocar a pessoa da foto pela persona",
-    "description": "Pack com a persona por edicao com instrucao (como o Magnific). So um recorte em volta dela (CROP_X/Y/W/H, no tamanho cheio da foto) vai para o Qwen, em QWEN_W x QWEN_H (~1 MP, mesma proporcao): com a foto inteira o rosto dela chegava pequeno (identidade fraca) e voltava ampliado e borrado. O image 2 e a foto da persona recortada no rosto e cabelo (PERSONA_X/Y/W/H; com roupa ele copiava a roupa). No image 1 a cabeca e o cabelo dela vao escondidos (HIDE_*: contorno SAM2 na zona da cabeca, menos as maos, borrado e acinzentado em HIDE_GRAY) - visivel, o Qwen copiava o cabelo e o rosto da original e a persona nao assumia. O PROMPT diz QUEM trocar - ela vai marcada com um retangulo vermelho (RING_*, coordenadas do recorte; em abraco so a descricao nao bastava). Grafo do template oficial image_qwen_image_edit_2511 (FluxKontextMultiReferenceLatentMethod index_timestep_zero, CFGNorm, shift 3.1) com a LoRA Lightning de 8 passos (cfg 1). Do resultado so volta a cabeca e o cabelo: contorno antigo (SAM2 com POINTS_POS/NEG) + o novo, alargado em HAIR_ROOM, dentro da zona ZONE_X/Y/W/H (cabeca ate o peito), menos as maos dela (HAND1..4, alargadas para levar o que ela segura; HANDn_V 0 = sem mao). Corpo, roupa, maos, objetos e cenario ficam os pixels da foto original no tamanho WIDTH x HEIGHT. Modelos: scripts/setup_qwen_edit.sh.",
+    "description": "Pack com a persona por edicao com instrucao (como o Magnific). So um recorte em volta dela (CROP_X/Y/W/H, no tamanho cheio da foto) vai para o Qwen, em QWEN_W x QWEN_H (~1 MP, mesma proporcao): com a foto inteira o rosto dela chegava pequeno (identidade fraca) e voltava ampliado e borrado. O image 2 e a foto da persona recortada no rosto e cabelo (PERSONA_X/Y/W/H; com roupa ele copiava a roupa). No image 1 a cabeca e o cabelo dela vao escondidos (HIDE_*: contorno SAM2 na zona da cabeca, menos as maos, borrado e acinzentado em HIDE_GRAY) - visivel, o Qwen copiava o cabelo e o rosto da original e a persona nao assumia. O PROMPT diz QUEM trocar - ela vai marcada com um retangulo vermelho (RING_*, coordenadas do recorte; em abraco so a descricao nao bastava). Grafo do template oficial image_qwen_image_edit_2511 (FluxKontextMultiReferenceLatentMethod index_timestep_zero, CFGNorm, shift 3.1) com a LoRA Lightning de 8 passos (cfg 1). Do resultado so volta a cabeca e o cabelo: contorno antigo (SAM2 com POINTS_POS/NEG) + o novo, alargado em HAIR_ROOM, dentro da zona ZONE_X/Y/W/H (cabeca ate o peito), menos os rostos dos outros (OTHER1..2) e as maos dela (HAND1..4, alargadas para levar o que ela segura; HANDn_V 0 = sem mao). Corpo, roupa, maos, objetos e cenario ficam os pixels da foto original no tamanho WIDTH x HEIGHT. Modelos: scripts/setup_qwen_edit.sh.",
     "compatible_models": [
       "chroma1-hd-fp8"
     ],
@@ -72,6 +72,16 @@
       "HIDE_GROW": 40,
       "HIDE_BLUR": 10,
       "HIDE_GRAY": 0.9,
+      "OTHER1_X": 0,
+      "OTHER1_Y": 0,
+      "OTHER1_W": 16,
+      "OTHER1_H": 16,
+      "OTHER1_V": 0,
+      "OTHER2_X": 0,
+      "OTHER2_Y": 0,
+      "OTHER2_W": 16,
+      "OTHER2_H": 16,
+      "OTHER2_V": 0,
       "FILENAME_PREFIX": "luna_studio"
     }
   },
@@ -453,7 +463,7 @@
       "class_type": "GrowMaskWithBlur",
       "inputs": {
         "mask": [
-          "114",
+          "os2",
           0
         ],
         "expand": 0,
@@ -766,7 +776,7 @@
       "class_type": "CropMask",
       "inputs": {
         "mask": [
-          "hs4",
+          "ho2",
           0
         ],
         "x": "${CROP_X}",
@@ -891,6 +901,86 @@
         ],
         "x": "${HAND4_X}",
         "y": "${HAND4_Y}",
+        "operation": "subtract"
+      }
+    },
+    "o1": {
+      "class_type": "SolidMask",
+      "inputs": {
+        "value": "${OTHER1_V}",
+        "width": "${OTHER1_W}",
+        "height": "${OTHER1_H}"
+      }
+    },
+    "o2": {
+      "class_type": "SolidMask",
+      "inputs": {
+        "value": "${OTHER2_V}",
+        "width": "${OTHER2_W}",
+        "height": "${OTHER2_H}"
+      }
+    },
+    "os1": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "114",
+          0
+        ],
+        "source": [
+          "o1",
+          0
+        ],
+        "x": "${OTHER1_X}",
+        "y": "${OTHER1_Y}",
+        "operation": "subtract"
+      }
+    },
+    "os2": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "os1",
+          0
+        ],
+        "source": [
+          "o2",
+          0
+        ],
+        "x": "${OTHER2_X}",
+        "y": "${OTHER2_Y}",
+        "operation": "subtract"
+      }
+    },
+    "ho1": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "hs4",
+          0
+        ],
+        "source": [
+          "o1",
+          0
+        ],
+        "x": "${OTHER1_X}",
+        "y": "${OTHER1_Y}",
+        "operation": "subtract"
+      }
+    },
+    "ho2": {
+      "class_type": "MaskComposite",
+      "inputs": {
+        "destination": [
+          "ho1",
+          0
+        ],
+        "source": [
+          "o2",
+          0
+        ],
+        "x": "${OTHER2_X}",
+        "y": "${OTHER2_Y}",
         "operation": "subtract"
       }
     }

@@ -62,8 +62,10 @@ SKIP_PREFIXES = (
     "Wan2_2-Animate", "WanAnimate_", "lightx2v_I2V", "clip_vision_h", "sam2",
     # pack com a persona (scripts/setup_qwen_edit.sh)
     "qwen_image_edit_", "Qwen-Image-Edit-", "qwen_2.5_vl_", "qwen_image_vae",
+    # rosto da persona no pack (scripts/setup_instantid.sh)
+    "RealVisXL", "instantid_",
 )
-SKIP_NAMES.update({".dl", "qwen-tts"})
+SKIP_NAMES.update({".dl", "qwen-tts", "antelopev2"})
 # Diferenca de relogio tolerada entre o mtime local e o LastModified do S3.
 MTIME_SLACK = 2.0
 MAX_DELETE_FRACTION = 0.1
