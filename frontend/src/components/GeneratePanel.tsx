@@ -77,7 +77,19 @@ interface Props {
     guidance: number;
     referenceFile?: File;
     denoise?: number;
+    personSwap?: boolean;
   }) => void;
+}
+
+// "Manter a cena": o mesmo caminho do Pack (Qwen + LoRA da persona) - troca so
+// a pessoa e a cena fica a da foto. "Reinterpretar": o Chroma redesenha a foto
+// inteira (a cena muda conforme o "Quanto mudar").
+const KEEP_SCENE_PROMPT = "same outfit, pose and expression as the reference photo";
+const KEEP_SCENE_MAX_PIXELS = 2_400_000;
+
+function keepSceneSize(width: number, height: number) {
+  const scale = Math.min(1, Math.sqrt(KEEP_SCENE_MAX_PIXELS / (width * height)));
+  return { width: Math.round((width * scale) / 16) * 16, height: Math.round((height * scale) / 16) * 16 };
 }
 
 export function GeneratePanel({
@@ -105,10 +117,16 @@ export function GeneratePanel({
   // continuar as da pessoa original em vez de virar as da persona.
   // 0.8: ainda troca cabelo/corpo pela persona, mas guarda mais da pose e da roupa.
   const [denoise, setDenoise] = useState(0.8);
+  const [keepScene, setKeepScene] = useState(true);
 
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
   const style = STYLES.find((s) => s.id === styleId) ?? STYLES[0];
-  const outputSize = reference ? referenceOutputSize(reference.width, reference.height) : format;
+  const swapScene = Boolean(reference && personaId && keepScene);
+  const outputSize = reference
+    ? swapScene
+      ? keepSceneSize(reference.width, reference.height)
+      : referenceOutputSize(reference.width, reference.height)
+    : format;
 
   function handleReferenceChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -137,7 +155,10 @@ export function GeneratePanel({
     e.preventDefault();
     // Com foto de referencia o texto e opcional: a cena vem da foto.
     const basePrompt = prompt.trim() || (reference ? "same scene, realistic photo" : "");
-    const finalPrompt = `${basePrompt}${ambiente.trim() ? `. Ambiente: ${ambiente.trim()}` : ""}${style.suffix}`;
+    // Manter a cena: o texto vira a correcao do Pack (o resto vem da foto).
+    const finalPrompt = swapScene
+      ? prompt.trim() ? `${prompt.trim()}, ${KEEP_SCENE_PROMPT}` : KEEP_SCENE_PROMPT
+      : `${basePrompt}${ambiente.trim() ? `. Ambiente: ${ambiente.trim()}` : ""}${style.suffix}`;
     onSubmit({
       prompt: finalPrompt,
       displayPrompt: basePrompt,
@@ -151,7 +172,8 @@ export function GeneratePanel({
       steps: settings.steps,
       guidance: settings.guidance,
       referenceFile: reference?.file,
-      denoise: reference ? denoise : undefined,
+      denoise: reference && !swapScene ? denoise : undefined,
+      personSwap: swapScene,
     });
   }
 
@@ -207,6 +229,16 @@ export function GeneratePanel({
         <div className="reference-box">
           <img src={reference.previewUrl} alt="Foto de referência" />
           <div className="reference-controls">
+            {personaId && (
+              <label className="voice-field">
+                Como usar a foto
+                <select value={keepScene ? "keep" : "reinterpret"} onChange={(e) => setKeepScene(e.target.value === "keep")}>
+                  <option value="keep">Manter a cena igual e trocar só a pessoa (recomendado)</option>
+                  <option value="reinterpret">Reinterpretar a cena (a cena pode mudar)</option>
+                </select>
+              </label>
+            )}
+            {!swapScene && (
             <label className="reference-denoise">
               <span>
                 Quanto mudar: <strong>{Math.round(denoise * 100)}%</strong>
@@ -224,6 +256,7 @@ export function GeneratePanel({
                 <span>mais a persona</span>
               </span>
             </label>
+            )}
             <button type="button" className="danger small" onClick={removeReference}>
               Remover foto
             </button>

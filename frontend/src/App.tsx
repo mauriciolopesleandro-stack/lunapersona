@@ -279,6 +279,7 @@ export default function App() {
     guidance: number;
     referenceFile?: File;
     denoise?: number;
+    personSwap?: boolean;
   }) {
     return executeGenerate(
       {
@@ -291,6 +292,9 @@ export default function App() {
         steps: params.steps,
         guidance: params.guidance,
         denoise: params.denoise,
+        // Manter a cena: o caminho do Pack (troca so a pessoa, cena da foto).
+        person_swap: params.personSwap || undefined,
+        pack_mode: params.personSwap ? "recreate" : undefined,
       },
       params.displayPrompt,
       params.referenceFile
