@@ -25,7 +25,9 @@ log() { echo "[train_qwen_lora] $(date +%H:%M:%S) $*" | tee -a "$LOG"; }
 stop_pod() {
   log "desligando o pod $RUNPOD_POD_ID"
   sync
-  curl -s -X POST -H "Authorization: Bearer $RUNPOD_API_KEY" "https://rest.runpod.io/v1/pods/$RUNPOD_POD_ID/stop" >> "$LOG" 2>&1
+  # a resposta traz o env do pod (com a chave da API): nunca vai para o log
+  curl -s -o /dev/null -w "stop: HTTP %{http_code}\n" -X POST -H "Authorization: Bearer $RUNPOD_API_KEY" \
+    "https://rest.runpod.io/v1/pods/$RUNPOD_POD_ID/stop" >> "$LOG" 2>&1
 }
 trap stop_pod EXIT
 
@@ -67,7 +69,7 @@ config:
       save:
         dtype: float16
         save_every: 250
-        max_step_saves_to_keep: 12
+        max_step_saves_to_keep: 4  # o volume enche (cota): 1250 nao gravou em 2026-10-03
       datasets:
         - folder_path: "/workspace/lora_qwen_luna/target"
           control_path:
