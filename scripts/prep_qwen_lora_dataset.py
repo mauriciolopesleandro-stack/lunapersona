@@ -1,87 +1,109 @@
 """Monta o dataset da LoRA da Luna para o Qwen-Image-Edit 2511 (pack com a persona).
 
-Cada foto de treino da Luna (ComfyUI/input/lora_luna) vira um par igual ao que
-o pack manda para o Qwen:
-- control 1: a propria foto com o cabelo e a cabeca escondidos (borrado e
-  acinzentado) e o rosto so levemente borrado - como o image 1 do pack;
-- control 2: o recorte do rosto da foto principal da persona - como o image 2;
-- alvo: a foto original; legenda: a instrucao do pack + "lunavox".
+Cada foto de treino da Luna vira um par IGUAL ao que o pack manda para o Qwen,
+gerado pelo proprio workflows/qwen-person-swap.json (sem rodar o Qwen):
+- control 1: o recorte em volta dela com o retangulo vermelho, o cabelo
+  escondido e o rosto borrado (no "ff6" do workflow);
+- control 2: o recorte do rosto da foto da persona (no "13");
+- alvo: o mesmo recorte da foto original (no "14");
+- legenda: a mesma instrucao do pack (person_swap.qwen_prompt) + "lunavox".
 Assim a LoRA aprende a pintar a Luna exatamente nessa situacao.
 
-Roda no pod com o venv do ComfyUI (PIL + insightface do no LunaFaces):
-  .venv-cu128/bin/python scripts/prep_qwen_lora_dataset.py DESTINO
+O rosto vai bem mais escondido que no pack (FACE_HIDE_*): aqui o rosto de
+baixo JA E a Luna, e com o borrado leve a LoRA so aprenderia a copiar o rosto
+de baixo (no pack ali esta o rosto da original). Com a LoRA, o pack usa o
+mesmo valor (person_swap.LORA_FACE_HIDE).
+
+Roda no pod com o venv do backend e o ComfyUI no ar:
+  /workspace/lunapersona/.venv-persist/bin/python scripts/prep_qwen_lora_dataset.py DESTINO
 """
 from __future__ import annotations
 
-import importlib.util
+import asyncio
+import shutil
 import sys
 from pathlib import Path
 
-import numpy as np
-import torch
-from PIL import Image, ImageDraw, ImageFilter
+sys.path.insert(0, "/workspace/lunapersona/backend")
+
+from app.clients.comfyui_client import ComfyUIClient  # noqa: E402
+from app.services import person_swap as ps  # noqa: E402
+from app.workflow_manager.manager import WorkflowManager  # noqa: E402
 
 COMFY = Path("/workspace/runpod-slim/ComfyUI")
-SRC = COMFY / "input" / "lora_luna"
-PERSONA = Path("/workspace/lunapersona/personas/luna/references")
-CAPTION = (
-    "lunavox. Replace the woman in image 1 with the woman from image 2: paint the face of the woman from image 2 "
-    "with her long dark brown hair and tanned skin where her hair is covered by gray and her face is slightly "
-    "blurred. Keep the head angle, gaze, expression, pose, clothes and scene of image 1."
-)
-
-spec = importlib.util.spec_from_file_location("lf", COMFY / "custom_nodes" / "luna_faces" / "__init__.py")
-lf = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(lf)  # type: ignore[union-attr]
+# Fotos novas (geradas em 2026-10-02, personas/luna/lora_qwen_novas, sem
+# tatuagem) + as antigas do treino do Chroma em que a tatuagem do antebraco
+# nao aparece (a Luna nao tem mais tatuagem).
+SOURCES = [Path("/workspace/lora_luna_src/novas")]
+OLD = COMFY / "input" / "lora_luna"
+OLD_KEEP = ("luna_02", "luna_03", "luna_07", "luna_08", "luna_11", "luna_12", "luna_13")
+PERSONA = "luna_ref_full.png"  # foto principal da persona no input/ do ComfyUI
+MAX_PIXELS = 2_400_000  # o mesmo teto do pack (frontend PackSwapPage.tsx)
+TRIGGER = "lunavox"
 
 
-def faces(img: Image.Image) -> list:
-    t = torch.from_numpy(np.asarray(img.convert("RGB")).astype(np.float32) / 255)
-    return lf._faces(t, 1024)
+# Fotos do pack de teste (casal) que o treino desenha a cada N passos para
+# acompanhar a LoRA: so as entradas do Qwen (sem alvo).
+SAMPLE_PHOTOS = ("hist_01.jpg", "hist_03.jpg", "hist_08.jpg")
 
 
-def hidden(img: Image.Image, box) -> Image.Image:
-    """Cabeca e cabelo escondidos como no pack (cinza 0.9 sobre borrado forte).
-    O rosto vai bem mais borrado que no pack: aqui ele E a Luna, e com o
-    borrado leve a LoRA so aprenderia a copiar o rosto de baixo (no pack ali
-    esta o rosto da original). Sobra so a direcao da cabeca e dos olhos."""
-    x1, y1, x2, y2 = (float(v) for v in box)
-    fw, fh = x2 - x1, y2 - y1
-    gray = Image.new("RGB", img.size, (128, 128, 128))
-    strong = Image.blend(img.filter(ImageFilter.GaussianBlur(10)), gray, 0.9)
-    soft = Image.blend(img.filter(ImageFilter.GaussianBlur(max(6, fw * 0.06))), gray, 0.65)
-    hair = Image.new("L", img.size, 0)
-    ImageDraw.Draw(hair).ellipse((x1 - fw * 1.3, y1 - fh * 1.0, x2 + fw * 1.3, y2 + fh * 3.0), fill=255)
-    hair = hair.filter(ImageFilter.GaussianBlur(12))
-    face = Image.new("L", img.size, 0)
-    ImageDraw.Draw(face).rectangle((x1 - fw * 0.1, y1 - fh * 0.1, x2 + fw * 0.1, y2 + fh * 0.05), fill=255)
-    face = face.filter(ImageFilter.GaussianBlur(12))
-    out = Image.composite(strong, img, hair)
-    return Image.composite(soft, out, face)
-
-
-def main(dest: Path) -> None:
+async def main(dest: Path, samples: Path | None = None) -> None:
+    c = ComfyUIClient("http://127.0.0.1:8188", generation_timeout=900)
+    wm = WorkflowManager(Path("/workspace/lunapersona/workflows"))
     for sub in ("target", "control1", "control2"):
         (dest / sub).mkdir(parents=True, exist_ok=True)
-    ref_path = next(p for p in sorted(PERSONA.glob("*.png")))
-    ref = Image.open(ref_path).convert("RGB")
-    rf = faces(ref)[0].bbox
-    fw, fh = rf[2] - rf[0], rf[3] - rf[1]
-    ref_crop = ref.crop((max(0, int(rf[0] - fw)), max(0, int(rf[1] - fh * 0.6)), min(ref.width, int(rf[2] + fw)), min(ref.height, int(rf[3] + fh))))
+    psize = ps.image_size((COMFY / "input" / PERSONA).read_bytes())
+    paths = [p for src in SOURCES for p in sorted(src.glob("*.png")) + sorted(src.glob("*.jpg"))]
+    paths += [OLD / f"{name}.jpg" for name in OLD_KEEP]
+    if samples is not None:
+        samples.mkdir(parents=True, exist_ok=True)
+        paths = [COMFY / "input" / name for name in SAMPLE_PHOTOS]
     n = 0
-    for path in sorted(SRC.glob("*.jpg")):
-        img = Image.open(path).convert("RGB")
-        found = faces(img)
-        if not found:
-            print("sem rosto, fica de fora:", path.name)
+    for path in paths:
+        if samples is None and (dest / "target" / f"{path.stem}.txt").exists():
+            n += 1  # ja feito numa rodada anterior
             continue
-        img.save(dest / "target" / f"{path.stem}.jpg", quality=95)
-        hidden(img, found[0].bbox).save(dest / "control1" / f"{path.stem}.jpg", quality=95)
-        ref_crop.save(dest / "control2" / f"{path.stem}.jpg", quality=95)
-        (dest / "target" / f"{path.stem}.txt").write_text(CAPTION)
+        name = path.name if samples is not None else f"lora_{path.stem}{path.suffix}"
+        if samples is None:
+            shutil.copy(path, COMFY / "input" / name)
+        w, h = ps.image_size(path.read_bytes())
+        s = min(1, (MAX_PIXELS / (w * h)) ** 0.5)
+        W, H = round(w * s / 16) * 16, round(h * s / 16) * 16
+        plan = await ps.plan_person_swap(c, name, W, H, PERSONA)
+        if plan.face is None:
+            print("sem rosto dela, fica de fora:", path.name)
+            continue
+        params = {
+            "REFERENCE_IMAGE": name, "PERSONA_IMAGE": PERSONA, "WIDTH": W, "HEIGHT": H, "SEED": 1,
+            "POINTS_POS": plan.points_pos, "POINTS_NEG": plan.points_neg,
+            **ps.qwen_swap_params(plan, W, H, psize, lora=True),
+        }
+        g = wm.render("qwen-person-swap", params)
+        g.pop("33", None)  # sem o Qwen: so as entradas dele
+        for key, node in (("target", "14"), ("control1", "ff6"), ("control2", "13")):
+            g[f"s_{key}"] = {"class_type": "SaveImage", "inputs": {"images": [node, 0], "filename_prefix": f"lora_ds/{key}_{path.stem}"}}
+        entry = await c.wait_for_completion(await c.queue_prompt(g))
+        saved = {}
+        for node_id, out in entry.get("outputs", {}).items():
+            for img in out.get("images", []):
+                saved[node_id[2:]] = COMFY / "output" / img["subfolder"] / img["filename"]
+        if len(saved) < 3:
+            print("falhou:", path.name, entry.get("status"))
+            continue
+        if samples is not None:
+            shutil.copy(saved["control1"], samples / f"c1_{path.stem}.png")
+            shutil.copy(saved["control2"], samples / f"c2_{path.stem}.png")
+            (samples / f"p_{path.stem}.txt").write_text(f"{TRIGGER}. {params['PROMPT']}")
+            print("amostra", path.name, flush=True)
+            continue
+        for key, src in saved.items():
+            shutil.copy(src, dest / key / f"{path.stem}.png")
+        (dest / "target" / f"{path.stem}.txt").write_text(f"{TRIGGER}. {params['PROMPT']}")
         n += 1
-    print(f"{n} pares em {dest}")
+        print("ok", path.name, params["PROMPT"][:90], flush=True)
+    print(f"{n} pares em {dest}", flush=True)
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]))
+    # uso: prep_qwen_lora_dataset.py DESTINO [--samples PASTA_DAS_AMOSTRAS]
+    asyncio.run(main(Path(sys.argv[1]), Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[2] == "--samples" else None))

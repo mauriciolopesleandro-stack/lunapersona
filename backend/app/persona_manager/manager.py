@@ -85,6 +85,10 @@ class PersonaLora:
     workflow_id: str = ""
     # Guidance usado com a LoRA (mais baixo = foto mais natural). None = o do pedido.
     guidance: float | None = None
+    # LoRA da persona para o Qwen-Image-Edit 2511 (pack com a persona,
+    # scripts/train_qwen_lora.sh). Sem o arquivo no pod, o pack segue sem ela.
+    qwen_file: str = ""
+    qwen_strength: float = 1.0
 
 
 @dataclass
@@ -204,6 +208,8 @@ class PersonaManager:
                 strength=float(lora_data.get("strength", 1.0)),
                 workflow_id=lora_data.get("workflow_id", ""),
                 guidance=float(lora_data["guidance"]) if lora_data.get("guidance") is not None else None,
+                qwen_file=lora_data.get("qwen_file", ""),
+                qwen_strength=float(lora_data.get("qwen_strength", 1.0)),
             )
         voice_data = data.get("voice")
         voice = None

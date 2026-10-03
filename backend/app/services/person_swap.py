@@ -480,6 +480,10 @@ PERSONA_SIDE, PERSONA_TOP, PERSONA_BOTTOM = 1.0, 0.6, 1.0
 # fraca) e voltava ampliado (borrado no meio de uma foto nitida).
 CROP_PAD = 0.3  # da caixa dela, de cada lado
 QWEN_PIXELS = 1024 * 1024
+# LoRA da persona para o Qwen (scripts/train_qwen_lora.sh): gatilho e quanto o
+# rosto da original vai escondido (o mesmo do dataset de treino).
+LORA_TRIGGER = "lunavox"
+LORA_FACE_HIDE = {"FACE_HIDE_BLUR": 10, "FACE_HIDE_GRAY": 0.7}
 RECREATE_PIXELS = 1536 * 1024  # foto inteira: um pouco mais que o recorte
 FULL_CROP = 0.8  # recorte maior que isso da foto: usa a foto inteira
 
@@ -617,6 +621,7 @@ def qwen_swap_params(
     persona_size: tuple[int, int],
     correction: str = "",
     recreate: bool = False,
+    lora: bool = False,
 ) -> dict[str, Any]:
     """Parametros do workflows/qwen-person-swap.json alem da cena e do prompt.
     recreate: a foto inteira vai para o Qwen (e sai dele inteira), maior que o
@@ -634,6 +639,11 @@ def qwen_swap_params(
         "PROMPT": qwen_prompt(plan, crop, correction),
         **ring_params(plan, crop),
     }
+    if lora:
+        # Com a LoRA da persona o rosto vai escondido como no treino dela
+        # (scripts/prep_qwen_lora_dataset.py) e a instrucao leva o gatilho.
+        params.update(LORA_FACE_HIDE)
+        params["PROMPT"] = f"{LORA_TRIGGER}. {params['PROMPT']}"
     params.update(hair_and_face_params(plan, width, height, crop))
     others = sorted(plan.others, key=_area, reverse=True)
     for i in range(MAX_OTHERS):

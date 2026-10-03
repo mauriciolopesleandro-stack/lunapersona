@@ -179,6 +179,11 @@ class GenerationService:
         graph = self.workflow_manager.render(workflow_id, params)
         if recreate:
             graph["33"]["inputs"]["images"] = ["40", 0]
+        if workflow_id == QWEN_SWAP_WORKFLOW and params.get("QWEN_LORA"):
+            # LoRA da persona depois da Lightning (scripts/train_qwen_lora.sh)
+            graph["7"] = {"class_type": "LoraLoaderModelOnly", "inputs": {
+                "model": ["6", 0], "lora_name": params["QWEN_LORA"], "strength_model": params["QWEN_LORA_STRENGTH"]}}
+            graph["31"]["inputs"]["model"] = ["7", 0]
         return graph
 
     async def _instantid_face(
@@ -365,10 +370,15 @@ class GenerationService:
                 params["PERSONA_IMAGE"] = persona_image_name
                 # A correcao escrita no "refazer" da foto entra na instrucao do
                 # Qwen (antes a instrucao era montada so pela foto e ela sumia).
+                qwen_lora = persona.lora if persona.lora and persona.lora.qwen_file else None
+                if qwen_lora and not await self._lora_available(qwen_lora.qwen_file):
+                    qwen_lora = None
                 params.update(qwen_swap_params(
                     swap_plan, params["WIDTH"], params["HEIGHT"], persona_size, pack_correction(user_prompt),
-                    recreate=req.pack_mode == "recreate",
+                    recreate=req.pack_mode == "recreate", lora=qwen_lora is not None,
                 ))
+                if qwen_lora is not None:
+                    params["QWEN_LORA"], params["QWEN_LORA_STRENGTH"] = qwen_lora.qwen_file, qwen_lora.qwen_strength
         if req.denoise is not None:
             params["DENOISE"] = req.denoise
         if use_lora:

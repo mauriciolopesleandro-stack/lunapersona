@@ -35,7 +35,9 @@
     "trigger": "lunavox",
     "strength": 1.2,
     "workflow_id": "chroma-txt2img-lora",
-    "guidance": 3
+    "guidance": 3,
+    "qwen_file": "luna_qwen_2511_v1.safetensors",
+    "qwen_strength": 1.0
   },
   "identity_methods": {
     "planned": [

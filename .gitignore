@@ -48,3 +48,7 @@ generated/
 Thumbs.db
 .vscode/
 .idea/
+
+# Fotos de treino da Luna (ficam no OneDrive e no volume do pod, fora do git)
+personas/luna/lora_qwen_novas/*.png
+personas/luna/lora_qwen_novas/colagens/
