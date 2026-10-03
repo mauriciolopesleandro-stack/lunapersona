@@ -237,6 +237,14 @@ def sam_points(woman: Box | None, face: Box | None, others: list[Box], width: in
         # topo da cabeca (cabelo): sem ele o SAM deixava o cabelo solto de
         # fora e sobrava mecha loira do lado da persona
         pos.append({"x": int(fx), "y": max(0, int(face[1] - (face[3] - face[1]) * 0.15))})
+        # cabelo atras da cabeca, do lado oposto ao outro: no close de perfil
+        # o SAM so pegava rosto e mao, e o cabelo loiro dela ficava
+        near = [o for o in others if o[3] > face[1] and o[1] < face[3]]
+        if near:
+            fw, fh = face[2] - face[0], face[3] - face[1]
+            ocx = _center(min(near, key=lambda o: abs(_center(o)[0] - fx)))[0]
+            hx = fx - fw * 0.75 if ocx > fx else fx + fw * 0.75
+            pos.append({"x": int(min(width - 1, max(0, hx))), "y": int(min(height - 1, fy + fh * 0.3))})
     if not pos:
         pos.append({"x": width // 2, "y": height // 2})
     neg = [{"x": int(_center(f)[0]), "y": int(_center(f)[1])} for f in others]
