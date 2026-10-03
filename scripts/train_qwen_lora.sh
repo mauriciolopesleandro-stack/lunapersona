@@ -13,7 +13,9 @@ set -uo pipefail
 AITK=/root/ai-toolkit
 OUT=/workspace/lora_qwen_out
 NAME=luna_qwen_2511_v1
-STEPS=${STEPS:-2500}
+# 20 s/passo com 512-1024 e controles de 1 MP; 512-768 com controles no
+# tamanho do alvo (match_target_res) fica bem mais rapido.
+STEPS=${STEPS:-1500}
 LOG=/workspace/lora_qwen_train.log
 export HF_HOME=/root/hf
 export HF_HUB_ENABLE_HF_TRANSFER=1
@@ -73,7 +75,7 @@ config:
             - "/workspace/lora_qwen_luna/control2"
           caption_ext: "txt"
           caption_dropout_rate: 0.05
-          resolution: [ 512, 768, 1024 ]
+          resolution: [ 512, 768 ]
       train:
         batch_size: 1
         cache_text_embeddings: true
@@ -95,12 +97,15 @@ config:
         quantize_te: true
         qtype_te: "qfloat8"
         low_vram: true
+        model_kwargs:
+          match_target_res: true
       sample:
         sampler: "flowmatch"
         sample_every: 500
         sample_start_step: 0
-        width: 768
-        height: 1024
+        skip_first_sample: true
+        width: 576
+        height: 768
         samples:$SAMPLES
         neg: ""
         seed: 42
