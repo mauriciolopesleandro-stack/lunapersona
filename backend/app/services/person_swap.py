@@ -117,6 +117,25 @@ def face_genders(man_boxes: list[Box], face_boxes: list[Box], captions: dict[int
     return {i for i, s in score.items() if s > 0}, {i for i, s in score.items() if s < 0}
 
 
+def _bad_woman_box(woman: Box, face: Box, others: list[Box] | None = None) -> bool:
+    """Caixa "woman" que nao e dela: no close de perfil comendo, o Florence
+    marcou a mao e o vao entre os dois - o rosto dela ficou na borda da caixa
+    oposta ao homem (a caixa "esticava" na direcao dele) e o retangulo
+    vermelho pegou o homem. No abraco o rosto dela fica na borda do lado dele,
+    e ai a caixa esta certa."""
+    ww = woman[2] - woman[0]
+    fw = face[2] - face[0]
+    fcx = _center(face)[0]
+    if fw > ww * 0.55:
+        return True
+    near = [o for o in others or [] if o[3] > woman[1] and o[1] < woman[3]]
+    if not near:
+        return False
+    ocx = _center(min(near, key=lambda o: abs(_center(o)[0] - fcx)))[0]
+    edge = ww * 0.12
+    return (ocx > fcx and fcx - woman[0] < edge) or (ocx < fcx and woman[2] - fcx < edge)
+
+
 def _box_from_face(face: Box, width: int, height: int) -> Box:
     """Caixa dela estimada pelo rosto (a caixa "woman" estava no homem)."""
     fw, fh = face[2] - face[0], face[3] - face[1]
@@ -145,7 +164,7 @@ def plan_regions(
         # Com o InsightFace: o rosto de mulher mais certo (o focinho do
         # cachorro virava "rosto de mulher" com certeza menor que o dela).
         her = max(female, key=lambda i: (scores.get(i, 0.0), _area(face_boxes[i])))
-        if woman is None or not _inside(_center(face_boxes[her]), woman):
+        if woman is None or not _inside(_center(face_boxes[her]), woman) or _bad_woman_box(woman, face_boxes[her], [f for i, f in enumerate(face_boxes) if i != her]):
             woman = _box_from_face(face_boxes[her], width or 10**6, height or 10**6)
         others = [f for i, f in enumerate(face_boxes) if i != her]
         return trim_to_her(woman, face_boxes[her], others), face_boxes[her], others
@@ -177,8 +196,9 @@ def trim_to_her(woman: Box, face: Box | None, others: list[Box]) -> Box:
     fcx = _center(face)[0] if face is not None else (x1 + x2) / 2
     for o in others:
         ocx = _center(o)[0]
-        # rosto dele um pouco acima da caixa dela tambem conta (ele e mais alto)
-        if not (x1 <= ocx <= x2 and o[3] > y1 and o[1] < y2):
+        # rosto dele um pouco acima da caixa dela tambem conta (ele e mais alto);
+        # basta encostar na caixa (no close o centro dele fica fora dela)
+        if not (o[0] < x2 and o[2] > x1 and o[3] > y1 and o[1] < y2):
             continue
         if ocx > fcx:
             x2 = min(x2, max(face[2], o[0]) if face is not None else o[0])
