@@ -49,6 +49,21 @@ def _faces(image, det_size: int) -> list:
     return sorted(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
 
 
+def _yaw(face) -> float | None:
+    """Para onde a cabeca esta virada, pelos 5 pontos do rosto: nariz em
+    relacao ao meio dos olhos, em distancias entre os olhos. Positivo = nariz
+    para a direita da imagem (rosto virado para a direita); |x| > ~0.35 e perfil
+    ou tres-quartos forte."""
+    kps = getattr(face, "kps", None)
+    if kps is None or len(kps) < 3:
+        return None
+    (lx, _), (rx, _), (nx, _) = kps[0], kps[1], kps[2]
+    eye_dist = abs(rx - lx)
+    if eye_dist < 1:
+        return None
+    return round(float((nx - (lx + rx) / 2) / eye_dist), 3)
+
+
 class LunaFaces:
     @classmethod
     def INPUT_TYPES(cls):
@@ -79,6 +94,7 @@ class LunaFaces:
                 "score": round(float(f.det_score), 3),
                 "sex": getattr(f, "sex", None),
                 "age": int(getattr(f, "age", 0) or 0),
+                "yaw": _yaw(f),
             }
             if ref is not None:
                 item["sim"] = round(float(np.dot(ref, f.normed_embedding)), 3)

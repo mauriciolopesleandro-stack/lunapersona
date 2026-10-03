@@ -58,6 +58,9 @@ class PersonSwapPlan:
     persona_face: Box | None = None
     # Rostos dos outros (o retangulo vermelho nunca os envolve).
     others: list[Box] = field(default_factory=list)
+    # Para onde a cabeca dela esta virada (LunaFaces: + = direita da imagem).
+    # Com a cabeca toda escondida (LoRA) o Qwen so sabe pela instrucao.
+    yaw: float | None = None
 
 
 def _florence(node_image: list, text: str, task: str = "caption_to_phrase_grounding", model: str = "2") -> dict[str, Any]:
@@ -405,6 +408,7 @@ async def plan_person_swap(
         hands=her_hands(hand_boxes, woman, face),
         persona_face=max(persona_faces, key=_area) if persona_faces else None,
         others=others,
+        yaw=next((f.get("yaw") for f in insight or [] if face is not None and tuple(f["bbox"]) == tuple(face)), None),
     )
     _debug({"image": image, "size": [width, height], "others": others, **asdict(plan)})
     return plan
@@ -460,7 +464,12 @@ def qwen_prompt(plan: PersonSwapPlan, crop: tuple[int, int, int, int], correctio
     keep_clothes = f" She keeps the same clothes ({clothes}) from image 1." if clothes else " She keeps the same clothes from image 1."
     mood = _EXPRESSION.findall(plan.caption or "")
     gaze = _GAZE.findall(plan.caption or "")
-    expression = " She is " + " and ".join(p.lower() for p in (mood[:1] + gaze[:1])) + "." if mood or gaze else ""
+    action = _ACTION.findall(plan.caption or "")
+    parts = [p.lower().strip(" ,") for p in (action[:1] + mood[:1] + gaze[:1])]
+    expression = " She is " + " and ".join(parts) + "." if parts else ""
+    if plan.yaw is not None and abs(plan.yaw) >= YAW_PROFILE:
+        side_word = "right" if plan.yaw > 0 else "left"
+        expression += f" Her head is turned in profile toward the {side_word} side of the image, not facing the camera."
     return (
         f"Replace the woman inside the red rectangle{side} with the woman from image 2, and remove the red "
         "rectangle. Her hair in image 1 is covered by gray and her face is slightly blurred: paint there the "
@@ -487,6 +496,14 @@ def pack_correction(prompt: str) -> str:
 _EXPRESSION = re.compile(
     r"\b(smiling broadly|smiling|laughing|grinning|serious|surprised)\b", re.I
 )
+# O que ela esta fazendo (com a cabeca escondida a comida/o beijo sumiam).
+_ACTION = re.compile(
+    r"\b((?:eating|drinking|biting|kissing|hugging|feeding|tasting|sipping|blowing|whispering to)\b[^,.;]{0,60}?)"
+    r"(?=\s+(?:while|as|and|with|from|in|at|on)\b|[,.;]|$)",
+    re.I,
+)
+# |yaw| a partir do qual a cabeca conta como perfil/tres-quartos forte.
+YAW_PROFILE = 0.35
 # Para onde ela olha (com a cabeca escondida o Qwen virava o rosto para a camera).
 _GAZE = re.compile(
     r"\b(looking (?:down|up|away|to the (?:left|right|side)|at (?:him|the man|each other|her phone|the phone|the "
