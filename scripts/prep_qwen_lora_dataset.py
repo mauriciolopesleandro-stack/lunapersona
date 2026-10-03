@@ -6,7 +6,7 @@ gerado pelo proprio workflows/qwen-person-swap.json (sem rodar o Qwen):
   escondido e o rosto borrado (no "ff6" do workflow);
 - control 2: o recorte do rosto da foto da persona (no "13");
 - alvo: o mesmo recorte da foto original (no "14");
-- legenda: a mesma instrucao do pack (person_swap.qwen_prompt) + "lunavox".
+- legenda: a mesma instrucao do pack com a LoRA (person_swap.qwen_prompt, ja com o gatilho).
 Assim a LoRA aprende a pintar a Luna exatamente nessa situacao.
 
 O rosto vai bem mais escondido que no pack (FACE_HIDE_*): aqui o rosto de
@@ -39,7 +39,6 @@ OLD = COMFY / "input" / "lora_luna"
 OLD_KEEP = ("luna_02", "luna_03", "luna_07", "luna_08", "luna_11", "luna_12", "luna_13")
 PERSONA = "luna_ref_full.png"  # foto principal da persona no input/ do ComfyUI
 MAX_PIXELS = 2_400_000  # o mesmo teto do pack (frontend PackSwapPage.tsx)
-TRIGGER = "lunavox"
 
 
 # Fotos do pack de teste (casal) que o treino desenha a cada N passos para
@@ -93,12 +92,12 @@ async def main(dest: Path, samples: Path | None = None) -> None:
         if samples is not None:
             shutil.copy(saved["control1"], samples / f"c1_{path.stem}.png")
             shutil.copy(saved["control2"], samples / f"c2_{path.stem}.png")
-            (samples / f"p_{path.stem}.txt").write_text(f"{TRIGGER}. {params['PROMPT']}")
+            (samples / f"p_{path.stem}.txt").write_text(params["PROMPT"])
             print("amostra", path.name, flush=True)
             continue
         for key, src in saved.items():
             shutil.copy(src, dest / key / f"{path.stem}.png")
-        (dest / "target" / f"{path.stem}.txt").write_text(f"{TRIGGER}. {params['PROMPT']}")
+        (dest / "target" / f"{path.stem}.txt").write_text(params["PROMPT"])
         n += 1
         print("ok", path.name, params["PROMPT"][:90], flush=True)
     print(f"{n} pares em {dest}", flush=True)
