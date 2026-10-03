@@ -481,9 +481,11 @@ PERSONA_SIDE, PERSONA_TOP, PERSONA_BOTTOM = 1.0, 0.6, 1.0
 CROP_PAD = 0.3  # da caixa dela, de cada lado
 QWEN_PIXELS = 1024 * 1024
 # LoRA da persona para o Qwen (scripts/train_qwen_lora.sh): gatilho e quanto o
-# rosto da original vai escondido (o mesmo do dataset de treino).
+# rosto da original vai escondido (o mesmo do dataset de treino). Cinza 100%:
+# com o rosto 70% cinza a LoRA aprendeu a refazer a pessoa de baixo
+# (scripts/qwen_lora_full_hide.py).
 LORA_TRIGGER = "lunavox"
-LORA_FACE_HIDE = {"FACE_HIDE_BLUR": 10, "FACE_HIDE_GRAY": 0.7}
+LORA_FACE_HIDE = {"FACE_HIDE_BLUR": 10, "FACE_HIDE_GRAY": 1.0, "HIDE_GRAY": 1.0}
 RECREATE_PIXELS = 1536 * 1024  # foto inteira: um pouco mais que o recorte
 FULL_CROP = 0.8  # recorte maior que isso da foto: usa a foto inteira
 
