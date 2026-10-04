@@ -38,6 +38,9 @@ Step 1 - STORY BIBLE (fixed descriptions, in English):
 - light: time of day and lighting for each part;
 - camera: one photographic style for the whole series (e.g. "candid smartphone photo, natural light").
 
+One entry per DISTINCT place and per DISTINCT outfit - scenes in the same place or with the same clothes reuse \
+the same index. Spots inside one room (the bed, the window, the armchair) are the same location: describe the \
+whole room once and say the spot in the action. Never write an entry like "same as before" or "same outfit".
 Each bible item must be complete on its own (a character entry always has the name, "man" or "woman", \
 age, build, face (eyes, nose, beard), hair, skin and clothes - e.g. "Rafa, a 28-year-old man, slim build, ...").
 
@@ -96,6 +99,7 @@ _FROM_PHOTOS = (
 )
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
+_SAME = re.compile(r"^(the\s+)?same\s+", re.IGNORECASE)
 # palavras que so aparecem se o modelo escreveu a biblia/acao em portugues
 _PT_WORDS = re.compile(r"\b(de|com|uma|anos|cabelo|pele|vestido|camisa|cozinha|mesa|luz|segurando|olhando)\b", re.IGNORECASE)
 _ENGLISH_REMINDER = (
@@ -186,7 +190,8 @@ def _in_portuguese(plan: dict[str, Any]) -> bool:
 
 def _pick(items: Any, index: Any) -> str:
     try:
-        return str(items[int(index)]).strip()
+        # "Same black lace lingerie..." - o gerador nao sabe o que e "same"
+        return _SAME.sub("", str(items[int(index)]).strip())
     except (TypeError, ValueError, IndexError, KeyError):
         return ""
 
