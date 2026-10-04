@@ -88,6 +88,7 @@ _OTHER_PERSON = re.compile(r"\b(?:man|men|he|his|him|husband|boyfriend|guy|male|
 
 # Correcao de rosto depois da geracao com LoRA (workflows/chroma-face-refine.json).
 FACE_REFINE_WORKFLOW = "chroma-face-refine"
+ZIMAGE_LORA_WORKFLOW = "zimage-txt2img-lora"
 
 PERSON_SWAP_WORKFLOW = "chroma-person-swap-lora"
 QWEN_SWAP_WORKFLOW = "qwen-person-swap"
@@ -308,6 +309,7 @@ class GenerationService:
         reference_image_name: str | None = None
         lora_params: dict[str, Any] = {}
         use_lora = False
+        zimage = False
         attitude = ""
         face_params: dict[str, Any] = {}
         swap_plan: PersonSwapPlan | None = None
@@ -344,6 +346,25 @@ class GenerationService:
                 # persona vence porque foi calibrado para a LoRA dela.
                 if lora.guidance is not None:
                     lora_params["GUIDANCE"] = lora.guidance
+                if (
+                    not req.reference_image
+                    and lora.zimage_file
+                    and ZIMAGE_LORA_WORKFLOW in model.compatible_workflows
+                    and await self._lora_available(lora.zimage_file)
+                ):
+                    # Z-Image Turbo + LoRA dela (teste de 2026-10-04: cena real
+                    # em ~17 s contra 3-4 min do Chroma). Prompt no formato das
+                    # legendas do treino; 8 passos fixos (os 26 do Chroma e o
+                    # agendador "beta" estragavam o Turbo) e sem a ampliacao e
+                    # o retoque de rosto, que sao do Chroma.
+                    zimage = True
+                    prompt = f"{lora.trigger}, a woman, {lead + ', ' if lead else ''}{user_prompt}"
+                    face_params = {}
+                    workflow_id = ZIMAGE_LORA_WORKFLOW
+                    lora_params = {
+                        "LORA_NAME": lora.zimage_file, "LORA_STRENGTH": lora.zimage_strength,
+                        "STEPS": 8, "CFG": 1.0, "SAMPLER": "res_multistep", "SCHEDULER": "simple",
+                    }
             else:
                 identity_fragment = persona.identity_prompt_fragment()
                 if identity_fragment:
@@ -440,7 +461,7 @@ class GenerationService:
                     params["QWEN_LORA"], params["QWEN_LORA_STRENGTH"] = qwen_lora.qwen_file, qwen_lora.qwen_strength
         if req.denoise is not None:
             params["DENOISE"] = req.denoise
-        if use_lora:
+        if use_lora and not zimage:
             params["HIRES_WIDTH"], params["HIRES_HEIGHT"] = self._hires_size(params["WIDTH"], params["HEIGHT"])
         params.update(lora_params)
         params.update(self.model_manager.loader_params(req.model_id))

@@ -89,6 +89,11 @@ class PersonaLora:
     # scripts/train_qwen_lora.sh). Sem o arquivo no pod, o pack segue sem ela.
     qwen_file: str = ""
     qwen_strength: float = 1.0
+    # LoRA da persona no Z-Image Turbo (scripts/train_zimage_lora.sh): com o
+    # arquivo no pod, foto sem foto de referencia sai pelo Z-Image (8 passos,
+    # ~17 s) em vez do Chroma (~3-4 min com ampliacao e retoque).
+    zimage_file: str = ""
+    zimage_strength: float = 1.0
 
 
 @dataclass
@@ -210,6 +215,8 @@ class PersonaManager:
                 guidance=float(lora_data["guidance"]) if lora_data.get("guidance") is not None else None,
                 qwen_file=lora_data.get("qwen_file", ""),
                 qwen_strength=float(lora_data.get("qwen_strength", 1.0)),
+                zimage_file=lora_data.get("zimage_file", ""),
+                zimage_strength=float(lora_data.get("zimage_strength", 1.0)),
             )
         voice_data = data.get("voice")
         voice = None
