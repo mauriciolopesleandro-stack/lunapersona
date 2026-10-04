@@ -37,7 +37,9 @@
     "workflow_id": "chroma-txt2img-lora",
     "guidance": 3,
     "qwen_file": "luna_qwen_2511_v1.safetensors",
-    "qwen_strength": 1.0
+    "qwen_strength": 1,
+    "zimage_file": "luna_zimage_v1.safetensors",
+    "zimage_strength": 1
   },
   "identity_methods": {
     "planned": [
