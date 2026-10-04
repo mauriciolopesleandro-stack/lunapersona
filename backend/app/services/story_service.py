@@ -85,7 +85,7 @@ class StoryService:
         bible = plan.get("bible") or {}
         scenes = []
         for i, s in enumerate(plan.get("scenes") or []):
-            prompt = _assemble(s, bible, trigger)
+            prompt = _assemble(s, bible, trigger, persona.name)
             if prompt:
                 scenes.append({
                     "title": str(s.get("title", "")).strip() or f"Foto {i + 1}",
@@ -105,7 +105,12 @@ def _pick(items: Any, index: Any) -> str:
         return ""
 
 
-def _assemble(scene: dict[str, Any], bible: dict[str, Any], trigger: str) -> str:
+def _is_persona(text: str, trigger: str, persona_name: str) -> bool:
+    head = text.strip().lower()
+    return head.startswith(trigger.lower()) or bool(persona_name) and head.startswith(persona_name.lower())
+
+
+def _assemble(scene: dict[str, Any], bible: dict[str, Any], trigger: str, persona_name: str = "") -> str:
     """Prompt da foto montado aqui, colando o texto completo da biblia: pedido
     ao modelo, ele resumia ("Rafa (black t-shirt)") e o rosto do outro mudava
     de uma foto para a outra. Plano antigo (so "prompt") ainda funciona."""
@@ -118,7 +123,9 @@ def _assemble(scene: dict[str, Any], bible: dict[str, Any], trigger: str) -> str
         parts.append(f"{trigger} is wearing {outfit}")
     for idx in scene.get("characters") or []:
         who = _pick(bible.get("characters"), idx)
-        if who:
+        # o modelo as vezes lista a propria persona ("Luna (... fair skin)"):
+        # quem a descreve e a LoRA
+        if who and not _is_persona(who, trigger, persona_name):
             parts.append(f"with {who}")
     place = _pick(bible.get("locations"), scene.get("location"))
     if place:
