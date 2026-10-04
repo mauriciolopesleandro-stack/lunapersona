@@ -689,3 +689,27 @@ export function sendContentMessage(personaId: string, text: string): Promise<Con
     "/content/jobs"
   );
 }
+
+// Historia em fotos: o modelo de chat do pod planeja a serie (biblia fixa +
+// um prompt por foto). As fotos saem pela geracao normal (generateImage).
+export interface StoryScene {
+  title: string;
+  summary: string;
+  prompt: string;
+}
+
+export interface StoryPlan {
+  bible: {
+    locations?: string[];
+    outfits?: string[];
+    characters?: string[];
+    light?: string;
+    camera?: string;
+  };
+  scenes: StoryScene[];
+  model: string;
+}
+
+export function planStory(personaId: string, story: string, count: number): Promise<StoryPlan> {
+  return runJob<StoryPlan>(`/personas/${personaId}/story/jobs`, { story, count }, 15 * 60_000, "o planejamento", "/story/jobs");
+}

@@ -28,6 +28,7 @@ import { VoicePage } from "./components/VoicePage";
 import { ContentPage } from "./components/ContentPage";
 import { SwapPage } from "./components/SwapPage";
 import { PackSwapPage } from "./components/PackSwapPage";
+import { StoryPage } from "./components/StoryPage";
 import { loadLastResult, saveLastResult } from "./lib/lastResult";
 import { TopBar } from "./components/TopBar";
 import { addHistoryEntry } from "./lib/history";
@@ -394,6 +395,7 @@ export default function App() {
               onReferencesChanged={() => loadPersonaThumbnails(personas)}
             />
           )}
+          {tab === "historia" && <StoryPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
           {tab === "pack" && <PackSwapPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
           {tab === "trocar" && <SwapPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
           {tab === "conteudo" && (

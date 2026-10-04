@@ -10,7 +10,7 @@ from app.idle_shutdown import IdleShutdownTracker
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
 from app.jobs import running_jobs
-from app.routes import chat, content, generate, health, models, personas, video, voice, workflows
+from app.routes import chat, content, generate, health, models, personas, story, video, voice, workflows
 from app.services.chat_service import ChatService
 from app.services.generation_service import GenerationService
 from app.services.scene_describer import SceneDescriber
@@ -18,6 +18,7 @@ from app.services.swap_service import SwapService
 from app.services.talk_service import TalkService
 from app.services.video_service import VideoService
 from app.services.content_service import ContentService
+from app.services.story_service import StoryService
 from app.services.voice_service import VoiceService
 from app.workflow_manager.manager import WorkflowManager
 
@@ -84,6 +85,11 @@ app.state.content_service = ContentService(
     persona_manager=app.state.persona_manager,
     comfyui_client=app.state.comfyui_client,
 )
+app.state.story_service = StoryService(
+    llm_client=app.state.llm_client,
+    persona_manager=app.state.persona_manager,
+    comfyui_client=app.state.comfyui_client,
+)
 app.state.chat_service = ChatService(
     llm_client=app.state.llm_client,
     persona_manager=app.state.persona_manager,
@@ -120,6 +126,7 @@ app.include_router(voice.router, prefix="/api")
 app.include_router(personas.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(content.router, prefix="/api")
+app.include_router(story.router, prefix="/api")
 
 
 @app.on_event("startup")
