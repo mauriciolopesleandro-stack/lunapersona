@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "id": "qwen-bfs-head-swap",
+    "title": "Qwen-Image-Edit 2511 + BFS - trocar a cabeca (rosto e cabelo) numa passada",
+    "description": "Troca de cabeca como fazem os criadores hoje: Qwen-Image-Edit 2511 com a LoRA BFS Best Face Swap head V5 (huggingface.co/Alissonerdx/BFS-Best-Face-Swap, MIT) e a Lightning de 8 passos. Picture 1 = a foto (corpo, pose, luz, cenario; BODY_IMAGE em WIDTH x HEIGHT), Picture 2 = a cabeca de referencia (HEAD_IMAGE: foto da persona ou retrato do outro personagem). O proprio modelo refaz a cabeca inteira com a luz da cena - sem mascaras, recortes nem colagem (o que deixava a borda artificial no qwen-person-swap). Prompt e ordem das imagens do guia oficial da V5 (docs/qwen-image-edit.md). Com duas pessoas na foto, o backend manda so o recorte em volta de quem troca e cola de volta. Modelos: scripts/setup_qwen_edit.sh + scripts/setup_fast.sh.",
+    "compatible_models": ["chroma1-hd-fp8"],
+    "hidden": true,
+    "required_params": ["BODY_IMAGE", "HEAD_IMAGE", "WIDTH", "HEIGHT", "SEED"],
+    "optional_params": {
+      "PROMPT": "head_swap: start with Picture 1 as the base image, keeping its lighting, environment, and background. remove the head from Picture 1 completely and replace it with the head from Picture 2, strictly preserving the hair, eye color, and nose structure of Picture 2. copy the eye direction, head rotation, and micro-expressions from Picture 1.",
+      "STEPS": 8,
+      "CFG": 1.0,
+      "SHIFT": 3.1,
+      "UNET": "qwen_image_edit_2511_fp8mixed.safetensors",
+      "TEXT_ENCODER": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "VAE": "qwen_image_vae.safetensors",
+      "LIGHTNING_LORA": "Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors",
+      "LIGHTNING_STRENGTH": 1.0,
+      "BFS_LORA": "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors",
+      "BFS_STRENGTH": 1.0,
+      "HEAD_PIXELS": 1.0,
+      "FILENAME_PREFIX": "luna_headswap"
+    }
+  },
+  "graph": {
+    "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "${UNET}", "weight_dtype": "default"}},
+    "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "${TEXT_ENCODER}", "type": "qwen_image", "device": "default"}},
+    "3": {"class_type": "VAELoader", "inputs": {"vae_name": "${VAE}"}},
+    "4": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["1", 0], "shift": "${SHIFT}"}},
+    "5": {"class_type": "CFGNorm", "inputs": {"model": ["4", 0], "strength": 1, "pre_cfg": false}},
+    "6": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["5", 0], "lora_name": "${LIGHTNING_LORA}", "strength_model": "${LIGHTNING_STRENGTH}"}},
+    "7": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["6", 0], "lora_name": "${BFS_LORA}", "strength_model": "${BFS_STRENGTH}"}},
+    "10": {"class_type": "LoadImage", "inputs": {"image": "${BODY_IMAGE}"}},
+    "11": {"class_type": "LoadImage", "inputs": {"image": "${HEAD_IMAGE}"}},
+    "12": {"class_type": "ImageScale", "inputs": {"image": ["10", 0], "upscale_method": "lanczos", "width": "${WIDTH}", "height": "${HEIGHT}", "crop": "disabled"}},
+    "13": {"class_type": "ImageScaleToTotalPixels", "inputs": {"image": ["11", 0], "upscale_method": "lanczos", "megapixels": "${HEAD_PIXELS}"}},
+    "20": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["2", 0], "prompt": "${PROMPT}", "vae": ["3", 0], "image1": ["12", 0], "image2": ["13", 0]}},
+    "21": {"class_type": "TextEncodeQwenImageEditPlus", "inputs": {"clip": ["2", 0], "prompt": "", "vae": ["3", 0], "image1": ["12", 0], "image2": ["13", 0]}},
+    "22": {"class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": {"conditioning": ["20", 0], "reference_latents_method": "index_timestep_zero"}},
+    "23": {"class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": {"conditioning": ["21", 0], "reference_latents_method": "index_timestep_zero"}},
+    "30": {"class_type": "VAEEncode", "inputs": {"pixels": ["12", 0], "vae": ["3", 0]}},
+    "31": {"class_type": "KSampler", "inputs": {"model": ["7", 0], "positive": ["22", 0], "negative": ["23", 0], "latent_image": ["30", 0], "seed": "${SEED}", "steps": "${STEPS}", "cfg": "${CFG}", "sampler_name": "euler", "scheduler": "simple", "denoise": 1}},
+    "32": {"class_type": "VAEDecode", "inputs": {"samples": ["31", 0], "vae": ["3", 0]}},
+    "33": {"class_type": "SaveImage", "inputs": {"images": ["32", 0], "filename_prefix": "${FILENAME_PREFIX}"}}
+  }
+}
