@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Profile } from "../api/client";
 import { changePassword, getProfile } from "../api/client";
+import { TelegramSettings } from "./TelegramSettings";
 
 interface Props {
   onLogout: () => void;
@@ -133,6 +134,8 @@ export function ProfilePage({ onLogout }: Props) {
           {saving ? "Salvando..." : "Salvar nova senha"}
         </button>
       </form>
+
+      <TelegramSettings />
     </div>
   );
 }

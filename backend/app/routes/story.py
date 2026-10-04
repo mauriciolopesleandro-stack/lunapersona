@@ -2,14 +2,31 @@
 (services/story_service.py). As fotos sao geradas pela rota de geracao normal."""
 from __future__ import annotations
 
+import time
+from collections.abc import Awaitable
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app import notify
 from app.jobs import JobRegistry
 from app.persona_manager.manager import PersonaNotFoundError
 
 router = APIRouter()
 _jobs = JobRegistry()
+
+
+async def _notified(planning: Awaitable[dict[str, Any]]) -> dict[str, Any]:
+    """Planejamento (leva minutos) com aviso no celular ao terminar."""
+    started = time.monotonic()
+    try:
+        result = await planning
+    except Exception as exc:
+        notify.fire(f"⚠️ O roteiro falhou: {str(exc)[:300]}", started)
+        raise
+    notify.fire(f"📝 Roteiro pronto: {len(result.get('scenes') or [])} fotos - abra a aba História", started)
+    return result
 
 
 class PlanBody(BaseModel):
@@ -33,7 +50,7 @@ async def start_plan_from_photos(persona_id: str, body: PhotosBody, request: Req
         request.app.state.persona_manager.get_persona(persona_id)
     except PersonaNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _jobs.start(lambda: service.plan_from_photos(persona_id, body.images, body.shape))
+    return _jobs.start(lambda: _notified(service.plan_from_photos(persona_id, body.images, body.shape)))
 
 
 @router.post("/personas/{persona_id}/story/jobs")
@@ -44,7 +61,7 @@ async def start_plan(persona_id: str, body: PlanBody, request: Request):
         request.app.state.persona_manager.get_persona(persona_id)
     except PersonaNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _jobs.start(lambda: service.plan(persona_id, body.story, body.count, body.shape))
+    return _jobs.start(lambda: _notified(service.plan(persona_id, body.story, body.count, body.shape)))
 
 
 @router.get("/story/jobs/{job_id}")

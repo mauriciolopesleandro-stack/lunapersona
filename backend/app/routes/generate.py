@@ -1,4 +1,5 @@
 import asyncio
+import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
+from app import notify
 from app.clients.comfyui_client import ComfyUIError
 from app.jobs import register_tasks
 from app.model_manager.manager import ModelNotFoundError
@@ -132,13 +134,18 @@ async def generate(body: GenerateBody, request: Request):
 
 async def _run_job(job_id: str, service, req: GenerationRequest) -> None:
     job = _jobs[job_id]
+    started = time.monotonic()
     try:
-        job["result"] = _payload(await service.generate(req))
+        result = await service.generate(req)
+        job["result"] = _payload(result)
         job["status"] = "done"
+        photo = notify.photo_link(result.images[0].url) if result.images else None
+        notify.fire("✅ Imagem pronta", started, photo=photo)
     except Exception as exc:
         job["status"] = "error"
         job["error_status"] = _error_status(exc) or 500
         job["detail"] = str(exc) or exc.__class__.__name__
+        notify.fire(f"⚠️ A imagem falhou: {job['detail'][:300]}", started)
 
 
 @router.post("/generate/jobs")

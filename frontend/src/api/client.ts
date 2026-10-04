@@ -61,6 +61,37 @@ export async function getProfile(): Promise<Profile> {
   return body;
 }
 
+// Aviso no celular pelo Telegram (api/telegram.ts). O token nunca volta para
+// o navegador: so se esta configurado e o nome do bot.
+export interface TelegramStatus {
+  storeReady: boolean;
+  tokenSet: boolean;
+  bot: string | null;
+  connected: boolean;
+  media: boolean;
+}
+
+export async function getTelegram(): Promise<TelegramStatus> {
+  const res = await fetch("/api/telegram");
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail ?? `Erro HTTP ${res.status}`);
+  return body;
+}
+
+export async function telegramAction(
+  action: "token" | "connect" | "media" | "test" | "forget",
+  extra: Record<string, unknown> = {}
+): Promise<TelegramStatus> {
+  const res = await fetch("/api/telegram", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...extra }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail ?? `Erro HTTP ${res.status}`);
+  return body;
+}
+
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   const res = await fetch("/api/change-password", {
     method: "POST",

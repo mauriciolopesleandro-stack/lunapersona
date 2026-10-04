@@ -1,4 +1,5 @@
 import asyncio
+import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Literal
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
+from app import notify
 from app.clients.comfyui_client import ComfyUIError
 from app.jobs import JobRegistry, register_tasks
 from app.persona_manager.manager import PersonaNotFoundError
@@ -72,8 +74,9 @@ _VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".m4v"}
 _MAX_VIDEO_BYTES = 500 * 1024 * 1024
 
 
-async def _run_job(job_id: str, service, req) -> None:
+async def _run_job(job_id: str, service, req, label: str = "🎬 Vídeo pronto") -> None:
     job = _jobs[job_id]
+    started = time.monotonic()
     try:
         result = await service.generate(req)
         job["result"] = {
@@ -88,10 +91,13 @@ async def _run_job(job_id: str, service, req) -> None:
             "reference": asdict(result.reference) if result.reference else None,
         }
         job["status"] = "done"
+        video = result.videos[0].url if result.videos else None
+        notify.fire(f"{label}: {result.seconds} s de vídeo", started, video=video)
     except Exception as exc:
         job["status"] = "error"
         job["error_status"] = 502 if isinstance(exc, ComfyUIError) else 500
         job["detail"] = str(exc) or exc.__class__.__name__
+        notify.fire(f"⚠️ O vídeo falhou: {job['detail'][:300]}", started)
 
 
 @router.post("/video/jobs")
@@ -118,7 +124,7 @@ async def start_talk_job(body: TalkBody, request: Request):
         _jobs.pop(next(iter(_jobs)))
     job_id = uuid.uuid4().hex
     _jobs[job_id] = {"status": "running"}
-    task = asyncio.create_task(_run_job(job_id, request.app.state.talk_service, req))
+    task = asyncio.create_task(_run_job(job_id, request.app.state.talk_service, req, "🗣️ Vídeo falando pronto"))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
     return {"job_id": job_id, "status": "running"}
@@ -155,7 +161,7 @@ async def start_swap_job(body: SwapBody, request: Request):
         _jobs.pop(next(iter(_jobs)))
     job_id = uuid.uuid4().hex
     _jobs[job_id] = {"status": "running"}
-    task = asyncio.create_task(_run_job(job_id, request.app.state.swap_service, req))
+    task = asyncio.create_task(_run_job(job_id, request.app.state.swap_service, req, "🎬 Troca no vídeo pronta"))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
     return {"job_id": job_id, "status": "running"}
@@ -216,9 +222,11 @@ async def start_frame_persona(body: FramePersonaBody, request: Request):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     async def work():
+        started = time.monotonic()
         image, check = await service.persona_in_frame(
             body.persona_id, body.frame, body.width, body.height, body.extra, body.seed
         )
+        notify.fire("🖼️ Persona no quadro do vídeo pronta", started, photo=notify.photo_link(image.url))
         return {"image": asdict(image), "check": check}
 
     return _reference_jobs.start(work)

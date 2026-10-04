@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     comfyui_connect_timeout: float = 10.0
     comfyui_generation_timeout: float = 300.0
 
+    # Aviso no celular (app/notify.py): o site repassa para o Telegram.
+    notify_url: str = "https://luna-ai-studio-frontend.vercel.app/api/notify"
+
     model_config = SettingsConfigDict(
         env_file=str(REPO_ROOT / ".env"),
         env_file_encoding="utf-8",
