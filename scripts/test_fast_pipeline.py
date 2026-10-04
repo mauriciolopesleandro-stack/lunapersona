@@ -177,6 +177,34 @@ def main() -> None:
         print(message, flush=True)
 
     raw: list[Path] = []
+    if "lora" in sys.argv:
+        # LoRA da Luna no Z-Image (scripts/train_zimage_lora.sh): o rosto dela
+        # sai direto na cena, sem troca. Mesmas cenas do calcadao, lado a lado
+        # com as do Z-Image puro (fast_scene_00001..5) quando existirem.
+        out: list[Path] = []
+        for i, (_kind, prompt) in enumerate(FOOD_SCENES):
+            t = time.time()
+            graph = wm.render("zimage-txt2img-lora", {
+                "PROMPT": prompt.replace(WOMAN, "lunavox, a 25-year-old Brazilian woman"), "WIDTH": W, "HEIGHT": H,
+                "SEED": 1000 + i, "LORA_NAME": "luna_zimage_v1.safetensors", "FILENAME_PREFIX": "fast_lora"})
+            out.append(OUT / saved(run(graph)))
+            her = pick(faces(f"{out[-1].name} [output]", luna), "F")
+            note(f"cena {i + 1} com LoRA: {time.time() - t:.1f}s  Luna={her and her['sim']}")
+        before = [OUT / f"fast_scene_{n:05d}_.png" for n in range(1, len(out) + 1)]
+        rows = [before, out] if all(p.exists() for p in before) else [out]
+        hgt = 560
+        ims_rows = [[Image.open(p).convert("RGB") for p in r] for r in rows]
+        ims_rows = [[im.resize((int(im.width * hgt / im.height), hgt)) for im in r] for r in ims_rows]
+        sheet = Image.new("RGB", (sum(i.width for i in ims_rows[0]) + 6 * len(out), (hgt + 6) * len(ims_rows)),
+                          (20, 20, 20))
+        for r, ims in enumerate(ims_rows):
+            x = 0
+            for im in ims:
+                sheet.paste(im, (x, r * (hgt + 6)))
+                x += im.width + 6
+        sheet.save("/workspace/fast_lora.jpg", quality=85)
+        note(f"total {time.time() - started:.0f}s -> /workspace/fast_lora.jpg")
+        return
     if "bfs" in sys.argv:
         # So a troca de cabeca, nas fotos ja feitas com o Chroma + LoRA (o
         # casal com o rosto do Rafa pelo InstantID): compara com o caminho atual.
