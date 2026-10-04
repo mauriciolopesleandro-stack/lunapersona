@@ -119,6 +119,19 @@ if [ -f "$LORAS/$NAME.safetensors" ]; then
   log "teste na ComfyUI: $(tail -1 "$LOG")"
 fi
 
+# Aviso no celular (Telegram, se conectado em Meu perfil) com o teste.
+SHEET=""
+if [ -f /workspace/fast_lora.jpg ]; then
+  cp /workspace/fast_lora.jpg /workspace/runpod-slim/ComfyUI/output/zimage_lora_teste.jpg
+  SHEET="https://${RUNPOD_POD_ID}-8188.proxy.runpod.net/view?filename=zimage_lora_teste.jpg&type=output&preview=jpeg;85"
+fi
+(cd /workspace/lunapersona/backend && ../.venv-persist/bin/python3 -c "
+import asyncio, sys
+from app.notify import send
+ok = asyncio.run(send(sys.argv[1], photo=sys.argv[2] or None))
+print('aviso enviado' if ok else 'aviso nao enviado')
+" "🎓 LoRA da Luna no Z-Image pronta (status $status). Em cima: sem LoRA; embaixo: com a LoRA." "$SHEET") >> "$LOG" 2>&1
+
 # Libera o auto-desligar do estudio (8 min parado).
 rm -f /workspace/keepalive_claude.on
 log "fim"
