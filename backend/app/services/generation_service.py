@@ -95,6 +95,14 @@ QWEN_SWAP_WORKFLOW = "qwen-person-swap"
 SWAP_ATTEMPTS = 3
 SWAP_GOOD_SIM = 0.35
 INSTANTID_FACE_WORKFLOW = "sdxl-instantid-face"
+# outro personagem mulher: so troca se o rosto da persona foi reconhecido
+OTHER_FACE_PERSONA_SIM = 0.25
+_FEMALE = re.compile(r"\b(woman|girl|female|lady|mulher|menina|garota|moça|senhora|amiga|namorada|irmã|mãe)\b", re.IGNORECASE)
+
+
+def _other_sex(description: str) -> str:
+    """Sexo do outro personagem pela descricao do roteiro ('F' ou 'M')."""
+    return "F" if _FEMALE.search(description or "") else "M"
 
 
 def _output_name(image: GenerationOutputImage) -> str:
@@ -240,8 +248,18 @@ class GenerationService:
         )
         if not faces or len(faces) < 2:
             return None
-        persona_face = max(faces, key=lambda f: float(f.get("sim", 0.0)))
-        others = [f for f in faces if f is not persona_face]
+        # A persona e mulher: se o personagem nao e mulher, ele e o rosto
+        # masculino. So pela semelhanca errava - de perfil, rindo, o rosto dela
+        # ficava ~0.03 e o rosto dele ia parar nela.
+        if _other_sex(req.other_face_prompt) != "F":
+            others = [f for f in faces if f.get("sex") == "M"]
+        else:
+            persona_face = max(faces, key=lambda f: float(f.get("sim", 0.0)))
+            if float(persona_face.get("sim", 0.0)) < OTHER_FACE_PERSONA_SIM:
+                return None
+            others = [f for f in faces if f is not persona_face and f.get("sex") == "F"]
+        if not others:
+            return None
         x1, y1, x2, y2 = max(others, key=lambda f: (f["bbox"][2] - f["bbox"][0]) * (f["bbox"][3] - f["bbox"][1]))["bbox"]
         fw, fh = x2 - x1, y2 - y1
         x, y = max(0, int(x1 - fw * 0.15)), max(0, int(y1 - fh * 0.15))

@@ -51,6 +51,9 @@ skin or body here (they are added from the bible);
 - "light": the light of this moment, short;
 - vary the framing across the series (close-up, medium, full body, over the shoulder...).
 
+LANGUAGE: everything in the bible and every "action" must be written in ENGLISH (the image model only \
+understands English), even though the story is in Portuguese. Only "title" and "summary" are in Portuguese.
+
 Reply with JSON only, no comments, in this exact shape:
 {{"bible": {{"locations": ["..."], "outfits": ["..."], "characters": ["..."], "light": "...", "camera": "..."}},
  "scenes": [{{"title": "titulo curto em portugues", "summary": "o que acontece, em portugues, 1 frase", \
@@ -65,6 +68,11 @@ _FROM_PHOTOS = (
 )
 
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
+# palavras que so aparecem se o modelo escreveu a biblia/acao em portugues
+_PT_WORDS = re.compile(r"\b(de|com|uma|anos|cabelo|pele|vestido|camisa|cozinha|mesa|luz|segurando|olhando)\b", re.IGNORECASE)
+_ENGLISH_REMINDER = (
+    "\n\nIMPORTANT: write the bible and every action in ENGLISH (only title and summary in Portuguese)."
+)
 
 
 class StoryService:
@@ -101,14 +109,21 @@ class StoryService:
         system = _SYSTEM.format(name=persona.name, age=25, trigger=trigger, count=count)
         if self.comfyui_client is not None:
             await self.comfyui_client.free_memory(need_bytes=LLM_VRAM_BYTES)
-        reply, model = await self.llm_client.chat(
-            [ChatMessage("system", system), ChatMessage("user", story.strip())],
-            think=True,
-            num_ctx=CONTEXT_TOKENS,
-            timeout=900.0,
-            keep_alive="0",
-        )
-        plan = _parse(reply)
+        story = story.strip()
+        for attempt in range(2):
+            reply, model = await self.llm_client.chat(
+                [ChatMessage("system", system), ChatMessage("user", story)],
+                think=True,
+                num_ctx=CONTEXT_TOKENS,
+                timeout=900.0,
+                keep_alive="0",
+            )
+            plan = _parse(reply)
+            # historia em portugues -> as vezes o modelo responde tudo em
+            # portugues e o gerador de imagem entende bem menos: pede de novo
+            if not _in_portuguese(plan):
+                break
+            story += _ENGLISH_REMINDER
         bible = plan.get("bible") or {}
         scenes = []
         for i, s in enumerate(plan.get("scenes") or []):
@@ -123,6 +138,15 @@ class StoryService:
         if not scenes:
             raise LLMResponseError("O modelo nao devolveu nenhuma cena. Tente de novo ou encurte a historia.")
         return {"bible": bible, "scenes": scenes, "model": model}
+
+
+def _in_portuguese(plan: dict[str, Any]) -> bool:
+    bible = plan.get("bible") or {}
+    text = " ".join(
+        [str(x) for key in ("locations", "outfits", "characters") for x in (bible.get(key) or [])]
+        + [str(s.get("action") or "") for s in plan.get("scenes") or [] if isinstance(s, dict)]
+    )
+    return len(_PT_WORDS.findall(text)) >= 4
 
 
 def _pick(items: Any, index: Any) -> str:
