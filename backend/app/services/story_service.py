@@ -193,6 +193,19 @@ def _in_portuguese(plan: dict[str, Any]) -> bool:
     return len(_PT_WORDS.findall(text)) >= 4
 
 
+_COUNT = {2: "two", 3: "three", 4: "four"}
+_MAN = re.compile(r"\b(man|boy|guy|male|homem|rapaz)\b", re.IGNORECASE)
+_WOMAN = re.compile(r"\b(woman|girl|lady|female|mulher|moça)\b", re.IGNORECASE)
+
+
+def _name(who: str) -> str:
+    return who.split(",")[0].strip()
+
+
+def _gender(who: str) -> str:
+    return "a man" if _MAN.search(who) else "a woman" if _WOMAN.search(who) else "a person"
+
+
 def _pick(items: Any, index: Any) -> str:
     """Item da biblia pelo indice. O modelo as vezes repete um item como
     "Rafa, same as above" ou "Same black lace lingerie": o gerador nao sabe o
@@ -223,16 +236,27 @@ def _assemble(scene: dict[str, Any], bible: dict[str, Any], trigger: str, person
     action = str(scene.get("action") or "").strip()
     if not action:
         return _with_trigger(str(scene.get("prompt") or "").strip(), trigger) if scene.get("prompt") else ""
-    parts = [_with_trigger(action, trigger)]
-    outfit = _pick(bible.get("outfits"), scene.get("outfit"))
-    if outfit:
-        parts.append(f"{trigger} is wearing {outfit}")
+    others: list[str] = []
     for idx in scene.get("characters") or []:
         who = _pick(bible.get("characters"), idx)
         # o modelo as vezes lista a propria persona ("Luna (... fair skin)"):
         # quem a descreve e a LoRA
-        if who and not _is_persona(who, trigger, persona_name):
-            parts.append(f"with {who}")
+        if who and not _is_persona(who, trigger, persona_name) and who not in others:
+            others.append(who)
+    parts = []
+    if others:
+        # Quem e quem logo no inicio: com "rafa" so no meio do texto saiam
+        # duas da persona (a LoRA puxa toda pessoa da foto para o rosto dela).
+        cast = " and ".join(f"{_name(w)} ({_gender(w)})" for w in others)
+        parts.append(f"photo of {_COUNT.get(len(others) + 1, 'several')} people: {trigger} (a woman) and {cast}")
+        for w in others:
+            action = re.sub(rf"\b{re.escape(_name(w))}\b", _name(w), action, flags=re.IGNORECASE)
+    parts.append(_with_trigger(action, trigger))
+    outfit = _pick(bible.get("outfits"), scene.get("outfit"))
+    if outfit:
+        parts.append(f"{trigger} is wearing {outfit}")
+    for who in others:
+        parts.append(f"with {who}")
     place = _pick(bible.get("locations"), scene.get("location"))
     if place:
         parts.append(f"in {place}")
