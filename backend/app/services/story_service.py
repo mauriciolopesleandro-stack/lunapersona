@@ -41,8 +41,12 @@ Step 1 - STORY BIBLE (fixed descriptions, in English):
 One entry per DISTINCT place and per DISTINCT outfit - scenes in the same place or with the same clothes reuse \
 the same index. Spots inside one room (the bed, the window, the armchair) are the same location: describe the \
 whole room once and say the spot in the action. Never write an entry like "same as before" or "same outfit".
-Each bible item must be complete on its own (a character entry always has the name, "man" or "woman", \
-age, build, face (eyes, nose, beard), hair, skin and clothes - e.g. "Rafa, a 28-year-old man, slim build, ...").
+A story that happens in one room and its balcony has exactly TWO locations (the room, the balcony).
+Each bible item must be complete on its own. A character entry always follows this pattern and ENDS with his \
+clothes: "Rafa, a 28-year-old man, slim build, short black hair, short beard, brown eyes, light brown skin, \
+wearing a white linen shirt and beige linen trousers". Do not list {trigger} as a character.
+Clothes stay exactly as the outfit entry says in every photo that uses it - never loosened, opened, removed or \
+"more relaxed"; a real change of clothes is a new outfit entry.
 
 Step 2 - for each photo:
 - "action" (English, 20 to 45 words): the framing and what happens - e.g. "medium shot of {trigger} laughing \
@@ -100,6 +104,7 @@ _FROM_PHOTOS = (
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
 _SAME = re.compile(r"^(the\s+)?same\s+", re.IGNORECASE)
+_SAME_AS = re.compile(r",?\s*(the\s+)?same as (above|before|previous|the previous \w+)\b[.,]?", re.IGNORECASE)
 # palavras que so aparecem se o modelo escreveu a biblia/acao em portugues
 _PT_WORDS = re.compile(r"\b(de|com|uma|anos|cabelo|pele|vestido|camisa|cozinha|mesa|luz|segurando|olhando)\b", re.IGNORECASE)
 _ENGLISH_REMINDER = (
@@ -189,11 +194,21 @@ def _in_portuguese(plan: dict[str, Any]) -> bool:
 
 
 def _pick(items: Any, index: Any) -> str:
+    """Item da biblia pelo indice. O modelo as vezes repete um item como
+    "Rafa, same as above" ou "Same black lace lingerie": o gerador nao sabe o
+    que e "same" - usa o primeiro item com o mesmo nome e tira o "same"."""
     try:
-        # "Same black lace lingerie..." - o gerador nao sabe o que e "same"
-        return _SAME.sub("", str(items[int(index)]).strip())
+        text = str(items[int(index)]).strip()
     except (TypeError, ValueError, IndexError, KeyError):
         return ""
+    if _SAME_AS.search(text):
+        name = text.split(",")[0].strip().lower()
+        for other in items:
+            other = str(other).strip()
+            if other.lower().startswith(name) and not _SAME_AS.search(other):
+                return other
+        text = _SAME_AS.sub(",", text).replace(",,", ",")
+    return _SAME.sub("", text).strip(" ,")
 
 
 def _is_persona(text: str, trigger: str, persona_name: str) -> bool:
