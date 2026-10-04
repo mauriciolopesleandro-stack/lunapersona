@@ -20,7 +20,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image
 
 REPO = Path(__file__).resolve().parents[1]
 COMFY = "http://127.0.0.1:8188"
@@ -124,33 +124,21 @@ def size16(w: float, h: float, mp: float = 1.0) -> tuple[int, int]:
 def head_swap(wm: WorkflowManager, image: Path, face: dict | None, head: str, crop: bool, seed: int) -> Path:
     """Troca a cabeca. crop=True: so o recorte em volta do rosto vai para o
     modelo (com duas pessoas ele nao sabe qual trocar) e volta colado."""
-    src = Image.open(image).convert("RGB")
-    box = (0, 0, src.width, src.height)
-    if crop and face:
+    src = Image.open(image)
+    x, y, w, h, feather = 0, 0, src.width, src.height, 0
+    if crop and face:  # mesma conta de backend/app/services/head_swap.py
         x1, y1, x2, y2 = face["bbox"]
         side = max(x2 - x1, y2 - y1) * 3.6
         cx, cy = (x1 + x2) / 2, (y1 + y2) / 2 + (y2 - y1) * 0.7
-        box = (int(max(0, cx - side / 2)), int(max(0, cy - side / 2)),
-               int(min(src.width, cx + side / 2)), int(min(src.height, cy + side / 2)))
-    part = src.crop(box)
-    name = f"fast_{image.stem}_{seed}.png"
-    part.save(INP / name)
-    w, h = size16(part.width, part.height, 1.0 if crop else 1.33)
-    graph = wm.render("qwen-bfs-head-swap", {"BODY_IMAGE": name, "HEAD_IMAGE": head, "WIDTH": w, "HEIGHT": h,
-                                              "SEED": seed, "FILENAME_PREFIX": "fast_swap"})
-    swapped = Image.open(OUT / saved(run(graph))).convert("RGB").resize(part.size, Image.LANCZOS)
-    if not crop:
-        out = swapped
-    else:
-        mask = Image.new("L", part.size, 0)
-        pad = int(min(part.size) * 0.08)
-        ImageDraw.Draw(mask).rectangle((pad, pad, part.width - pad, part.height - pad), fill=255)
-        mask = mask.filter(ImageFilter.GaussianBlur(pad / 2))
-        out = src.copy()
-        out.paste(swapped, box[:2], mask)
-    path = OUT / f"fast_final_{image.stem}_{seed}.png"
-    out.save(path)
-    return path
+        x, y = int(max(0, cx - side / 2)), int(max(0, cy - side / 2))
+        w, h = int(min(src.width, cx + side / 2)) - x, int(min(src.height, cy + side / 2)) - y
+        feather = int(min(w, h) * 0.08)
+    mw, mh = size16(w, h, 1.0)
+    graph = wm.render("qwen-bfs-head-swap", {
+        "BODY_IMAGE": f"{image.name} [output]", "HEAD_IMAGE": head, "WIDTH": mw, "HEIGHT": mh,
+        "CROP_X": x, "CROP_Y": y, "CROP_W": w, "CROP_H": h, "FEATHER": feather,
+        "SEED": seed, "FILENAME_PREFIX": "fast_swap"})
+    return OUT / saved(run(graph))
 
 
 def main() -> None:

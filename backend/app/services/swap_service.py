@@ -29,6 +29,7 @@ from typing import Any
 from app.clients.comfyui_client import ComfyUIClient, ComfyUIError, GenerationOutputImage
 from app.clients.llm_client import ChatMessage, LLMError, OllamaClient
 from app.services.generation_service import GenerationRequest, GenerationService
+from app.services.head_swap import available as head_swap_available, faces_in, head_swap
 from app.services.prompt_translator import to_english
 from app.services.scene_describer import describe_image
 from app.services.video_service import QUALITY_PIXELS, TEXT_ENCODER, VAE, VideoResponse
@@ -162,7 +163,17 @@ class SwapService:
     ) -> tuple[GenerationOutputImage, dict[str, Any]]:
         """A persona num quadro do video (mesma roupa, pose e cenario). extra =
         correcao digitada (ex.: a cor certa do biquini). A IA confere a foto
-        contra o quadro e, se nao bater, gera de novo com a correcao dela."""
+        contra o quadro e, se nao bater, gera de novo com a correcao dela.
+
+        Com a LoRA BFS no pod (e sem correcao digitada) so a cabeca e trocada no
+        proprio quadro: roupa, pose e cenario ja sao os do video, entao nao
+        precisa descrever, gerar do zero nem conferir. Nos registros do pod o
+        caminho antigo levava ~4-5 min por quadro (Florence recarregado 3 vezes,
+        Chroma + ampliacao + retoque, modelo de chat tirando o gerador da GPU)."""
+        if not extra.strip() and await head_swap_available(self.comfyui_client):
+            image = await self._head_in_frame(persona_id, frame, width, height, seed)
+            if image is not None:
+                return image, {"coherent": True, "problems_pt": "", "fix_en": "", "attempts": 1}
         video_desc = await describe_image(self.comfyui_client, self.generation_service.workflow_manager, frame)
         image, check = None, {"coherent": True, "problems_pt": "", "fix_en": ""}
         fix = ""
@@ -177,6 +188,22 @@ class SwapService:
                 break
             fix = check["fix_en"]
         return image, check
+
+    async def _head_in_frame(
+        self, persona_id: str, frame: str, width: int, height: int, seed: int | None
+    ) -> GenerationOutputImage | None:
+        ref = self.generation_service.persona_manager.get_primary_reference_bytes(persona_id)
+        if not ref:
+            return None
+        head = await self.comfyui_client.upload_image(*ref)
+        faces = await faces_in(self.comfyui_client, frame)
+        # Quem e trocado no video e a pessoa maior; com outras no quadro, so o
+        # recorte em volta do rosto dela vai para o modelo.
+        face = tuple(faces[0]["bbox"]) if len(faces) > 1 else None
+        return await head_swap(
+            self.comfyui_client, self.generation_service.workflow_manager, frame, head, width, height,
+            seed if seed is not None else uuid.uuid4().int % (2**32), face=face, prefix="troca_quadro_persona",
+        )
 
     async def _check_frame(self, video_desc: str, image: GenerationOutputImage) -> dict[str, Any]:
         """Compara a descricao do quadro com a da foto gerada (Florence-2 + o
