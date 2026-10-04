@@ -35,17 +35,23 @@ Step 1 - STORY BIBLE (fixed descriptions, in English):
 - light: time of day and lighting for each part;
 - camera: one photographic style for the whole series (e.g. "candid smartphone photo, natural light").
 
-Step 2 - one prompt per photo (in English, 45 to 90 words). Each prompt:
-- starts with the framing and the action (e.g. "medium shot of {trigger} laughing while ...");
-- copies the location, the outfit and the other characters' descriptions VERBATIM from the bible;
-- says where she looks and what her hands hold;
-- ends with the light and the camera style from the bible;
-- never describes {trigger}'s face, hair color, skin or body (the model already knows them);
-- varies the framing across the series (close-up, medium, full body, over the shoulder...).
+Each bible item must be complete on its own (a character entry always has the name, age, build, hair, \
+skin and clothes).
+
+Step 2 - for each photo:
+- "action" (English, 20 to 45 words): the framing and what happens - e.g. "medium shot of {trigger} laughing \
+while she lifts a tray from the oven, looking at Rafa, both hands holding the tray" - with where she looks and \
+what her hands hold. Do NOT describe the place, the clothes, the other people's looks or {trigger}'s face, hair, \
+skin or body here (they are added from the bible);
+- "location": index of the place in bible.locations; "outfit": index in bible.outfits;
+- "characters": indexes in bible.characters of the other people visible in the photo ([] if she is alone);
+- "light": the light of this moment, short;
+- vary the framing across the series (close-up, medium, full body, over the shoulder...).
 
 Reply with JSON only, no comments, in this exact shape:
 {{"bible": {{"locations": ["..."], "outfits": ["..."], "characters": ["..."], "light": "...", "camera": "..."}},
- "scenes": [{{"title": "titulo curto em portugues", "summary": "o que acontece, em portugues, 1 frase", "prompt": "..."}}]}}"""
+ "scenes": [{{"title": "titulo curto em portugues", "summary": "o que acontece, em portugues, 1 frase", \
+"action": "...", "location": 0, "outfit": 0, "characters": [0], "light": "..."}}]}}"""
 
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -76,18 +82,54 @@ class StoryService:
             keep_alive="0",
         )
         plan = _parse(reply)
-        scenes = [
-            {
-                "title": str(s.get("title", "")).strip() or f"Foto {i + 1}",
-                "summary": str(s.get("summary", "")).strip(),
-                "prompt": _with_trigger(str(s.get("prompt", "")).strip(), trigger),
-            }
-            for i, s in enumerate(plan.get("scenes") or [])
-            if str(s.get("prompt", "")).strip()
-        ][:count]
+        bible = plan.get("bible") or {}
+        scenes = []
+        for i, s in enumerate(plan.get("scenes") or []):
+            prompt = _assemble(s, bible, trigger)
+            if prompt:
+                scenes.append({
+                    "title": str(s.get("title", "")).strip() or f"Foto {i + 1}",
+                    "summary": str(s.get("summary", "")).strip(),
+                    "prompt": prompt,
+                })
+        scenes = scenes[:count]
         if not scenes:
             raise LLMResponseError("O modelo nao devolveu nenhuma cena. Tente de novo ou encurte a historia.")
-        return {"bible": plan.get("bible") or {}, "scenes": scenes, "model": model}
+        return {"bible": bible, "scenes": scenes, "model": model}
+
+
+def _pick(items: Any, index: Any) -> str:
+    try:
+        return str(items[int(index)]).strip()
+    except (TypeError, ValueError, IndexError, KeyError):
+        return ""
+
+
+def _assemble(scene: dict[str, Any], bible: dict[str, Any], trigger: str) -> str:
+    """Prompt da foto montado aqui, colando o texto completo da biblia: pedido
+    ao modelo, ele resumia ("Rafa (black t-shirt)") e o rosto do outro mudava
+    de uma foto para a outra. Plano antigo (so "prompt") ainda funciona."""
+    action = str(scene.get("action") or "").strip()
+    if not action:
+        return _with_trigger(str(scene.get("prompt") or "").strip(), trigger) if scene.get("prompt") else ""
+    parts = [_with_trigger(action, trigger)]
+    outfit = _pick(bible.get("outfits"), scene.get("outfit"))
+    if outfit:
+        parts.append(f"{trigger} is wearing {outfit}")
+    for idx in scene.get("characters") or []:
+        who = _pick(bible.get("characters"), idx)
+        if who:
+            parts.append(f"with {who}")
+    place = _pick(bible.get("locations"), scene.get("location"))
+    if place:
+        parts.append(f"in {place}")
+    light = str(scene.get("light") or bible.get("light") or "").strip()
+    if light:
+        parts.append(light)
+    camera = str(bible.get("camera") or "").strip()
+    if camera:
+        parts.append(camera)
+    return ", ".join(p.rstrip(" .,") for p in parts)
 
 
 def _parse(reply: str) -> dict[str, Any]:
