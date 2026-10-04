@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import {
   generateImage,
   planStory,
+  planStoryFromPhotos,
+  uploadGenerationReference,
   type GenerationImage,
   type PersonaSummary,
   type StoryPlan,
@@ -18,6 +20,8 @@ interface StoryPhoto {
   title: string;
   summary: string;
   prompt: string;
+  // foto do pack que originou a cena (so como referencia visual)
+  sourceUrl?: string;
   result: GenerationImage | null;
   status: "waiting" | "running" | "done" | "error";
   error: string | null;
@@ -48,6 +52,7 @@ export function StoryPage({ personas, ensureAwake }: Props) {
   const [planning, setPlanning] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [packFiles, setPackFiles] = useState<File[]>([]);
 
   useEffect(() => {
     if (!personaId && personas[0]) setPersonaId(personas[0].id);
@@ -73,6 +78,34 @@ export function StoryPage({ personas, ensureAwake }: Props) {
           title: s.title,
           summary: s.summary,
           prompt: s.prompt,
+          result: null,
+          status: "waiting",
+          error: null,
+        }))
+      );
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setPlanning(false);
+    }
+  }
+
+  async function makePlanFromPhotos() {
+    setPlanning(true);
+    setError(null);
+    try {
+      await ensureAwake();
+      const names: string[] = [];
+      for (const file of packFiles) names.push(await uploadGenerationReference(file));
+      const result = await planStoryFromPhotos(personaId, names);
+      setPlan(result);
+      setPhotos(
+        result.scenes.map((sc, i) => ({
+          id: `${Date.now()}-${i}`,
+          title: sc.title,
+          summary: sc.summary,
+          prompt: sc.prompt,
+          sourceUrl: packFiles[i] ? URL.createObjectURL(packFiles[i]) : undefined,
           result: null,
           status: "waiting",
           error: null,
@@ -159,6 +192,32 @@ export function StoryPage({ personas, ensureAwake }: Props) {
           placeholder="Ex: Sábado de manhã a Luna acorda no apartamento dela em São Paulo, faz café e lê na varanda. À tarde encontra a amiga Bia num café da Vila Madalena, as duas riem e tiram selfie. No fim do dia ela vai sozinha ver o pôr do sol no Mirante 9 de Julho..."
         />
         <div className="char-count">{story.length}/12000</div>
+        <p className="muted small">
+          Ou suba um pack de fotos (até 20): a IA descreve cada foto e monta a história com uma cena por foto. As
+          fotos novas são criadas do zero com {personaName} - nada das fotos originais é reaproveitado.
+        </p>
+        <div className="content-action-buttons">
+          <label className="reference-upload">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              disabled={planning || running}
+              onChange={(e) => {
+                setPackFiles(Array.from(e.target.files ?? []).slice(0, 20));
+                e.target.value = "";
+              }}
+            />
+            🖼 {packFiles.length ? `${packFiles.length} foto(s) escolhida(s)` : "Escolher pack de fotos"}
+          </label>
+          <button
+            type="button"
+            disabled={planning || running || packFiles.length === 0 || !personaId}
+            onClick={makePlanFromPhotos}
+          >
+            {planning ? "Lendo as fotos..." : "Montar história das fotos"}
+          </button>
+        </div>
         <div className="content-action-buttons">
           <label className="voice-field">
             Fotos
@@ -251,6 +310,12 @@ export function StoryPage({ personas, ensureAwake }: Props) {
                 </strong>
                 {photo.summary ? ` - ${photo.summary}` : ""}
               </p>
+              {photo.sourceUrl && (
+                <figure>
+                  <img src={photo.sourceUrl} alt="" />
+                  <figcaption>Foto do pack (referência)</figcaption>
+                </figure>
+              )}
               <figure>
                 {photo.result ? <img src={photo.result.url} alt="" /> : <div className="swap-placeholder" />}
                 <figcaption>

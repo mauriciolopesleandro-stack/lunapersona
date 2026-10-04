@@ -16,6 +16,9 @@ from typing import Any
 from app.clients.comfyui_client import ComfyUIClient
 from app.clients.llm_client import ChatMessage, LLMResponseError, OllamaClient
 from app.persona_manager.manager import PersonaManager
+from app.services.reference_caption import clean_reference_caption
+from app.services.scene_describer import describe_image
+from app.workflow_manager.manager import WorkflowManager
 
 MAX_PHOTOS = 20
 # Historia longa + biblia + 20 prompts cabem (o padrao do Ollama corta).
@@ -53,6 +56,14 @@ Reply with JSON only, no comments, in this exact shape:
  "scenes": [{{"title": "titulo curto em portugues", "summary": "o que acontece, em portugues, 1 frase", \
 "action": "...", "location": 0, "outfit": 0, "characters": [0], "light": "..."}}]}}"""
 
+# Pack de fotos -> historia: cada foto vira uma cena, na mesma ordem.
+_FROM_PHOTOS = (
+    "The input below is not a story: it is the description of each photo of a photo shoot, in order. "
+    "Make exactly one photo per description, in the same order. In every photo the main woman is {trigger}. "
+    "Keep each photo's place, clothes, pose, action, framing and the other people (as characters in the bible, "
+    "described in your own words) - the series must tell the same story as the shoot.\n\n"
+)
+
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
 
@@ -62,10 +73,26 @@ class StoryService:
         llm_client: OllamaClient,
         persona_manager: PersonaManager,
         comfyui_client: ComfyUIClient | None = None,
+        workflow_manager: WorkflowManager | None = None,
     ) -> None:
         self.llm_client = llm_client
         self.persona_manager = persona_manager
         self.comfyui_client = comfyui_client
+        self.workflow_manager = workflow_manager
+
+    async def plan_from_photos(self, persona_id: str, images: list[str]) -> dict[str, Any]:
+        """Pack de fotos -> historia: o Florence descreve cada foto (sem os
+        tracos da pessoa) e o planejamento faz uma cena nova por foto. As fotos
+        novas sao geradas do zero - nada das originais e reaproveitado."""
+        if self.comfyui_client is None or self.workflow_manager is None:
+            raise LLMResponseError("Descricao de fotos indisponivel neste backend.")
+        persona = self.persona_manager.get_persona(persona_id)
+        trigger = persona.lora.trigger if persona.lora else persona.name
+        lines = []
+        for i, image in enumerate(images[:MAX_PHOTOS]):
+            caption = clean_reference_caption(await describe_image(self.comfyui_client, self.workflow_manager, image))
+            lines.append(f"Photo {i + 1}: {caption or 'no description'}")
+        return await self.plan(persona_id, _FROM_PHOTOS.format(trigger=trigger) + "\n".join(lines), len(lines))
 
     async def plan(self, persona_id: str, story: str, count: int) -> dict[str, Any]:
         persona = self.persona_manager.get_persona(persona_id)

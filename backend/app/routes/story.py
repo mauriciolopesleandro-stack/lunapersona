@@ -17,6 +17,22 @@ class PlanBody(BaseModel):
     count: int = Field(default=8, ge=1, le=20)
 
 
+class PhotosBody(BaseModel):
+    # nomes devolvidos por /generate/reference (fotos ja no input/ do ComfyUI)
+    images: list[str] = Field(..., min_length=1, max_length=20)
+
+
+@router.post("/personas/{persona_id}/story/from-photos/jobs")
+async def start_plan_from_photos(persona_id: str, body: PhotosBody, request: Request):
+    request.app.state.idle_shutdown.touch()
+    service = request.app.state.story_service
+    try:
+        request.app.state.persona_manager.get_persona(persona_id)
+    except PersonaNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _jobs.start(lambda: service.plan_from_photos(persona_id, body.images))
+
+
 @router.post("/personas/{persona_id}/story/jobs")
 async def start_plan(persona_id: str, body: PlanBody, request: Request):
     request.app.state.idle_shutdown.touch()

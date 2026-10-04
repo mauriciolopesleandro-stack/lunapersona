@@ -89,6 +89,7 @@ app.state.story_service = StoryService(
     llm_client=app.state.llm_client,
     persona_manager=app.state.persona_manager,
     comfyui_client=app.state.comfyui_client,
+    workflow_manager=app.state.workflow_manager,
 )
 app.state.chat_service = ChatService(
     llm_client=app.state.llm_client,

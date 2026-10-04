@@ -713,3 +713,15 @@ export interface StoryPlan {
 export function planStory(personaId: string, story: string, count: number): Promise<StoryPlan> {
   return runJob<StoryPlan>(`/personas/${personaId}/story/jobs`, { story, count }, 15 * 60_000, "o planejamento", "/story/jobs");
 }
+
+// Pack de fotos -> historia: as fotos (ja enviadas por uploadGenerationReference)
+// sao descritas e viram cenas novas, geradas do zero com a persona.
+export function planStoryFromPhotos(personaId: string, images: string[]): Promise<StoryPlan> {
+  return runJob<StoryPlan>(
+    `/personas/${personaId}/story/from-photos/jobs`,
+    { images },
+    25 * 60_000,
+    "a leitura das fotos",
+    "/story/jobs"
+  );
+}
