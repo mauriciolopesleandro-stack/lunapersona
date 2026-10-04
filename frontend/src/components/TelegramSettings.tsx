@@ -58,7 +58,7 @@ export function TelegramSettings() {
           Conectado{status.bot ? ` ao bot @${status.bot}` : ""}. Os avisos estão ligados.
         </p>
       ) : (
-        <ol className="small">
+        <ol className="telegram-steps">
           <li>
             No Telegram, abra o <strong>@BotFather</strong>, mande <code>/newbot</code> e escolha um nome e um usuário
             para o bot. Ele te responde com um <strong>token</strong>.

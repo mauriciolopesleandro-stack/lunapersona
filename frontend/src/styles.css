@@ -1170,6 +1170,18 @@ button.danger {
   max-width: 560px;
 }
 
+.telegram-steps {
+  margin: 8px 0 14px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.telegram-steps li {
+  margin: 3px 0;
+}
+
 .profile-password fieldset {
   margin: 0 0 12px;
   padding: 0;
