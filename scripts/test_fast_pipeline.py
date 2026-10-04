@@ -204,17 +204,20 @@ def main() -> None:
         ]
         rows = []
         for lora in loras:
-            row, sims = [], []
+            # Todas as fotos da etapa em sequencia (sem outro grafo no meio, a
+            # ComfyUI nao recarrega o modelo): mede o tempo real por foto.
+            row, times = [], []
             for i, prompt in enumerate(prompts):
+                t = time.time()
                 graph = wm.render("zimage-txt2img-lora", {
                     "PROMPT": prompt, "WIDTH": W, "HEIGHT": H, "SEED": 7000 + i, "LORA_NAME": lora,
                     "FILENAME_PREFIX": "fast_ckpt"})
                 row.append(OUT / saved(run(graph)))
-                her = pick(faces(f"{row[-1].name} [output]", luna), "F")
-                sims.append(her and her["sim"])
+                times.append(round(time.time() - t, 1))
             rows.append(row)
+            sims = [(lambda f: f and f["sim"])(pick(faces(f"{img.name} [output]", luna), "F")) for img in row]
             valid = [s for s in sims if s is not None]
-            note(f"{lora}: Luna={sims} media={sum(valid) / len(valid) if valid else 0:.3f}")
+            note(f"{lora}: tempos={times} Luna={sims} media={sum(valid) / len(valid) if valid else 0:.3f}")
         hgt = 520
         ims_rows = [[Image.open(p).convert("RGB") for p in r] for r in rows]
         ims_rows = [[im.resize((int(im.width * hgt / im.height), hgt)) for im in r] for r in ims_rows]
