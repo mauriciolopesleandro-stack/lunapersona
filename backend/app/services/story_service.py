@@ -67,7 +67,7 @@ _FROM_PHOTOS = (
     "described in your own words) - the series must tell the same story as the shoot.\n\n"
 )
 
-_JSON = re.compile(r"\{.*\}", re.DOTALL)
+_THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
 # palavras que so aparecem se o modelo escreveu a biblia/acao em portugues
 _PT_WORDS = re.compile(r"\b(de|com|uma|anos|cabelo|pele|vestido|camisa|cozinha|mesa|luz|segurando|olhando)\b", re.IGNORECASE)
 _ENGLISH_REMINDER = (
@@ -118,7 +118,13 @@ class StoryService:
                 timeout=900.0,
                 keep_alive="0",
             )
-            plan = _parse(reply)
+            try:
+                plan = _parse(reply)
+            except LLMResponseError:
+                # resposta quebrada (JSON cortado ou com sobra): tenta de novo
+                if attempt:
+                    raise
+                continue
             # historia em portugues -> as vezes o modelo responde tudo em
             # portugues e o gerador de imagem entende bem menos: pede de novo
             if not _in_portuguese(plan):
@@ -191,16 +197,27 @@ def _assemble(scene: dict[str, Any], bible: dict[str, Any], trigger: str, person
 
 
 def _parse(reply: str) -> dict[str, Any]:
-    match = _JSON.search(reply or "")
-    if not match:
-        raise LLMResponseError("O modelo nao devolveu o plano em JSON. Tente de novo.")
-    try:
-        data = json.loads(match.group(0))
-    except ValueError as exc:
-        raise LLMResponseError(f"Plano em JSON invalido ({exc}). Tente de novo.") from exc
-    if not isinstance(data, dict):
-        raise LLMResponseError("Plano em formato inesperado. Tente de novo.")
-    return data
+    """O plano e o objeto JSON com "scenes". A resposta as vezes traz texto ou
+    um "{}" solto antes/depois - pegar do primeiro { ao ultimo } dava "Extra
+    data". Aqui cada { e testado e fica o maior objeto valido com cenas."""
+    text = _THINK.sub("", reply or "")
+    decoder = json.JSONDecoder()
+    best: dict[str, Any] | None = None
+    best_len = 0
+    error: ValueError | None = None
+    for start in (i for i, ch in enumerate(text) if ch == "{"):
+        try:
+            data, end = decoder.raw_decode(text, start)
+        except ValueError as exc:
+            error = error or exc
+            continue
+        if isinstance(data, dict) and data.get("scenes") and end - start > best_len:
+            best, best_len = data, end - start
+    if best is not None:
+        return best
+    if error is not None:
+        raise LLMResponseError(f"Plano em JSON invalido ({error}). Tente de novo.")
+    raise LLMResponseError("O modelo nao devolveu o plano em JSON. Tente de novo.")
 
 
 def _with_trigger(prompt: str, trigger: str) -> str:
