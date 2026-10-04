@@ -89,6 +89,12 @@ _OTHER_PERSON = re.compile(r"\b(?:man|men|he|his|him|husband|boyfriend|guy|male|
 # Correcao de rosto depois da geracao com LoRA (workflows/chroma-face-refine.json).
 FACE_REFINE_WORKFLOW = "chroma-face-refine"
 ZIMAGE_LORA_WORKFLOW = "zimage-txt2img-lora"
+# Pedido ja diz a roupa? (em ingles - o pedido passa pela traducao antes)
+_CLOTHES_WORDS = re.compile(
+    r"\b(?:wear\w*|dress\w*|outfit|clothes|clothing|shirt|t-shirt|top|blouse|jacket|coat|sweater|hoodie|jeans|pants|"
+    r"trousers|shorts|skirt|bikini|swimsuit|lingerie|robe|uniform|suit|leggings|sportswear|naked|nude)\b",
+    re.IGNORECASE,
+)
 
 PERSON_SWAP_WORKFLOW = "chroma-person-swap-lora"
 QWEN_SWAP_WORKFLOW = "qwen-person-swap"
@@ -358,7 +364,12 @@ class GenerationService:
                     # agendador "beta" estragavam o Turbo) e sem a ampliacao e
                     # o retoque de rosto, que sao do Chroma.
                     zimage = True
-                    prompt = f"{lora.trigger}, a woman, {lead + ', ' if lead else ''}{user_prompt}"
+                    # O corpo descrito em texto (feito para o Chroma) fazia o
+                    # Z-Image escolher roupa que mostra o corpo - biquini num
+                    # quiosque sem ninguem pedir. A LoRA ja sabe o corpo dela;
+                    # sem roupa no pedido, roupa comum para o lugar.
+                    clothes = "" if _CLOTHES_WORDS.search(user_prompt) else ", wearing casual everyday clothes that suit the place"
+                    prompt = f"{lora.trigger}, a woman, {attitude + ', ' if attitude else ''}{user_prompt}{clothes}"
                     face_params = {}
                     workflow_id = ZIMAGE_LORA_WORKFLOW
                     lora_params = {
