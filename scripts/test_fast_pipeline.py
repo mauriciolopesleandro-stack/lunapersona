@@ -189,6 +189,44 @@ def main() -> None:
         print(message, flush=True)
 
     raw: list[Path] = []
+    if "ckpt" in sys.argv:
+        # Compara etapas do treino (cada LoRA passada depois de "ckpt"): mesmas
+        # 3 cenas e sementes, semelhanca com a Luna. Treino demais copia as
+        # fotos de treino e endurece a imagem - fica a etapa mais equilibrada.
+        loras = [a for a in sys.argv[sys.argv.index("ckpt") + 1:] if a.endswith(".safetensors")]
+        prompts = [
+            "lunavox, a 25-year-old Brazilian woman, close-up portrait looking at the camera, soft daylight, "
+            "natural skin texture, candid smartphone photo",
+            "lunavox, a 25-year-old Brazilian woman, full body photo walking on a street in Sao Paulo wearing jeans "
+            "and a white t-shirt, candid smartphone photo, realistic",
+            "lunavox, a 25-year-old Brazilian woman, medium shot laughing at a bar table at night holding a glass of "
+            "caipirinha, candid smartphone photo, realistic",
+        ]
+        rows = []
+        for lora in loras:
+            row, sims = [], []
+            for i, prompt in enumerate(prompts):
+                graph = wm.render("zimage-txt2img-lora", {
+                    "PROMPT": prompt, "WIDTH": W, "HEIGHT": H, "SEED": 7000 + i, "LORA_NAME": lora,
+                    "FILENAME_PREFIX": "fast_ckpt"})
+                row.append(OUT / saved(run(graph)))
+                her = pick(faces(f"{row[-1].name} [output]", luna), "F")
+                sims.append(her and her["sim"])
+            rows.append(row)
+            valid = [s for s in sims if s is not None]
+            note(f"{lora}: Luna={sims} media={sum(valid) / len(valid) if valid else 0:.3f}")
+        hgt = 520
+        ims_rows = [[Image.open(p).convert("RGB") for p in r] for r in rows]
+        ims_rows = [[im.resize((int(im.width * hgt / im.height), hgt)) for im in r] for r in ims_rows]
+        sheet = Image.new("RGB", (sum(i.width for i in ims_rows[0]) + 12, (hgt + 6) * len(ims_rows)), (20, 20, 20))
+        for r, ims in enumerate(ims_rows):
+            x = 0
+            for im in ims:
+                sheet.paste(im, (x, r * (hgt + 6)))
+                x += im.width + 6
+        sheet.save("/workspace/fast_ckpt.jpg", quality=85)
+        note(f"total {time.time() - started:.0f}s -> /workspace/fast_ckpt.jpg")
+        return
     if "lora" in sys.argv:
         # LoRA da Luna no Z-Image (scripts/train_zimage_lora.sh): o rosto dela
         # sai direto na cena, sem troca. Mesmas cenas do calcadao, lado a lado
