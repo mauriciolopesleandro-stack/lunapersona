@@ -51,6 +51,17 @@ skin or body here (they are added from the bible);
 - "light": the light of this moment, short;
 - vary the framing across the series (close-up, medium, full body, over the shoulder...).
 
+FRAMING - the photos are {shape}. Pick framings that fit this shape so nobody is cut by the frame:
+{shape_rule}
+- name the framing first ("full body shot", "medium shot from the waist up", "close-up of their faces") and say \
+what is fully in frame ("both of them fully in frame, heads and feet visible");
+- never put an important hand or object at the edge of the frame.
+
+TOUCH - when people touch, describe the contact exactly and simply: which hand, where it rests, how \
+(e.g. "his right hand resting lightly on her waist", "their fingers interlaced", "her head leaning on his \
+shoulder", "she holds his forearm with her left hand"). One clear point of contact per photo, relaxed and \
+natural, bodies turned toward each other, the contact visible to the camera (not hidden behind a body).
+
 LANGUAGE: everything in the bible and every "action" must be written in ENGLISH (the image model only \
 understands English), even though the story is in Portuguese. Only "title" and "summary" are in Portuguese.
 
@@ -58,6 +69,23 @@ Reply with JSON only, no comments, in this exact shape:
 {{"bible": {{"locations": ["..."], "outfits": ["..."], "characters": ["..."], "light": "...", "camera": "..."}},
  "scenes": [{{"title": "titulo curto em portugues", "summary": "o que acontece, em portugues, 1 frase", \
 "action": "...", "location": 0, "outfit": 0, "characters": [0], "light": "..."}}]}}"""
+
+# Formato da foto -> enquadramentos que cabem nele (sem isso o modelo pedia
+# "duas pessoas lado a lado de corpo inteiro" numa foto 9:16 e cortava gente).
+_SHAPES = {
+    "9:16": ("tall vertical 9:16 (phone stories)",
+             "- one person: full body standing or medium shot; two people: close together, one slightly in front of "
+             "the other or face to face, medium shot from the waist up or full body standing close - never side by "
+             "side far apart, never lying down across the frame."),
+    "4:5": ("vertical 4:5 (feed)",
+            "- one person: any framing; two people: close together, medium shot or full body standing close - not "
+            "far apart side by side."),
+    "1:1": ("square 1:1",
+            "- medium shots work best; two people close together; full body only if they are sitting or close."),
+    "16:9": ("wide horizontal 16:9",
+             "- two people side by side, sitting or lying fit well; one person: medium shot or full body with "
+             "space around; avoid tall full body close-ups."),
+}
 
 # Pack de fotos -> historia: cada foto vira uma cena, na mesma ordem.
 _FROM_PHOTOS = (
@@ -88,7 +116,7 @@ class StoryService:
         self.comfyui_client = comfyui_client
         self.workflow_manager = workflow_manager
 
-    async def plan_from_photos(self, persona_id: str, images: list[str]) -> dict[str, Any]:
+    async def plan_from_photos(self, persona_id: str, images: list[str], shape: str = "9:16") -> dict[str, Any]:
         """Pack de fotos -> historia: o Florence descreve cada foto (sem os
         tracos da pessoa) e o planejamento faz uma cena nova por foto. As fotos
         novas sao geradas do zero - nada das originais e reaproveitado."""
@@ -100,13 +128,14 @@ class StoryService:
         for i, image in enumerate(images[:MAX_PHOTOS]):
             caption = clean_reference_caption(await describe_image(self.comfyui_client, self.workflow_manager, image))
             lines.append(f"Photo {i + 1}: {caption or 'no description'}")
-        return await self.plan(persona_id, _FROM_PHOTOS.format(trigger=trigger) + "\n".join(lines), len(lines))
+        return await self.plan(persona_id, _FROM_PHOTOS.format(trigger=trigger) + "\n".join(lines), len(lines), shape)
 
-    async def plan(self, persona_id: str, story: str, count: int) -> dict[str, Any]:
+    async def plan(self, persona_id: str, story: str, count: int, shape: str = "9:16") -> dict[str, Any]:
         persona = self.persona_manager.get_persona(persona_id)
         trigger = persona.lora.trigger if persona.lora else persona.name
         count = max(1, min(MAX_PHOTOS, count))
-        system = _SYSTEM.format(name=persona.name, age=25, trigger=trigger, count=count)
+        label, rule = _SHAPES.get(shape, _SHAPES["9:16"])
+        system = _SYSTEM.format(name=persona.name, age=25, trigger=trigger, count=count, shape=label, shape_rule=rule)
         if self.comfyui_client is not None:
             await self.comfyui_client.free_memory(need_bytes=LLM_VRAM_BYTES)
         story = story.strip()

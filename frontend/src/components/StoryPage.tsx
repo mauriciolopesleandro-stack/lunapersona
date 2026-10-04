@@ -74,7 +74,7 @@ export function StoryPage({ personas, ensureAwake }: Props) {
     setError(null);
     try {
       await ensureAwake();
-      const result = await planStory(personaId, story, count);
+      const result = await planStory(personaId, story, count, format.id);
       setPlan(result);
       setCastFace(null);
       setPhotos(
@@ -102,7 +102,7 @@ export function StoryPage({ personas, ensureAwake }: Props) {
       await ensureAwake();
       const names: string[] = [];
       for (const file of packFiles) names.push(await uploadGenerationReference(file));
-      const result = await planStoryFromPhotos(personaId, names);
+      const result = await planStoryFromPhotos(personaId, names, format.id);
       setPlan(result);
       setCastFace(null);
       setPhotos(
