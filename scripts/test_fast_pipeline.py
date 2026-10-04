@@ -83,6 +83,27 @@ def luna_reference() -> bytes:
     return (refs / primary["filename"]).read_bytes()
 
 
+# Modo "comida": encontro no calcadao - objetos na mao e na boca (o que mais
+# falhava no pack antigo).
+BOARDWALK = ("on the Copacabana boardwalk at sunset, black and white wavy sidewalk, beach and kiosks behind, "
+             "candid smartphone photo, natural skin texture, realistic")
+FOOD_SCENES = [
+    ("couple", f"photo of two people: {WOMAN}, wearing a white summer dress, and {RAFA}, wearing a light blue linen "
+               f"shirt. He feeds her a bite of a hot dog, holding it in his right hand close to her mouth, she laughs "
+               f"while taking a small bite, {BOARDWALK}"),
+    ("solo", f"medium shot of {WOMAN}, wearing a white summer dress, biting a churro covered in sugar and cinnamon, "
+             f"holding it in her right hand, sugar on her lips, laughing and looking at the camera, {BOARDWALK}"),
+    ("couple", f"photo of two people: {WOMAN}, wearing a white summer dress, and {RAFA}, wearing a light blue linen "
+               f"shirt. He holds out a chocolate ice cream cone and she takes a bite of the ice cream from his hand, "
+               f"both laughing, {BOARDWALK}"),
+    ("solo", f"close-up of {WOMAN}, wearing a white summer dress, licking a strawberry ice cream cone she holds in "
+             f"her left hand, playful smile, {BOARDWALK}"),
+    ("couple", f"photo of two people sitting at a beach kiosk table: {WOMAN}, wearing a white summer dress, and "
+               f"{RAFA}, wearing a light blue linen shirt. He feeds her a spoonful of acai from a bowl, she smiles "
+               f"with the spoon at her lips, {BOARDWALK}"),
+]
+
+
 def run(graph: dict) -> dict:
     req = urllib.request.Request(f"{COMFY}/prompt", json.dumps({"prompt": graph}).encode(),
                                  {"Content-Type": "application/json"})
@@ -162,8 +183,9 @@ def main() -> None:
         kinds = [kind for kind, _n in EXISTING]
         raw = [OUT / f"luna_studio_{n:05d}_.png" for _kind, n in EXISTING]
     else:
-        kinds = [kind for kind, _prompt in SCENES]
-        for i, (_kind, prompt) in enumerate(SCENES):
+        scenes = FOOD_SCENES if "comida" in sys.argv else SCENES
+        kinds = [kind for kind, _prompt in scenes]
+        for i, (_kind, prompt) in enumerate(scenes):
             t = time.time()
             graph = wm.render("zimage-txt2img", {"PROMPT": prompt, "WIDTH": W, "HEIGHT": H, "SEED": 1000 + i,
                                                   "FILENAME_PREFIX": "fast_scene"})
@@ -199,7 +221,7 @@ def main() -> None:
         for im in ims:
             sheet.paste(im, (x, r * (hgt + 6)))
             x += im.width + 6
-    name = ("bfs" if "bfs" in sys.argv else "zimage") + ("_klein" if "klein" in sys.argv else "_qwen")
+    name = ("bfs" if "bfs" in sys.argv else "comida" if "comida" in sys.argv else "zimage") + ("_klein" if "klein" in sys.argv else "_qwen")
     sheet.save(f"/workspace/fast_{name}.jpg", quality=85)
     note(f"total {time.time() - started:.0f}s -> /workspace/fast_{name}.jpg")
 
