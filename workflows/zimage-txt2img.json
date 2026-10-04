@@ -12,8 +12,8 @@
       "SHIFT": 3.0,
       "SAMPLER": "res_multistep",
       "SCHEDULER": "simple",
-      "UNET": "z_image_turbo_bf16.safetensors",
-      "TEXT_ENCODER": "qwen_3_4b_fp8_mixed.safetensors",
+      "UNET": "z_image_turbo_int8_convrot.safetensors",
+      "TEXT_ENCODER": "qwen_3_4b_fp4_mixed.safetensors",
       "VAE": "ae.safetensors",
       "FILENAME_PREFIX": "luna_fast"
     }

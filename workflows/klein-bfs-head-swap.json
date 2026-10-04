@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "id": "klein-bfs-head-swap",
+    "title": "FLUX.2 Klein 4B + BFS - trocar a cabeca (rapido)",
+    "description": "Mesma troca de cabeca do qwen-bfs-head-swap (BFS Best Face Swap, Picture 1 = corpo, Picture 2 = cabeca; prompt do guia oficial), no FLUX.2 [klein] 4B destilado (Apache 2.0, 4 passos, ~4 GB fp8). O Qwen-Image-Edit (20 GB + leitor de 8 GB) nao cabe junto na placa de 24 GB e era recarregado e reencaixado com as LoRAs a cada foto (~140 s de 166 s no teste de 2026-10-04); o Klein divide o leitor de texto Qwen3-4B com o Z-Image e os dois ficam carregados. Grafo do template oficial image_flux2_klein_image_edit_4b_distilled (CLIPLoader flux2, ReferenceLatent por imagem, CFGGuider cfg 1, Flux2Scheduler 4 passos, euler, EmptyFlux2LatentImage). Recorte/colagem como no qwen-bfs-head-swap (CROP_*, FEATHER). Modelos: scripts/setup_fast.sh.",
+    "compatible_models": ["chroma1-hd-fp8"],
+    "hidden": true,
+    "required_params": ["BODY_IMAGE", "HEAD_IMAGE", "WIDTH", "HEIGHT", "CROP_X", "CROP_Y", "CROP_W", "CROP_H", "SEED"],
+    "optional_params": {
+      "PROMPT": "head_swap: start with Picture 1 as the base image, keeping its lighting, environment, and background. remove the head from Picture 1 completely and replace it with the head from Picture 2, strictly preserving the hair, eye color, and nose structure of Picture 2. copy the eye direction, head rotation, and micro-expressions from Picture 1.",
+      "STEPS": 4,
+      "CFG": 1.0,
+      "UNET": "flux-2-klein-4b-fp8.safetensors",
+      "TEXT_ENCODER": "qwen_3_4b_fp4_mixed.safetensors",
+      "VAE": "flux2-vae.safetensors",
+      "BFS_LORA": "bfs_head_v1_flux-klein_4b.safetensors",
+      "BFS_STRENGTH": 1.0,
+      "HEAD_PIXELS": 1.0,
+      "FEATHER": 0,
+      "FILENAME_PREFIX": "luna_headswap"
+    }
+  },
+  "graph": {
+    "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "${UNET}", "weight_dtype": "default"}},
+    "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "${TEXT_ENCODER}", "type": "flux2", "device": "default"}},
+    "3": {"class_type": "VAELoader", "inputs": {"vae_name": "${VAE}"}},
+    "7": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["1", 0], "lora_name": "${BFS_LORA}", "strength_model": "${BFS_STRENGTH}"}},
+    "10": {"class_type": "LoadImage", "inputs": {"image": "${BODY_IMAGE}"}},
+    "11": {"class_type": "LoadImage", "inputs": {"image": "${HEAD_IMAGE}"}},
+    "14": {"class_type": "ImageCrop", "inputs": {"image": ["10", 0], "width": "${CROP_W}", "height": "${CROP_H}", "x": "${CROP_X}", "y": "${CROP_Y}"}},
+    "12": {"class_type": "ImageScale", "inputs": {"image": ["14", 0], "upscale_method": "lanczos", "width": "${WIDTH}", "height": "${HEIGHT}", "crop": "disabled"}},
+    "13": {"class_type": "ImageScaleToTotalPixels", "inputs": {"image": ["11", 0], "upscale_method": "lanczos", "megapixels": "${HEAD_PIXELS}", "resolution_steps": 16}},
+    "20": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": "${PROMPT}"}},
+    "21": {"class_type": "VAEEncode", "inputs": {"pixels": ["12", 0], "vae": ["3", 0]}},
+    "22": {"class_type": "VAEEncode", "inputs": {"pixels": ["13", 0], "vae": ["3", 0]}},
+    "23": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["20", 0], "latent": ["21", 0]}},
+    "24": {"class_type": "ReferenceLatent", "inputs": {"conditioning": ["23", 0], "latent": ["22", 0]}},
+    "25": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["24", 0]}},
+    "26": {"class_type": "CFGGuider", "inputs": {"model": ["7", 0], "positive": ["24", 0], "negative": ["25", 0], "cfg": "${CFG}"}},
+    "27": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+    "28": {"class_type": "Flux2Scheduler", "inputs": {"steps": "${STEPS}", "width": "${WIDTH}", "height": "${HEIGHT}"}},
+    "29": {"class_type": "RandomNoise", "inputs": {"noise_seed": "${SEED}"}},
+    "30": {"class_type": "EmptyFlux2LatentImage", "inputs": {"width": "${WIDTH}", "height": "${HEIGHT}", "batch_size": 1}},
+    "31": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["29", 0], "guider": ["26", 0], "sampler": ["27", 0], "sigmas": ["28", 0], "latent_image": ["30", 0]}},
+    "32": {"class_type": "VAEDecode", "inputs": {"samples": ["31", 0], "vae": ["3", 0]}},
+    "40": {"class_type": "ImageScale", "inputs": {"image": ["32", 0], "upscale_method": "lanczos", "width": "${CROP_W}", "height": "${CROP_H}", "crop": "disabled"}},
+    "41": {"class_type": "SolidMask", "inputs": {"value": 1.0, "width": "${CROP_W}", "height": "${CROP_H}"}},
+    "42": {"class_type": "FeatherMask", "inputs": {"mask": ["41", 0], "left": "${FEATHER}", "top": "${FEATHER}", "right": "${FEATHER}", "bottom": "${FEATHER}"}},
+    "43": {"class_type": "ImageCompositeMasked", "inputs": {"destination": ["10", 0], "source": ["40", 0], "x": "${CROP_X}", "y": "${CROP_Y}", "resize_source": false, "mask": ["42", 0]}},
+    "33": {"class_type": "SaveImage", "inputs": {"images": ["43", 0], "filename_prefix": "${FILENAME_PREFIX}"}}
+  }
+}

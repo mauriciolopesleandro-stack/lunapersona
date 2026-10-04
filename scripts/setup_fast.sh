@@ -1,45 +1,36 @@
 #!/usr/bin/env bash
 # Modelos do caminho rapido (pesquisa de mercado, 2026-10):
-#  - Z-Image Turbo (Tongyi/Alibaba, Apache 2.0): cena em 8 passos, segundos por
-#    foto e pele mais real que o Chroma. ~18 GB (DiT bf16 + Qwen3-4B fp8); o VAE
-#    e o ae.safetensors do FLUX que ja esta no volume.
-#  - BFS Best Face Swap head V5 para o Qwen-Image-Edit 2511 (MIT, ~0.3 GB): troca
-#    a cabeca inteira (rosto + cabelo) numa passada, com a luz da cena. Usa o
-#    Qwen-Image-Edit 2511 + Lightning ja instalados por scripts/setup_qwen_edit.sh.
+#  - Z-Image Turbo (Tongyi/Alibaba, Apache 2.0): cena em 8 passos. Versao int8
+#    (6.2 GB) e leitor de texto Qwen3-4B fp4 (3.5 GB) - o volume de 165 GB
+#    estava cheio; o VAE e o ae.safetensors do FLUX que ja esta no volume.
+#  - FLUX.2 [klein] 4B fp8 (Apache 2.0, 3.8 GB) + VAE do FLUX.2: troca de
+#    cabeca rapida, divide o leitor de texto com o Z-Image (cabem juntos nos 24 GB).
+#  - LoRAs BFS Best Face Swap (MIT): head V5 para o Qwen-Image-Edit 2511 (que ja
+#    esta no volume, scripts/setup_qwen_edit.sh) e head V1 para o Klein 4B.
 #
-# Roda uma vez no luna-models-ro. Nao apaga nada: se faltar espaco, mostra os
-# maiores arquivos para decidir o que tirar.
-set -euo pipefail
+# Roda uma vez no luna-models-ro. Nao apaga nada. O df do /workspace mostra o
+# disco da RunPod inteiro, nao a cota do volume: se a cota estourar, o download
+# falha e o script lista os maiores arquivos para decidir o que tirar.
+set -uo pipefail
 
 COMFY=/workspace/runpod-slim/ComfyUI
 PY="$COMFY/.venv-cu128/bin/python"
 M="$COMFY/models"
-NEED_GB=19
 
 log() { echo "[setup_fast] $*"; }
 
 # destino|repositorio|arquivo no repositorio
 FILES=(
-  "diffusion_models|Comfy-Org/z_image_turbo|split_files/diffusion_models/z_image_turbo_bf16.safetensors"
-  "text_encoders|Comfy-Org/z_image_turbo|split_files/text_encoders/qwen_3_4b_fp8_mixed.safetensors"
+  "diffusion_models|Comfy-Org/z_image_turbo|split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors"
+  "text_encoders|Comfy-Org/z_image_turbo|split_files/text_encoders/qwen_3_4b_fp4_mixed.safetensors"
+  "diffusion_models|black-forest-labs/FLUX.2-klein-4b-fp8|flux-2-klein-4b-fp8.safetensors"
+  "vae|Comfy-Org/flux2-dev|split_files/vae/flux2-vae.safetensors"
   "loras|Alissonerdx/BFS-Best-Face-Swap|bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors"
+  "loras|Alissonerdx/BFS-Best-Face-Swap|bfs_head_v1_flux-klein_4b.safetensors"
 )
+[ -f "$M/vae/ae.safetensors" ] || log "AVISO: falta models/vae/ae.safetensors (VAE do FLUX, usado pelo Z-Image)"
 
-df -h /workspace | tail -1
-free_gb=$(df -BG --output=avail /workspace | tail -1 | tr -dc '0-9')
-missing=0
-for entry in "${FILES[@]}"; do
-  IFS="|" read -r dest repo path <<< "$entry"
-  [ -f "$M/$dest/$(basename "$path")" ] || missing=1
-done
-if [ "$missing" = 1 ] && [ "${free_gb:-0}" -lt "$NEED_GB" ]; then
-  log "so ${free_gb} GB livres, precisa de ~${NEED_GB} GB. Maiores arquivos de modelo:"
-  find "$M" /workspace -xdev -type f -size +2G -printf '%s\t%p\n' 2>/dev/null | sort -rn | head -25 \
-    | awk -F'\t' '{printf "%6.1f GB  %s\n", $1/1e9, $2}'
-  exit 1
-fi
-[ -f "$M/vae/ae.safetensors" ] || log "AVISO: falta models/vae/ae.safetensors (VAE do FLUX)"
-
+failed=0
 for entry in "${FILES[@]}"; do
   IFS="|" read -r dest repo path <<< "$entry"
   name="$(basename "$path")"
@@ -49,15 +40,29 @@ for entry in "${FILES[@]}"; do
     continue
   fi
   log "baixando $name"
-  "$PY" - "$repo" "$path" "$M/$dest" <<'EOF'
-import os, shutil, sys
+  if ! "$PY" - "$repo" "$path" "$M/$dest" <<'EOF'
+import os, shutil, sys, time
 from huggingface_hub import hf_hub_download
 repo, path, dest = sys.argv[1:4]
 tmp = os.path.join(dest, ".dl")
-src = hf_hub_download(repo_id=repo, filename=path, local_dir=tmp)
-shutil.move(src, os.path.join(dest, os.path.basename(path)))
-shutil.rmtree(tmp, ignore_errors=True)
+t = time.time()
+try:
+    src = hf_hub_download(repo_id=repo, filename=path, local_dir=tmp)
+    shutil.move(src, os.path.join(dest, os.path.basename(path)))
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+print(f"  ok em {time.time() - t:.0f} s")
 EOF
+  then
+    failed=1
+    log "FALHOU: $name"
+  fi
 done
-df -h /workspace | tail -1
+
+if [ "$failed" = 1 ]; then
+  log "algum download falhou (cota do volume?). Maiores arquivos:"
+  find "$M" /workspace -xdev -type f -size +1G -printf '%s\t%p\n' 2>/dev/null | sort -rn | head -25 \
+    | awk -F'\t' '{printf "%6.1f GB  %s\n", $1/1e9, $2}'
+  exit 1
+fi
 log "pronto"

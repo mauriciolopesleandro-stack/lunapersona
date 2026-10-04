@@ -124,6 +124,7 @@ def size16(w: float, h: float, mp: float = 1.0) -> tuple[int, int]:
 
 
 def head_swap(wm: WorkflowManager, image: Path, face: dict | None, head: str, crop: bool, seed: int) -> Path:
+    workflow = "klein-bfs-head-swap" if "klein" in sys.argv else "qwen-bfs-head-swap"
     """Troca a cabeca. crop=True: so o recorte em volta do rosto vai para o
     modelo (com duas pessoas ele nao sabe qual trocar) e volta colado."""
     src = Image.open(image)
@@ -136,18 +137,23 @@ def head_swap(wm: WorkflowManager, image: Path, face: dict | None, head: str, cr
         w, h = int(min(src.width, cx + side / 2)) - x, int(min(src.height, cy + side / 2)) - y
         feather = int(min(w, h) * 0.08)
     mw, mh = size16(w, h, 1.0)
-    graph = wm.render("qwen-bfs-head-swap", {
+    graph = wm.render(workflow, {
         "BODY_IMAGE": f"{image.name} [output]", "HEAD_IMAGE": head, "WIDTH": mw, "HEIGHT": mh,
         "CROP_X": x, "CROP_Y": y, "CROP_W": w, "CROP_H": h, "FEATHER": feather,
-        "SEED": seed, "FILENAME_PREFIX": "fast_swap"})
+        "SEED": seed, "FILENAME_PREFIX": "fast_klein" if "klein" in sys.argv else "fast_swap"})
     return OUT / saved(run(graph))
 
 
 def main() -> None:
+    started = time.time()
     wm = WorkflowManager()
     (INP / "fast_luna_ref.png").write_bytes(luna_reference())
     luna = "fast_luna_ref.png"
     log: list[str] = []
+
+    def note(message: str) -> None:
+        log.append(message)
+        print(message, flush=True)
 
     raw: list[Path] = []
     if "bfs" in sys.argv:
@@ -162,7 +168,7 @@ def main() -> None:
             graph = wm.render("zimage-txt2img", {"PROMPT": prompt, "WIDTH": W, "HEIGHT": H, "SEED": 1000 + i,
                                                   "FILENAME_PREFIX": "fast_scene"})
             raw.append(OUT / saved(run(graph)))
-            log.append(f"cena {i + 1}: Z-Image {time.time() - t:.1f}s")
+            note(f"cena {i + 1}: Z-Image {time.time() - t:.1f}s")
 
     final = []
     for i, (kind, image) in enumerate(zip(kinds, raw)):
@@ -177,7 +183,7 @@ def main() -> None:
         final.append(out)
         sim_her = pick(faces(f"{out.name} [output]", luna), "F")
         sim_him = pick(faces(f"{out.name} [output]", RAFA_HEAD), "M") if kind == "couple" else None
-        log.append(f"foto {i + 1} ({image.name}): troca {time.time() - t:.1f}s"
+        note(f"foto {i + 1} ({image.name}): troca {time.time() - t:.1f}s"
                    f"  Luna antes={her and her['sim']} depois={sim_her and sim_her['sim']}"
                    f"  Rafa antes={before_him and before_him['sim']} depois={sim_him and sim_him['sim']}")
 
@@ -193,8 +199,9 @@ def main() -> None:
         for im in ims:
             sheet.paste(im, (x, r * (hgt + 6)))
             x += im.width + 6
-    sheet.save("/workspace/fast_test.jpg", quality=85)
-    print("\n".join(log))
+    name = ("bfs" if "bfs" in sys.argv else "zimage") + ("_klein" if "klein" in sys.argv else "_qwen")
+    sheet.save(f"/workspace/fast_{name}.jpg", quality=85)
+    note(f"total {time.time() - started:.0f}s -> /workspace/fast_{name}.jpg")
 
 
 if __name__ == "__main__":

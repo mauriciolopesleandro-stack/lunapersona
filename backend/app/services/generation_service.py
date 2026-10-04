@@ -25,6 +25,7 @@ from app.services.person_swap import (
     swap_face_box,
     swap_similarity,
 )
+from app.services.head_swap import head_swap
 from app.services.prompt_translator import to_english
 from app.services.reference_caption import clean_reference_caption
 from app.services.scene_describer import describe_image
@@ -232,9 +233,11 @@ class GenerationService:
     async def _other_face(
         self, image: GenerationOutputImage, req: GenerationRequest, size: tuple[int, int], seed: int
     ) -> GenerationOutputImage | None:
-        """Historia: o rosto que nao e da persona (o mais parecido com ela e o
-        dela) vira o rosto de referencia do outro personagem, pelo InstantID -
-        so com a descricao em texto ele mudava de uma foto para a outra."""
+        """Historia: o rosto que nao e da persona vira o do retrato fixo do outro
+        personagem (troca de cabeca BFS, app/services/head_swap.py) - so com a
+        descricao em texto ele mudava de uma foto para a outra. Antes era o
+        InstantID, que deixava o olhar fixo e a semelhanca parecida (teste de
+        2026-10-04: ~0.5 nos dois)."""
         ref = self.persona_manager.get_primary_reference_bytes(req.persona_id)
         if not ref:
             return None
@@ -260,23 +263,14 @@ class GenerationService:
             others = [f for f in faces if f is not persona_face and f.get("sex") == "F"]
         if not others:
             return None
-        x1, y1, x2, y2 = max(others, key=lambda f: (f["bbox"][2] - f["bbox"][0]) * (f["bbox"][3] - f["bbox"][1]))["bbox"]
-        fw, fh = x2 - x1, y2 - y1
-        x, y = max(0, int(x1 - fw * 0.15)), max(0, int(y1 - fh * 0.15))
-        w, h = min(size[0] - x, int(fw * 1.3)), min(size[1] - y, int(fh * 1.25))
+        target = max(others, key=lambda f: (f["bbox"][2] - f["bbox"][0]) * (f["bbox"][3] - f["bbox"][1]))
         try:
-            graph = self.workflow_manager.render(INSTANTID_FACE_WORKFLOW, {
-                "IMAGE": name, "ORIGINAL": name, "PERSONA_IMAGE": req.other_face_ref,
-                "FACE_X": x, "FACE_Y": y, "FACE_W": w, "FACE_H": h, "WIDTH": size[0], "HEIGHT": size[1], "SEED": seed,
-                "FACE_PROMPT": f"photo of {req.other_face_prompt or 'a man'}, natural skin texture, sharp focus",
-                "NEGATIVE_PROMPT": "blurry, deformed face, asymmetric eyes, plastic skin, airbrushed, cgi, 3d render, "
-                "cartoon, text, watermark",
-            })
-            entry = await self.comfyui_client.wait_for_completion(await self.comfyui_client.queue_prompt(graph))
-        except (ComfyUIError, WorkflowParamError):
+            return await head_swap(
+                self.comfyui_client, self.workflow_manager, name, req.other_face_ref, size[0], size[1], seed,
+                face=tuple(target["bbox"]), prefix="luna_studio",
+            )
+        except WorkflowParamError:
             return None
-        out = self.comfyui_client.extract_images(entry)
-        return out[0] if out else None
 
     async def _finish_swap(
         self,
