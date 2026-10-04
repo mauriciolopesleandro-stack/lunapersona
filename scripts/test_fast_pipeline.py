@@ -28,7 +28,9 @@ ROOT = Path("/workspace/runpod-slim/ComfyUI")
 OUT, INP = ROOT / "output", ROOT / "input"
 W, H = 864, 1536
 RAFA_HEAD = "luna_studio_00627_.png [output]"  # retrato do Rafa do teste de casal
-BASELINE = [618, 620, 622, 624, 626]  # ensaio solo v2 feito com Chroma + LoRA
+# Modo "bfs": fotos ja feitas com Chroma + LoRA (ensaio solo v2 e ensaio de
+# casal, este com o rosto do Rafa pelo InstantID).
+EXISTING = [("solo", n) for n in (618, 620, 622, 624, 626)] + [("couple", n) for n in (632, 635, 638, 641, 644)]
 
 WOMAN = "a 25-year-old Brazilian woman with long dark brown wavy hair, tan skin, slim curvy body"
 RAFA = "Rafa, a 28-year-old man with short black hair, short beard and light brown skin"
@@ -147,25 +149,27 @@ def main() -> None:
     luna = "fast_luna_ref.png"
     log: list[str] = []
 
-    base = []
-    for n in BASELINE:
-        f = pick(faces(f"luna_studio_{n:05d}_.png [output]", luna), "F")
-        base.append(f["sim"] if f else None)
-    log.append(f"Chroma+LoRA (ensaio v2) semelhanca com a Luna: {base}")
-
-    raw = []
-    for i, (_kind, prompt) in enumerate(SCENES):
-        t = time.time()
-        graph = wm.render("zimage-txt2img", {"PROMPT": prompt, "WIDTH": W, "HEIGHT": H, "SEED": 1000 + i,
-                                              "FILENAME_PREFIX": "fast_scene"})
-        raw.append(OUT / saved(run(graph)))
-        log.append(f"cena {i + 1}: Z-Image {time.time() - t:.1f}s")
+    raw: list[Path] = []
+    if "bfs" in sys.argv:
+        # So a troca de cabeca, nas fotos ja feitas com o Chroma + LoRA (o
+        # casal com o rosto do Rafa pelo InstantID): compara com o caminho atual.
+        kinds = [kind for kind, _n in EXISTING]
+        raw = [OUT / f"luna_studio_{n:05d}_.png" for _kind, n in EXISTING]
+    else:
+        kinds = [kind for kind, _prompt in SCENES]
+        for i, (_kind, prompt) in enumerate(SCENES):
+            t = time.time()
+            graph = wm.render("zimage-txt2img", {"PROMPT": prompt, "WIDTH": W, "HEIGHT": H, "SEED": 1000 + i,
+                                                  "FILENAME_PREFIX": "fast_scene"})
+            raw.append(OUT / saved(run(graph)))
+            log.append(f"cena {i + 1}: Z-Image {time.time() - t:.1f}s")
 
     final = []
-    for i, ((kind, _prompt), image) in enumerate(zip(SCENES, raw)):
+    for i, (kind, image) in enumerate(zip(kinds, raw)):
         t = time.time()
         found = faces(f"{image.name} [output]", luna)
         her, him = pick(found, "F"), pick(found, "M")
+        before_him = pick(faces(f"{image.name} [output]", RAFA_HEAD), "M") if kind == "couple" else None
         out = head_swap(wm, image, her, luna, crop=kind == "couple", seed=2000 + i)
         if kind == "couple" and him:
             him_now = pick(faces(f"{out.name} [output]", RAFA_HEAD), "M")
@@ -173,8 +177,9 @@ def main() -> None:
         final.append(out)
         sim_her = pick(faces(f"{out.name} [output]", luna), "F")
         sim_him = pick(faces(f"{out.name} [output]", RAFA_HEAD), "M") if kind == "couple" else None
-        log.append(f"cena {i + 1}: troca {time.time() - t:.1f}s  Luna={sim_her and sim_her['sim']}"
-                   f"  Rafa={sim_him and sim_him['sim']}  rostos={[(f['sex'], f['sim']) for f in found]}")
+        log.append(f"foto {i + 1} ({image.name}): troca {time.time() - t:.1f}s"
+                   f"  Luna antes={her and her['sim']} depois={sim_her and sim_her['sim']}"
+                   f"  Rafa antes={before_him and before_him['sim']} depois={sim_him and sim_him['sim']}")
 
     hgt = 560
     rows = []
