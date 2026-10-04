@@ -38,8 +38,8 @@ Step 1 - STORY BIBLE (fixed descriptions, in English):
 - light: time of day and lighting for each part;
 - camera: one photographic style for the whole series (e.g. "candid smartphone photo, natural light").
 
-Each bible item must be complete on its own (a character entry always has the name, age, build, hair, \
-skin and clothes).
+Each bible item must be complete on its own (a character entry always has the name, "man" or "woman", \
+age, build, face (eyes, nose, beard), hair, skin and clothes - e.g. "Rafa, a 28-year-old man, slim build, ...").
 
 Step 2 - for each photo:
 - "action" (English, 20 to 45 words): the framing and what happens - e.g. "medium shot of {trigger} laughing \
