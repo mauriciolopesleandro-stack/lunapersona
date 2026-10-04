@@ -540,6 +540,9 @@ FULL_CROP = 0.8  # recorte maior que isso da foto: usa a foto inteira
 ZONE_SIDE = 0.9
 ZONE_TOP = 0.5
 ZONE_DROP = 2.6  # abaixo do queixo: cabelo longo da persona ate o peito
+# Com a LoRA: so a cabeca e o pescoco (o cabelo longo entra pela mascara de cabelo)
+LORA_ZONE_SIDE = 0.7
+LORA_ZONE_DROP = 0.5
 # Onde procurar o cabelo dela inteiro (larguras/alturas do rosto): cabelo
 # longo e solto passa da zona da cabeca e as pontas loiras ficavam.
 HAIR_SIDE = 1.6
@@ -578,10 +581,16 @@ def _clamp_box(x1: float, y1: float, x2: float, y2: float, width: int, height: i
     return x1, y1, max(16, x2 - x1), max(16, y2 - y1)
 
 
-def zone_box(plan: PersonSwapPlan, width: int, height: int) -> tuple[int, int, int, int]:
+def zone_box(plan: PersonSwapPlan, width: int, height: int, lora: bool = False) -> tuple[int, int, int, int]:
     if plan.face is not None:
         fx1, fy1, fx2, fy2 = plan.face
         fw, fh = fx2 - fx1, fy2 - fy1
+        if lora:
+            # Com a LoRA so a cabeca (o cabelo vem da mascara de cabelo): o
+            # peito/maos escondidos viravam roupa e objetos redesenhados -
+            # objeto cortado ao meio e cara de montagem.
+            return _clamp_box(fx1 - fw * LORA_ZONE_SIDE, fy1 - fh * ZONE_TOP, fx2 + fw * LORA_ZONE_SIDE,
+                              fy2 + fh * LORA_ZONE_DROP, width, height)
         x1, x2 = fx1 - fw * ZONE_SIDE, fx2 + fw * ZONE_SIDE
         if plan.woman is not None:
             # cabelo volumoso passa da largura do rosto: vai ate a caixa dela
@@ -676,7 +685,7 @@ def qwen_swap_params(
     crop = (0, 0, width, height) if recreate else crop_box(plan, width, height)
     cx, cy, cw, ch = crop
     qw, qh = qwen_size(cw, ch, RECREATE_PIXELS if recreate else QWEN_PIXELS)
-    zx, zy, zw, zh = zone_box(plan, width, height)
+    zx, zy, zw, zh = zone_box(plan, width, height, lora)
     px, py, pw, ph = persona_crop(plan, persona_size)
     params: dict[str, Any] = {
         "CROP_X": cx, "CROP_Y": cy, "CROP_W": cw, "CROP_H": ch,

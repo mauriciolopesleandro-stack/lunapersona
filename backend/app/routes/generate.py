@@ -43,6 +43,9 @@ class GenerateBody(BaseModel):
     # Pack: "recreate" redesenha a foto inteira (sem colagem); "swap" troca so
     # a pessoa e o resto volta identico.
     pack_mode: str = Field(default="swap", pattern="^(swap|recreate)$")
+    # Pack: retoque do rosto com o InstantID depois do Qwen (com a LoRA pode
+    # deixar a pele com cara de plastico).
+    face_pass: bool = True
 
 
 def _build_request(body: GenerateBody, request: Request) -> GenerationRequest:
@@ -63,6 +66,7 @@ def _build_request(body: GenerateBody, request: Request) -> GenerationRequest:
         denoise=body.denoise,
         person_swap=body.person_swap,
         pack_mode=body.pack_mode,
+        face_pass=body.face_pass,
     )
 
 

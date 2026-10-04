@@ -54,6 +54,8 @@ class GenerationRequest:
     # Pack com Qwen: "recreate" = a foto inteira sai do Qwen (sem colagem, sem
     # emendas; o cenario pode mudar um pouco); "swap" = so a area dela volta.
     pack_mode: str = "swap"
+    # Pack: retoque do rosto com o InstantID depois do Qwen.
+    face_pass: bool = True
 
 
 # Vai no fim do prompt da persona. Sem palavras de enquadramento (close,
@@ -221,6 +223,7 @@ class GenerationService:
         plan: PersonSwapPlan,
         face_box: tuple[int, int, int, int] | None,
         params: dict[str, Any],
+        face_pass: bool = True,
     ) -> tuple[list[GenerationOutputImage], float | None, bool]:
         """Rosto da persona pelo InstantID na troca do Qwen (identidade da foto
         dela, pontos do rosto da propria troca): a semelhanca subiu de ~0.55
@@ -228,8 +231,8 @@ class GenerationService:
         acertando (~0.9) o InstantID as vezes baixava um pouco.
         (imagens, semelhanca, se o InstantID rodou - ai a LoRA nao entra)."""
         sim = await swap_similarity(self.comfyui_client, _output_name(images[0]), persona_image, plan.face)
-        if face_box is None:
-            return images, sim, False
+        if face_box is None or not face_pass:
+            return images, sim, not face_pass
         iid = await self._instantid_face(images[0], persona_image, face_box, params)
         if iid is None:
             return images, sim, False
@@ -403,7 +406,7 @@ class GenerationService:
             # o InstantID, parecido com a foto da persona) e, se nao, tenta outras
             # sementes - fica a melhor. Conferir antes do InstantID refazia a
             # troca a toa (ele sozinho ja levava 0.25 para 0.75).
-            best_images, best_sim, used_iid = await self._finish_swap(images, persona_image_name, swap_plan, face_box, params)
+            best_images, best_sim, used_iid = await self._finish_swap(images, persona_image_name, swap_plan, face_box, params, req.face_pass)
             for attempt in range(1, SWAP_ATTEMPTS):
                 if best_sim is None or best_sim >= SWAP_GOOD_SIM:
                     break
@@ -412,7 +415,7 @@ class GenerationService:
                 retry_images = self.comfyui_client.extract_images(await self.comfyui_client.wait_for_completion(retry_id))
                 if not retry_images:
                     continue
-                cand_images, sim, cand_iid = await self._finish_swap(retry_images, persona_image_name, swap_plan, face_box, params)
+                cand_images, sim, cand_iid = await self._finish_swap(retry_images, persona_image_name, swap_plan, face_box, params, req.face_pass)
                 if sim is not None and sim > best_sim:
                     best_images, best_sim, used_iid, prompt_id = cand_images, sim, cand_iid, retry_id
             images = best_images
