@@ -46,6 +46,10 @@ class GenerateBody(BaseModel):
     # Pack: retoque do rosto com o InstantID depois do Qwen (com a LoRA pode
     # deixar a pele com cara de plastico).
     face_pass: bool = True
+    # Historia: rosto de referencia do outro personagem ("nome [output]") e a
+    # descricao dele - o rosto dele vira esse em todas as fotos (InstantID).
+    other_face_ref: str | None = None
+    other_face_prompt: str = ""
 
 
 def _build_request(body: GenerateBody, request: Request) -> GenerationRequest:
@@ -67,6 +71,8 @@ def _build_request(body: GenerateBody, request: Request) -> GenerationRequest:
         person_swap=body.person_swap,
         pack_mode=body.pack_mode,
         face_pass=body.face_pass,
+        other_face_ref=body.other_face_ref,
+        other_face_prompt=body.other_face_prompt,
     )
 
 

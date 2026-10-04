@@ -53,6 +53,10 @@ export function StoryPage({ personas, ensureAwake }: Props) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [packFiles, setPackFiles] = useState<File[]>([]);
+  // Rosto fixo do outro personagem: gerado uma vez a partir da descricao do
+  // roteiro e aplicado nele em todas as fotos (sem isso o rosto mudava).
+  const [castFace, setCastFace] = useState<GenerationImage | null>(null);
+  const [castBusy, setCastBusy] = useState(false);
 
   useEffect(() => {
     if (!personaId && personas[0]) setPersonaId(personas[0].id);
@@ -72,6 +76,7 @@ export function StoryPage({ personas, ensureAwake }: Props) {
       await ensureAwake();
       const result = await planStory(personaId, story, count);
       setPlan(result);
+      setCastFace(null);
       setPhotos(
         result.scenes.map((s, i) => ({
           id: `${Date.now()}-${i}`,
@@ -99,6 +104,7 @@ export function StoryPage({ personas, ensureAwake }: Props) {
       for (const file of packFiles) names.push(await uploadGenerationReference(file));
       const result = await planStoryFromPhotos(personaId, names);
       setPlan(result);
+      setCastFace(null);
       setPhotos(
         result.scenes.map((sc, i) => ({
           id: `${Date.now()}-${i}`,
@@ -118,15 +124,19 @@ export function StoryPage({ personas, ensureAwake }: Props) {
     }
   }
 
-  async function generateOne(photo: StoryPhoto, seed?: number) {
+  async function generateOne(photo: StoryPhoto, seed?: number, face: GenerationImage | null = castFace) {
     patch(photo.id, { status: "running", error: null });
     try {
+      // o rosto fixo so entra nas fotos em que o personagem aparece
+      const withCast = face && castDescription && photo.prompt.includes(castDescription.slice(0, 20));
       const res = await generateImage({
         prompt: photo.prompt,
         persona_id: personaId,
         width: format.width,
         height: format.height,
         seed,
+        other_face_ref: withCast ? faceRef(face) : undefined,
+        other_face_prompt: withCast ? castDescription : undefined,
       });
       patch(photo.id, { result: res.images[0] ?? null, status: "done" });
     } catch (e) {
@@ -139,9 +149,10 @@ export function StoryPage({ personas, ensureAwake }: Props) {
     setError(null);
     try {
       await ensureAwake();
+      const face = castFace ?? (await makeCastFace());
       // Uma por vez, na ordem da historia (as prontas ficam como estao).
       for (const photo of photos) {
-        if (photo.status !== "done") await generateOne(photo);
+        if (photo.status !== "done") await generateOne(photo, undefined, face);
       }
     } finally {
       setRunning(false);
@@ -156,6 +167,38 @@ export function StoryPage({ personas, ensureAwake }: Props) {
     } finally {
       setRunning(false);
     }
+  }
+
+  const personaLower = personaName.toLowerCase();
+  const castDescription =
+    (plan?.bible.characters ?? []).find((c) => {
+      const head = c.trim().toLowerCase();
+      return !head.startsWith(personaLower) && !head.startsWith("lunavox");
+    }) ?? "";
+
+  async function makeCastFace(): Promise<GenerationImage | null> {
+    if (!castDescription) return null;
+    setCastBusy(true);
+    try {
+      const res = await generateImage({
+        prompt: `close-up portrait photo of ${castDescription}, looking at the camera, plain light grey background, soft natural light, realistic photo, natural skin texture`,
+        width: 1024,
+        height: 1024,
+        seed: Math.floor(Math.random() * 2 ** 32),
+      });
+      const face = res.images[0] ?? null;
+      setCastFace(face);
+      return face;
+    } catch (e) {
+      setError(errorText(e));
+      return null;
+    } finally {
+      setCastBusy(false);
+    }
+  }
+
+  function faceRef(face: GenerationImage) {
+    return `${face.subfolder ? `${face.subfolder}/` : ""}${face.filename} [output]`;
   }
 
   const done = photos.filter((p) => p.status === "done").length;
@@ -296,6 +339,18 @@ export function StoryPage({ personas, ensureAwake }: Props) {
             <p className="small">
               <strong>Estilo:</strong> {bible.camera}
             </p>
+          )}
+          {castDescription && (
+            <div className="content-action-buttons">
+              {castFace && <img src={castFace.url} alt="" style={{ width: 120, borderRadius: 8 }} />}
+              <span className="small">
+                Rosto fixo de: <strong>{castDescription.split(/[(,]/)[0].trim()}</strong>
+                {castFace ? " - usado em todas as fotos em que ele aparece" : " - é criado ao gerar (ou crie agora)"}
+              </span>
+              <button type="button" disabled={castBusy || running} onClick={() => makeCastFace()}>
+                {castBusy ? "Criando rosto..." : castFace ? "Outro rosto" : "Criar rosto agora"}
+              </button>
+            </div>
           )}
         </div>
       )}

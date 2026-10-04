@@ -17,6 +17,7 @@ from app.persona_manager.manager import PersonaManager
 from app.services.person_swap import (
     PersonSwapPlan,
     image_size,
+    luna_faces,
     pack_correction,
     plan_person_swap,
     qwen_available,
@@ -56,6 +57,10 @@ class GenerationRequest:
     pack_mode: str = "swap"
     # Pack: retoque do rosto com o InstantID depois do Qwen.
     face_pass: bool = True
+    # Historia: rosto de referencia do outro personagem ("nome [output]") e a
+    # descricao dele (o rosto dele fica igual em todas as fotos).
+    other_face_ref: str | None = None
+    other_face_prompt: str = ""
 
 
 # Vai no fim do prompt da persona. Sem palavras de enquadramento (close,
@@ -215,6 +220,45 @@ class GenerationService:
             out = self.comfyui_client.extract_images(entry)
             return out[0] if out else None
         return None
+
+    async def _other_face(
+        self, image: GenerationOutputImage, req: GenerationRequest, size: tuple[int, int], seed: int
+    ) -> GenerationOutputImage | None:
+        """Historia: o rosto que nao e da persona (o mais parecido com ela e o
+        dela) vira o rosto de referencia do outro personagem, pelo InstantID -
+        so com a descricao em texto ele mudava de uma foto para a outra."""
+        ref = self.persona_manager.get_primary_reference_bytes(req.persona_id)
+        if not ref:
+            return None
+        persona_image = await self.comfyui_client.upload_image(*ref)
+        name = _output_name(image)
+        faces = await luna_faces(
+            self.comfyui_client,
+            {"1": {"class_type": "LoadImage", "inputs": {"image": name}},
+             "2": {"class_type": "LoadImage", "inputs": {"image": persona_image}}},
+            ["1", 0], ["2", 0],
+        )
+        if not faces or len(faces) < 2:
+            return None
+        persona_face = max(faces, key=lambda f: float(f.get("sim", 0.0)))
+        others = [f for f in faces if f is not persona_face]
+        x1, y1, x2, y2 = max(others, key=lambda f: (f["bbox"][2] - f["bbox"][0]) * (f["bbox"][3] - f["bbox"][1]))["bbox"]
+        fw, fh = x2 - x1, y2 - y1
+        x, y = max(0, int(x1 - fw * 0.15)), max(0, int(y1 - fh * 0.15))
+        w, h = min(size[0] - x, int(fw * 1.3)), min(size[1] - y, int(fh * 1.25))
+        try:
+            graph = self.workflow_manager.render(INSTANTID_FACE_WORKFLOW, {
+                "IMAGE": name, "ORIGINAL": name, "PERSONA_IMAGE": req.other_face_ref,
+                "FACE_X": x, "FACE_Y": y, "FACE_W": w, "FACE_H": h, "WIDTH": size[0], "HEIGHT": size[1], "SEED": seed,
+                "FACE_PROMPT": f"photo of {req.other_face_prompt or 'a man'}, natural skin texture, sharp focus",
+                "NEGATIVE_PROMPT": "blurry, deformed face, asymmetric eyes, plastic skin, airbrushed, cgi, 3d render, "
+                "cartoon, text, watermark",
+            })
+            entry = await self.comfyui_client.wait_for_completion(await self.comfyui_client.queue_prompt(graph))
+        except (ComfyUIError, WorkflowParamError):
+            return None
+        out = self.comfyui_client.extract_images(entry)
+        return out[0] if out else None
 
     async def _finish_swap(
         self,
@@ -422,6 +466,11 @@ class GenerationService:
             skip_refine = skip_refine or used_iid
         if face_params and images and not skip_refine and FACE_REFINE_WORKFLOW in model.compatible_workflows:
             images = await self._refine_faces(images, {**params, **face_params}, face_box)
+        if req.other_face_ref and images and req.persona_id:
+            size = (params.get("HIRES_WIDTH") or params["WIDTH"], params.get("HIRES_HEIGHT") or params["HEIGHT"])
+            other = await self._other_face(images[0], req, size, params["SEED"])
+            if other is not None:
+                images = [other]
         duration = time.monotonic() - start
 
         return GenerationResponse(

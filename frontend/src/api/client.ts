@@ -124,6 +124,10 @@ export interface GenerateRequestBody {
   person_swap?: boolean;
   // Pack: "recreate" redesenha a foto inteira; "swap" troca so a pessoa.
   pack_mode?: "recreate" | "swap";
+  // Historia: rosto de referencia do outro personagem ("nome [output]") e a
+  // descricao dele - o rosto dele fica igual em todas as fotos.
+  other_face_ref?: string;
+  other_face_prompt?: string;
 }
 
 export interface GenerateResponse {
