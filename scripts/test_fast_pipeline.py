@@ -104,6 +104,18 @@ FOOD_SCENES = [
 ]
 
 
+CLOSE_SCENES = [
+    "close-up photo of lunavox, a 25-year-old Brazilian woman, taking a bite of a hot dog with mustard at a beach "
+    "kiosk, laughing, a little mustard on the corner of her mouth, wearing a white summer dress, Copacabana boardwalk "
+    "softly blurred behind, candid smartphone photo, natural skin texture, realistic",
+    "close-up photo of lunavox, a 25-year-old Brazilian woman, holding a hot dog with both hands and smiling at the "
+    "camera after taking a bite, cheeks full, playful, beach kiosk at sunset behind, candid smartphone photo, natural "
+    "skin texture, realistic",
+    "close-up photo of lunavox, a 25-year-old Brazilian woman, biting a churro covered in sugar, sugar on her lips, "
+    "laughing, Copacabana boardwalk softly blurred behind, candid smartphone photo, natural skin texture, realistic",
+]
+
+
 def run(graph: dict) -> dict:
     req = urllib.request.Request(f"{COMFY}/prompt", json.dumps({"prompt": graph}).encode(),
                                  {"Content-Type": "application/json"})
@@ -203,7 +215,25 @@ def main() -> None:
                 sheet.paste(im, (x, r * (hgt + 6)))
                 x += im.width + 6
         sheet.save("/workspace/fast_lora.jpg", quality=85)
-        note(f"total {time.time() - started:.0f}s -> /workspace/fast_lora.jpg")
+        # Closes pedidos pelo usuario (comendo no calcadao, natural).
+        close = []
+        for i, prompt in enumerate(CLOSE_SCENES):
+            t = time.time()
+            graph = wm.render("zimage-txt2img-lora", {
+                "PROMPT": prompt, "WIDTH": W, "HEIGHT": H, "SEED": 5000 + i,
+                "LORA_NAME": "luna_zimage_v1.safetensors", "FILENAME_PREFIX": "fast_lora_close"})
+            close.append(OUT / saved(run(graph)))
+            her = pick(faces(f"{close[-1].name} [output]", luna), "F")
+            note(f"close {i + 1} com LoRA: {time.time() - t:.1f}s  Luna={her and her['sim']}")
+        ims = [Image.open(p).convert("RGB") for p in close]
+        ims = [im.resize((int(im.width * 700 / im.height), 700)) for im in ims]
+        sheet = Image.new("RGB", (sum(i.width for i in ims) + 6 * len(ims), 700), (20, 20, 20))
+        x = 0
+        for im in ims:
+            sheet.paste(im, (x, 0))
+            x += im.width + 6
+        sheet.save("/workspace/fast_lora_close.jpg", quality=86)
+        note(f"total {time.time() - started:.0f}s -> /workspace/fast_lora.jpg, /workspace/fast_lora_close.jpg")
         return
     if "bfs" in sys.argv:
         # So a troca de cabeca, nas fotos ja feitas com o Chroma + LoRA (o
