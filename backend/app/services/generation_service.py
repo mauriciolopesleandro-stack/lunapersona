@@ -93,6 +93,7 @@ CHROMA_TXT2IMG_WORKFLOW = "chroma-txt2img"
 ZIMAGE_WORKFLOW = "zimage-txt2img"
 ZIMAGE_LORA_WORKFLOW = "zimage-txt2img-lora"
 ZIMAGE_IMG2IMG_WORKFLOW = "zimage-img2img-lora"
+ZIMAGE_DEPTH_WORKFLOW = "zimage-depth-lora"
 PERSON_INPAINT_WORKFLOW = "zimage-person-inpaint-lora"
 ZIMAGE_UNET = "z_image_turbo_int8_convrot.safetensors"
 PERSON_CONTROL_PATCH = "Z-Image-Turbo-Fun-Controlnet-Union-2.1-lite-2602-8steps.safetensors"
@@ -401,20 +402,21 @@ class GenerationService:
         lora = persona.lora
         description = clean_reference_caption(await self._describe_reference(req.reference_image))
         prompt = ", ".join(p for p in (f"{lora.trigger}, a woman", user_prompt, description, REALISM_SUFFIX) if p)
-        # O "Quanto mudar" do site (0.4-0.95) foi calibrado no Chroma (26 passos).
-        # No Turbo (8 passos) 0.7 refazia so ~5 passos e a pessoa da foto ficava
-        # (teste de 2026-10-05: continuou loira): 0.4-0.95 vira 0.75-1.0.
-        asked = req.denoise if req.denoise is not None else 0.8
-        denoise = min(1.0, 0.75 + (max(0.4, asked) - 0.4) * 0.25 / 0.55)
-        graph = self.workflow_manager.render(ZIMAGE_IMG2IMG_WORKFLOW, {
+        # Partir da propria foto (img2img) nao trocava a pessoa no Turbo - mesmo
+        # com 0.89 ela continuou loira (teste de 2026-10-05). A foto sai do zero
+        # com a LoRA dela, seguindo a profundidade da referencia; o "Quanto
+        # mudar" (0.4-0.95) vira a forca desse controle (0.85-0.45).
+        asked = min(0.95, max(0.4, req.denoise if req.denoise is not None else 0.8))
+        control = 0.85 - (asked - 0.4) * 0.4 / 0.55
+        graph = self.workflow_manager.render(ZIMAGE_DEPTH_WORKFLOW, {
             "PROMPT": prompt, "REFERENCE_IMAGE": req.reference_image,
             "WIDTH": req.width or 864, "HEIGHT": req.height or 1536, "SEED": seed,
             "LORA_NAME": lora.zimage_file, "LORA_STRENGTH": lora.zimage_strength,
-            "DENOISE": round(denoise, 3), "FILENAME_PREFIX": "luna_studio",
+            "CONTROL_STRENGTH": round(control, 3), "FILENAME_PREFIX": "luna_studio",
         })
         prompt_id, images = await self._run_graph(graph)
         return GenerationResponse(
-            prompt_id=prompt_id, model_id=req.model_id, workflow_id=ZIMAGE_IMG2IMG_WORKFLOW,
+            prompt_id=prompt_id, model_id=req.model_id, workflow_id=ZIMAGE_DEPTH_WORKFLOW,
             persona_id=req.persona_id, images=images, duration_seconds=time.monotonic() - start,
         )
 

@@ -16,7 +16,7 @@
         "unet_weight_dtype": "default",
         "clip_type": "chroma"
       },
-      "compatible_workflows": ["chroma-txt2img", "chroma-txt2img-lora", "chroma-img2img", "chroma-img2img-lora", "chroma-face-refine", "chroma-person-swap-lora", "qwen-person-swap", "sdxl-instantid-face", "zimage-txt2img", "qwen-bfs-head-swap", "klein-bfs-head-swap", "zimage-txt2img-lora", "zimage-person-inpaint-lora", "zimage-img2img-lora"],
+      "compatible_workflows": ["chroma-txt2img", "chroma-txt2img-lora", "chroma-img2img", "chroma-img2img-lora", "chroma-face-refine", "chroma-person-swap-lora", "qwen-person-swap", "sdxl-instantid-face", "zimage-txt2img", "qwen-bfs-head-swap", "klein-bfs-head-swap", "zimage-txt2img-lora", "zimage-person-inpaint-lora", "zimage-img2img-lora", "zimage-depth-lora"],
       "defaults": {
         "width": 1024,
         "height": 1024,
