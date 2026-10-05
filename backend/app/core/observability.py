@@ -23,6 +23,8 @@ EVENTS = {
     "face_lock_completed",
     "validation_started",
     "validation_completed",
+    "skin_correction_started",
+    "skin_correction_completed",
     "generation_rejected",
     "regeneration_started",
     "generation_accepted",

@@ -26,6 +26,7 @@ from app.core.validation.checks import (
     BodyConsistencyValidator,
     FaceIdentityValidator,
     PoseValidator,
+    SkinRealismValidator,
     SubjectCountValidator,
     TriggerLeakValidator,
 )
@@ -35,6 +36,7 @@ from app.providers.base import ProviderRegistry
 from app.providers.comfyui import comfyui_provider_set
 from app.services.prompt_translator import to_english
 from app.validation_backends.comfyui import ComfyImageAnalyzer, FlorenceTextReader
+from app.validation_backends.skin import PillowSkinTextureAnalyzer
 from app.routes import (
     chat, content, generate, health, models, persona_engine, personas, story, video, voice, workflows,
 )
@@ -159,7 +161,7 @@ app.state.generation_orchestrator = GenerationOrchestrator(
     analyzer=ComfyImageAnalyzer(app.state.comfyui_client),
     validation=ValidationEngine([
         FaceIdentityValidator(), SubjectCountValidator(), AnatomyValidator(), PoseValidator(),
-        BodyConsistencyValidator(), AgeValidator(), TriggerLeakValidator(_ocr),
+        BodyConsistencyValidator(), AgeValidator(), TriggerLeakValidator(_ocr), SkinRealismValidator(),
     ]),
     retry=RetryPolicy(engine_config["retry"]["face_relock_before_regenerate"]),
     history=app.state.generation_history,
@@ -167,6 +169,8 @@ app.state.generation_orchestrator = GenerationOrchestrator(
     cost=CostEstimator(RunPodProvider(settings.runpod_api_key, settings.runpod_pod_id),
                        engine_config["cost"].get("fallback_gpu_price_per_hour")),
     translator=_translate,
+    # V1.1: so mede a pele; corrigir depende da Persona Sheet (desligado na 1.1).
+    skin_analyzer=PillowSkinTextureAnalyzer(app.state.comfyui_client),
 )
 
 

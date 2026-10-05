@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.clients.comfyui_client import ComfyUIError
-from app.providers.base import FaceIdentityAdapter, ProviderImage, ReferenceImage, StageOutput
+from app.providers.base import FaceIdentityAdapter, FaceLockGuidance, ProviderImage, ReferenceImage, StageOutput
 from app.providers.comfyui.session import ComfySession, output_name
 from app.workflow_manager.manager import WorkflowNotFoundError
 
@@ -61,7 +61,11 @@ class QwenFaceAdapter(FaceIdentityAdapter):
             )
         return self._uploaded[key]
 
-    async def lock_face(self, image: ProviderImage, master_face: ReferenceImage, seed: int) -> StageOutput:
+    def base_prompt(self) -> str:
+        return self.session.workflows.get_workflow(WORKFLOW).optional_params["PROMPT"]
+
+    async def lock_face(self, image: ProviderImage, master_face: ReferenceImage, seed: int,
+                        guidance: FaceLockGuidance | None = None) -> StageOutput:
         width, height = image.width or 832, image.height or 1216
         # Benchmark E1: a imagem entrou no Qwen no proprio tamanho (832x1216).
         # So reduz quando ela passa bem de 1 MP.
@@ -72,6 +76,11 @@ class QwenFaceAdapter(FaceIdentityAdapter):
             "CROP_X": 0, "CROP_Y": 0, "CROP_W": width, "CROP_H": height, "FEATHER": 0,
             "SEED": seed, "FILENAME_PREFIX": "luna_engine_face",
         }
+        # V1.1: texto de textura/idade somado a instrucao do BFS. Sem guidance
+        # o grafo e identico ao da V1. O negativo da etapa NAO entra: o BFS
+        # roda com CFG 1 (o condicionamento negativo nao tem efeito).
+        if guidance and guidance.positive:
+            values["PROMPT"] = f"{self.base_prompt()} {' '.join(guidance.positive)}"
         switch = self.session.mark("qwen")
         prompt_id, out, seconds = await self.session.run(WORKFLOW, values)
         return StageOutput(
@@ -81,5 +90,8 @@ class QwenFaceAdapter(FaceIdentityAdapter):
             gpu=await self.session.gpu(),
             effective_parameters={"workflow": WORKFLOW, "model_size": [mw, mh], "seed": seed,
                                   "master_face": master_face.reference_id, "master_sha256": master_face.sha256,
-                                  "crop": "imagem inteira"},
+                                  "crop": "imagem inteira",
+                                  "texture_guidance": guidance.positive if guidance else None,
+                                  "stage_negative": guidance.stage_negative if guidance else None,
+                                  "stage_negative_applied": False},
         )

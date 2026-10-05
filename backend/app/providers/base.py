@@ -102,6 +102,29 @@ class PoseControl:
 
 
 @dataclass
+class FaceLockGuidance:
+    """V1.1: texto extra para o Face Lock preservar a textura da pele e a idade.
+    stage_negative so entra se o adapter suportar negativo (o Qwen BFS roda com CFG 1: nao)."""
+
+    positive: list[str] = field(default_factory=list)
+    stage_negative: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class SkinCorrectionRequest:
+    """V1.1: correcao minima de textura so na regiao do rosto."""
+
+    face_bbox: tuple[float, float, float, float]
+    prompt: str
+    denoise: float
+    seed: int
+    expand: float = 0.25
+
+
+@dataclass
 class SceneRequest:
     prompt: PromptSections
     parameters: GenerationParameters
@@ -172,7 +195,8 @@ class FaceIdentityAdapter(ABC):
     name: str
 
     @abstractmethod
-    async def lock_face(self, image: ProviderImage, master_face: ReferenceImage, seed: int) -> StageOutput: ...
+    async def lock_face(self, image: ProviderImage, master_face: ReferenceImage, seed: int,
+                        guidance: FaceLockGuidance | None = None) -> StageOutput: ...
 
     @abstractmethod
     async def validate_configuration(self) -> list[str]: ...
@@ -191,6 +215,21 @@ class PoseControlAdapter(ABC):
     async def validate_configuration(self) -> list[str]: ...
 
 
+class SkinCorrectionAdapter(ABC):
+    """V1.1: recupera microtextura da pele sem refazer o rosto (opcional)."""
+
+    name: str
+
+    @abstractmethod
+    async def correct(self, image: ProviderImage, request: SkinCorrectionRequest) -> StageOutput: ...
+
+    @abstractmethod
+    async def validate_configuration(self) -> list[str]: ...
+
+    def model_versions(self) -> dict[str, str]:
+        return {}
+
+
 @dataclass
 class ProviderSet:
     name: str
@@ -198,6 +237,7 @@ class ProviderSet:
     scene: SceneAdapter
     face: FaceIdentityAdapter
     pose: PoseControlAdapter | None = None
+    skin: SkinCorrectionAdapter | None = None
 
     def describe(self) -> dict[str, Any]:
         return {
@@ -205,6 +245,7 @@ class ProviderSet:
             "scene": self.scene.get_capabilities().to_dict(),
             "face": self.face.name,
             "pose": self.pose.name if self.pose else None,
+            "skin": self.skin.name if self.skin else None,
         }
 
 

@@ -10,6 +10,7 @@ const CHECK_LABELS: Record<string, string> = {
   body_consistency: "Corpo (vs master)",
   age: "Idade aparente",
   trigger_leak: "Gatilho escrito",
+  skin_realism: "Pele natural",
 };
 
 const STATUS_TEXT: Record<string, string> = {
@@ -18,6 +19,7 @@ const STATUS_TEXT: Record<string, string> = {
   UNKNOWN: "não verificado",
   NOT_COMPARABLE: "não comparável",
   INFORMATIONAL: "informativo",
+  WARN: "atenção",
 };
 
 const RESULT_TEXT: Record<string, string> = {
@@ -91,6 +93,19 @@ export function ValidationReportView({ result, failures = [], compact = false }:
             </div>
           ))}
         </dl>
+      )}
+      {!compact && result.skin && (
+        <p className="muted small">
+          Pele {fmt(result.skin.skin_realism_score)} ({result.skin.skin_realism_grade ?? "não medida"})
+          {result.skin.skin_correction_applied
+            ? ` · corrigida (antes ${fmt(result.skin.skin_realism_before_correction)}; rosto ${fmt(
+                result.skin.face_identity_before,
+              )} → ${fmt(result.skin.face_identity_after)})`
+            : result.skin.skin_correction_attempts > 0
+              ? " · correção descartada (mudaria a pessoa)"
+              : ""}
+          {result.skin.skin_correction_note ? ` · ${result.skin.skin_correction_note}` : ""}
+        </p>
       )}
       {!compact && m && (
         <p className="muted small">

@@ -34,7 +34,14 @@ from app.core.validation.analysis import ImageAnalyzer
 from app.core.validation.checks import ValidationContext
 from app.core.validation.engine import ValidationEngine, ValidationReport
 from app.core.validation.geometry import Keypoint
+from app.core.validation.skin import (
+    IdentityPreservationGuard,
+    SkinCorrectionPolicy,
+    SkinRealismAnalyzer,
+    SkinRealismResult,
+)
 from app.providers.base import (
+    FaceLockGuidance,
     GenerationParameters,
     ProviderError,
     ProviderImage,
@@ -42,6 +49,7 @@ from app.providers.base import (
     ProviderSet,
     ReferenceImage,
     SceneRequest,
+    SkinCorrectionRequest,
     StageOutput,
 )
 
@@ -76,6 +84,7 @@ class AttemptState:
     base: StageOutput | None = None
     scene_stage: StageOutput | None = None  # cena gerada NESTA tentativa
     face_stage: StageOutput | None = None
+    skin_stage: StageOutput | None = None  # V1.1: correcao de pele que FICOU
     error: str | None = None
     prompt: Any = None
     last_failures: list[str] = field(default_factory=list)
@@ -95,6 +104,9 @@ class GenerationOrchestrator:
         prompt_builder: PromptBuilder,
         cost: CostEstimator | None = None,
         translator: Translator | None = None,
+        skin_analyzer: SkinRealismAnalyzer | None = None,
+        skin_policy: SkinCorrectionPolicy | None = None,
+        skin_guard: IdentityPreservationGuard | None = None,
     ) -> None:
         self.personas = personas
         self.sheets = sheets
@@ -106,6 +118,10 @@ class GenerationOrchestrator:
         self.prompts = prompt_builder
         self.cost = cost or CostEstimator()
         self.translator = translator
+        # V1.1 (pele natural). Sem analisador a pele fica UNKNOWN e nada e corrigido.
+        self.skin_analyzer = skin_analyzer
+        self.skin_policy = skin_policy or SkinCorrectionPolicy()
+        self.skin_guard = skin_guard or IdentityPreservationGuard()
         self._master_poses: dict[str, list[Keypoint] | None] = {}
 
     # --- preparo (sincrono: erros viram 4xx na rota) ----------------------
@@ -133,7 +149,9 @@ class GenerationOrchestrator:
             "threshold_source": "pedido" if req.validation_threshold is not None else "persona_sheet",
             "max_attempts": min(req.max_attempts, MAX_ATTEMPTS_LIMIT),
             "model_versions": {"scene": provider.scene.model_versions(lora), "face_lock": provider.face.model_versions(),
-                               "pose": provider.pose.name if provider.pose and req.mode == MODE_POSE else None},
+                               "pose": provider.pose.name if provider.pose and req.mode == MODE_POSE else None,
+                               "skin_correction": provider.skin.model_versions()
+                               if provider.skin and skin_correction_config(sheet).get("enabled") else None},
             "master_reference_versions": sheet.master_reference_versions,
             "prompt_version": None, "negative_version": None,
             "status": RUNNING, "attempt": 0, "execution_mode": None,
@@ -228,6 +246,14 @@ class GenerationOrchestrator:
             *(await provider.pose.validate_configuration() if pose and provider.pose else []),
             *await self.analyzer.check_ready(),
         ]
+        if skin_correction_config(sheet).get("enabled"):
+            # Ligada na ficha e sem como executar = erro, nunca "segue sem corrigir" em silencio.
+            if provider.skin is None:
+                problems.append(f"A Persona Sheet liga a correcao de pele, mas o provider '{provider.name}' nao tem esse adapter.")
+            elif self.skin_analyzer is None:
+                problems.append("A Persona Sheet liga a correcao de pele, mas nao ha analisador de pele configurado.")
+            else:
+                problems += await provider.skin.validate_configuration()
         if problems:
             raise GenerationJobError("; ".join(problems))
         scene = job["scene_prompt"]
@@ -301,8 +327,13 @@ class GenerationOrchestrator:
         if state.base is None:
             return
         log_event("face_lock_started", job_id=job["id"], attempt=state.attempt, seed=state.face_seed)
+        guidance = face_guidance(ctx.sheet)
         try:
-            state.face_stage = await ctx.provider.face.lock_face(state.base.image, ctx.master_face, state.face_seed)
+            if guidance is None:  # V1: mesma chamada (e mesmo grafo) de antes
+                state.face_stage = await ctx.provider.face.lock_face(state.base.image, ctx.master_face, state.face_seed)
+            else:
+                state.face_stage = await ctx.provider.face.lock_face(state.base.image, ctx.master_face, state.face_seed,
+                                                                     guidance=guidance)
         except ProviderError as exc:
             state.error = f"face lock: {exc}"
             log_event("generation_error", job_id=job["id"], attempt=state.attempt, stage="face_lock", error=str(exc))
@@ -314,24 +345,36 @@ class GenerationOrchestrator:
         """Valida, grava a tentativa e devolve True se aceitou."""
         report: ValidationReport | None = None
         validation_seconds = 0.0
+        skin_info: dict[str, Any] | None = None
+        state.skin_stage = None
+        tried: list[StageOutput] = []
         if state.face_stage is not None:
             log_event("validation_started", job_id=job["id"], attempt=state.attempt)
             start = time.monotonic()
             analysis = await self.analyzer.analyze(state.face_stage.image, ctx.master_face)
+            skin, analysis, skin_info, tried = await self._skin_step(job, ctx, state, analysis)
+            final = state.skin_stage or state.face_stage
             report = await self.validation.run(ValidationContext(
-                sheet=ctx.sheet, image=state.face_stage.image, analysis=analysis,
+                sheet=ctx.sheet, image=final.image, analysis=analysis,
                 requested_pose=ctx.requested_pose, master_body_pose=ctx.master_body_pose,
                 threshold_override=job["threshold"] if job.get("threshold_source") == "pedido" else None,
-            ), seconds=time.monotonic() - start)
+                skin=skin,
+            ), seconds=max(0.0, time.monotonic() - start - sum(s.seconds or 0 for s in tried)))
             validation_seconds = report.seconds
+            if skin_info is not None:
+                age = report.checks.get("age")
+                skin_info["age_score"] = age.evidence.get("consistency") if age else None
             log_event("validation_completed", job_id=job["id"], attempt=state.attempt, status=report.status,
                       face=report.face_score, failures=report.failures)
-        stages = [s.to_dict() for s in (state.scene_stage, state.face_stage) if s is not None]
+        # A correcao entra no tempo/custo mesmo quando foi descartada pela guarda.
+        stages = [s.to_dict() for s in (state.scene_stage, state.face_stage, *tried) if s is not None]
+        final = state.skin_stage or state.face_stage
         prompt = state.prompt
         result = {
             "id": new_id(), "job_id": job["id"], "attempt": state.attempt, "strategy": state.strategy,
-            "image_url": state.face_stage.image.url if state.face_stage else None,
-            "image_locator": state.face_stage.image.locator if state.face_stage else None,
+            "image_url": final.image.url if final else None,
+            "image_locator": final.image.locator if final else None,
+            "face_lock_image_url": state.face_stage.image.url if state.skin_stage and state.face_stage else None,
             "base_image_url": state.base.image.url if state.base else None,
             "status": "ERROR" if report is None else ("ACCEPT" if report.accepted else "REJECT"),
             "face_score": report.face_score if report else None,
@@ -340,9 +383,14 @@ class GenerationOrchestrator:
             "prompt": prompt.to_dict() if prompt else None,
             "stages": stages,
             "metrics": await self.cost.metrics(stages, validation_seconds, mode),
+            "skin": skin_info,
             "error": state.error,
             "created_at": utcnow(),
         }
+        if skin_info is not None and skin_info["skin_correction_duration"]:
+            price = result["metrics"].get("gpu_price_per_hour")
+            skin_info["skin_correction_cost"] = (round(price * skin_info["skin_correction_duration"] / 3600, 5)
+                                                 if price is not None else None)
         job["results"].append(result)
         failures = report.failures if report else ["provider_error"]
         for f in failures:
@@ -359,6 +407,72 @@ class GenerationOrchestrator:
         log_event("generation_rejected", job_id=job["id"], attempt=state.attempt, failures=failures)
         self.history.save(job)
         return False
+
+    async def _skin_step(self, job, ctx: JobContext, state: AttemptState, analysis):
+        """V1.1: mede a pele do Face Lock e, se a ficha ligar e a nota estiver baixa,
+        tenta a correcao minima. A correcao so fica se a guarda aprovar (rosto,
+        idade, pose e pessoas iguais E pele melhor). Devolve (pele, analise final,
+        telemetria, etapas de correcao executadas)."""
+        vcfg = ctx.sheet.validation.get("skin_realism")
+        if self.skin_analyzer is None or not vcfg:
+            return None, analysis, None, []
+        ccfg = skin_correction_config(ctx.sheet)
+        original = analysis
+        face = analysis.persona_face()
+        skin = await self._measure_skin(state.face_stage.image, face, vcfg)
+        info: dict[str, Any] = {
+            "skin_realism_score": skin.score, "skin_realism_status": skin.status, "skin_realism_grade": skin.grade,
+            "skin_realism_before_correction": skin.score, "skin_realism_detail": skin.to_dict(),
+            "skin_correction_enabled": bool(ccfg.get("enabled")), "skin_correction_applied": False,
+            "skin_correction_attempts": 0, "skin_correction_duration": 0.0, "skin_correction_cost": None,
+            "skin_correction_reason": None, "skin_correction_note": None, "guard": [],
+            "face_identity_before": face.similarity if face else None, "face_identity_after": None, "age_score": None,
+        }
+        tried: list[StageOutput] = []
+        while True:
+            decision = self.skin_policy.decide(skin, ccfg, len(tried))
+            if not decision.apply:
+                if not tried:
+                    info["skin_correction_note"] = decision.reason
+                break
+            info["skin_correction_reason"] = info["skin_correction_reason"] or decision.reason
+            current = state.skin_stage or state.face_stage
+            target = analysis.persona_face()
+            request = SkinCorrectionRequest(
+                face_bbox=target.bbox, prompt=ccfg["prompt"], denoise=float(ccfg["denoise"]),
+                seed=(state.face_seed + 1 + len(tried)) % SEED_SPACE, expand=float(ccfg.get("expand", 0.25)))
+            log_event("skin_correction_started", job_id=job["id"], attempt=state.attempt, reason=decision.reason,
+                      score=skin.score)
+            try:
+                out = await ctx.provider.skin.correct(current.image, request)
+            except ProviderError as exc:
+                info["skin_correction_note"] = f"correcao de pele falhou (imagem do Face Lock mantida): {exc}"
+                log_event("generation_error", job_id=job["id"], attempt=state.attempt, stage="skin_correction",
+                          error=str(exc))
+                break
+            tried.append(out)
+            after = await self.analyzer.analyze(out.image, ctx.master_face)
+            skin_after = await self._measure_skin(out.image, after.persona_face(), vcfg)
+            # Identidade/idade/pose sempre contra o Face Lock original (sem deriva acumulada).
+            verdict = self.skin_guard.evaluate(original, after, skin, skin_after, ccfg["guard"])
+            info["guard"].append({**verdict.to_dict(), "seed": request.seed, "image_url": out.image.url})
+            info["face_identity_after"] = verdict.deltas.get("face_identity_after")
+            log_event("skin_correction_completed", job_id=job["id"], attempt=state.attempt, accepted=verdict.accepted,
+                      reasons=verdict.reasons, skin_before=skin.score, skin_after=skin_after.score)
+            if verdict.accepted:
+                state.skin_stage, analysis, skin = out, after, skin_after
+                info["skin_correction_applied"] = True
+        info["skin_correction_attempts"] = len(tried)
+        info["skin_correction_duration"] = round(sum(s.seconds or 0 for s in tried), 2)
+        info["skin_realism_score"], info["skin_realism_status"] = skin.score, skin.status
+        info["skin_realism_grade"], info["skin_realism_detail"] = skin.grade, skin.to_dict()
+        return skin, analysis, info, tried
+
+    async def _measure_skin(self, image: ProviderImage, face, config: dict[str, Any]) -> SkinRealismResult:
+        try:
+            return await self.skin_analyzer.analyze(image, face, config)
+        except Exception as exc:  # medida e informativa: falha vira UNKNOWN registrado, nunca PASS
+            return SkinRealismResult(None, "UNKNOWN", None, note=f"analisador de pele falhou: {exc}")
 
     def _apply_retry(self, job, state: AttemptState) -> None:
         failures = state.last_failures or ["provider_error"]
@@ -382,6 +496,31 @@ class GenerationOrchestrator:
     def _error(self, job, message: str) -> None:
         job["status"], job["error"] = ERROR, message
         log_event("generation_error", job_id=job["id"], error=message)
+
+
+def skin_correction_config(sheet: PersonaSheet) -> dict[str, Any]:
+    return sheet.generation.get("skin_correction") or {}
+
+
+def face_guidance(sheet: PersonaSheet) -> FaceLockGuidance | None:
+    """V1.1: texto extra do Face Lock vindo da ficha (preservacao de textura e
+    trava de idade). None = tudo desligado = chamada identica a V1."""
+    face_lock = sheet.generation.get("face_lock") or {}
+    texture = face_lock.get("texture_preservation") or {}
+    age_lock = face_lock.get("age_lock") or {}
+    positive: list[str] = []
+    negative: list[str] = []
+    if texture.get("enabled"):
+        positive += list(texture.get("positive", []))
+        negative += list(texture.get("stage_negative", []))
+    if age_lock.get("enabled"):
+        target = sheet.age.get("target")
+        if target is None:
+            raise PersonaSheetError("age_lock ligado, mas a ficha nao tem identity.age.target.")
+        positive.append(age_lock["template"].format(target_age=target))
+    if not positive and not negative:
+        return None
+    return FaceLockGuidance(positive=positive, stage_negative=negative)
 
 
 def _check_of(failure_type: str) -> str:

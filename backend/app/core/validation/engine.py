@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from app.core.validation.checks import FAIL, UNKNOWN, CheckResult, ValidationContext
+from app.core.validation.checks import FAIL, UNKNOWN, WARN, CheckResult, ValidationContext
 
 STATUS_PASS = "PASS"
 STATUS_PASS_WITH_UNKNOWN = "PASS_WITH_UNKNOWN"
@@ -31,6 +31,8 @@ class ValidationReport:
     failures: list[str] = field(default_factory=list)
     unverified: list[str] = field(default_factory=list)
     seconds: float = 0.0
+    # V1.1: medidos e abaixo do desejado, sem bloquear (ex.: pele, idade).
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def accepted(self) -> bool:
@@ -47,6 +49,7 @@ class ValidationReport:
             "checks": {k: c.to_dict() for k, c in self.checks.items()},
             "failures": self.failures,
             "unverified": self.unverified,
+            "warnings": self.warnings,
             "seconds": self.seconds,
         }
 
@@ -61,5 +64,6 @@ class ValidationEngine:
             checks[validator.name] = await validator.check(ctx)
         failures = [c.failure_type or c.name for c in checks.values() if c.blocking and c.status == FAIL]
         unverified = [c.name for c in checks.values() if c.blocking and c.status == UNKNOWN]
+        warnings = [c.name for c in checks.values() if c.status == WARN or (not c.blocking and c.status == FAIL)]
         status = STATUS_FAIL if failures else STATUS_PASS_WITH_UNKNOWN if unverified else STATUS_PASS
-        return ValidationReport(status, checks, failures, unverified, round(seconds, 2))
+        return ValidationReport(status, checks, failures, unverified, round(seconds, 2), warnings)

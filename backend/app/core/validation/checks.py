@@ -21,6 +21,8 @@ from app.core.validation.geometry import Keypoint, body_ratios, pose_distance, r
 from app.providers.base import ProviderImage
 
 PASS, FAIL, UNKNOWN, NOT_COMPARABLE, INFORMATIONAL = "PASS", "FAIL", "UNKNOWN", "NOT_COMPARABLE", "INFORMATIONAL"
+# V1.1: medido e abaixo do desejado, mas sem bloquear (escala ainda provisoria).
+WARN = "WARN"
 # Corpo grande o bastante para ser "sujeito" e nao figurante distante.
 PROMINENT_BODY = 0.25
 
@@ -51,6 +53,8 @@ class ValidationContext:
     # Esqueleto da master_body (medido uma vez, mesma imagem da ficha).
     master_body_pose: list[Keypoint] | None = None
     threshold_override: float | None = None
+    # V1.1: pele medida na imagem final (depois da correcao, se houve).
+    skin: Any = None
 
 
 class FaceIdentityValidator:
@@ -75,7 +79,11 @@ class FaceIdentityValidator:
 
 
 class AgeValidator:
-    """Informativo na V1: registra o drift de idade conhecido (Qwen BFS rejuvenesce)."""
+    """Idade aparente (InsightFace) contra o alvo da ficha.
+
+    V1: so informativo. V1.1 (validation_profile.age.consistency_check): PASS
+    dentro da faixa, WARN fora - nunca bloqueia (a estimativa de idade e ruidosa).
+    `consistency` = 1 - |idade - alvo| / 10 (AgeConsistencyScore)."""
 
     name = "age"
 
@@ -86,12 +94,42 @@ class AgeValidator:
             return CheckResult(self.name, UNKNOWN, False, "Idade nao estimada.", confidence="LOW")
         low, high = age["accepted_range"]
         inside = low <= face.age <= high
+        target = age.get("target")
+        consistency = round(max(0.0, 1 - abs(face.age - target) / 10), 3) if target else None
+        status = INFORMATIONAL
+        if ctx.sheet.validation.get("age", {}).get("consistency_check"):
+            status = PASS if inside else WARN
         return CheckResult(
-            self.name, INFORMATIONAL, False,
-            f"Idade estimada {face.age:.0f} ({'dentro' if inside else 'fora'} de {low}-{high}; alvo {age.get('target')}).",
+            self.name, status, False,
+            f"Idade estimada {face.age:.0f} ({'dentro' if inside else 'fora'} de {low}-{high}; alvo {target}).",
             score=face.age, confidence="LOW",
-            evidence={"target": age.get("target"), "range": [low, high], "inside": inside,
+            evidence={"target": target, "range": [low, high], "inside": inside, "consistency": consistency,
                       "known_drift": age.get("known_drift")},
+        )
+
+
+class SkinRealismValidator:
+    """SkinRealismScore da pele final. Nao bloqueia por padrao
+    (validation_profile.skin_realism.blocking=false): a escala e provisoria."""
+
+    name = "skin_realism"
+
+    async def check(self, ctx: ValidationContext) -> CheckResult:
+        cfg = ctx.sheet.validation.get("skin_realism") or {}
+        blocking = bool(cfg.get("blocking", False))
+        skin = ctx.skin
+        if skin is None:
+            return CheckResult(self.name, UNKNOWN, False, "Pele nao analisada.", confidence="LOW")
+        evidence = {"grade": skin.grade, "reasons": skin.reasons, "unknown_aspects": skin.unknown_aspects, **skin.raw}
+        if skin.status == "UNKNOWN":
+            return CheckResult(self.name, UNKNOWN, blocking, skin.note or "Pele nao medida.", confidence="LOW",
+                               evidence=evidence)
+        status = {"PASS": PASS, "WARN": WARN, "FAIL": FAIL}[skin.status]
+        return CheckResult(
+            self.name, status, blocking and status == FAIL,
+            f"Microtextura {skin.score:.2f} ({skin.grade}); faixas provisorias.",
+            score=skin.score, threshold=float(cfg.get("bands", {}).get("warn_below", 0.5)), confidence="LOW",
+            failure_type="skin_realism_low" if status == FAIL and blocking else None, evidence=evidence,
         )
 
 

@@ -22,6 +22,7 @@ from app.core.validation.checks import (
     BodyConsistencyValidator,
     FaceIdentityValidator,
     PoseValidator,
+    SkinRealismValidator,
     SubjectCountValidator,
     TriggerLeakValidator,
 )
@@ -36,8 +37,11 @@ from app.providers.base import (
     ProviderRegistry,
     ProviderSet,
     SceneAdapter,
+    SkinCorrectionAdapter,
+    SkinCorrectionRequest,
     StageOutput,
 )
+from app.core.validation.skin import grade, unknown
 from tests.conftest import REPO
 
 GLOBAL_NEGATIVE = json.loads((REPO / "config" / "persona_engine.json").read_text(encoding="utf-8"))["global_negative"]
@@ -114,6 +118,7 @@ class FakeFace(FaceIdentityAdapter):
 
     def __init__(self, problems: list[str] | None = None) -> None:
         self.calls = []
+        self.guidance = []
         self.problems = problems or []
         self.log: list[str] | None = None
 
@@ -123,8 +128,9 @@ class FakeFace(FaceIdentityAdapter):
     async def validate_configuration(self):
         return list(self.problems)
 
-    async def lock_face(self, image, master_face, seed) -> StageOutput:
+    async def lock_face(self, image, master_face, seed, guidance=None) -> StageOutput:
         self.calls.append((image.locator, master_face, seed))
+        self.guidance.append(guidance)
         n = len(self.calls)
         if self.log is not None:
             self.log.append(f"face{n}")
@@ -141,6 +147,50 @@ class FakePose(PoseControlAdapter):
 
     async def prepare(self, pose_reference, strength):
         return PoseControl(pose_reference, strength)
+
+
+class FakeSkinCorrection(SkinCorrectionAdapter):
+    """Correcao de pele falsa: devolve skinN<imagem>."""
+
+    name = "fake-skin"
+
+    def __init__(self, fail: bool = False, problems: list[str] | None = None) -> None:
+        self.calls: list[tuple[str, SkinCorrectionRequest]] = []
+        self.fail = fail
+        self.problems = problems or []
+
+    def model_versions(self):
+        return {"unet": "fake-zimage", "lora": "nenhuma"}
+
+    async def validate_configuration(self):
+        return list(self.problems)
+
+    async def correct(self, image, request) -> StageOutput:
+        self.calls.append((image.locator, request))
+        if self.fail:
+            raise ProviderError("correcao caiu")
+        n = len(self.calls)
+        out = ProviderImage("fake", f"skin{n}<{image.locator}", f"http://fake/skin{n}.png", image.width, image.height)
+        return StageOutput(out, "skin_correction", self.name, 9.0, request.seed, ["fake-zimage"], f"s{n}",
+                           gpu={"name": "Fake GPU", "vram_used_mb": 14000, "vram_total_mb": 24467})
+
+
+class ScriptedSkin:
+    """SkinRealismAnalyzer falso: nota por prefixo do locator (face*, skin*)."""
+
+    def __init__(self, scores: dict[str, float | None]) -> None:
+        self.scores = scores
+        self.calls: list[str] = []
+
+    async def analyze(self, image, face, config):
+        self.calls.append(image.locator)
+        prefix = image.locator.split("<")[0].rstrip("0123456789")
+        score = self.scores.get(image.locator.split("<")[0], self.scores.get(prefix))
+        if score is None or face is None:
+            return unknown("sem medida no teste")
+        cal = config["calibration"]
+        texture = cal["lo"] + score * (cal["hi"] - cal["lo"])
+        return grade(texture, 0.0, config, {"areas": []})
 
 
 class ScriptedAnalyzer:
@@ -176,18 +226,21 @@ class FixedPrice:
         return {"price_per_hour": 0.57, "gpu": "Fake GPU", "source": "teste"}
 
 
-def build(engine_dir: Path, analyzer: ScriptedAnalyzer, scene=None, face_adapter=None, price=True):
+def build(engine_dir: Path, analyzer: ScriptedAnalyzer, scene=None, face_adapter=None, price=True,
+          skin_adapter=None, skin_analyzer=None):
     registry = ProviderRegistry()
     scene = scene or FakeScene()
     face_adapter = face_adapter or FakeFace()
-    registry.register(ProviderSet("fake", "Fake", scene, face_adapter, FakePose()))
+    registry.register(ProviderSet("fake", "Fake", scene, face_adapter, FakePose(), skin=skin_adapter))
     orch = GenerationOrchestrator(
         personas=PersonaRepository(engine_dir), sheets=PersonaSheetRepository(engine_dir), providers=registry,
         analyzer=analyzer,
         validation=ValidationEngine([FaceIdentityValidator(), SubjectCountValidator(), AnatomyValidator(), PoseValidator(),
-                                     BodyConsistencyValidator(), AgeValidator(), TriggerLeakValidator()]),
+                                     BodyConsistencyValidator(), AgeValidator(), TriggerLeakValidator(),
+                                     SkinRealismValidator()]),
         retry=RetryPolicy(1), history=GenerationHistory(engine_dir),
         prompt_builder=PromptBuilder(NegativePromptBuilder(GLOBAL_NEGATIVE)),
         cost=CostEstimator(FixedPrice() if price else None),
+        skin_analyzer=skin_analyzer,
     )
     return orch, scene, face_adapter

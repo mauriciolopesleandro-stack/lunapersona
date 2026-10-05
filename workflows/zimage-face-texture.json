@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "id": "zimage-face-texture",
+    "title": "Persona V1.1 - recuperar textura da pele no rosto",
+    "description": "Correcao minima e condicional: recorta o rosto da imagem final, redesenha com o Z-Image Turbo SEM a LoRA da persona e denoise baixo (so superficie da pele), e cola de volta com borda suave. Nao refaz o rosto: a guarda do Persona Engine descarta o resultado se identidade, idade, pose ou numero de pessoas mudarem.",
+    "compatible_models": [
+      "chroma1-hd-fp8"
+    ],
+    "hidden": true,
+    "required_params": [
+      "IMAGE",
+      "PROMPT",
+      "SEED",
+      "DENOISE",
+      "CROP_X",
+      "CROP_Y",
+      "CROP_W",
+      "CROP_H",
+      "WORK_W",
+      "WORK_H",
+      "FEATHER"
+    ],
+    "optional_params": {
+      "STEPS": 8,
+      "CFG": 1,
+      "SHIFT": 3,
+      "SAMPLER": "res_multistep",
+      "SCHEDULER": "simple",
+      "UNET": "z_image_turbo_int8_convrot.safetensors",
+      "TEXT_ENCODER": "qwen_3_4b_fp4_mixed.safetensors",
+      "VAE": "ae.safetensors",
+      "FILENAME_PREFIX": "luna_engine_skin"
+    }
+  },
+  "graph": {
+    "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "${UNET}", "weight_dtype": "default"}},
+    "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "${TEXT_ENCODER}", "type": "lumina2", "device": "default"}},
+    "3": {"class_type": "VAELoader", "inputs": {"vae_name": "${VAE}"}},
+    "4": {"class_type": "ModelSamplingAuraFlow", "inputs": {"model": ["1", 0], "shift": "${SHIFT}"}},
+    "5": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": "${PROMPT}"}},
+    "6": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["5", 0]}},
+    "10": {"class_type": "LoadImage", "inputs": {"image": "${IMAGE}"}},
+    "11": {"class_type": "ImageCrop", "inputs": {"image": ["10", 0], "width": "${CROP_W}", "height": "${CROP_H}", "x": "${CROP_X}", "y": "${CROP_Y}"}},
+    "12": {"class_type": "ImageScale", "inputs": {"image": ["11", 0], "upscale_method": "lanczos", "width": "${WORK_W}", "height": "${WORK_H}", "crop": "disabled"}},
+    "13": {"class_type": "VAEEncode", "inputs": {"pixels": ["12", 0], "vae": ["3", 0]}},
+    "14": {"class_type": "KSampler", "inputs": {"model": ["4", 0], "positive": ["5", 0], "negative": ["6", 0], "latent_image": ["13", 0], "seed": "${SEED}", "steps": "${STEPS}", "cfg": "${CFG}", "sampler_name": "${SAMPLER}", "scheduler": "${SCHEDULER}", "denoise": "${DENOISE}"}},
+    "15": {"class_type": "VAEDecode", "inputs": {"samples": ["14", 0], "vae": ["3", 0]}},
+    "16": {"class_type": "ImageScale", "inputs": {"image": ["15", 0], "upscale_method": "lanczos", "width": "${CROP_W}", "height": "${CROP_H}", "crop": "disabled"}},
+    "17": {"class_type": "SolidMask", "inputs": {"value": 1.0, "width": "${CROP_W}", "height": "${CROP_H}"}},
+    "18": {"class_type": "FeatherMask", "inputs": {"mask": ["17", 0], "left": "${FEATHER}", "top": "${FEATHER}", "right": "${FEATHER}", "bottom": "${FEATHER}"}},
+    "19": {"class_type": "ImageCompositeMasked", "inputs": {"destination": ["10", 0], "source": ["16", 0], "x": "${CROP_X}", "y": "${CROP_Y}", "resize_source": false, "mask": ["18", 0]}},
+    "20": {"class_type": "SaveImage", "inputs": {"images": ["19", 0], "filename_prefix": "${FILENAME_PREFIX}"}}
+  }
+}

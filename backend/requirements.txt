@@ -5,3 +5,6 @@ pydantic==2.9.2
 pydantic-settings==2.5.2
 python-dotenv==1.0.1
 python-multipart==0.0.9
+# Persona Engine V1.1: medida da microtextura da pele (app/validation_backends/skin.py)
+pillow==11.0.0
+numpy==2.1.3

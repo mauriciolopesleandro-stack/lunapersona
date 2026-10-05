@@ -619,7 +619,7 @@ export interface EnginePersonaPatch {
   validation?: { threshold: number | null };
 }
 
-export type CheckStatus = "PASS" | "FAIL" | "UNKNOWN" | "NOT_COMPARABLE" | "INFORMATIONAL";
+export type CheckStatus = "PASS" | "FAIL" | "UNKNOWN" | "NOT_COMPARABLE" | "INFORMATIONAL" | "WARN";
 
 // Um validador do Persona Engine V1 (backend/app/core/validation/checks.py).
 export interface ValidationCheck {
@@ -640,6 +640,8 @@ export interface ValidationReport {
   checks: Record<string, ValidationCheck>;
   failures: string[];
   unverified: string[];
+  // V1.1: avisos que nao reprovam (ex.: pele com nota baixa).
+  warnings?: string[];
   seconds: number;
 }
 
@@ -668,8 +670,27 @@ export interface GenerationResult {
   validation: ValidationReport | null;
   seeds: { scene: number; face_lock: number };
   metrics: GenerationMetrics;
+  // V1.1: realismo da pele e correcao (null quando a pele nao foi analisada).
+  skin?: SkinTelemetry | null;
+  face_lock_image_url?: string | null;
   error: string | null;
   created_at: string;
+}
+
+export interface SkinTelemetry {
+  skin_realism_score: number | null;
+  skin_realism_status: "PASS" | "WARN" | "FAIL" | "UNKNOWN";
+  skin_realism_grade: string | null;
+  skin_realism_before_correction: number | null;
+  skin_correction_applied: boolean;
+  skin_correction_attempts: number;
+  skin_correction_duration: number;
+  skin_correction_cost: number | null;
+  skin_correction_reason: string | null;
+  skin_correction_note: string | null;
+  face_identity_before: number | null;
+  face_identity_after: number | null;
+  age_score: number | null;
 }
 
 export interface GenerationFailure {

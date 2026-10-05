@@ -61,6 +61,7 @@ def to_face(data: dict[str, Any]) -> DetectedFace:
         similarity=float(data["sim"]) if data.get("sim") is not None else None,
         age=float(data["age"]) if data.get("age") else None,
         sex=data.get("sex"), det_score=float(data.get("score", 0.0)), yaw=data.get("yaw"),
+        kps=[(float(x), float(y)) for x, y in data.get("kps", [])],
     )
 
 

@@ -1368,7 +1368,8 @@ label.checkbox-row input {
   color: var(--danger);
 }
 
-.check-status.check-unknown {
+.check-status.check-unknown,
+.check-status.check-warn {
   background: var(--warning-bg);
   color: var(--warning);
 }

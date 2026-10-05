@@ -20,6 +20,8 @@ class DetectedFace:
     sex: str | None = None
     det_score: float = 0.0
     yaw: float | None = None
+    # 5 pontos do rosto (olhos, nariz, cantos da boca), quando o detector entrega.
+    kps: list[tuple[float, float]] = field(default_factory=list)
 
 
 @dataclass

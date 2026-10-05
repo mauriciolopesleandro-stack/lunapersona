@@ -4,6 +4,7 @@ from app.providers.comfyui.face import QwenFaceAdapter
 from app.providers.comfyui.pose import DWPoseControlAdapter
 from app.providers.comfyui.scene import ZImageAdapter
 from app.providers.comfyui.session import ComfySession
+from app.providers.comfyui.skin import ZImageTextureAdapter
 from app.workflow_manager.manager import WorkflowManager
 
 
@@ -17,7 +18,9 @@ def comfyui_provider_set(client: ComfyUIClient, workflows: WorkflowManager) -> P
         scene=ZImageAdapter(session),
         face=QwenFaceAdapter(session),
         pose=DWPoseControlAdapter(session),
+        # V1.1: so roda se a Persona Sheet ligar a correcao de pele.
+        skin=ZImageTextureAdapter(session),
     )
 
 
-__all__ = ["ComfySession", "DWPoseControlAdapter", "QwenFaceAdapter", "ZImageAdapter", "comfyui_provider_set"]
+__all__ = ["ComfySession", "DWPoseControlAdapter", "QwenFaceAdapter", "ZImageAdapter", "ZImageTextureAdapter", "comfyui_provider_set"]
