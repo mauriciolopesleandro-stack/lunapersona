@@ -184,7 +184,11 @@ class PersonaManager:
             return []
         personas = []
         for entry in sorted(self.personas_dir.iterdir()):
-            if entry.is_dir() and (entry / "persona.json").exists():
+            path = entry / "persona.json"
+            if entry.is_dir() and path.exists():
+                # Persona removida pelo Persona Engine (DELETE e so desativar).
+                if json.loads(path.read_text(encoding="utf-8")).get("engine", {}).get("active") is False:
+                    continue
                 personas.append(self.get_persona(entry.name))
         return personas
 
@@ -245,7 +249,11 @@ class PersonaManager:
     def _save_persona(self, persona: Persona) -> None:
         path = self._persona_json_path(persona.id)
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Chaves que este manager nao conhece (o bloco "engine" do Persona
+        # Engine, app/core/persona) ficam como estavam.
+        previous = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         payload = {
+            **previous,
             "id": persona.id,
             "name": persona.name,
             "description": persona.description,
@@ -253,6 +261,8 @@ class PersonaManager:
             "generation": asdict(persona.generation),
             "identity_methods": persona.identity_methods,
         }
+        payload.pop("lora", None)
+        payload.pop("voice", None)
         if persona.lora:
             payload["lora"] = asdict(persona.lora)
         if persona.voice:

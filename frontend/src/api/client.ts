@@ -4,7 +4,19 @@
 // reserva - ex: rodando local, onde /api/runpod-status nao existe.
 const FALLBACK_API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 let podApiBase: string | null = null;
+let podApiToken: string | null = null;
 let apiBaseLookup: Promise<void> | null = null;
+
+// Toda chamada deste arquivo ao backend do pod leva o token (o backend recusa
+// alteracoes sem ele - backend/app/security.py). Sombreia o fetch global so
+// aqui dentro; chamadas a /api/* da Vercel saem iguais.
+const fetch: typeof window.fetch = (input, init) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  if (!podApiToken || !url.startsWith(currentApiBase())) return window.fetch(input, init);
+  const headers = new Headers(init?.headers);
+  headers.set("X-Luna-Token", podApiToken);
+  return window.fetch(input, { ...init, headers });
+};
 
 function currentApiBase(): string {
   return podApiBase ?? FALLBACK_API_BASE;
@@ -594,6 +606,7 @@ export interface PodStatus {
   dataCenterId: string | null;
   gpu: string | null;
   apiBase: string | null;
+  apiToken?: string;
   costPerHr: number;
   uptimeSeconds: number;
   liveSpend: number;
@@ -608,6 +621,7 @@ export async function getPodStatus(): Promise<PodStatus> {
   }
   const status = (await res.json()) as PodStatus;
   if (status.apiBase) podApiBase = status.apiBase;
+  if (status.apiToken) podApiToken = status.apiToken;
   return status;
 }
 

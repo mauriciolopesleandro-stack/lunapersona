@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { isAuthenticated } from "./_auth.js";
+import { backendApiToken, isAuthenticated } from "./_auth.js";
 import { externalApiBase } from "./_external.js";
 import {
   enforceSingleRunningPod,
@@ -51,6 +51,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         dataCenterId: "servidor proprio",
         gpu: null,
         apiBase: external,
+        apiToken: backendApiToken(),
         costPerHr: 0,
         uptimeSeconds: 0,
         liveSpend: 0,
@@ -82,6 +83,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         dataCenterId: pod?.dataCenterId ?? null,
         gpu: pod?.gpuDisplayName ?? null,
         apiBase,
+        // So depois do login (checado acima): o backend do pod exige este
+        // token em toda alteracao (backend/app/security.py).
+        apiToken: backendApiToken(),
         costPerHr,
         uptimeSeconds,
         liveSpend: running ? (uptimeSeconds / 3600) * costPerHr : 0,

@@ -16,6 +16,7 @@
 // Os dois volumes tem o mesmo conteudo: o proprio pod sincroniza um com o
 // outro via API S3 da RunPod (scripts/volume_sync.py), entao tanto faz em
 // qual deles o estudio sobe.
+import { backendApiToken } from "./_auth.js";
 import { s3Configured, s3ObjectExists } from "./_s3.js";
 import { storeConfigured, storeDelete, storeSetIfAbsent } from "./_store.js";
 
@@ -199,7 +200,9 @@ function toStudioPod(p: RestPod): StudioPod {
     dataCenterId: p.networkVolume?.dataCenterId ?? p.machine?.dataCenterId ?? null,
     networkVolumeId: p.networkVolume?.id ?? null,
     gpuDisplayName: p.machine?.gpuDisplayName ?? null,
-    hasCurrentEnv: Boolean(p.env?.RUNPOD_S3_ACCESS_KEY && p.env?.RUNPOD_API_KEY),
+    hasCurrentEnv: Boolean(
+      p.env?.RUNPOD_S3_ACCESS_KEY && p.env?.RUNPOD_API_KEY && p.env?.LUNA_API_TOKEN === backendApiToken()
+    ),
   };
 }
 
@@ -315,6 +318,8 @@ function podEnv(volume: StudioVolume): Record<string, string> {
   // nunca teve essa chave - sem isto o pod ficava ligado ate alguem clicar
   // em "Desligar".
   env.RUNPOD_API_KEY = requireEnv("RUNPOD_API_KEY");
+  // Sem este token o backend do pod recusa alteracoes (backend/app/security.py).
+  env.LUNA_API_TOKEN = backendApiToken();
   // Credenciais S3 da RunPod para o pod sincronizar os volumes. Sem elas o
   // estudio funciona igual, so nao mantem os dois volumes iguais.
   if (process.env.RUNPOD_S3_ACCESS_KEY && process.env.RUNPOD_S3_SECRET_KEY) {

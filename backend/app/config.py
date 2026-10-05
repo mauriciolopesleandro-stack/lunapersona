@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     # Aviso no celular (app/notify.py): o site repassa para o Telegram.
     notify_url: str = "https://luna-ai-studio-frontend.vercel.app/api/notify"
 
+    # Token que o site manda no cabecalho X-Luna-Token (app/security.py). A
+    # Vercel calcula o mesmo valor e passa ao pod ao cria-lo. Vazio = backend
+    # aberto, como antes (pod antigo ou PC proprio sem o token no .env).
+    luna_api_token: str = ""
+
     model_config = SettingsConfigDict(
         env_file=str(REPO_ROOT / ".env"),
         env_file_encoding="utf-8",

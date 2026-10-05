@@ -110,7 +110,8 @@ def post_json(url: str, payload: dict, timeout: float) -> dict:
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        # Backend com token (backend/app/security.py): no pod ele esta no ambiente.
+        headers={"Content-Type": "application/json", "X-Luna-Token": os.environ.get("LUNA_API_TOKEN", "")},
         method="POST",
     )
     try:

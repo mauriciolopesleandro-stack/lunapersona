@@ -48,6 +48,14 @@ export function verifySessionToken(token: string | undefined): boolean {
   return expiresAt > Math.floor(Date.now() / 1000);
 }
 
+// Token do backend do pod (cabecalho X-Luna-Token, backend/app/security.py).
+// Derivado do SESSION_SECRET: sem variavel nova na Vercel. O pod recebe o
+// mesmo valor ao ser criado (podEnv em _runpod.ts) e o site so o recebe
+// depois do login (/api/runpod-status).
+export function backendApiToken(): string {
+  return createHmac("sha256", sessionSecret()).update("luna-backend-api-v1").digest("hex");
+}
+
 export function parseCookies(req: IncomingMessage): Record<string, string> {
   const header = req.headers.cookie;
   if (!header) return {};

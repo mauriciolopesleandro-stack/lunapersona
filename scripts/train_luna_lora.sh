@@ -141,7 +141,7 @@ echo "$TRAIN_PID" > "$WORK/train.pid"
 (
   while kill -0 "$TRAIN_PID" 2>/dev/null; do
     curl -s -o /dev/null -X POST localhost:8000/api/generate -H "Content-Type: application/json" \
-      -d '{"prompt":"keepalive","model_id":"__keepalive__"}' || true
+      -H "X-Luna-Token: ${LUNA_API_TOKEN:-}" -d '{"prompt":"keepalive","model_id":"__keepalive__"}' || true
     sleep 120
   done
   # So em output/ (para baixar pelo /view e testar). Nunca em models/loras:

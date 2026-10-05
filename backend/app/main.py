@@ -11,6 +11,7 @@ from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
 from app.jobs import running_jobs
 from app.routes import chat, content, generate, health, models, personas, story, video, voice, workflows
+from app.security import token_middleware
 from app.services.chat_service import ChatService
 from app.services.generation_service import GenerationService
 from app.services.scene_describer import SceneDescriber
@@ -26,6 +27,9 @@ settings = get_settings()
 
 app = FastAPI(title="Luna AI Studio - Backend", version="0.1.0")
 
+# Antes do CORS: o ultimo middleware adicionado e o mais externo, e a resposta
+# 401 tambem precisa dos cabecalhos de CORS para o site ler o erro.
+app.middleware("http")(token_middleware(settings.luna_api_token))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
