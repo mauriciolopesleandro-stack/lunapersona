@@ -401,11 +401,16 @@ class GenerationService:
         lora = persona.lora
         description = clean_reference_caption(await self._describe_reference(req.reference_image))
         prompt = ", ".join(p for p in (f"{lora.trigger}, a woman", user_prompt, description, REALISM_SUFFIX) if p)
+        # O "Quanto mudar" do site (0.4-0.95) foi calibrado no Chroma (26 passos).
+        # No Turbo (8 passos) 0.7 refazia so ~5 passos e a pessoa da foto ficava
+        # (teste de 2026-10-05: continuou loira): 0.4-0.95 vira 0.75-1.0.
+        asked = req.denoise if req.denoise is not None else 0.8
+        denoise = min(1.0, 0.75 + (max(0.4, asked) - 0.4) * 0.25 / 0.55)
         graph = self.workflow_manager.render(ZIMAGE_IMG2IMG_WORKFLOW, {
             "PROMPT": prompt, "REFERENCE_IMAGE": req.reference_image,
             "WIDTH": req.width or 864, "HEIGHT": req.height or 1536, "SEED": seed,
             "LORA_NAME": lora.zimage_file, "LORA_STRENGTH": lora.zimage_strength,
-            "DENOISE": req.denoise if req.denoise is not None else 0.8,
+            "DENOISE": round(denoise, 3), "FILENAME_PREFIX": "luna_studio",
         })
         prompt_id, images = await self._run_graph(graph)
         return GenerationResponse(
