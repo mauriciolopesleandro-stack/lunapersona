@@ -163,6 +163,13 @@ class Persona:
         return self.identity.fixed.get("caracteristicas_corporais", "").strip()
 
 
+def _reference(entry: dict[str, Any]) -> PersonaReference:
+    # O index.json tambem guarda tipo, peso e ativo (ReferenceManager do
+    # Persona Engine); aqui so entram os campos que este manager conhece.
+    known = PersonaReference.__dataclass_fields__
+    return PersonaReference(**{k: v for k, v in entry.items() if k in known})
+
+
 class PersonaManager:
     def __init__(self, personas_dir: Path) -> None:
         self.personas_dir = personas_dir
@@ -331,7 +338,7 @@ class PersonaManager:
 
     def list_references(self, persona_id: str) -> list[PersonaReference]:
         entries = self._load_reference_index(persona_id)
-        return [PersonaReference(**entry) for entry in entries]
+        return [_reference(entry) for entry in entries]
 
     def add_reference(
         self, persona_id: str, original_filename: str, content: bytes, label: str = ""
@@ -363,7 +370,7 @@ class PersonaManager:
         }
         entries.append(entry)
         self._save_reference_index(persona_id, entries)
-        return PersonaReference(**entry)
+        return _reference(entry)
 
     def get_reference_path(self, persona_id: str, reference_id: str) -> Path:
         entries = self._load_reference_index(persona_id)
@@ -394,7 +401,7 @@ class PersonaManager:
         for entry in entries:
             entry["is_primary"] = entry["id"] == reference_id
         self._save_reference_index(persona_id, entries)
-        return [PersonaReference(**e) for e in entries]
+        return [_reference(e) for e in entries]
 
     def delete_reference(self, persona_id: str, reference_id: str) -> None:
         entries = self._load_reference_index(persona_id)

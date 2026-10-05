@@ -10,7 +10,11 @@ from app.idle_shutdown import IdleShutdownTracker
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
 from app.jobs import running_jobs
-from app.routes import chat, content, generate, health, models, personas, story, video, voice, workflows
+from app.core.persona import PersonaRepository
+from app.core.persona.references import ReferenceManager
+from app.routes import (
+    chat, content, generate, health, models, persona_engine, personas, story, video, voice, workflows,
+)
 from app.security import token_middleware
 from app.services.chat_service import ChatService
 from app.services.generation_service import GenerationService
@@ -48,6 +52,8 @@ app.state.comfyui_client = ComfyUIClient(
 app.state.workflow_manager = WorkflowManager(settings.workflows_dir)
 app.state.model_manager = ModelManager(settings.models_registry_path)
 app.state.persona_manager = PersonaManager(settings.personas_dir)
+app.state.persona_repository = PersonaRepository(settings.personas_dir)
+app.state.reference_manager = ReferenceManager(app.state.persona_manager)
 app.state.llm_client = OllamaClient(
     base_url=settings.llm_api_url, model=settings.llm_model, timeout=settings.llm_timeout
 )
@@ -132,6 +138,7 @@ app.include_router(personas.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(content.router, prefix="/api")
 app.include_router(story.router, prefix="/api")
+app.include_router(persona_engine.router, prefix="/api")
 
 
 @app.on_event("startup")
