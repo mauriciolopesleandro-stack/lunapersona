@@ -12,6 +12,8 @@ from app.persona_manager.manager import PersonaManager
 from app.jobs import running_jobs
 from app.core.persona import PersonaRepository
 from app.core.persona.references import ReferenceManager
+from app.providers.base import ProviderRegistry
+from app.providers.comfyui import ComfyUIAdapter
 from app.routes import (
     chat, content, generate, health, models, persona_engine, personas, story, video, voice, workflows,
 )
@@ -54,6 +56,9 @@ app.state.model_manager = ModelManager(settings.models_registry_path)
 app.state.persona_manager = PersonaManager(settings.personas_dir)
 app.state.persona_repository = PersonaRepository(settings.personas_dir)
 app.state.reference_manager = ReferenceManager(app.state.persona_manager)
+# Modelos de geracao do Persona Engine. Provider novo = registrar aqui.
+app.state.provider_registry = ProviderRegistry()
+app.state.provider_registry.register(ComfyUIAdapter(app.state.comfyui_client, app.state.workflow_manager))
 app.state.llm_client = OllamaClient(
     base_url=settings.llm_api_url, model=settings.llm_model, timeout=settings.llm_timeout
 )

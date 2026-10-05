@@ -13,6 +13,7 @@ from typing import Any
 
 from app.clients.comfyui_client import ComfyUIClient, ComfyUIError, GenerationOutputImage
 from app.clients.llm_client import OllamaClient
+from app.core.generation.vocabulary import CLOTHES_WORDS, EXPRESSION_WORDS
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
 from app.services.person_swap import (
@@ -76,11 +77,7 @@ HIRES_SCALE = 1.5
 HIRES_MAX_PIXELS = 2_400_000
 
 # Se o pedido ja fala de expressao/olhar, a atitude padrao da persona nao entra.
-_EXPRESSION_WORDS = re.compile(
-    r"\b(?:smil\w*|laugh\w*|grin\w*|expression|surpris\w*|shock\w*|mouth|wink\w*|pout\w*|serious|sad|angry|"
-    r"cry\w*|tongue|scream\w*|gaze|frown\w*|kiss\w*|looking)\b",
-    re.I,
-)
+_EXPRESSION_WORDS = EXPRESSION_WORDS
 # Frases da descricao sobre outra pessoa (no pack so a mulher e redesenhada).
 # ...mas frase que tambem fala dela fica (sem isso sumia a descricao dela e o
 # modelo pintava fundo no lugar da cabeca).
@@ -104,11 +101,7 @@ def _face_area(face: dict[str, Any]) -> float:
     x1, y1, x2, y2 = face["bbox"]
     return (x2 - x1) * (y2 - y1)
 # Pedido ja diz a roupa? (em ingles - o pedido passa pela traducao antes)
-_CLOTHES_WORDS = re.compile(
-    r"\b(?:wear\w*|dress\w*|outfit|clothes|clothing|shirt|t-shirt|top|blouse|jacket|coat|sweater|hoodie|jeans|pants|"
-    r"trousers|shorts|skirt|bikini|swimsuit|lingerie|robe|uniform|suit|leggings|sportswear|naked|nude)\b",
-    re.IGNORECASE,
-)
+_CLOTHES_WORDS = CLOTHES_WORDS
 
 PERSON_SWAP_WORKFLOW = "chroma-person-swap-lora"
 QWEN_SWAP_WORKFLOW = "qwen-person-swap"
