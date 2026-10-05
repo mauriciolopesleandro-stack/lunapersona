@@ -6,7 +6,8 @@ InsightFace e feito para rosto: acha de perfil, diz homem/mulher e compara a
 identidade de dois rostos.
 
 Saida: texto JSON com uma lista de rostos, do maior para o menor:
-[{"bbox": [x1, y1, x2, y2], "score": 0.83, "sex": "F", "age": 27, "sim": 0.41}]
+[{"bbox": [x1, y1, x2, y2], "score": 0.83, "sex": "F", "age": 27, "yaw": 0.05,
+  "kps": [[x, y], ...5 pontos], "sim": 0.41}]
 "sim" = semelhanca (cosseno do ArcFace) com o maior rosto da imagem de
 referencia; so existe com referencia. Acima de ~0.35 costuma ser a mesma pessoa.
 
@@ -96,6 +97,11 @@ class LunaFaces:
                 "age": int(getattr(f, "age", 0) or 0),
                 "yaw": _yaw(f),
             }
+            # 5 pontos (olho esq., olho dir., nariz, canto esq. e dir. da boca):
+            # proporcoes do rosto na validacao do Persona Engine.
+            kps = getattr(f, "kps", None)
+            if kps is not None:
+                item["kps"] = [[round(float(x), 1), round(float(y), 1)] for x, y in kps[:5]]
             if ref is not None:
                 item["sim"] = round(float(np.dot(ref, f.normed_embedding)), 3)
             out.append(item)

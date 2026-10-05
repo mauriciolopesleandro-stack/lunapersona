@@ -66,6 +66,9 @@ class ScriptedValidator:
     scores: list[float | None]
     seen: list[str] = field(default_factory=list)
 
+    async def check_ready(self):
+        return []
+
     async def validate(self, references, image, persona):
         self.seen.append(image.locator)
         score = self.scores[min(len(self.seen) - 1, len(self.scores) - 1)]

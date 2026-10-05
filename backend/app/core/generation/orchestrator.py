@@ -35,6 +35,8 @@ from app.providers.base import (
 
 
 class IdentityChecker(Protocol):
+    async def check_ready(self) -> list[str]: ...
+
     async def validate(
         self, references: list[ReferenceImage], image: ProviderImage, persona: PersonaProfile
     ) -> IdentityValidationResult: ...
@@ -172,7 +174,9 @@ class GenerationOrchestrator:
         references = [
             ReferenceImage(r.id, r.filename, self.references.read_bytes(r), r.type, r.weight) for r in refs
         ]
-        problems = await adapter.validate_configuration()
+        # Sem o modelo OU sem como medir o rosto, nem comeca: gerar 4 vezes
+        # sem poder validar so gastaria GPU.
+        problems = [*await adapter.validate_configuration(), *await self.validator.check_ready()]
         if problems:
             raise GenerationJobError("; ".join(problems))
 
