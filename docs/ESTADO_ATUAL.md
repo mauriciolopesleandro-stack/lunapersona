@@ -146,6 +146,14 @@ notas, e token no backend do pod (`X-Luna-Token`). Tudo descrito em
 marcar o tipo das fotos da Luna). A pendência 6 acima (backend sem
 autenticação) foi resolvida para alterações; leituras GET continuam abertas.
 
+## 4c. Persona Engine V1 (2026-10-05)
+
+Pipeline do benchmark em produção: Z-Image + LoRA -> Qwen 2511 BFS com a
+master_face, validação com validadores independentes e retry por tipo de falha.
+Ficha em `personas/luna/persona_sheet.json`; documentação em
+`docs/PERSONA_ENGINE.md`. Pendente: conferir o hash das masters no volume na
+primeira geração (MasterIntegrityError se o arquivo for outro).
+
 ## 5. Preferências e regras do usuário
 
 - Fala português, prefere explicação simples e passo a passo.

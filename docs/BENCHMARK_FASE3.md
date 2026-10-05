@@ -6,7 +6,7 @@ Convenção: **EVIDÊNCIA** (medido), **OBSERVAÇÃO** (visto nas folhas, QUALIT
 **Arquivos:**
 - `scripts/benchmark_persona2.py` (gera e mede) e `scripts/analyze_benchmark2.py`;
 - `docs/testes/bench2_*.jpg` (folhas de contato), `bench2_results.json` (parâmetros e medidas de cada imagem), `bench2_analise.txt` (saída completa da análise);
-- `docs/persona_sheet_luna_v1.json`.
+- `personas/luna/persona_sheet.json`.
 
 ## AUDIT (resumo; detalhes em `docs/AUDITORIA_PERSONA.md`)
 
@@ -204,7 +204,7 @@ Nenhuma imagem gerada virou referência.
 
 ## PERSONA SHEET JSON
 
-`docs/persona_sheet_luna_v1.json` (v1.0, status `CALIBRATED_NOT_DEPLOYED`).
+`personas/luna/persona_sheet.json` (v1.0, status `CALIBRATED_NOT_DEPLOYED`).
 
 ## PERSONA SHEET HUMAN READABLE
 
