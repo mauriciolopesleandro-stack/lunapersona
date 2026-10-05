@@ -84,7 +84,7 @@
       "class_type": "VAEEncode",
       "inputs": {
         "pixels": [
-          "12",
+          "21",
           0
         ],
         "vae": [
@@ -134,9 +134,13 @@
       }
     },
     "10": {
-      "class_type": "LoadImage",
+      "class_type": "SaveImage",
       "inputs": {
-        "image": "${REFERENCE_IMAGE}"
+        "images": [
+          "9",
+          0
+        ],
+        "filename_prefix": "${FILENAME_PREFIX}"
       }
     },
     "11": {
@@ -150,11 +154,17 @@
         "strength_model": "${LORA_STRENGTH}"
       }
     },
-    "12": {
+    "20": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "${REFERENCE_IMAGE}"
+      }
+    },
+    "21": {
       "class_type": "ImageScale",
       "inputs": {
         "image": [
-          "10",
+          "20",
           0
         ],
         "upscale_method": "lanczos",
