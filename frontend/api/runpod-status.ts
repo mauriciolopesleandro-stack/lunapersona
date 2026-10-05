@@ -3,6 +3,7 @@ import { isAuthenticated } from "./_auth.js";
 import { externalApiBase } from "./_external.js";
 import {
   enforceSingleRunningPod,
+  findSshEndpoint,
   getBalance,
   pickCurrentPod,
   podApiBase,
@@ -87,6 +88,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         balance,
         volumeSync: Boolean(process.env.RUNPOD_S3_ACCESS_KEY && process.env.RUNPOD_S3_SECRET_KEY),
         stoppedExtraPods: stopped,
+        // IP/porta do SSH do pod atual (mudam a cada religada): manutencao sem
+        // depender do login no console da RunPod. So com a sessao do site.
+        ssh: running && pod ? findSshEndpoint(pod) : null,
       })
     );
   } catch (err) {
