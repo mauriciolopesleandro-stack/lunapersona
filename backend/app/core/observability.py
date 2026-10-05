@@ -9,6 +9,13 @@ import re
 from typing import Any
 
 log = logging.getLogger("luna.engine")
+# O uvicorn nao configura o logger raiz (so os dele): sem isto as linhas INFO
+# sumiam. No pod saem em /tmp/luna-logs/uvicorn.log.
+if not log.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(message)s"))
+    log.addHandler(_handler)
+    log.setLevel(logging.INFO)
 
 EVENTS = {
     "generation_started",

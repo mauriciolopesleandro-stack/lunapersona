@@ -137,6 +137,15 @@ Logs no pod: `/tmp/luna-autostart.log` e `/tmp/luna-logs/*.log`.
 7. Limpeza opcional: remover `RUNPOD_POD_ID` e `VITE_API_BASE_URL` da Vercel e
    apagar os pods antigos — só com o ok do usuário.
 
+## 4b. Persona Engine (2026-10-05)
+
+Gerar com validação de identidade, perfil da persona separado em
+identidade/aparência/estilo/restrições, tipos e pesos das fotos, histórico com
+notas, e token no backend do pod (`X-Luna-Token`). Tudo descrito em
+`docs/PERSONA_ENGINE.md`, inclusive as pendências (calibrar a nota no pod e
+marcar o tipo das fotos da Luna). A pendência 6 acima (backend sem
+autenticação) foi resolvida para alterações; leituras GET continuam abertas.
+
 ## 5. Preferências e regras do usuário
 
 - Fala português, prefere explicação simples e passo a passo.
