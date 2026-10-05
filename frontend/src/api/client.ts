@@ -552,10 +552,9 @@ export async function uploadPersonaReference(personaId: string, file: File): Pro
 }
 
 export async function deletePersonaReference(personaId: string, referenceId: string): Promise<void> {
-  const res = await fetch(`${await apiBase()}/personas/${personaId}/references/${referenceId}`, {
-    method: "DELETE",
-  });
-  await handleResponse<{ deleted: string }>(res);
+  // Pelo Persona Engine: a foto sai da lista mas fica guardada no volume
+  // (a rota antiga apagava o arquivo de vez).
+  await removeEngineReference(personaId, referenceId);
 }
 
 export async function setPrimaryPersonaReference(personaId: string, referenceId: string): Promise<PersonaReference[]> {
@@ -568,6 +567,202 @@ export async function setPrimaryPersonaReference(personaId: string, referenceId:
 
 export function personaReferenceFileUrl(personaId: string, referenceId: string): string {
   return `${currentApiBase()}/personas/${personaId}/references/${referenceId}/file`;
+}
+
+// --- Persona Engine (/engine): perfil separado, referencias com tipo/peso,
+// geracao com validacao de identidade (backend/app/core) -----------------
+
+export const APPEARANCE_FIELDS = ["roupa", "expressao", "maquiagem", "acessorios"] as const;
+export const STYLE_FIELDS = ["fotografia", "iluminacao", "composicao", "estetica", "tratamento", "realismo", "camera"] as const;
+export const REFERENCE_TYPES = ["PRIMARY", "FACE", "FULL_BODY", "PROFILE", "STYLE", "OTHER"] as const;
+export type ReferenceType = (typeof REFERENCE_TYPES)[number];
+
+export interface EngineReference {
+  id: string;
+  persona_id: string;
+  type: ReferenceType;
+  weight: number;
+  active: boolean;
+  is_primary: boolean;
+  original_filename: string;
+  width: number | null;
+  height: number | null;
+  created_at: string;
+}
+
+export interface EnginePersona {
+  id: string;
+  name: string;
+  description: string;
+  identity: { traits: Record<string, string>; apparent_age: number | null; sex: "" | "F" | "M"; distinctive_keywords: string[] };
+  appearance: { values: Record<string, string> };
+  style: { values: Record<string, string> };
+  constraints: { rules: string[]; negative: string[] };
+  validation: { threshold: number | null };
+  active: boolean;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  primary_reference_id?: string | null;
+  references?: EngineReference[];
+}
+
+export interface EnginePersonaPatch {
+  name?: string;
+  description?: string;
+  identity?: Partial<Pick<EnginePersona["identity"], "apparent_age" | "sex" | "distinctive_keywords">> & {
+    traits?: Record<string, string>;
+  };
+  appearance?: Record<string, string>;
+  style?: Record<string, string>;
+  constraints?: Partial<EnginePersona["constraints"]>;
+  validation?: { threshold: number | null };
+}
+
+export interface MetricScore {
+  name: string;
+  weight: number;
+  score: number | null;
+  measured: boolean;
+  note: string;
+  raw: Record<string, unknown>;
+}
+
+export interface IdentityValidation {
+  identity_score: number | null;
+  face_similarity: number | null;
+  facial_structure_score: number | null;
+  appearance_score: number | null;
+  distinctive_features_score: number | null;
+  coverage: number;
+  face_found: boolean;
+  status: "ACCEPT" | "REJECT";
+  reasons: string[];
+  hard_failures: string[];
+  metrics: Record<string, MetricScore>;
+}
+
+export interface GenerationResult {
+  id: string;
+  job_id: string;
+  attempt: number;
+  image_url: string | null;
+  identity_score: number | null;
+  face_score: number | null;
+  appearance_score: number | null;
+  status: "ACCEPT" | "REJECT" | "ERROR";
+  validation: IdentityValidation | null;
+  parameters: { identity_strength: number; face_restore: boolean; seed: number | null };
+  duration_seconds: number | null;
+  created_at: string;
+}
+
+export interface GenerationFailure {
+  id: string;
+  result_id: string;
+  failure_type: string;
+  severity: "low" | "medium" | "high";
+  details: string;
+}
+
+export interface GenerationJob {
+  id: string;
+  persona_id: string;
+  provider: string;
+  scene_prompt: string;
+  threshold: number;
+  max_attempts: number;
+  status: "RUNNING" | "ACCEPTED" | "FAILED" | "ERROR";
+  attempt: number;
+  best_result_id: string | null;
+  accepted_result_id: string | null;
+  error: string | null;
+  retry_of: string | null;
+  created_at: string;
+  best_result: GenerationResult | null;
+  results?: GenerationResult[];
+  failures?: GenerationFailure[];
+  retries?: { attempt_number: number; previous_score: number | null; failure_reason: string | null; changes: Record<string, unknown> }[];
+}
+
+export interface ProviderInfo {
+  name: string;
+  title: string;
+  identity_mechanisms: string[];
+  supports_face_restore: boolean;
+}
+
+export interface EngineGenerationBody {
+  persona_id: string;
+  scene_prompt: string;
+  provider?: string;
+  style_overrides?: Record<string, string>;
+  identity_strength?: number;
+  face_restore?: boolean;
+  validation_threshold?: number;
+  max_attempts?: number;
+}
+
+function jsonInit(method: string, body?: unknown): RequestInit {
+  return body === undefined
+    ? { method }
+    : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+export async function createEnginePersona(body: EnginePersonaPatch & { name: string }): Promise<EnginePersona> {
+  return handleResponse(await fetch(`${await apiBase()}/engine/personas`, jsonInit("POST", body)));
+}
+
+export async function getEnginePersona(personaId: string): Promise<EnginePersona> {
+  return handleResponse(await fetch(`${await apiBase()}/engine/personas/${personaId}`));
+}
+
+export async function updateEnginePersona(personaId: string, patch: EnginePersonaPatch): Promise<EnginePersona> {
+  return handleResponse(await fetch(`${await apiBase()}/engine/personas/${personaId}`, jsonInit("PATCH", patch)));
+}
+
+export async function deactivateEnginePersona(personaId: string): Promise<void> {
+  await handleResponse(await fetch(`${await apiBase()}/engine/personas/${personaId}`, jsonInit("DELETE")));
+}
+
+export async function updateEngineReference(
+  personaId: string,
+  referenceId: string,
+  patch: Partial<Pick<EngineReference, "type" | "weight" | "active">>
+): Promise<EngineReference> {
+  return handleResponse(
+    await fetch(`${await apiBase()}/engine/personas/${personaId}/references/${referenceId}`, jsonInit("PATCH", patch))
+  );
+}
+
+// Tira a foto da lista; o backend guarda o arquivo em references/removed/.
+export async function removeEngineReference(personaId: string, referenceId: string): Promise<void> {
+  await handleResponse(
+    await fetch(`${await apiBase()}/engine/personas/${personaId}/references/${referenceId}`, jsonInit("DELETE"))
+  );
+}
+
+export async function getEngineProviders(): Promise<{ providers: ProviderInfo[]; default: string }> {
+  return handleResponse(await fetch(`${await apiBase()}/engine/providers`));
+}
+
+export async function startEngineGeneration(body: EngineGenerationBody): Promise<GenerationJob> {
+  return handleResponse(await fetch(`${await apiBase()}/engine/generation`, jsonInit("POST", body)));
+}
+
+export async function getEngineGeneration(jobId: string): Promise<GenerationJob> {
+  return handleResponse(await fetch(`${await apiBase()}/engine/generation/${jobId}`));
+}
+
+export async function retryEngineGeneration(jobId: string): Promise<GenerationJob> {
+  return handleResponse(await fetch(`${await apiBase()}/engine/generation/${jobId}/retry`, jsonInit("POST", {})));
+}
+
+export async function getPersonaGenerations(personaId: string): Promise<GenerationJob[]> {
+  const data = await handleResponse<{ generations: GenerationJob[] }>(
+    await fetch(`${await apiBase()}/engine/personas/${personaId}/generations`)
+  );
+  return data.generations;
 }
 
 // --- Chat (assistente de criacao de prompts) --------------------------

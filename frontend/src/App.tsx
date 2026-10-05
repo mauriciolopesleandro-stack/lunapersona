@@ -394,6 +394,8 @@ export default function App() {
               models={models}
               workflows={workflows}
               onReferencesChanged={() => loadPersonaThumbnails(personas)}
+              onPersonasChanged={() => loadConfig()}
+              ensureAwake={() => ensurePodAwake(setPodMessage)}
             />
           )}
           {tab === "historia" && <StoryPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
