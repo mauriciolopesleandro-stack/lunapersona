@@ -1,0 +1,1991 @@
+{
+ "A_100": {
+  "config": "A",
+  "seed": 100,
+  "image": "bench_A_100_00001_.png [output]",
+  "seconds": 58.4,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.533,
+     "age": 31,
+     "sex": "F",
+     "score": 0.772,
+     "yaw": -0.01,
+     "bbox": [
+      384.8,
+      86.0,
+      476.6,
+      213.6
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 282.0,
+    "shoulders": 0.694,
+    "hips": 0.487,
+    "r_thigh": 0.956,
+    "l_thigh": 1.015,
+    "r_shin": 0.968,
+    "l_shin": 0.82,
+    "r_upper_arm": 0.604,
+    "l_upper_arm": 0.603
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A_101": {
+  "config": "A",
+  "seed": 101,
+  "image": "bench_A_101_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.421,
+     "age": 27,
+     "sex": "F",
+     "score": 0.779,
+     "yaw": -0.015,
+     "bbox": [
+      385.6,
+      79.8,
+      477.2,
+      208.9
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 291.4,
+    "shoulders": 0.681,
+    "hips": 0.466,
+    "r_thigh": 0.928,
+    "l_thigh": 0.939,
+    "r_shin": 0.894,
+    "l_shin": 0.801,
+    "r_upper_arm": 0.573,
+    "l_upper_arm": 0.58
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A_102": {
+  "config": "A",
+  "seed": 102,
+  "image": "bench_A_102_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.504,
+     "age": 34,
+     "sex": "F",
+     "score": 0.841,
+     "yaw": -0.03,
+     "bbox": [
+      412.1,
+      61.3,
+      509.2,
+      195.6
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 285.4,
+    "shoulders": 0.693,
+    "hips": 0.475,
+    "r_thigh": 1.021,
+    "l_thigh": 1.006,
+    "r_shin": 1.0,
+    "l_shin": 0.9,
+    "r_upper_arm": 0.62,
+    "l_upper_arm": 0.612
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A_103": {
+  "config": "A",
+  "seed": 103,
+  "image": "bench_A_103_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.436,
+     "age": 27,
+     "sex": "F",
+     "score": 0.776,
+     "yaw": -0.002,
+     "bbox": [
+      375.7,
+      77.5,
+      468.2,
+      203.5
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 285.7,
+    "shoulders": 0.713,
+    "hips": 0.48,
+    "r_thigh": 0.987,
+    "l_thigh": 0.994,
+    "r_shin": 0.889,
+    "l_shin": 0.869,
+    "r_upper_arm": 0.606,
+    "l_upper_arm": 0.597
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A_104": {
+  "config": "A",
+  "seed": 104,
+  "image": "bench_A_104_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.439,
+     "age": 30,
+     "sex": "F",
+     "score": 0.842,
+     "yaw": -0.03,
+     "bbox": [
+      374.4,
+      67.4,
+      474.4,
+      203.0
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 297.0,
+    "shoulders": 0.706,
+    "hips": 0.466,
+    "r_thigh": 0.946,
+    "l_thigh": 0.953,
+    "r_shin": 0.887,
+    "l_shin": 0.815,
+    "r_upper_arm": 0.553,
+    "l_upper_arm": 0.571
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A_105": {
+  "config": "A",
+  "seed": 105,
+  "image": "bench_A_105_00001_.png [output]",
+  "seconds": 13.1,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.426,
+     "age": 29,
+     "sex": "F",
+     "score": 0.82,
+     "yaw": 0.003,
+     "bbox": [
+      396.2,
+      95.6,
+      486.6,
+      215.7
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 282.3,
+    "shoulders": 0.718,
+    "hips": 0.474,
+    "r_thigh": 0.946,
+    "l_thigh": 0.989,
+    "r_shin": 0.935,
+    "l_shin": 0.851,
+    "r_upper_arm": 0.591,
+    "l_upper_arm": 0.594
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A_106": {
+  "config": "A",
+  "seed": 106,
+  "image": "bench_A_106_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.533,
+     "age": 26,
+     "sex": "F",
+     "score": 0.821,
+     "yaw": 0.028,
+     "bbox": [
+      387.7,
+      71.1,
+      484.5,
+      198.7
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 296.4,
+    "shoulders": 0.687,
+    "hips": 0.459,
+    "r_thigh": 0.94,
+    "l_thigh": 0.919,
+    "r_shin": 0.81,
+    "l_shin": 0.809,
+    "r_upper_arm": 0.578,
+    "l_upper_arm": 0.577
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A_107": {
+  "config": "A",
+  "seed": 107,
+  "image": "bench_A_107_00001_.png [output]",
+  "seconds": 13.1,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.528,
+     "age": 28,
+     "sex": "F",
+     "score": 0.792,
+     "yaw": 0.037,
+     "bbox": [
+      378.5,
+      80.5,
+      477.5,
+      212.4
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 287.3,
+    "shoulders": 0.696,
+    "hips": 0.49,
+    "r_thigh": 0.96,
+    "l_thigh": 0.981,
+    "r_shin": 0.928,
+    "l_shin": 0.891,
+    "r_upper_arm": 0.588,
+    "l_upper_arm": 0.586
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A_108": {
+  "config": "A",
+  "seed": 108,
+  "image": "bench_A_108_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.511,
+     "age": 28,
+     "sex": "F",
+     "score": 0.808,
+     "yaw": -0.003,
+     "bbox": [
+      387.3,
+      88.6,
+      484.1,
+      216.4
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 287.5,
+    "shoulders": 0.684,
+    "hips": 0.466,
+    "r_thigh": 0.992,
+    "l_thigh": 0.969,
+    "r_shin": 0.89,
+    "l_shin": 0.806,
+    "r_upper_arm": 0.605,
+    "l_upper_arm": 0.582
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A_109": {
+  "config": "A",
+  "seed": 109,
+  "image": "bench_A_109_00001_.png [output]",
+  "seconds": 13.2,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.535,
+     "age": 27,
+     "sex": "F",
+     "score": 0.813,
+     "yaw": -0.031,
+     "bbox": [
+      389.3,
+      112.6,
+      481.4,
+      235.3
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 269.2,
+    "shoulders": 0.708,
+    "hips": 0.491,
+    "r_thigh": 1.05,
+    "l_thigh": 1.018,
+    "r_shin": 0.957,
+    "l_shin": 0.885,
+    "r_upper_arm": 0.607,
+    "l_upper_arm": 0.612
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A13_100": {
+  "config": "A13",
+  "seed": 100,
+  "image": "bench_A13_100_00001_.png [output]",
+  "seconds": 37.1,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.477,
+     "age": 33,
+     "sex": "F",
+     "score": 0.768,
+     "yaw": 0.022,
+     "bbox": [
+      389.0,
+      82.3,
+      480.6,
+      208.9
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 275.4,
+    "shoulders": 0.709,
+    "hips": 0.488,
+    "r_thigh": 0.986,
+    "l_thigh": 1.018,
+    "r_shin": 0.978,
+    "l_shin": 0.749,
+    "r_upper_arm": 0.608,
+    "l_upper_arm": 0.614
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A13_101": {
+  "config": "A13",
+  "seed": 101,
+  "image": "bench_A13_101_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.426,
+     "age": 31,
+     "sex": "F",
+     "score": 0.836,
+     "yaw": 0.011,
+     "bbox": [
+      376.5,
+      71.6,
+      472.5,
+      205.1
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 297.5,
+    "shoulders": 0.686,
+    "hips": 0.474,
+    "r_thigh": 0.953,
+    "l_thigh": 0.917,
+    "r_shin": 0.857,
+    "l_shin": 0.732,
+    "r_upper_arm": 0.587,
+    "l_upper_arm": 0.58
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A13_102": {
+  "config": "A13",
+  "seed": 102,
+  "image": "bench_A13_102_00001_.png [output]",
+  "seconds": 13.1,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.435,
+     "age": 36,
+     "sex": "F",
+     "score": 0.84,
+     "yaw": -0.004,
+     "bbox": [
+      407.9,
+      57.2,
+      506.3,
+      193.0
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 283.7,
+    "shoulders": 0.728,
+    "hips": 0.497,
+    "r_thigh": 1.017,
+    "l_thigh": 1.009,
+    "r_shin": 0.946,
+    "l_shin": 0.899,
+    "r_upper_arm": 0.627,
+    "l_upper_arm": 0.602
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A13_103": {
+  "config": "A13",
+  "seed": 103,
+  "image": "bench_A13_103_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.454,
+     "age": 33,
+     "sex": "F",
+     "score": 0.863,
+     "yaw": -0.032,
+     "bbox": [
+      371.6,
+      61.2,
+      468.0,
+      197.8
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 292.9,
+    "shoulders": 0.7,
+    "hips": 0.475,
+    "r_thigh": 0.978,
+    "l_thigh": 0.964,
+    "r_shin": 0.897,
+    "l_shin": 0.873,
+    "r_upper_arm": 0.589,
+    "l_upper_arm": 0.583
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A13_104": {
+  "config": "A13",
+  "seed": 104,
+  "image": "bench_A13_104_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.588,
+     "age": 33,
+     "sex": "F",
+     "score": 0.871,
+     "yaw": -0.068,
+     "bbox": [
+      370.8,
+      66.7,
+      470.3,
+      203.2
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 292.0,
+    "shoulders": 0.737,
+    "hips": 0.487,
+    "r_thigh": 0.975,
+    "l_thigh": 0.948,
+    "r_shin": 0.915,
+    "l_shin": 0.742,
+    "r_upper_arm": 0.6,
+    "l_upper_arm": 0.593
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A13_105": {
+  "config": "A13",
+  "seed": 105,
+  "image": "bench_A13_105_00001_.png [output]",
+  "seconds": 13.1,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.467,
+     "age": 33,
+     "sex": "F",
+     "score": 0.804,
+     "yaw": 0.018,
+     "bbox": [
+      394.0,
+      94.2,
+      484.0,
+      215.1
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 273.9,
+    "shoulders": 0.74,
+    "hips": 0.479,
+    "r_thigh": 1.002,
+    "l_thigh": 1.009,
+    "r_shin": 0.981,
+    "l_shin": 0.797,
+    "r_upper_arm": 0.58,
+    "l_upper_arm": 0.598
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A13_106": {
+  "config": "A13",
+  "seed": 106,
+  "image": "bench_A13_106_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.494,
+     "age": 30,
+     "sex": "F",
+     "score": 0.833,
+     "yaw": -0.017,
+     "bbox": [
+      380.3,
+      56.5,
+      482.1,
+      189.0
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 299.7,
+    "shoulders": 0.706,
+    "hips": 0.472,
+    "r_thigh": 0.959,
+    "l_thigh": 0.939,
+    "r_shin": 0.842,
+    "l_shin": 0.843,
+    "r_upper_arm": 0.584,
+    "l_upper_arm": 0.576
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A13_107": {
+  "config": "A13",
+  "seed": 107,
+  "image": "bench_A13_107_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.447,
+     "age": 28,
+     "sex": "F",
+     "score": 0.813,
+     "yaw": -0.02,
+     "bbox": [
+      376.7,
+      76.5,
+      471.5,
+      207.2
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 293.5,
+    "shoulders": 0.695,
+    "hips": 0.479,
+    "r_thigh": 0.959,
+    "l_thigh": 0.97,
+    "r_shin": 0.915,
+    "l_shin": 0.764,
+    "r_upper_arm": 0.608,
+    "l_upper_arm": 0.586
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A13_108": {
+  "config": "A13",
+  "seed": 108,
+  "image": "bench_A13_108_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.566,
+     "age": 32,
+     "sex": "F",
+     "score": 0.82,
+     "yaw": -0.07,
+     "bbox": [
+      385.6,
+      89.2,
+      482.5,
+      216.8
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 285.9,
+    "shoulders": 0.702,
+    "hips": 0.469,
+    "r_thigh": 0.99,
+    "l_thigh": 0.991,
+    "r_shin": 0.882,
+    "l_shin": 0.817,
+    "r_upper_arm": 0.571,
+    "l_upper_arm": 0.569
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "A13_109": {
+  "config": "A13",
+  "seed": 109,
+  "image": "bench_A13_109_00001_.png [output]",
+  "seconds": 13.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.452,
+     "age": 30,
+     "sex": "F",
+     "score": 0.808,
+     "yaw": -0.187,
+     "bbox": [
+      388.0,
+      104.9,
+      477.3,
+      228.1
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 267.4,
+    "shoulders": 0.698,
+    "hips": 0.493,
+    "r_thigh": 0.98,
+    "l_thigh": 1.02,
+    "r_shin": 0.973,
+    "l_shin": 0.896,
+    "r_upper_arm": 0.616,
+    "l_upper_arm": 0.632
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "C_100": {
+  "config": "C",
+  "seed": 100,
+  "image": "bench_C_100_00001_.png [output]",
+  "seconds": 53.8,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.487,
+     "age": 30,
+     "sex": "F",
+     "score": 0.782,
+     "yaw": -0.048,
+     "bbox": [
+      382.7,
+      84.8,
+      475.5,
+      215.0
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 278.0,
+    "shoulders": 0.711,
+    "hips": 0.486,
+    "r_thigh": 0.99,
+    "l_thigh": 1.009,
+    "r_shin": 0.94,
+    "l_shin": 0.841,
+    "r_upper_arm": 0.615,
+    "l_upper_arm": 0.611
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "C_101": {
+  "config": "C",
+  "seed": 101,
+  "image": "bench_C_101_00001_.png [output]",
+  "seconds": 15.2,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.351,
+     "age": 31,
+     "sex": "F",
+     "score": 0.798,
+     "yaw": 0.008,
+     "bbox": [
+      382.0,
+      76.8,
+      473.1,
+      207.0
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 295.7,
+    "shoulders": 0.686,
+    "hips": 0.468,
+    "r_thigh": 0.976,
+    "l_thigh": 0.942,
+    "r_shin": 0.842,
+    "l_shin": 0.809,
+    "r_upper_arm": 0.596,
+    "l_upper_arm": 0.581
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "C_102": {
+  "config": "C",
+  "seed": 102,
+  "image": "bench_C_102_00001_.png [output]",
+  "seconds": 14.9,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.51,
+     "age": 28,
+     "sex": "F",
+     "score": 0.825,
+     "yaw": -0.118,
+     "bbox": [
+      378.4,
+      70.1,
+      474.4,
+      202.1
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 294.5,
+    "shoulders": 0.689,
+    "hips": 0.479,
+    "r_thigh": 0.957,
+    "l_thigh": 0.971,
+    "r_shin": 0.873,
+    "l_shin": 0.863,
+    "r_upper_arm": 0.584,
+    "l_upper_arm": 0.591
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "C_103": {
+  "config": "C",
+  "seed": 103,
+  "image": "bench_C_103_00001_.png [output]",
+  "seconds": 15.1,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.493,
+     "age": 32,
+     "sex": "F",
+     "score": 0.802,
+     "yaw": -0.009,
+     "bbox": [
+      383.8,
+      86.8,
+      470.7,
+      209.8
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 281.0,
+    "shoulders": 0.716,
+    "hips": 0.488,
+    "r_thigh": 0.991,
+    "l_thigh": 0.984,
+    "r_shin": 0.847,
+    "l_shin": 0.859,
+    "r_upper_arm": 0.602,
+    "l_upper_arm": 0.587
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "C_104": {
+  "config": "C",
+  "seed": 104,
+  "image": "bench_C_104_00001_.png [output]",
+  "seconds": 14.8,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.549,
+     "age": 32,
+     "sex": "F",
+     "score": 0.843,
+     "yaw": -0.068,
+     "bbox": [
+      371.2,
+      77.4,
+      467.9,
+      207.5
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 290.9,
+    "shoulders": 0.733,
+    "hips": 0.481,
+    "r_thigh": 0.986,
+    "l_thigh": 0.978,
+    "r_shin": 0.891,
+    "l_shin": 0.79,
+    "r_upper_arm": 0.583,
+    "l_upper_arm": 0.574
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "C_105": {
+  "config": "C",
+  "seed": 105,
+  "image": "bench_C_105_00001_.png [output]",
+  "seconds": 14.8,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.549,
+     "age": 28,
+     "sex": "F",
+     "score": 0.801,
+     "yaw": -0.113,
+     "bbox": [
+      384.1,
+      97.5,
+      472.9,
+      217.1
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 277.9,
+    "shoulders": 0.71,
+    "hips": 0.475,
+    "r_thigh": 0.977,
+    "l_thigh": 0.971,
+    "r_shin": 0.943,
+    "l_shin": 0.787,
+    "r_upper_arm": 0.572,
+    "l_upper_arm": 0.598
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "C_106": {
+  "config": "C",
+  "seed": 106,
+  "image": "bench_C_106_00001_.png [output]",
+  "seconds": 14.8,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.437,
+     "age": 26,
+     "sex": "F",
+     "score": 0.813,
+     "yaw": 0.04,
+     "bbox": [
+      389.2,
+      73.4,
+      484.5,
+      198.5
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 296.9,
+    "shoulders": 0.699,
+    "hips": 0.466,
+    "r_thigh": 0.953,
+    "l_thigh": 0.939,
+    "r_shin": 0.791,
+    "l_shin": 0.799,
+    "r_upper_arm": 0.557,
+    "l_upper_arm": 0.57
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "C_107": {
+  "config": "C",
+  "seed": 107,
+  "image": "bench_C_107_00001_.png [output]",
+  "seconds": 14.9,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.457,
+     "age": 32,
+     "sex": "F",
+     "score": 0.78,
+     "yaw": -0.009,
+     "bbox": [
+      375.5,
+      80.0,
+      469.3,
+      208.2
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 292.3,
+    "shoulders": 0.685,
+    "hips": 0.472,
+    "r_thigh": 0.997,
+    "l_thigh": 0.951,
+    "r_shin": 0.934,
+    "l_shin": 0.761,
+    "r_upper_arm": 0.593,
+    "l_upper_arm": 0.577
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "C_108": {
+  "config": "C",
+  "seed": 108,
+  "image": "bench_C_108_00001_.png [output]",
+  "seconds": 14.7,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.497,
+     "age": 31,
+     "sex": "F",
+     "score": 0.81,
+     "yaw": -0.027,
+     "bbox": [
+      386.4,
+      85.9,
+      483.5,
+      213.5
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 294.1,
+    "shoulders": 0.637,
+    "hips": 0.425,
+    "r_thigh": 0.986,
+    "l_thigh": 0.939,
+    "r_shin": 0.863,
+    "l_shin": 0.802,
+    "r_upper_arm": 0.595,
+    "l_upper_arm": 0.578
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "C_109": {
+  "config": "C",
+  "seed": 109,
+  "image": "bench_C_109_00001_.png [output]",
+  "seconds": 14.9,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.404,
+     "age": 31,
+     "sex": "F",
+     "score": 0.828,
+     "yaw": -0.123,
+     "bbox": [
+      385.0,
+      108.5,
+      474.9,
+      227.7
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 267.2,
+    "shoulders": 0.689,
+    "hips": 0.493,
+    "r_thigh": 0.981,
+    "l_thigh": 1.034,
+    "r_shin": 0.911,
+    "l_shin": 0.885,
+    "r_upper_arm": 0.6,
+    "l_upper_arm": 0.618
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "D_100": {
+  "config": "D",
+  "seed": 100,
+  "image": "bench_D_100_00001_.png [output]",
+  "seconds": 15.1,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.424,
+     "age": 26,
+     "sex": "F",
+     "score": 0.809,
+     "yaw": -0.028,
+     "bbox": [
+      381.1,
+      85.4,
+      474.9,
+      215.3
+     ]
+    }
+   ],
+   "dwpose_people": 4,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 275.6,
+    "shoulders": 0.666,
+    "hips": 0.484,
+    "r_thigh": 1.006,
+    "l_thigh": 0.948,
+    "r_shin": 0.86,
+    "l_shin": 0.842,
+    "r_upper_arm": 0.551,
+    "l_upper_arm": 0.569
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "D_101": {
+  "config": "D",
+  "seed": 101,
+  "image": "bench_D_101_00001_.png [output]",
+  "seconds": 14.9,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.395,
+     "age": 35,
+     "sex": "F",
+     "score": 0.798,
+     "yaw": -0.087,
+     "bbox": [
+      374.3,
+      120.3,
+      465.0,
+      240.9
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 277.7,
+    "shoulders": 0.648,
+    "hips": 0.469,
+    "r_thigh": 1.039,
+    "l_thigh": 0.999,
+    "r_shin": 0.872,
+    "l_shin": 0.879,
+    "r_upper_arm": 0.58,
+    "l_upper_arm": 0.571
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "D_102": {
+  "config": "D",
+  "seed": 102,
+  "image": "bench_D_102_00001_.png [output]",
+  "seconds": 15.1,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.402,
+     "age": 26,
+     "sex": "F",
+     "score": 0.863,
+     "yaw": -0.273,
+     "bbox": [
+      382.4,
+      124.3,
+      463.4,
+      241.3
+     ]
+    },
+    {
+     "sim": -0.049,
+     "age": 32,
+     "sex": "M",
+     "score": 0.561,
+     "yaw": 0.461,
+     "bbox": [
+      754.0,
+      241.9,
+      768.2,
+      260.5
+     ]
+    }
+   ],
+   "dwpose_people": 6,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 277.3,
+    "shoulders": 0.634,
+    "hips": 0.427,
+    "r_thigh": 0.912,
+    "l_thigh": 0.919,
+    "r_shin": 1.017,
+    "l_shin": 0.82,
+    "r_upper_arm": 0.482,
+    "l_upper_arm": 0.502
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "D_103": {
+  "config": "D",
+  "seed": 103,
+  "image": "bench_D_103_00001_.png [output]",
+  "seconds": 15.1,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.464,
+     "age": 29,
+     "sex": "F",
+     "score": 0.869,
+     "yaw": -0.255,
+     "bbox": [
+      361.4,
+      98.8,
+      446.3,
+      214.3
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 276.3,
+    "shoulders": 0.66,
+    "hips": 0.467,
+    "r_thigh": 0.976,
+    "l_thigh": 0.972,
+    "r_shin": 0.858,
+    "l_shin": 0.869,
+    "r_upper_arm": 0.546,
+    "l_upper_arm": 0.549
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "D_104": {
+  "config": "D",
+  "seed": 104,
+  "image": "bench_D_104_00001_.png [output]",
+  "seconds": 15.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.498,
+     "age": 25,
+     "sex": "F",
+     "score": 0.83,
+     "yaw": -0.211,
+     "bbox": [
+      373.0,
+      76.3,
+      474.3,
+      210.9
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 290.5,
+    "shoulders": 0.709,
+    "hips": 0.485,
+    "r_thigh": 0.984,
+    "l_thigh": 1.004,
+    "r_shin": 0.891,
+    "l_shin": 0.754,
+    "r_upper_arm": 0.612,
+    "l_upper_arm": 0.571
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "D_105": {
+  "config": "D",
+  "seed": 105,
+  "image": "bench_D_105_00001_.png [output]",
+  "seconds": 14.7,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.324,
+     "age": 26,
+     "sex": "F",
+     "score": 0.861,
+     "yaw": -0.443,
+     "bbox": [
+      376.9,
+      139.7,
+      457.0,
+      253.9
+     ]
+    },
+    {
+     "sim": -0.009,
+     "age": 34,
+     "sex": "F",
+     "score": 0.367,
+     "yaw": -0.153,
+     "bbox": [
+      797.0,
+      302.5,
+      804.8,
+      312.4
+     ]
+    }
+   ],
+   "dwpose_people": 2,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 272.8,
+    "shoulders": 0.624,
+    "hips": 0.446,
+    "r_thigh": 0.932,
+    "l_thigh": 0.931,
+    "r_shin": 0.944,
+    "l_shin": 0.722,
+    "r_upper_arm": 0.6,
+    "l_upper_arm": 0.559
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "D_106": {
+  "config": "D",
+  "seed": 106,
+  "image": "bench_D_106_00001_.png [output]",
+  "seconds": 15.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.426,
+     "age": 25,
+     "sex": "F",
+     "score": 0.779,
+     "yaw": -0.43,
+     "bbox": [
+      377.4,
+      38.5,
+      470.5,
+      172.5
+     ]
+    }
+   ],
+   "dwpose_people": 3,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 307.9,
+    "shoulders": 0.671,
+    "hips": 0.451,
+    "r_thigh": 0.934,
+    "l_thigh": 0.879,
+    "r_shin": 0.754,
+    "l_shin": 0.661,
+    "r_upper_arm": 0.57,
+    "l_upper_arm": 0.535
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "D_107": {
+  "config": "D",
+  "seed": 107,
+  "image": "bench_D_107_00001_.png [output]",
+  "seconds": 14.9,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.339,
+     "age": 29,
+     "sex": "F",
+     "score": 0.846,
+     "yaw": -0.658,
+     "bbox": [
+      384.7,
+      145.7,
+      458.4,
+      259.3
+     ]
+    }
+   ],
+   "dwpose_people": 4,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 284.0,
+    "shoulders": 0.386,
+    "hips": 0.299,
+    "r_thigh": 0.883,
+    "l_thigh": 0.898,
+    "r_shin": 0.785,
+    "l_shin": 0.946,
+    "r_upper_arm": 0.526,
+    "l_upper_arm": 0.591
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "D_108": {
+  "config": "D",
+  "seed": 108,
+  "image": "bench_D_108_00001_.png [output]",
+  "seconds": 15.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.418,
+     "age": 29,
+     "sex": "F",
+     "score": 0.82,
+     "yaw": -0.316,
+     "bbox": [
+      372.0,
+      123.2,
+      458.0,
+      248.6
+     ]
+    },
+    {
+     "sim": -0.05,
+     "age": 32,
+     "sex": "F",
+     "score": 0.428,
+     "yaw": -4.879,
+     "bbox": [
+      -5.1,
+      300.6,
+      20.2,
+      353.4
+     ]
+    }
+   ],
+   "dwpose_people": 2,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 268.0,
+    "shoulders": 0.713,
+    "hips": 0.474,
+    "r_thigh": 0.968,
+    "l_thigh": 0.99,
+    "r_shin": 0.985,
+    "l_shin": 0.772,
+    "r_upper_arm": 0.575,
+    "l_upper_arm": 0.587
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "D_109": {
+  "config": "D",
+  "seed": 109,
+  "image": "bench_D_109_00001_.png [output]",
+  "seconds": 73.2,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.345,
+     "age": 25,
+     "sex": "F",
+     "score": 0.869,
+     "yaw": -0.419,
+     "bbox": [
+      394.5,
+      108.7,
+      471.5,
+      222.3
+     ]
+    },
+    {
+     "sim": 0.042,
+     "age": 27,
+     "sex": "F",
+     "score": 0.708,
+     "yaw": -3.402,
+     "bbox": [
+      172.3,
+      412.3,
+      212.7,
+      481.2
+     ]
+    }
+   ],
+   "dwpose_people": 3,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 263.2,
+    "shoulders": 0.675,
+    "hips": 0.464,
+    "r_thigh": 0.928,
+    "l_thigh": 0.935,
+    "r_shin": 0.935,
+    "l_shin": 0.804,
+    "r_upper_arm": 0.551,
+    "l_upper_arm": 0.592
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "B_100": {
+  "config": "B",
+  "seed": 100,
+  "image": "bench_B_100_00001_.png [output]",
+  "seconds": 161.1,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.625,
+     "age": 21,
+     "sex": "F",
+     "score": 0.843,
+     "yaw": 0.01,
+     "bbox": [
+      384.2,
+      94.4,
+      472.2,
+      214.2
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 273.1,
+    "shoulders": 0.674,
+    "hips": 0.473,
+    "r_thigh": 1.057,
+    "l_thigh": 1.035,
+    "r_shin": 0.9,
+    "l_shin": 0.859,
+    "r_upper_arm": 0.588,
+    "l_upper_arm": 0.591
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "B_101": {
+  "config": "B",
+  "seed": 101,
+  "image": "bench_B_101_00001_.png [output]",
+  "seconds": 91.6,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.632,
+     "age": 22,
+     "sex": "F",
+     "score": 0.832,
+     "yaw": -0.005,
+     "bbox": [
+      389.5,
+      110.1,
+      479.5,
+      230.6
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 270.8,
+    "shoulders": 0.669,
+    "hips": 0.468,
+    "r_thigh": 1.042,
+    "l_thigh": 1.024,
+    "r_shin": 0.915,
+    "l_shin": 0.863,
+    "r_upper_arm": 0.624,
+    "l_upper_arm": 0.602
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "B_102": {
+  "config": "B",
+  "seed": 102,
+  "image": "bench_B_102_00001_.png [output]",
+  "seconds": 87.7,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.638,
+     "age": 25,
+     "sex": "F",
+     "score": 0.78,
+     "yaw": 0.023,
+     "bbox": [
+      380.8,
+      88.5,
+      471.8,
+      212.8
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 279.5,
+    "shoulders": 0.692,
+    "hips": 0.461,
+    "r_thigh": 1.02,
+    "l_thigh": 0.998,
+    "r_shin": 0.895,
+    "l_shin": 0.839,
+    "r_upper_arm": 0.611,
+    "l_upper_arm": 0.606
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "B_103": {
+  "config": "B",
+  "seed": 103,
+  "image": "bench_B_103_00001_.png [output]",
+  "seconds": 91.7,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.657,
+     "age": 21,
+     "sex": "F",
+     "score": 0.833,
+     "yaw": -0.022,
+     "bbox": [
+      383.2,
+      93.8,
+      471.5,
+      216.1
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 278.5,
+    "shoulders": 0.671,
+    "hips": 0.467,
+    "r_thigh": 1.034,
+    "l_thigh": 1.008,
+    "r_shin": 0.913,
+    "l_shin": 0.842,
+    "r_upper_arm": 0.586,
+    "l_upper_arm": 0.604
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "B_104": {
+  "config": "B",
+  "seed": 104,
+  "image": "bench_B_104_00001_.png [output]",
+  "seconds": 92.8,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.638,
+     "age": 25,
+     "sex": "F",
+     "score": 0.878,
+     "yaw": -0.015,
+     "bbox": [
+      386.0,
+      110.0,
+      473.3,
+      225.5
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 265.9,
+    "shoulders": 0.685,
+    "hips": 0.487,
+    "r_thigh": 1.084,
+    "l_thigh": 1.057,
+    "r_shin": 0.95,
+    "l_shin": 0.883,
+    "r_upper_arm": 0.623,
+    "l_upper_arm": 0.603
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "B_105": {
+  "config": "B",
+  "seed": 105,
+  "image": "bench_B_105_00001_.png [output]",
+  "seconds": 89.6,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.616,
+     "age": 21,
+     "sex": "F",
+     "score": 0.87,
+     "yaw": 0.03,
+     "bbox": [
+      387.8,
+      110.0,
+      474.5,
+      226.5
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 266.2,
+    "shoulders": 0.704,
+    "hips": 0.481,
+    "r_thigh": 1.047,
+    "l_thigh": 1.024,
+    "r_shin": 0.933,
+    "l_shin": 0.878,
+    "r_upper_arm": 0.598,
+    "l_upper_arm": 0.595
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "B_106": {
+  "config": "B",
+  "seed": 106,
+  "image": "bench_B_106_00001_.png [output]",
+  "seconds": 88.5,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.604,
+     "age": 22,
+     "sex": "F",
+     "score": 0.787,
+     "yaw": 0.016,
+     "bbox": [
+      374.0,
+      92.7,
+      464.0,
+      216.7
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 274.0,
+    "shoulders": 0.675,
+    "hips": 0.475,
+    "r_thigh": 1.051,
+    "l_thigh": 1.025,
+    "r_shin": 0.929,
+    "l_shin": 0.871,
+    "r_upper_arm": 0.602,
+    "l_upper_arm": 0.609
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "B_107": {
+  "config": "B",
+  "seed": 107,
+  "image": "bench_B_107_00001_.png [output]",
+  "seconds": 88.7,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.611,
+     "age": 22,
+     "sex": "F",
+     "score": 0.807,
+     "yaw": 0.021,
+     "bbox": [
+      379.1,
+      88.1,
+      467.7,
+      211.2
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 271.9,
+    "shoulders": 0.686,
+    "hips": 0.483,
+    "r_thigh": 1.044,
+    "l_thigh": 1.05,
+    "r_shin": 0.874,
+    "l_shin": 0.921,
+    "r_upper_arm": 0.609,
+    "l_upper_arm": 0.609
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "B_108": {
+  "config": "B",
+  "seed": 108,
+  "image": "bench_B_108_00001_.png [output]",
+  "seconds": 89.6,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.594,
+     "age": 23,
+     "sex": "F",
+     "score": 0.835,
+     "yaw": -0.0,
+     "bbox": [
+      384.8,
+      106.1,
+      475.9,
+      229.0
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 269.4,
+    "shoulders": 0.689,
+    "hips": 0.483,
+    "r_thigh": 1.054,
+    "l_thigh": 1.029,
+    "r_shin": 0.904,
+    "l_shin": 0.847,
+    "r_upper_arm": 0.62,
+    "l_upper_arm": 0.605
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "B_109": {
+  "config": "B",
+  "seed": 109,
+  "image": "bench_B_109_00001_.png [output]",
+  "seconds": 87.0,
+  "measure": {
+   "faces": [
+    {
+     "sim": 0.628,
+     "age": 21,
+     "sex": "F",
+     "score": 0.811,
+     "yaw": 0.005,
+     "bbox": [
+      381.0,
+      93.6,
+      471.0,
+      217.1
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 277.6,
+    "shoulders": 0.677,
+    "hips": 0.474,
+    "r_thigh": 1.039,
+    "l_thigh": 0.987,
+    "r_shin": 0.877,
+    "l_shin": 0.848,
+    "r_upper_arm": 0.572,
+    "l_upper_arm": 0.59
+   },
+   "florence_person_boxes": 1
+  }
+ },
+ "_refs": {
+  "bench_face_ref.png": {
+   "faces": [
+    {
+     "sim": 0.969,
+     "age": 27,
+     "sex": "F",
+     "score": 0.702,
+     "yaw": -0.284,
+     "bbox": [
+      172.1,
+      156.6,
+      570.0,
+      667.1
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 5,
+    "torso_px": null
+   },
+   "florence_person_boxes": 1
+  },
+  "bench_body_ref.png": {
+   "faces": [
+    {
+     "sim": 0.638,
+     "age": 25,
+     "sex": "F",
+     "score": 0.861,
+     "yaw": -0.215,
+     "bbox": [
+      384.6,
+      92.4,
+      487.2,
+      233.8
+     ]
+    }
+   ],
+   "dwpose_people": 1,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 330.2,
+    "shoulders": 0.57,
+    "hips": 0.35,
+    "r_thigh": 0.839,
+    "l_thigh": 0.845,
+    "r_shin": 0.583,
+    "l_shin": 0.822,
+    "r_upper_arm": 0.564,
+    "l_upper_arm": 0.615
+   },
+   "florence_person_boxes": 1
+  },
+  "bench_ds23.png": {
+   "faces": [
+    {
+     "sim": 0.521,
+     "age": 27,
+     "sex": "F",
+     "score": 0.708,
+     "yaw": -0.446,
+     "bbox": [
+      415.0,
+      74.1,
+      529.2,
+      239.1
+     ]
+    }
+   ],
+   "dwpose_people": 3,
+   "body": {
+    "visible_keypoints": 14,
+    "torso_px": 365.5,
+    "shoulders": 0.721,
+    "hips": 0.461,
+    "r_thigh": 1.002,
+    "l_thigh": 0.969,
+    "r_shin": 0.978,
+    "l_shin": 0.892,
+    "r_upper_arm": 0.603,
+    "l_upper_arm": 0.596
+   },
+   "florence_person_boxes": 1
+  }
+ }
+}

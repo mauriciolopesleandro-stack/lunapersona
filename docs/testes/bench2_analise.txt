@@ -1,0 +1,195 @@
+REFS: {'bench_face_ref.png': None, 'bench_body_ref.png': 0.57, 'bench_pose04.png': 0.48, 'bench_ds23.png': 0.721}
+
+=== E0: 10 jobs, 10 medidos, erros []
+  modelo: z_image_turbo_int8_convrot.safetensors | LoRA: luna_zimage_v1.safetensors@1.0 | workflow: zimage-txt2img-lora (grafo igual)
+  rosto ArcFace (melhor rosto vs MASTER): 0.438 ± 0.067 (min 0.319, max 0.517, n=10)
+  idade estimada: 27.4 ± 2.4 (min 25.0, max 32.0, n=10)
+  rostos/imagem: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] | corpos DWPose: [1, 1, 1, 1, 1, 1, 2, 1, 3, 5] | corpos >=25% da altura: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  MULTIPLE_SUBJECTS FAIL (todos os rostos/corpos): 3/10 ['E0_walking_200', 'E0_walkway_200', 'E0_walkway_201']
+  shoulders    media 0.628 CV  23.3% n=10
+  hips         media 0.417 CV  14.0% n=10
+  r_thigh      media 0.872 CV   5.9% n=10
+  l_thigh      media 0.883 CV   6.8% n=10
+  r_shin       media 0.857 CV   9.9% n=10
+  l_shin       media 0.843 CV  15.6% n=10
+  r_upper_arm  media 0.557 CV   6.3% n=10
+  l_upper_arm  media 0.584 CV   4.9% n=10
+  tempo/imagem: todos 16.9 ± 12.5 (min 12.6, max 54.3, n=10) | primeira 13.0 | mediana 12.8
+  tempo de medicao (LunaFaces + DWPose): 8.3 ± 0.5 (min 7.6, max 9.1, n=10)
+  VRAM pico 12816 MiB de 24467 | util media 71%
+  RAM usada pico 64639 MiB
+  custo/imagem (mediana, US$ 0.57/h): US$ 0.00203 | imagens/hora 281
+
+=== E1: 10 jobs, 10 medidos, erros []
+  modelo: qwen_image_edit_2511_fp8mixed.safetensors | LoRA: Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors@1.0 + bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors@1.0 | workflow: qwen-bfs-head-swap (imagem inteira)
+  rosto ArcFace (melhor rosto vs MASTER): 0.651 ± 0.047 (min 0.568, max 0.739, n=10)
+  idade estimada: 22.2 ± 1.2 (min 20.0, max 24.0, n=10)
+  rostos/imagem: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] | corpos DWPose: [1, 1, 1, 1, 1, 1, 2, 1, 4, 4] | corpos >=25% da altura: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  MULTIPLE_SUBJECTS FAIL (todos os rostos/corpos): 3/10 ['E1_walking_200', 'E1_walkway_200', 'E1_walkway_201']
+  shoulders    media 0.611 CV  25.9% n=10
+  hips         media 0.414 CV  14.9% n=10
+  r_thigh      media 0.867 CV   5.9% n=10
+  l_thigh      media 0.879 CV   6.4% n=10
+  r_shin       media 0.857 CV  10.7% n=10
+  l_shin       media 0.838 CV  14.4% n=10
+  r_upper_arm  media 0.567 CV   4.6% n=10
+  l_upper_arm  media 0.580 CV   4.4% n=10
+  vs BASE: diferenca geral 14.2 ± 5.4 (min 7.6, max 22.9, n=10) | fundo 11.9 ± 6.7 (min 3.7, max 21.6, n=10) | distancia de pose 0.021 ± 0.009 (min 0.012, max 0.043, n=10)
+  mudanca de proporcao vs BASE (ombro/quadril/coxas): 0.024 ± 0.031 (min 0.001, max 0.174, n=40)
+  ganho de rosto vs BASE (pareado): 0.213 ± 0.066 (min 0.115, max 0.319, n=10)
+  tempo/imagem: todos 86.1 ± 38.6 (min 2.4, max 167.3, n=10) | primeira 81.8 | mediana 82.0
+  tempo de medicao (LunaFaces + DWPose): 8.6 ± 0.8 (min 7.6, max 10.3, n=10)
+  VRAM pico 23726 MiB de 24467 | util media 34%
+  RAM usada pico 67140 MiB
+  custo/imagem (mediana, US$ 0.57/h): US$ 0.01298 | imagens/hora 44
+
+=== E2: 10 jobs, 10 medidos, erros []
+  modelo: qwen_image_edit_2511_fp8mixed.safetensors | LoRA: Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors@1.0 | workflow: qwen edit 3 imagens (base + rosto + corpo)
+  rosto ArcFace (melhor rosto vs MASTER): 0.551 ± 0.095 (min 0.412, max 0.719, n=10)
+  idade estimada: 25.9 ± 1.6 (min 23.0, max 28.0, n=10)
+  rostos/imagem: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] | corpos DWPose: [1, 1, 1, 1, 1, 1, 2, 1, 4, 3] | corpos >=25% da altura: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  MULTIPLE_SUBJECTS FAIL (todos os rostos/corpos): 3/10 ['E2_walking_200', 'E2_walkway_200', 'E2_walkway_201']
+  shoulders    media 0.554 CV  33.0% n=10
+  hips         media 0.383 CV  20.1% n=10
+  r_thigh      media 0.883 CV   3.7% n=10
+  l_thigh      media 0.891 CV   2.3% n=10
+  r_shin       media 0.854 CV  12.5% n=10
+  l_shin       media 0.811 CV  13.8% n=10
+  r_upper_arm  media 0.544 CV   5.1% n=9
+  l_upper_arm  media 0.572 CV   3.6% n=10
+  vs BASE: diferenca geral 28.6 ± 7.6 (min 19.5, max 42.3, n=10) | fundo 19.4 ± 8.8 (min 7.5, max 30.8, n=10) | distancia de pose 0.081 ± 0.044 (min 0.023, max 0.152, n=10)
+  mudanca de proporcao vs BASE (ombro/quadril/coxas): 0.095 ± 0.121 (min 0.004, max 0.714, n=40)
+  ganho de rosto vs BASE (pareado): 0.113 ± 0.138 (min -0.076, max 0.293, n=10)
+  tempo/imagem: todos 102.7 ± 22.3 (min 89.9, max 147.8, n=10) | primeira 91.6 | mediana 91.9
+  tempo de medicao (LunaFaces + DWPose): 9.0 ± 0.7 (min 7.6, max 10.0, n=10)
+  VRAM pico 23726 MiB de 24467 | util media 42%
+  RAM usada pico 67140 MiB
+  custo/imagem (mediana, US$ 0.57/h): US$ 0.01455 | imagens/hora 39
+
+=== C2A: 10 jobs, 10 medidos, erros []
+  modelo: z_image_turbo_int8_convrot.safetensors | LoRA: luna_zimage_v1.safetensors@1.0 | workflow: zimage + DWPose + ControlNet Union 0.8
+  rosto ArcFace (melhor rosto vs MASTER): 0.463 ± 0.066 (min 0.333, max 0.581, n=10)
+  idade estimada: 31.8 ± 3.7 (min 27.0, max 39.0, n=10)
+  rostos/imagem: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] | corpos DWPose: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] | corpos >=25% da altura: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  MULTIPLE_SUBJECTS FAIL (todos os rostos/corpos): 0/10 []
+  shoulders    media 0.706 CV   2.4% n=10
+  hips         media 0.471 CV   1.6% n=10
+  r_thigh      media 0.970 CV   2.0% n=10
+  l_thigh      media 0.989 CV   3.0% n=10
+  r_shin       media 0.918 CV   5.1% n=10
+  l_shin       media 0.881 CV   4.5% n=10
+  r_upper_arm  media 0.590 CV   2.6% n=10
+  l_upper_arm  media 0.579 CV   3.1% n=10
+  tempo/imagem: todos 16.0 ± 4.2 (min 14.2, max 28.6, n=10) | primeira 28.6 | mediana 14.7
+  tempo de medicao (LunaFaces + DWPose): 8.1 ± 0.5 (min 7.2, max 8.7, n=10)
+  VRAM pico 14922 MiB de 24467 | util media 80%
+  RAM usada pico 60282 MiB
+  custo/imagem (mediana, US$ 0.57/h): US$ 0.00233 | imagens/hora 245
+
+=== C2B: 10 jobs, 10 medidos, erros []
+  modelo: z_image_turbo_int8_convrot.safetensors | LoRA: luna_zimage_v1.safetensors@1.0 | workflow: zimage + DWPose + ControlNet Union 0.8
+  rosto ArcFace (melhor rosto vs MASTER): 0.438 ± 0.071 (min 0.295, max 0.564, n=10)
+  idade estimada: 26.7 ± 2.0 (min 24.0, max 31.0, n=10)
+  rostos/imagem: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] | corpos DWPose: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] | corpos >=25% da altura: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  MULTIPLE_SUBJECTS FAIL (todos os rostos/corpos): 0/10 []
+  shoulders    media 0.610 CV  25.0% n=10
+  hips         media 0.423 CV  20.5% n=10
+  r_thigh      media 0.855 CV  20.0% n=10
+  l_thigh      media 0.926 CV   9.2% n=9
+  r_shin       media 0.863 CV   9.6% n=10
+  l_shin       media 0.923 CV  21.6% n=9
+  r_upper_arm  media 0.587 CV  11.3% n=10
+  l_upper_arm  media 0.629 CV  10.2% n=10
+  aderencia a pose (distancia do esqueleto fonte; 0 = igual): 0.094 ± 0.053 (min 0.058, max 0.211, n=6)
+  tempo/imagem: todos 15.8 ± 1.8 (min 14.6, max 20.9, n=10) | primeira 14.7 | mediana 14.9
+  tempo de medicao (LunaFaces + DWPose): 8.5 ± 0.5 (min 7.8, max 9.5, n=10)
+  VRAM pico 14922 MiB de 24467 | util media 81%
+  RAM usada pico 59811 MiB
+  custo/imagem (mediana, US$ 0.57/h): US$ 0.00236 | imagens/hora 242
+
+=== C2C: 10 jobs, 10 medidos, erros []
+  modelo: z_image_turbo_int8_convrot.safetensors | LoRA: luna_zimage_v1.safetensors@1.0 | workflow: zimage + DWPose + ControlNet Union 0.8
+  rosto ArcFace (melhor rosto vs MASTER): 0.449 ± 0.065 (min 0.278, max 0.530, n=10)
+  idade estimada: 27.2 ± 2.1 (min 24.0, max 31.0, n=10)
+  rostos/imagem: [2, 1, 1, 1, 2, 1, 1, 1, 1, 1] | corpos DWPose: [4, 1, 3, 1, 4, 1, 3, 1, 3, 1] | corpos >=25% da altura: [1, 1, 1, 1, 1, 1, 1, 1, 2, 1]
+  MULTIPLE_SUBJECTS FAIL (todos os rostos/corpos): 5/10 ['C2C_frontal_400', 'C2C_pose04_400', 'C2C_side_400', 'C2C_walk23_400', 'C2C_walk34_400']
+  shoulders    media 0.582 CV  24.2% n=10
+  hips         media 0.387 CV  18.6% n=10
+  r_thigh      media 0.819 CV  14.3% n=9
+  l_thigh      media 0.865 CV   7.4% n=8
+  r_shin       media 0.770 CV  14.9% n=9
+  l_shin       media 0.859 CV  10.8% n=8
+  r_upper_arm  media 0.541 CV   6.4% n=10
+  l_upper_arm  media 0.605 CV   7.5% n=10
+  aderencia a pose (distancia do esqueleto fonte; 0 = igual): 0.106 ± 0.047 (min 0.053, max 0.180, n=6)
+  tempo/imagem: todos 15.3 ± 0.7 (min 14.4, max 16.4, n=10) | primeira 16.4 | mediana 15.3
+  tempo de medicao (LunaFaces + DWPose): 8.2 ± 0.6 (min 7.7, max 9.7, n=10)
+  VRAM pico 14922 MiB de 24467 | util media 87%
+  RAM usada pico 61263 MiB
+  custo/imagem (mediana, US$ 0.57/h): US$ 0.00242 | imagens/hora 235
+
+=== CQ: 10 jobs, 10 medidos, erros []
+  modelo: qwen_image_edit_2511_fp8mixed.safetensors | LoRA: Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors@1.0 | workflow: qwen edit 3 imagens (base + rosto + corpo)
+  rosto ArcFace (melhor rosto vs MASTER): 0.617 ± 0.048 (min 0.539, max 0.695, n=10)
+  idade estimada: 25.7 ± 1.8 (min 22.0, max 29.0, n=10)
+  rostos/imagem: [1, 1, 2, 1, 1, 1, 1, 1, 1, 1] | corpos DWPose: [1, 1, 4, 1, 1, 1, 1, 1, 1, 1] | corpos >=25% da altura: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  MULTIPLE_SUBJECTS FAIL (todos os rostos/corpos): 1/10 ['CQ_pose04_400']
+  shoulders    media 0.565 CV   5.8% n=10
+  hips         media 0.362 CV  12.2% n=10
+  r_thigh      media 0.833 CV   5.0% n=9
+  l_thigh      media 0.853 CV   4.4% n=9
+  r_shin       media 0.661 CV   9.1% n=9
+  l_shin       media 0.905 CV   5.2% n=9
+  r_upper_arm  media 0.577 CV   4.2% n=10
+  l_upper_arm  media 0.597 CV   4.8% n=10
+  vs BASE: diferenca geral 73.3 ± 30.0 (min 33.8, max 104.0, n=10) | fundo 73.9 ± 35.6 (min 26.4, max 106.8, n=10) | distancia de pose 0.163 ± 0.108 (min 0.049, max 0.368, n=10)
+  mudanca de proporcao vs BASE (ombro/quadril/coxas): 0.111 ± 0.143 (min 0.010, max 0.771, n=36)
+  ganho de rosto vs BASE (pareado): 0.168 ± 0.102 (min 0.009, max 0.417, n=10)
+  tempo/imagem: todos 90.3 ± 1.2 (min 88.2, max 92.8, n=10) | primeira 90.9 | mediana 90.05000000000001
+  tempo de medicao (LunaFaces + DWPose): 8.3 ± 0.7 (min 7.3, max 9.9, n=10)
+  VRAM pico 23724 MiB de 24467 | util media 53%
+  RAM usada pico 66557 MiB
+  custo/imagem (mediana, US$ 0.57/h): US$ 0.01426 | imagens/hora 40
+
+=== ST/qwen: 10 jobs, 10 medidos, erros []
+  modelo: qwen_image_edit_2511_fp8mixed.safetensors | LoRA: Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors@1.0 + bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors@1.0 | workflow: qwen-bfs-head-swap (imagem inteira)
+  rosto ArcFace (melhor rosto vs MASTER): 0.733 ± 0.079 (min 0.617, max 0.870, n=10)
+  idade estimada: 23.7 ± 1.8 (min 21.0, max 28.0, n=10)
+  rostos/imagem: [1, 1, 1, 2, 1, 1, 1, 1, 1, 1] | corpos DWPose: [1, 1, 1, 9, 1, 3, 1, 1, 1, 1] | corpos >=25% da altura: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  MULTIPLE_SUBJECTS FAIL (todos os rostos/corpos): 2/10 ['STQ_3', 'STQ_5']
+  shoulders    media 0.633 CV  21.4% n=9
+  hips         media 0.437 CV  17.1% n=9
+  r_thigh      media 0.609 CV  28.9% n=7
+  l_thigh      media 0.817 CV   9.7% n=5
+  r_shin       media 0.824 CV  40.1% n=4
+  l_shin       media 0.880 CV  30.7% n=3
+  r_upper_arm  media 0.609 CV  32.9% n=9
+  l_upper_arm  media 0.656 CV  16.4% n=9
+  vs BASE: diferenca geral 20.0 ± 5.5 (min 13.3, max 31.1, n=10) | fundo 17.1 ± 7.4 (min 7.9, max 34.5, n=10) | distancia de pose 0.023 ± 0.016 (min 0.009, max 0.052, n=9)
+  mudanca de proporcao vs BASE (ombro/quadril/coxas): 0.037 ± 0.036 (min 0.001, max 0.167, n=30)
+  ganho de rosto vs BASE (pareado): 0.288 ± 0.056 (min 0.202, max 0.376, n=10)
+  tempo/imagem: todos 166.0 ± 11.5 (min 157.9, max 199.2, n=10) | primeira 168.2 | mediana 162.3
+  tempo de medicao (LunaFaces + DWPose): 7.8 ± 0.7 (min 7.2, max 9.5, n=10)
+  VRAM pico 23716 MiB de 24467 | util media 23%
+  RAM usada pico 67330 MiB
+  custo/imagem (mediana, US$ 0.57/h): US$ 0.02570 | imagens/hora 22
+
+=== ST/zimage: 10 jobs, 10 medidos, erros []
+  modelo: z_image_turbo_int8_convrot.safetensors | LoRA: luna_zimage_v1.safetensors@1.0 | workflow: zimage-txt2img-lora
+  rosto ArcFace (melhor rosto vs MASTER): 0.444 ± 0.067 (min 0.358, max 0.581, n=10)
+  idade estimada: 27.7 ± 2.9 (min 26.0, max 36.0, n=10)
+  rostos/imagem: [1, 1, 1, 2, 1, 1, 1, 1, 1, 1] | corpos DWPose: [1, 1, 1, 9, 1, 2, 1, 1, 1, 1] | corpos >=25% da altura: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  MULTIPLE_SUBJECTS FAIL (todos os rostos/corpos): 2/10 ['ST0_3', 'ST0_5']
+  shoulders    media 0.647 CV  19.4% n=9
+  hips         media 0.443 CV  15.6% n=9
+  r_thigh      media 0.594 CV  28.9% n=7
+  l_thigh      media 0.798 CV   8.5% n=5
+  r_shin       media 0.820 CV  44.5% n=4
+  l_shin       media 0.904 CV  34.0% n=3
+  r_upper_arm  media 0.602 CV  33.4% n=9
+  l_upper_arm  media 0.657 CV  17.0% n=9
+  tempo/imagem: todos 53.1 ± 1.9 (min 51.2, max 57.2, n=10) | primeira 52.9 | mediana 52.45
+  tempo de medicao (LunaFaces + DWPose): 8.1 ± 0.7 (min 7.2, max 9.2, n=10)
+  VRAM pico 23716 MiB de 24467 | util media 23%
+  RAM usada pico 67330 MiB
+  custo/imagem (mediana, US$ 0.57/h): US$ 0.00830 | imagens/hora 69
