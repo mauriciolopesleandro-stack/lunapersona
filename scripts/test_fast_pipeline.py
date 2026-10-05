@@ -189,6 +189,61 @@ def main() -> None:
         print(message, flush=True)
 
     raw: list[Path] = []
+    if "corpo" in sys.argv:
+        # Troca da pessoa inteira (zimage-person-inpaint-lora): foto de outra
+        # mulher (loira, cabelo curto - para a troca ficar visivel) feita no
+        # Z-Image, depois a Luna inteira no lugar dela, mesma pose e fundo.
+        cases = [
+            ("full body photo of a woman with short blonde hair wearing a green coat and blue jeans, standing in a "
+             "bookstore holding an open book with both hands, candid smartphone photo, realistic",
+             "full body photo standing in a bookstore holding an open book with both hands, wearing a green coat and "
+             "blue jeans"),
+            ("photo of a woman with short blonde hair wearing a red sweater, sitting at a cafe table holding a cup of "
+             "coffee with her right hand and smiling, candid smartphone photo, realistic",
+             "sitting at a cafe table holding a cup of coffee with her right hand and smiling, wearing a red sweater"),
+        ]
+        refs, outs = [], []
+        for i, (ref_prompt, _scene) in enumerate(cases):
+            graph = wm.render("zimage-txt2img", {"PROMPT": ref_prompt, "WIDTH": W, "HEIGHT": H, "SEED": 9100 + i,
+                                                  "FILENAME_PREFIX": "fast_corpo_ref"})
+            refs.append(OUT / saved(run(graph)))
+        for i, ((_ref_prompt, scene), ref) in enumerate(zip(cases, refs)):
+            face = pick(faces(f"{ref.name} [output]", luna), "F")
+            if not face:
+                note(f"caso {i + 1}: sem rosto achado na referencia")
+                continue
+            x1, y1, x2, y2 = face["bbox"]
+            fh, cx = y2 - y1, (x1 + x2) / 2
+            # cabeca, peito e quadril - o SAM2 pega a pessoa inteira a partir deles
+            points = [{"x": int(cx), "y": int((y1 + y2) / 2)}, {"x": int(cx), "y": int(y2 + fh * 1.5)},
+                      {"x": int(cx), "y": int(min(H - 5, y2 + fh * 3.2))}]
+            for strength in (0.75, 0.6):
+                t = time.time()
+                graph = wm.render("zimage-person-inpaint-lora", {
+                    "PROMPT": f"lunavox, a woman, {scene}, candid smartphone photo, natural skin texture, realistic",
+                    "REFERENCE_IMAGE": f"{ref.name} [output]", "WIDTH": W, "HEIGHT": H, "SEED": 9300 + i,
+                    "LORA_NAME": "luna_zimage_v1.safetensors", "POINTS_POS": json.dumps(points),
+                    "CONTROL_STRENGTH": strength, "FILENAME_PREFIX": "fast_corpo"})
+                entry = run(graph)
+                out = OUT / entry["outputs"]["41"]["images"][0]["filename"]
+                outs.append(out)
+                her = pick(faces(f"{out.name} [output]", luna), "F")
+                note(f"caso {i + 1} forca {strength}: {time.time() - t:.1f}s  Luna antes={face['sim']} "
+                     f"depois={her and her['sim']}")
+        rows = [refs, outs[0::2], outs[1::2]]
+        hgt = 560
+        ims_rows = [[Image.open(p).convert("RGB") for p in r] for r in rows if r]
+        ims_rows = [[im.resize((int(im.width * hgt / im.height), hgt)) for im in r] for r in ims_rows]
+        sheet = Image.new("RGB", (max(sum(i.width for i in r) + 6 * len(r) for r in ims_rows), (hgt + 6) * len(ims_rows)),
+                          (20, 20, 20))
+        for r, ims in enumerate(ims_rows):
+            x = 0
+            for im in ims:
+                sheet.paste(im, (x, r * (hgt + 6)))
+                x += im.width + 6
+        sheet.save("/workspace/fast_corpo.jpg", quality=85)
+        note(f"total {time.time() - started:.0f}s -> /workspace/fast_corpo.jpg")
+        return
     if "ckpt" in sys.argv:
         # Compara etapas do treino (cada LoRA passada depois de "ckpt"): mesmas
         # 3 cenas e sementes, semelhanca com a Luna. Treino demais copia as
