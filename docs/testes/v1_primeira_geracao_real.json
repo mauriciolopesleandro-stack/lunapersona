@@ -1,0 +1,369 @@
+{
+ "hashes": {
+  "master_face": {
+   "file": "references/f7e81b9a6c974a3587d1c8d8bad405b9.png",
+   "expected": "1c431d3c3c8ac85636de49dc0d2e7c7405b44fa0256ed746827afc24fc3c3269",
+   "volume": "1c431d3c3c8ac85636de49dc0d2e7c7405b44fa0256ed746827afc24fc3c3269",
+   "match": true
+  },
+  "master_face_secondary": {
+   "file": "references/31b2e73f9f384d219265d3ee7c493e98.png",
+   "expected": "90b09a5ed541b8a552076f6dec288857221b893f27024ba3548f6874e8eb39eb",
+   "volume": "90b09a5ed541b8a552076f6dec288857221b893f27024ba3548f6874e8eb39eb",
+   "match": true
+  },
+  "master_body": {
+   "file": "references/db5b998d8a284347bbeb727d9d51bb6d.png",
+   "expected": "70532015fada2be0f8816671acf38c93593cf405632b42d480654e177ac0842b",
+   "volume": "70532015fada2be0f8816671acf38c93593cf405632b42d480654e177ac0842b",
+   "match": true
+  },
+  "master_body_seated": {
+   "file": "references/f4b1a7e6020f40178e7083bdd20a342e.png",
+   "expected": "d548a80375ec3576fab61a22b823451e0ff18d13bd4f7c8ac408e228af871ef5",
+   "volume": "d548a80375ec3576fab61a22b823451e0ff18d13bd4f7c8ac408e228af871ef5",
+   "match": true
+  }
+ },
+ "wall_seconds": 266.4,
+ "job": {
+  "id": "73fdb406-e09f-4aa9-bfa6-ce1fb877adec",
+  "batch_id": null,
+  "retry_of": null,
+  "persona_id": "luna",
+  "persona_version": "1.0",
+  "pipeline_version": "luna-v1.0",
+  "provider": "comfyui",
+  "mode": "FREE",
+  "pose_reference": null,
+  "single_subject": true,
+  "scene_prompt": "full body photo, standing at the counter of a cozy coffee shop in Sao Paulo, holding a cup of coffee, wearing a white blouse and blue jeans, afternoon light",
+  "scene_prompt_en": "full body photo, standing at the counter of a cozy coffee shop in Sao Paulo, holding a cup of coffee, wearing a white blouse and blue jeans, afternoon light",
+  "style_overrides": {},
+  "parameters": {
+   "width": 832,
+   "height": 1216,
+   "seed": null
+  },
+  "threshold": 0.55,
+  "threshold_source": "persona_sheet",
+  "max_attempts": 3,
+  "model_versions": {
+   "scene": {
+    "unet": "z_image_turbo_int8_convrot.safetensors",
+    "text_encoder": "qwen_3_4b_fp4_mixed.safetensors",
+    "vae": "ae.safetensors",
+    "lora": "luna_zimage_v1.safetensors",
+    "workflow": "zimage-txt2img-lora",
+    "control_patch": "Z-Image-Turbo-Fun-Controlnet-Union-2.1-lite-2602-8steps.safetensors"
+   },
+   "face_lock": {
+    "unet": "qwen_image_edit_2511_fp8mixed.safetensors",
+    "lightning_lora": "Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors",
+    "bfs_lora": "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors",
+    "workflow": "qwen-bfs-head-swap"
+   },
+   "pose": null
+  },
+  "master_reference_versions": {
+   "master_face": "1c431d3c3c8ac85636de49dc0d2e7c7405b44fa0256ed746827afc24fc3c3269",
+   "master_face_secondary": "90b09a5ed541b8a552076f6dec288857221b893f27024ba3548f6874e8eb39eb",
+   "master_body": "70532015fada2be0f8816671acf38c93593cf405632b42d480654e177ac0842b",
+   "master_body_seated": "d548a80375ec3576fab61a22b823451e0ff18d13bd4f7c8ac408e228af871ef5"
+  },
+  "prompt_version": "prompt-v1.0",
+  "negative_version": "negative-v1.0+52394b21",
+  "status": "ACCEPTED",
+  "attempt": 1,
+  "execution_mode": "SINGLE_REQUEST_MODE",
+  "best_result_id": "8374a26d-94f0-4409-a2cd-e06596fa3d5a",
+  "accepted_result_id": "8374a26d-94f0-4409-a2cd-e06596fa3d5a",
+  "error": null,
+  "results": [
+   {
+    "id": "8374a26d-94f0-4409-a2cd-e06596fa3d5a",
+    "job_id": "73fdb406-e09f-4aa9-bfa6-ce1fb877adec",
+    "attempt": 1,
+    "strategy": "INITIAL",
+    "image_url": "http://127.0.0.1:8188/view?filename=luna_engine_face_00001_.png&subfolder=&type=output",
+    "image_locator": "luna_engine_face_00001_.png [output]",
+    "base_image_url": "http://127.0.0.1:8188/view?filename=luna_engine_00001_.png&subfolder=&type=output",
+    "status": "ACCEPT",
+    "face_score": 0.749,
+    "validation": {
+     "status": "PASS_WITH_UNKNOWN",
+     "checks": {
+      "face_identity": {
+       "name": "face_identity",
+       "status": "PASS",
+       "blocking": true,
+       "reason": "ArcFace 0.749 >= 0.55 contra a master_face.",
+       "score": 0.749,
+       "threshold": 0.55,
+       "confidence": "MEDIUM",
+       "failure_type": null,
+       "evidence": {
+        "metric": "ArcFace cosseno (InsightFace antelopev2) contra master_face",
+        "faces": 1,
+        "bbox": [
+         367.9,
+         114.3,
+         522.4,
+         323.9
+        ],
+        "age": 24.0
+       }
+      },
+      "subject_count": {
+       "name": "subject_count",
+       "status": "PASS",
+       "blocking": true,
+       "reason": "1 instancia da persona; 0 outra(s) pessoa(s) com rosto, permitidas.",
+       "score": 1.0,
+       "threshold": 1.0,
+       "confidence": "LOW",
+       "failure_type": null,
+       "evidence": {
+        "persona_instances": 1,
+        "persona_similarities": [
+         0.749
+        ],
+        "other_faces": 0,
+        "other_similarities": [],
+        "bodies": 1,
+        "prominent_bodies": 1,
+        "background_bodies": 0
+       }
+      },
+      "anatomy": {
+       "name": "anatomy",
+       "status": "UNKNOWN",
+       "blocking": true,
+       "reason": "Sem detector de anatomia validado: nao verificado (nao e PASS).",
+       "score": null,
+       "threshold": null,
+       "confidence": "LOW",
+       "failure_type": null,
+       "evidence": {
+        "detector": null,
+        "main_body_points": 12
+       }
+      },
+      "pose": {
+       "name": "pose",
+       "status": "INFORMATIONAL",
+       "blocking": false,
+       "reason": "Pose livre (sem pose pedida).",
+       "score": null,
+       "threshold": null,
+       "confidence": "MEDIUM",
+       "failure_type": null,
+       "evidence": {
+        "main_body_points": 12
+       }
+      },
+      "body_consistency": {
+       "name": "body_consistency",
+       "status": "NOT_COMPARABLE",
+       "blocking": false,
+       "reason": "Pose diferente da master_body (walk34): proporcoes 2D nao comparaveis.",
+       "score": null,
+       "threshold": null,
+       "confidence": "LOW",
+       "failure_type": null,
+       "evidence": {
+        "pose_match": false,
+        "pose_distance": 0.219
+       }
+      },
+      "age": {
+       "name": "age",
+       "status": "INFORMATIONAL",
+       "blocking": false,
+       "reason": "Idade estimada 24 (dentro de 23-31; alvo 27).",
+       "score": 24.0,
+       "threshold": null,
+       "confidence": "LOW",
+       "failure_type": null,
+       "evidence": {
+        "target": 27,
+        "range": [
+         23,
+         31
+        ],
+        "inside": true,
+        "known_drift": "a troca de cabeca (Qwen BFS) deixa a idade estimada em 20-25 (benchmark E1: 22.2; estresse: 23.7). Registrado, nao corrigido na V1."
+       }
+      },
+      "trigger_leak": {
+       "name": "trigger_leak",
+       "status": "UNKNOWN",
+       "blocking": false,
+       "reason": "OCR desligado: vazamento do gatilho nao verificado.",
+       "score": null,
+       "threshold": null,
+       "confidence": "LOW",
+       "failure_type": null,
+       "evidence": {
+        "trigger": "***"
+       }
+      }
+     },
+     "failures": [],
+     "unverified": [
+      "anatomy"
+     ],
+     "seconds": 14.16
+    },
+    "seeds": {
+     "scene": 1191775970,
+     "face_lock": 1191775971
+    },
+    "prompt": {
+     "subject": "lunavox, a woman",
+     "appearance": "confident mysterious gaze, subtle playful half smile, lips closed",
+     "scene": "full body photo, standing at the counter of a cozy coffee shop in Sao Paulo, holding a cup of coffee, wearing a white blouse and blue jeans, afternoon light",
+     "style": "",
+     "directives": [],
+     "negative": {
+      "global_terms": [
+       "extra limbs",
+       "duplicated person",
+       "duplicated head",
+       "duplicated torso",
+       "fused limbs",
+       "disconnected limbs",
+       "malformed anatomy",
+       "floating limbs",
+       "unnatural proportions",
+       "deformed hands",
+       "extra fingers",
+       "missing limbs",
+       "duplicate body",
+       "multiple copies of subject"
+      ],
+      "persona_terms": [
+       "tattoos",
+       "blonde or light hair",
+       "short hair",
+       "pale skin",
+       "different face",
+       "thin or skinny body",
+       "teenage or elderly appearance"
+      ],
+      "scene_terms": [
+       "second copy of the same woman",
+       "mirror reflection of her",
+       "twins"
+      ],
+      "version": "negative-v1.0+52394b21"
+     },
+     "version": "prompt-v1.0",
+     "text": "lunavox, a woman, confident mysterious gaze, subtle playful half smile, lips closed, full body photo, standing at the counter of a cozy coffee shop in Sao Paulo, holding a cup of coffee, wearing a white blouse and blue jeans, afternoon light"
+    },
+    "stages": [
+     {
+      "image": {
+       "provider": "comfyui",
+       "locator": "luna_engine_00001_.png [output]",
+       "url": "http://127.0.0.1:8188/view?filename=luna_engine_00001_.png&subfolder=&type=output",
+       "width": 832,
+       "height": 1216
+      },
+      "stage": "scene",
+      "adapter": "zimage",
+      "seconds": 52.88,
+      "seed": 1191775970,
+      "model_ids": [
+       "z_image_turbo_int8_convrot.safetensors",
+       "luna_zimage_v1.safetensors"
+      ],
+      "provider_job_id": "085e4106-9e63-40a1-b291-1c0056277fcd",
+      "model_switch": null,
+      "gpu": {
+       "name": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+       "vram_total_mb": 23986,
+       "vram_used_mb": 9880
+      },
+      "effective_parameters": {
+       "workflow": "zimage-txt2img-lora",
+       "prompt": "lunavox, a woman, confident mysterious gaze, subtle playful half smile, lips closed, full body photo, standing at the counter of a cozy coffee shop in Sao Paulo, holding a cup of coffee, wearing a white blouse and blue jeans, afternoon light",
+       "lora_strength": 1.0,
+       "width": 832,
+       "height": 1216,
+       "seed": 1191775970,
+       "STEPS": 8,
+       "CFG": 1.0,
+       "SHIFT": 3,
+       "SAMPLER": "res_multistep",
+       "SCHEDULER": "simple",
+       "negative_applied": false,
+       "pose": null
+      }
+     },
+     {
+      "image": {
+       "provider": "comfyui",
+       "locator": "luna_engine_face_00001_.png [output]",
+       "url": "http://127.0.0.1:8188/view?filename=luna_engine_face_00001_.png&subfolder=&type=output",
+       "width": 832,
+       "height": 1216
+      },
+      "stage": "face_lock",
+      "adapter": "qwen-bfs-head-swap",
+      "seconds": 171.99,
+      "seed": 1191775971,
+      "model_ids": [
+       "qwen_image_edit_2511_fp8mixed.safetensors",
+       "Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors",
+       "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors"
+      ],
+      "provider_job_id": "b11839cc-978f-4a31-b811-87dcb9eb221d",
+      "model_switch": true,
+      "gpu": {
+       "name": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+       "vram_total_mb": 23986,
+       "vram_used_mb": 21759
+      },
+      "effective_parameters": {
+       "workflow": "qwen-bfs-head-swap",
+       "model_size": [
+        832,
+        1216
+       ],
+       "seed": 1191775971,
+       "master_face": "f7e81b9a6c974a3587d1c8d8bad405b9",
+       "master_sha256": "1c431d3c3c8ac85636de49dc0d2e7c7405b44fa0256ed746827afc24fc3c3269",
+       "crop": "imagem inteira"
+      }
+     }
+    ],
+    "metrics": {
+     "execution_mode": "SINGLE_REQUEST_MODE",
+     "stage_seconds": {
+      "scene": 52.88,
+      "face_lock": 171.99
+     },
+     "generation_seconds": 52.88,
+     "postprocess_seconds": 171.99,
+     "validation_seconds": 14.16,
+     "total_seconds": 239.03,
+     "model_switches": 1,
+     "model_load_seconds": "NOT MEASURED (incluido na etapa quando model_switch=true)",
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+     "vram_used_mb_max": 21759,
+     "vram_total_mb": 23986,
+     "gpu_price_per_hour": 0.57,
+     "price_source": "runpod",
+     "estimated_cost_usd": 0.03785
+    },
+    "error": null,
+    "created_at": "2026-10-05T19:39:09.784647+00:00"
+   }
+  ],
+  "failures": [],
+  "retries": [],
+  "created_at": "2026-10-05T19:34:43.379177+00:00",
+  "updated_at": "2026-10-05T19:39:09.825852+00:00"
+ }
+}
