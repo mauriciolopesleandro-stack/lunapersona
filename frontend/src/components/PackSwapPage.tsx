@@ -63,7 +63,7 @@ export function PackSwapPage({ personas, ensureAwake }: Props) {
   const [error, setError] = useState<string | null>(null);
   // "recreate": a foto inteira e redesenhada (sem emendas; o cenario pode mudar
   // um pouco). "swap": so a pessoa e trocada e o resto fica identico.
-  const [mode, setMode] = useState<"recreate" | "swap">("recreate");
+  const [mode, setMode] = useState<"full" | "swap">("full");
 
   useEffect(() => {
     if (!personaId && personas[0]) setPersonaId(personas[0].id);
@@ -166,9 +166,9 @@ export function PackSwapPage({ personas, ensureAwake }: Props) {
         </p>
         <label className="voice-field">
           Modo
-          <select value={mode} onChange={(e) => setMode(e.target.value as "recreate" | "swap")} disabled={running}>
-            <option value="recreate">Recriar a foto inteira (mais natural, cenário pode mudar um pouco)</option>
-            <option value="swap">Trocar só a pessoa (cenário idêntico à foto)</option>
+          <select value={mode} onChange={(e) => setMode(e.target.value as "full" | "swap")} disabled={running}>
+            <option value="full">Trocar a pessoa inteira (rosto e corpo da persona, cenário idêntico)</option>
+            <option value="swap">Trocar só o rosto e o cabelo (corpo e roupa ficam os da foto)</option>
           </select>
         </label>
         {personas.length > 1 && (

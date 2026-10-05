@@ -303,16 +303,6 @@
         "filename_prefix": "${FILENAME_PREFIX}"
       }
     },
-    "42": {
-      "class_type": "SaveImage",
-      "inputs": {
-        "images": [
-          "21",
-          0
-        ],
-        "filename_prefix": "${FILENAME_PREFIX}_pose"
-      }
-    },
     "50": {
       "class_type": "ModelPatchLoader",
       "inputs": {

@@ -4,6 +4,7 @@ onde ComfyUIClient, WorkflowManager e ModelManager se encontram.
 """
 from __future__ import annotations
 
+import json
 import re
 import time
 import uuid
@@ -25,7 +26,7 @@ from app.services.person_swap import (
     swap_face_box,
     swap_similarity,
 )
-from app.services.head_swap import head_swap
+from app.services.head_swap import faces_in, head_swap, model_size
 from app.services.prompt_translator import to_english
 from app.services.reference_caption import clean_reference_caption
 from app.services.scene_describer import describe_image
@@ -88,7 +89,19 @@ _OTHER_PERSON = re.compile(r"\b(?:man|men|he|his|him|husband|boyfriend|guy|male|
 
 # Correcao de rosto depois da geracao com LoRA (workflows/chroma-face-refine.json).
 FACE_REFINE_WORKFLOW = "chroma-face-refine"
+CHROMA_TXT2IMG_WORKFLOW = "chroma-txt2img"
+ZIMAGE_WORKFLOW = "zimage-txt2img"
 ZIMAGE_LORA_WORKFLOW = "zimage-txt2img-lora"
+ZIMAGE_IMG2IMG_WORKFLOW = "zimage-img2img-lora"
+PERSON_INPAINT_WORKFLOW = "zimage-person-inpaint-lora"
+ZIMAGE_UNET = "z_image_turbo_int8_convrot.safetensors"
+PERSON_CONTROL_PATCH = "Z-Image-Turbo-Fun-Controlnet-Union-2.1-lite-2602-8steps.safetensors"
+ZIMAGE_PIXELS = 1_300_000
+
+
+def _face_area(face: dict[str, Any]) -> float:
+    x1, y1, x2, y2 = face["bbox"]
+    return (x2 - x1) * (y2 - y1)
 # Pedido ja diz a roupa? (em ingles - o pedido passa pela traducao antes)
 _CLOTHES_WORDS = re.compile(
     r"\b(?:wear\w*|dress\w*|outfit|clothes|clothing|shirt|t-shirt|top|blouse|jacket|coat|sweater|hoodie|jeans|pants|"
@@ -304,6 +317,102 @@ class GenerationService:
             return [iid], iid_sim, True
         return images, sim, True
 
+    async def _zimage_available(self) -> bool:
+        try:
+            return ZIMAGE_UNET in await self.comfyui_client.list_diffusion_models()
+        except ComfyUIError:
+            return False
+
+    async def _run_graph(self, graph: dict[str, Any]) -> tuple[str, list[GenerationOutputImage]]:
+        prompt_id = await self.comfyui_client.queue_prompt(graph)
+        entry = await self.comfyui_client.wait_for_completion(prompt_id)
+        return prompt_id, self.comfyui_client.extract_images(entry)
+
+    async def _swap_person(
+        self, req: GenerationRequest, persona: Any, seed: int, user_prompt: str
+    ) -> GenerationResponse:
+        """Foto de referencia com a persona no lugar da pessoa, cena da foto.
+        pack_mode "full" (e o antigo "recreate"): a pessoa INTEIRA vira a
+        persona - rosto e corpo pela LoRA do Z-Image, na pose da foto (DWPose +
+        ControlNet em modo inpaint), fundo colado da original. "swap": so a
+        cabeca (troca BFS, app/services/head_swap.py) - corpo e roupa ficam os
+        da foto. Antes: Qwen + mascaras + InstantID + retoque do Chroma (borda
+        artificial, objeto cortado, minutos)."""
+        start = time.monotonic()
+        lora = persona.lora
+        content = await self.comfyui_client.download_file(req.reference_image, "", "input")
+        size = image_size(content)
+        faces = await faces_in(self.comfyui_client, req.reference_image)
+        women = [f for f in faces if f.get("sex") == "F"]
+        target = max(women or faces, key=_face_area) if faces else None
+        others = [f for f in faces if f is not target]
+        full = req.pack_mode in ("full", "recreate")
+        if full and size and target and PERSON_CONTROL_PATCH in await self.comfyui_client.list_model_patches():
+            width, height = size
+            mw, mh = model_size(width, height, ZIMAGE_PIXELS)
+            sx, sy = mw / width, mh / height
+            x1, y1, x2, y2 = target["bbox"]
+            fh, cx = y2 - y1, (x1 + x2) / 2
+            # Cabeca, peito e quadril: o SAM2 pega a pessoa inteira a partir deles.
+            points = [(cx, (y1 + y2) / 2), (cx, min(height - 1, y2 + fh * 1.5)), (cx, min(height - 1, y2 + fh * 3.2))]
+            caption = clean_reference_caption(
+                await describe_image(self.comfyui_client, self.workflow_manager, req.reference_image)
+            )
+            prompt = ", ".join(
+                p for p in (f"{lora.trigger}, a woman", pack_correction(user_prompt), caption, REALISM_SUFFIX) if p
+            )
+            graph = self.workflow_manager.render(PERSON_INPAINT_WORKFLOW, {
+                "PROMPT": prompt, "REFERENCE_IMAGE": req.reference_image, "WIDTH": mw, "HEIGHT": mh, "SEED": seed,
+                "LORA_NAME": lora.zimage_file, "LORA_STRENGTH": lora.zimage_strength,
+                "POINTS_POS": json.dumps([{"x": int(x * sx), "y": int(y * sy)} for x, y in points]),
+            })
+            if others:
+                # O outro (marido, amiga) fica fora do contorno.
+                graph["25"]["inputs"]["coordinates_negative"] = json.dumps([
+                    {"x": int((f["bbox"][0] + f["bbox"][2]) / 2 * sx), "y": int((f["bbox"][1] + f["bbox"][3]) / 2 * sy)}
+                    for f in others
+                ])
+            workflow_id = PERSON_INPAINT_WORKFLOW
+            prompt_id, images = await self._run_graph(graph)
+        else:
+            reference = self.persona_manager.get_primary_reference_bytes(req.persona_id)
+            if not reference or not size:
+                raise WorkflowParamError("Nao consegui ler a foto ou a foto da persona para a troca.")
+            head = await self.comfyui_client.upload_image(*reference)
+            face = tuple(target["bbox"]) if target and others else None
+            out = await head_swap(
+                self.comfyui_client, self.workflow_manager, req.reference_image, head, size[0], size[1], seed,
+                face=face, prefix="luna_studio",
+            )
+            workflow_id, prompt_id, images = "qwen-bfs-head-swap", "", [out] if out else []
+        if not images:
+            raise WorkflowParamError("A troca nao saiu. Tente de novo ou use outra foto.")
+        return GenerationResponse(
+            prompt_id=prompt_id, model_id=req.model_id, workflow_id=workflow_id, persona_id=req.persona_id,
+            images=images, duration_seconds=time.monotonic() - start,
+        )
+
+    async def _reinterpret(
+        self, req: GenerationRequest, persona: Any, seed: int, user_prompt: str
+    ) -> GenerationResponse:
+        """"Reinterpretar a cena" com a LoRA do Z-Image: a foto e o ponto de
+        partida e o "Quanto mudar" (DENOISE) diz quanto dela fica."""
+        start = time.monotonic()
+        lora = persona.lora
+        description = clean_reference_caption(await self._describe_reference(req.reference_image))
+        prompt = ", ".join(p for p in (f"{lora.trigger}, a woman", user_prompt, description, REALISM_SUFFIX) if p)
+        graph = self.workflow_manager.render(ZIMAGE_IMG2IMG_WORKFLOW, {
+            "PROMPT": prompt, "REFERENCE_IMAGE": req.reference_image,
+            "WIDTH": req.width or 864, "HEIGHT": req.height or 1536, "SEED": seed,
+            "LORA_NAME": lora.zimage_file, "LORA_STRENGTH": lora.zimage_strength,
+            "DENOISE": req.denoise if req.denoise is not None else 0.8,
+        })
+        prompt_id, images = await self._run_graph(graph)
+        return GenerationResponse(
+            prompt_id=prompt_id, model_id=req.model_id, workflow_id=ZIMAGE_IMG2IMG_WORKFLOW,
+            persona_id=req.persona_id, images=images, duration_seconds=time.monotonic() - start,
+        )
+
     async def generate(self, req: GenerationRequest) -> GenerationResponse:
         model = self.model_manager.get_model(req.model_id)
 
@@ -324,7 +433,16 @@ class GenerationService:
         if req.persona_id:
             persona = self.persona_manager.get_persona(req.persona_id)
             lora = persona.lora
-            if lora and lora.workflow_id in model.compatible_workflows and await self._lora_available(lora.file):
+            zimage_ready = bool(lora and lora.zimage_file) and await self._lora_available(lora.zimage_file)
+            if zimage_ready and req.reference_image:
+                # Foto de referencia com a LoRA do Z-Image: troca (pessoa
+                # inteira ou so a cabeca) ou reinterpretar - sem o Chroma.
+                if req.person_swap:
+                    return await self._swap_person(req, persona, seed, user_prompt)
+                return await self._reinterpret(req, persona, seed, user_prompt)
+            if lora and (zimage_ready or (
+                lora.workflow_id in model.compatible_workflows and await self._lora_available(lora.file)
+            )):
                 # A LoRA ja carrega rosto, corpo e acessorios: o texto longo de
                 # identidade so competiria com ela (e vira retrato/colagem).
                 use_lora = True
@@ -352,12 +470,7 @@ class GenerationService:
                 # persona vence porque foi calibrado para a LoRA dela.
                 if lora.guidance is not None:
                     lora_params["GUIDANCE"] = lora.guidance
-                if (
-                    not req.reference_image
-                    and lora.zimage_file
-                    and ZIMAGE_LORA_WORKFLOW in model.compatible_workflows
-                    and await self._lora_available(lora.zimage_file)
-                ):
+                if zimage_ready and not req.reference_image:
                     # Z-Image Turbo + LoRA dela (teste de 2026-10-04: cena real
                     # em ~17 s contra 3-4 min do Chroma). Prompt no formato das
                     # legendas do treino; 8 passos fixos (os 26 do Chroma e o
@@ -390,6 +503,15 @@ class GenerationService:
                     filename, content = reference
                     reference_image_name = await self.comfyui_client.upload_image(filename, content)
                     workflow_id = "flux-kontext-reference"
+
+        if not req.persona_id and not req.reference_image and workflow_id == CHROMA_TXT2IMG_WORKFLOW \
+                and await self._zimage_available():
+            # Sem persona ("sem persona" no Gerar, retrato do outro personagem
+            # da Historia): Z-Image puro - segundos e o mesmo realismo das
+            # fotos dela, em vez dos minutos e do estilo do Chroma.
+            zimage = True
+            workflow_id = ZIMAGE_WORKFLOW
+            lora_params = {"STEPS": 8, "CFG": 1.0, "SAMPLER": "res_multistep", "SCHEDULER": "simple"}
 
         if req.reference_image:
             workflow_id = IMG2IMG_LORA_WORKFLOW if use_lora else IMG2IMG_WORKFLOW

@@ -1,0 +1,167 @@
+{
+  "meta": {
+    "id": "zimage-img2img-lora",
+    "title": "Z-Image Turbo + LoRA da persona - reinterpretar uma foto",
+    "description": "Reinterpretar a cena com a persona: a foto de referencia (REFERENCE_IMAGE) vira o ponto de partida e o Z-Image com a LoRA dela redesenha por cima, com DENOISE (0.4-0.95, o \"Quanto mudar\" do site) - no lugar do chroma-img2img-lora (minutos e outro estilo).",
+    "compatible_models": [
+      "chroma1-hd-fp8"
+    ],
+    "hidden": true,
+    "required_params": [
+      "PROMPT",
+      "REFERENCE_IMAGE",
+      "WIDTH",
+      "HEIGHT",
+      "SEED",
+      "LORA_NAME",
+      "DENOISE"
+    ],
+    "optional_params": {
+      "STEPS": 8,
+      "CFG": 1,
+      "SHIFT": 3,
+      "SAMPLER": "res_multistep",
+      "SCHEDULER": "simple",
+      "UNET": "z_image_turbo_int8_convrot.safetensors",
+      "TEXT_ENCODER": "qwen_3_4b_fp4_mixed.safetensors",
+      "VAE": "ae.safetensors",
+      "FILENAME_PREFIX": "luna_fast",
+      "LORA_STRENGTH": 1
+    }
+  },
+  "graph": {
+    "1": {
+      "class_type": "UNETLoader",
+      "inputs": {
+        "unet_name": "${UNET}",
+        "weight_dtype": "default"
+      }
+    },
+    "2": {
+      "class_type": "CLIPLoader",
+      "inputs": {
+        "clip_name": "${TEXT_ENCODER}",
+        "type": "lumina2",
+        "device": "default"
+      }
+    },
+    "3": {
+      "class_type": "VAELoader",
+      "inputs": {
+        "vae_name": "${VAE}"
+      }
+    },
+    "4": {
+      "class_type": "ModelSamplingAuraFlow",
+      "inputs": {
+        "model": [
+          "11",
+          0
+        ],
+        "shift": "${SHIFT}"
+      }
+    },
+    "5": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "2",
+          0
+        ],
+        "text": "${PROMPT}"
+      }
+    },
+    "6": {
+      "class_type": "ConditioningZeroOut",
+      "inputs": {
+        "conditioning": [
+          "5",
+          0
+        ]
+      }
+    },
+    "7": {
+      "class_type": "VAEEncode",
+      "inputs": {
+        "pixels": [
+          "12",
+          0
+        ],
+        "vae": [
+          "3",
+          0
+        ]
+      }
+    },
+    "8": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "4",
+          0
+        ],
+        "positive": [
+          "5",
+          0
+        ],
+        "negative": [
+          "6",
+          0
+        ],
+        "latent_image": [
+          "7",
+          0
+        ],
+        "seed": "${SEED}",
+        "steps": "${STEPS}",
+        "cfg": "${CFG}",
+        "sampler_name": "${SAMPLER}",
+        "scheduler": "${SCHEDULER}",
+        "denoise": "${DENOISE}"
+      }
+    },
+    "9": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "8",
+          0
+        ],
+        "vae": [
+          "3",
+          0
+        ]
+      }
+    },
+    "10": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "${REFERENCE_IMAGE}"
+      }
+    },
+    "11": {
+      "class_type": "LoraLoaderModelOnly",
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "lora_name": "${LORA_NAME}",
+        "strength_model": "${LORA_STRENGTH}"
+      }
+    },
+    "12": {
+      "class_type": "ImageScale",
+      "inputs": {
+        "image": [
+          "10",
+          0
+        ],
+        "upscale_method": "lanczos",
+        "width": "${WIDTH}",
+        "height": "${HEIGHT}",
+        "crop": "center"
+      }
+    }
+  }
+}

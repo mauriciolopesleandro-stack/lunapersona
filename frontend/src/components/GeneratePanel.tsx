@@ -78,6 +78,7 @@ interface Props {
     referenceFile?: File;
     denoise?: number;
     personSwap?: boolean;
+    packMode?: "full" | "swap";
   }) => void;
 }
 
@@ -117,11 +118,13 @@ export function GeneratePanel({
   // continuar as da pessoa original em vez de virar as da persona.
   // 0.8: ainda troca cabelo/corpo pela persona, mas guarda mais da pose e da roupa.
   const [denoise, setDenoise] = useState(0.8);
-  const [keepScene, setKeepScene] = useState(true);
+  // full: a pessoa inteira vira a persona (rosto e corpo), mesma pose e fundo;
+  // head: so rosto e cabelo (corpo e roupa da foto); reinterpret: a cena muda.
+  const [photoMode, setPhotoMode] = useState<"full" | "head" | "reinterpret">("full");
 
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
   const style = STYLES.find((s) => s.id === styleId) ?? STYLES[0];
-  const swapScene = Boolean(reference && personaId && keepScene);
+  const swapScene = Boolean(reference && personaId && photoMode !== "reinterpret");
   const outputSize = reference
     ? swapScene
       ? keepSceneSize(reference.width, reference.height)
@@ -174,6 +177,7 @@ export function GeneratePanel({
       referenceFile: reference?.file,
       denoise: reference && !swapScene ? denoise : undefined,
       personSwap: swapScene,
+      packMode: photoMode === "head" ? "swap" : "full",
     });
   }
 
@@ -222,8 +226,8 @@ export function GeneratePanel({
 
       <div className="step-label">2. Foto de referência (opcional)</div>
       <p className="muted small reference-hint">
-        Suba uma foto com a cena que você quer: a IA mantém o cenário, a luz, a pose e a roupa e troca o rosto e o cabelo da
-        pessoa pelos da persona.
+        Suba uma foto com a cena que você quer: a IA mantém o cenário, a luz e a pose e coloca a persona no lugar da pessoa
+        (inteira ou só o rosto, você escolhe abaixo).
       </p>
       {reference ? (
         <div className="reference-box">
@@ -232,8 +236,9 @@ export function GeneratePanel({
             {personaId && (
               <label className="voice-field">
                 Como usar a foto
-                <select value={keepScene ? "keep" : "reinterpret"} onChange={(e) => setKeepScene(e.target.value === "keep")}>
-                  <option value="keep">Manter a cena igual e trocar o rosto e o cabelo (corpo e roupa ficam os da foto)</option>
+                <select value={photoMode} onChange={(e) => setPhotoMode(e.target.value as "full" | "head" | "reinterpret")}>
+                  <option value="full">Trocar a pessoa inteira (rosto e corpo da persona, mesma pose e cenário)</option>
+                  <option value="head">Trocar só o rosto e o cabelo (corpo e roupa ficam os da foto)</option>
                   <option value="reinterpret">Reinterpretar a cena (a cena pode mudar)</option>
                 </select>
               </label>

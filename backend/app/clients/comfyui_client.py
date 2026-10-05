@@ -158,6 +158,19 @@ class ComfyUIClient:
         options = node.get("input", {}).get("required", {}).get("lora_name", [[]])[0]
         return list(options) if isinstance(options, list) else []
 
+    async def list_model_patches(self) -> list[str]:
+        """Arquivos que o ModelPatchLoader enxerga em models/model_patches (ControlNet do Z-Image)."""
+        try:
+            async with httpx.AsyncClient(timeout=self.connect_timeout) as client:
+                resp = await client.get(f"{self.base_url}/object_info/ModelPatchLoader", headers=self._headers())
+        except httpx.RequestError as exc:
+            raise ComfyUIConnectionError(str(exc)) from exc
+        if resp.status_code != 200:
+            return []
+        node = resp.json().get("ModelPatchLoader", {})
+        options = node.get("input", {}).get("required", {}).get("name", [[]])[0]
+        return list(options) if isinstance(options, list) else []
+
     async def list_diffusion_models(self) -> list[str]:
         """Arquivos que o UNETLoader enxerga em models/diffusion_models."""
         try:
