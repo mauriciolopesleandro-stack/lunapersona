@@ -1,10 +1,14 @@
-"""ModelAdapter: o unico ponto de contato entre o Persona Engine e um modelo
-de geracao (ComfyUI hoje; Flux API, GPT Image etc. depois, cada um na sua
-pasta em app/providers/).
+"""Contratos entre o Persona Engine e os modelos (Persona Engine V1).
 
-O nucleo (core/) fala so em termos genericos - prompt em secoes, fotos de
-referencia, "forca da identidade" de 0 a 1 - e cada adapter traduz para o
-seu modelo (forca da LoRA, peso do IP-Adapter, etc.).
+O nucleo (app/core) so conhece estas interfaces; cada provider (hoje o
+ComfyUI do estudio, em app/providers/comfyui) implementa as etapas:
+
+  SceneAdapter          cena, corpo e pose (Z-Image + LoRA da persona)
+  FaceIdentityAdapter   Face Lock: refaz cabeca/rosto com a master_face (Qwen 2511 BFS)
+  PoseControlAdapter    prepara o controle de pose (DWPose + ControlNet) - opcional
+
+Um ProviderSet junta as tres etapas de um provider. Trocar de GPU, de
+servidor ou de modelo e escrever outro ProviderSet, sem mexer no nucleo.
 """
 from __future__ import annotations
 
@@ -27,33 +31,9 @@ class ProviderConfigurationError(ProviderError):
 
 @dataclass
 class GenerationParameters:
-    """Parametros independentes de modelo. identity_strength 0-1: quanto a
-    identidade da persona pesa (0.5 = o padrao do modelo)."""
-
     width: int | None = None
     height: int | None = None
     seed: int | None = None
-    identity_strength: float = 0.5
-    # Retoque do rosto pela foto da persona depois da geracao (se o modelo tiver).
-    face_restore: bool = False
-    steps: int | None = None
-    guidance: float | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
-class ProviderCapabilities:
-    name: str
-    title: str
-    # Como o modelo segura a identidade: "lora", "reference_image", "text"...
-    identity_mechanisms: list[str] = field(default_factory=list)
-    supports_face_restore: bool = False
-    supports_negative_prompt: bool = False
-    supports_seed: bool = True
-    default_size: tuple[int, int] = (1024, 1024)
-    max_pixels: int = 2_000_000
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -64,40 +44,7 @@ class ReferenceImage:
     reference_id: str
     filename: str
     content: bytes
-    type: str
-    weight: float
-
-
-@dataclass
-class PromptSections:
-    """Saida do PromptBuilder. Cada adapter monta o texto final do jeito que
-    o seu modelo entende (ordem, idioma, se usa negativo)."""
-
-    identity_directive: str
-    identity_traits: str
-    appearance: str
-    style: str
-    scene: str
-    constraints: list[str]
-    negative: list[str]
-    # Reforcos pedidos pelo RetryManager (ex.: "apparent age 26").
-    emphasis: list[str] = field(default_factory=list)
-    text: str = ""
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass
-class ProviderInput:
-    persona_id: str
-    prompt: PromptSections
-    parameters: GenerationParameters
-    references: list[ReferenceImage] = field(default_factory=list)
-    # Recursos de identidade da persona que um modelo especifico usa (LoRA...).
-    identity_assets: dict[str, Any] = field(default_factory=dict)
-    # Sexo da persona ("F"/"M"/""), para o modelo escrever "a woman" etc.
-    sex: str = ""
+    sha256: str = ""
 
 
 @dataclass
@@ -114,64 +61,172 @@ class ProviderImage:
 
 
 @dataclass
-class ProviderOutput:
-    images: list[ProviderImage]
-    provider_job_id: str
-    duration_seconds: float
-    # O que o modelo realmente usou (workflow, forca da LoRA, semente...).
+class NegativeSet:
+    """Negativo em camadas (global + persona + cena). O adapter decide se aplica."""
+
+    global_terms: list[str] = field(default_factory=list)
+    persona_terms: list[str] = field(default_factory=list)
+    scene_terms: list[str] = field(default_factory=list)
+    version: str = ""
+
+    def all_terms(self) -> list[str]:
+        return list(dict.fromkeys([*self.global_terms, *self.persona_terms, *self.scene_terms]))
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class PromptSections:
+    """Saida do PromptBuilder. O adapter monta o texto final do seu modelo."""
+
+    subject: str  # gatilho interno da LoRA + "a woman" (nunca vem do texto do usuario)
+    appearance: str
+    scene: str
+    style: str
+    directives: list[str] = field(default_factory=list)  # ex.: "only one woman in the photo"
+    negative: NegativeSet = field(default_factory=NegativeSet)
+    version: str = ""
+    text: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class PoseControl:
+    """Pose pedida: imagem de origem do esqueleto (no provider) e forca."""
+
+    source: str
+    strength: float
+
+
+@dataclass
+class SceneRequest:
+    prompt: PromptSections
+    parameters: GenerationParameters
+    lora: dict[str, Any]  # arquivo, gatilho e forca da LoRA da persona (da ficha + persona.json)
+    pose: PoseControl | None = None
+
+
+@dataclass
+class StageOutput:
+    image: ProviderImage
+    stage: str
+    adapter: str
+    seconds: float
+    seed: int
+    model_ids: list[str] = field(default_factory=list)
+    provider_job_id: str = ""
+    # True = o modelo desta etapa precisou ser carregado (outro estava na GPU).
+    model_switch: bool | None = None
+    gpu: dict[str, Any] = field(default_factory=dict)
     effective_parameters: dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["image"] = self.image.to_dict()
+        return data
 
-class ModelAdapter(ABC):
+
+@dataclass
+class AdapterCapabilities:
+    name: str
+    title: str
+    supports_negative_prompt: bool = False
+    supports_pose_control: bool = False
+    default_size: tuple[int, int] = (832, 1216)
+    max_pixels: int = 1_300_000
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class SceneAdapter(ABC):
     name: str
 
     @abstractmethod
-    async def generate(self, request: ProviderInput) -> ProviderOutput: ...
+    async def generate(self, request: SceneRequest) -> StageOutput: ...
 
     @abstractmethod
-    async def validate_configuration(self) -> list[str]:
-        """Problemas que impedem gerar agora (lista vazia = pronto)."""
+    async def validate_configuration(self, lora: dict[str, Any], pose: bool) -> list[str]: ...
 
     @abstractmethod
-    def get_capabilities(self) -> ProviderCapabilities: ...
+    def get_capabilities(self) -> AdapterCapabilities: ...
+
+    def model_versions(self, lora: dict[str, Any]) -> dict[str, str]:
+        return {}
 
     def normalize_parameters(self, params: GenerationParameters) -> GenerationParameters:
-        """Encaixa os parametros no que o modelo aceita (tamanho multiplo de
-        16 e ate max_pixels, identidade entre 0 e 1)."""
         caps = self.get_capabilities()
         width, height = params.width or caps.default_size[0], params.height or caps.default_size[1]
         scale = min(1.0, (caps.max_pixels / (width * height)) ** 0.5)
-        width, height = max(256, round(width * scale / 16) * 16), max(256, round(height * scale / 16) * 16)
         return GenerationParameters(
-            width=width,
-            height=height,
-            seed=params.seed if caps.supports_seed else None,
-            identity_strength=min(1.0, max(0.0, params.identity_strength)),
-            face_restore=params.face_restore and caps.supports_face_restore,
-            steps=params.steps,
-            guidance=params.guidance,
+            width=max(256, round(width * scale / 16) * 16),
+            height=max(256, round(height * scale / 16) * 16),
+            seed=params.seed,
         )
+
+
+class FaceIdentityAdapter(ABC):
+    name: str
+
+    @abstractmethod
+    async def lock_face(self, image: ProviderImage, master_face: ReferenceImage, seed: int) -> StageOutput: ...
+
+    @abstractmethod
+    async def validate_configuration(self) -> list[str]: ...
+
+    def model_versions(self) -> dict[str, str]:
+        return {}
+
+
+class PoseControlAdapter(ABC):
+    name: str
+
+    @abstractmethod
+    async def prepare(self, pose_reference: str, strength: float) -> PoseControl: ...
+
+    @abstractmethod
+    async def validate_configuration(self) -> list[str]: ...
+
+
+@dataclass
+class ProviderSet:
+    name: str
+    title: str
+    scene: SceneAdapter
+    face: FaceIdentityAdapter
+    pose: PoseControlAdapter | None = None
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "name": self.name, "title": self.title,
+            "scene": self.scene.get_capabilities().to_dict(),
+            "face": self.face.name,
+            "pose": self.pose.name if self.pose else None,
+        }
 
 
 class ProviderRegistry:
     def __init__(self) -> None:
-        self._adapters: dict[str, ModelAdapter] = {}
+        self._sets: dict[str, ProviderSet] = {}
 
-    def register(self, adapter: ModelAdapter) -> None:
-        self._adapters[adapter.name] = adapter
+    def register(self, provider_set: ProviderSet) -> None:
+        self._sets[provider_set.name] = provider_set
 
-    def get(self, name: str) -> ModelAdapter:
-        adapter = self._adapters.get(name)
-        if adapter is None:
+    def get(self, name: str) -> ProviderSet:
+        found = self._sets.get(name)
+        if found is None:
             raise UnknownProviderError(
-                f"Provider '{name}' nao existe. Disponiveis: {', '.join(sorted(self._adapters)) or 'nenhum'}."
+                f"Provider '{name}' nao existe. Disponiveis: {', '.join(sorted(self._sets)) or 'nenhum'}."
             )
-        return adapter
+        return found
 
     def names(self) -> list[str]:
-        return sorted(self._adapters)
+        return sorted(self._sets)
 
     def default(self) -> str:
-        if not self._adapters:
+        if not self._sets:
             raise UnknownProviderError("Nenhum provider registrado.")
-        return next(iter(self._adapters))
+        return next(iter(self._sets))

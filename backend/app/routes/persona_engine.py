@@ -20,11 +20,14 @@ from app.core.generation.history import JobNotFoundError
 from app.core.generation.request import (
     DEFAULT_MAX_ATTEMPTS,
     MAX_ATTEMPTS_LIMIT,
+    MODE_FREE,
     GenerationRequest,
     InvalidGenerationRequestError,
 )
 from app.core.persona import PersonaValidationError
-from app.core.persona.references import InvalidReferenceError
+from app.core.persona.references import InvalidReferenceError, MasterReferenceProtectedError
+from app.core.persona.sheet import PersonaSheetError
+from app.core.storage import new_id
 from app.jobs import register_tasks
 from app.persona_manager.manager import InvalidReferenceFileError, PersonaNotFoundError, ReferenceNotFoundError
 from app.providers.base import GenerationParameters, UnknownProviderError
@@ -43,9 +46,11 @@ def _errors():
         yield
     except (PersonaNotFoundError, ReferenceNotFoundError, JobNotFoundError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except MasterReferenceProtectedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (
         PersonaValidationError, InvalidReferenceError, InvalidReferenceFileError,
-        InvalidGenerationRequestError, UnknownProviderError,
+        InvalidGenerationRequestError, UnknownProviderError, PersonaSheetError,
     ) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -210,9 +215,19 @@ class GenerationBody(BaseModel):
     width: int | None = Field(default=None, ge=256, le=2048)
     height: int | None = Field(default=None, ge=256, le=2048)
     seed: int | None = Field(default=None, ge=0, lt=2**32)
-    identity_strength: float = Field(default=0.5, ge=0.0, le=1.0)
-    face_restore: bool = False
-    validation_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    mode: Literal["FREE", "POSE_CONTROLLED"] = MODE_FREE
+    # Nome devolvido por POST /api/generate/reference (imagem de pose).
+    pose_reference: str | None = Field(default=None, max_length=200)
+    validation_threshold: float | None = Field(default=None, gt=0.0, lt=1.0)
+    max_attempts: int = Field(default=DEFAULT_MAX_ATTEMPTS, ge=1, le=MAX_ATTEMPTS_LIMIT)
+    single_subject: bool = True
+
+
+class BatchBody(BaseModel):
+    persona_id: str
+    scenes: list[str] = Field(..., min_length=1, max_length=50)
+    provider: str | None = None
+    style_overrides: dict[str, str] = Field(default_factory=dict)
     max_attempts: int = Field(default=DEFAULT_MAX_ATTEMPTS, ge=1, le=MAX_ATTEMPTS_LIMIT)
 
 
@@ -227,31 +242,31 @@ def _touch(request: Request) -> None:
         tracker.touch()
 
 
-def _start(request: Request, job: dict[str, Any]) -> dict[str, Any]:
+def _launch(request: Request, job_ids: list[str], batch: bool) -> None:
     orchestrator = request.app.state.generation_orchestrator
     notify = getattr(request.app.state, "engine_notify", None)
     started = time.monotonic()
 
     async def work() -> None:
         try:
-            done = await orchestrator.run(job["id"])
+            done = await orchestrator.run_batch(job_ids) if batch else [await orchestrator.run(job_ids[0])]
         except Exception:
-            log.exception("Persona Engine: geracao %s quebrou", job["id"])
+            log.exception("Persona Engine: geracao %s quebrou", job_ids)
             return
         if notify is not None:
-            notify(done, started)
+            for job in done:
+                notify(job, started)
 
     task = asyncio.create_task(work())
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
-    return _summary(job)
 
 
 def _summary(job: dict[str, Any]) -> dict[str, Any]:
     """O job sem as listas (para listagens)."""
     best = next((r for r in job["results"] if r["id"] == job.get("best_result_id")), None)
     return {
-        **{k: v for k, v in job.items() if k not in ("results", "failures", "retries", "prompt")},
+        **{k: v for k, v in job.items() if k not in ("results", "failures", "retries")},
         "best_result": best,
     }
 
@@ -259,28 +274,49 @@ def _summary(job: dict[str, Any]) -> dict[str, Any]:
 @router.get("/providers")
 async def list_providers(request: Request):
     registry = request.app.state.provider_registry
-    return {"providers": [registry.get(n).get_capabilities().to_dict() for n in registry.names()],
-            "default": registry.default()}
+    return {"providers": [registry.get(n).describe() for n in registry.names()], "default": registry.default()}
+
+
+@router.get("/personas/{persona_id}/sheet")
+async def persona_sheet(persona_id: str, request: Request):
+    """Resumo da Persona Sheet: versao, masters (id e hash), travas, cobertura e limitacoes."""
+    with _errors():
+        _repo(request).get(persona_id, include_inactive=True)
+        return request.app.state.persona_sheets.get(persona_id).summary()
+
+
+def _request(body: GenerationBody) -> GenerationRequest:
+    return GenerationRequest(
+        persona_id=body.persona_id, scene_prompt=body.scene_prompt, provider=body.provider,
+        style_overrides=body.style_overrides,
+        generation_parameters=GenerationParameters(width=body.width, height=body.height, seed=body.seed),
+        mode=body.mode, pose_reference=body.pose_reference, validation_threshold=body.validation_threshold,
+        max_attempts=body.max_attempts, single_subject=body.single_subject,
+    )
 
 
 @router.post("/generation", status_code=202)
 async def start_generation(body: GenerationBody, request: Request):
     _touch(request)
-    req = GenerationRequest(
-        persona_id=body.persona_id,
-        scene_prompt=body.scene_prompt,
-        provider=body.provider,
-        style_overrides=body.style_overrides,
-        generation_parameters=GenerationParameters(
-            width=body.width, height=body.height, seed=body.seed,
-            identity_strength=body.identity_strength, face_restore=body.face_restore,
-        ),
-        validation_threshold=body.validation_threshold,
-        max_attempts=body.max_attempts,
-    )
     with _errors():
-        job = request.app.state.generation_orchestrator.prepare(req)
-    return _start(request, job)
+        job = request.app.state.generation_orchestrator.prepare(_request(body))
+    _launch(request, [job["id"]], batch=False)
+    return _summary(job)
+
+
+@router.post("/generation/batch", status_code=202)
+async def start_batch(body: BatchBody, request: Request):
+    """Varias cenas da mesma persona: todas no Z-Image, depois todos os Face Locks."""
+    _touch(request)
+    batch_id = new_id()
+    jobs = []
+    with _errors():
+        for scene in body.scenes:
+            req = GenerationRequest(persona_id=body.persona_id, scene_prompt=scene, provider=body.provider,
+                                    style_overrides=body.style_overrides, max_attempts=body.max_attempts)
+            jobs.append(request.app.state.generation_orchestrator.prepare(req, batch_id=batch_id))
+    _launch(request, [j["id"] for j in jobs], batch=True)
+    return {"batch_id": batch_id, "jobs": [_summary(j) for j in jobs]}
 
 
 @router.get("/generation/{job_id}")
@@ -304,7 +340,8 @@ async def retry_generation(job_id: str, request: Request, body: RetryBody | None
     _touch(request)
     with _errors():
         job = request.app.state.generation_orchestrator.prepare_retry(job_id, body.max_attempts if body else None)
-    return _start(request, job)
+    _launch(request, [job["id"]], batch=False)
+    return _summary(job)
 
 
 @router.get("/personas/{persona_id}/generations")

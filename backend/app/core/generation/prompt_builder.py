@@ -1,74 +1,77 @@
-"""PromptBuilder: monta o pedido em secoes, na ordem IDENTITY, APPEARANCE,
-STYLE, SCENE, CONSTRAINTS - sem colar tudo num texto so.
+"""PromptBuilder do Persona Engine V1.
 
-O texto nao e o que segura a identidade (isso e a LoRA, a foto de
-referencia e a validacao depois); e uma camada a mais. Por isso cada
-adapter recebe as secoes e decide o texto final do seu modelo; o campo
-`text` e a versao completa, para log e para modelos que aceitam instrucoes.
+Monta o pedido em partes (quem, aparencia, cena, estilo, diretivas, negativo):
+- QUEM vem da Persona Sheet: gatilho interno da LoRA + "a woman". O gatilho
+  nunca vem do texto do usuario: se aparecer na cena/estilo ele e removido
+  (o benchmark viu "lunavox" escrito em placas; o gatilho nao deve virar
+  conteudo semantico da cena).
+- APARENCIA e ESTILO vem do perfil editavel (atributos VARIABLE/FREE da ficha).
+- A identidade do rosto NAO vem do texto: e o Face Lock (Qwen BFS + master).
 """
 from __future__ import annotations
 
+import re
+
+from app.core.generation.negative import NegativePromptBuilder
 from app.core.generation.vocabulary import CLOTHES_WORDS, EXPRESSION_WORDS
 from app.core.persona.profile import APPEARANCE_FIELDS, STYLE_FIELDS, PersonaProfile
+from app.core.persona.sheet import PersonaSheet
 from app.providers.base import PromptSections
 
-IDENTITY_DIRECTIVE = (
-    "Maintain the exact identity of the referenced persona. "
-    "Preserve facial structure, facial proportions and distinctive characteristics."
-)
-BASE_CONSTRAINTS = [
-    "Do not change identity.",
-    "Do not create a different person.",
-    "Do not alter defining facial characteristics.",
-]
-# Sem roupa no pedido nem na persona: o Z-Image escolhia biquini num
-# quiosque sem ninguem pedir (ver GenerationService).
+PROMPT_BUILDER_VERSION = "prompt-v1.0"
+# Sem roupa no pedido nem no perfil: o Z-Image escolhia biquini num quiosque.
 DEFAULT_CLOTHES = "wearing casual everyday clothes that suit the place"
 
 
+def strip_trigger(text: str, trigger: str) -> str:
+    """Tira o gatilho (e grafias proximas: 'luna vox', 'Lunavox') do texto."""
+    letters = r"\W*".join(re.escape(c) for c in trigger)
+    cleaned = re.sub(letters, " ", text, flags=re.IGNORECASE)
+    return re.sub(r"\s{2,}", " ", re.sub(r"\s+,", ",", cleaned)).strip(" ,")
+
+
 class PromptBuilder:
+    def __init__(self, negative: NegativePromptBuilder) -> None:
+        self.negative = negative
+
     def build(
         self,
-        persona: PersonaProfile,
+        sheet: PersonaSheet,
+        profile: PersonaProfile,
         scene: str,
         style_overrides: dict[str, str] | None = None,
-        emphasis: list[str] | None = None,
+        directives: list[str] | None = None,
+        single_subject: bool = True,
     ) -> PromptSections:
-        scene = scene.strip()
-        traits = persona.identity.text()
-        if persona.identity.apparent_age:
-            traits = ", ".join(p for p in (traits, f"apparent age {persona.identity.apparent_age}") if p)
+        gen = sheet.generation
+        trigger = gen["scene"]["trigger"]
+        rules = gen.get("prompt_rules", {})
+        clean = (lambda t: strip_trigger(t, trigger)) if rules.get("strip_trigger_from_user_text", True) else (lambda t: t)
 
-        appearance = dict(persona.appearance.values)
+        scene = clean(scene.strip())
+        appearance = {k: clean(v) for k, v in profile.appearance.values.items()}
         if EXPRESSION_WORDS.search(scene):
             appearance.pop("expressao", None)
         if CLOTHES_WORDS.search(scene):
             appearance.pop("roupa", None)
         elif not appearance.get("roupa"):
             appearance["roupa"] = DEFAULT_CLOTHES
-        style = {**persona.style.values, **{k: v for k, v in (style_overrides or {}).items() if v and v.strip()}}
+        style = {**profile.style.values, **{k: v for k, v in (style_overrides or {}).items() if v and v.strip()}}
+        style = {k: clean(v) for k, v in style.items()}
+
+        extra = list(directives or [])
+        if rules.get("apply_trigger_leak_directive") and rules.get("trigger_leak_directive"):
+            extra.append(rules["trigger_leak_directive"])
 
         sections = PromptSections(
-            identity_directive=IDENTITY_DIRECTIVE,
-            identity_traits=traits,
+            subject=f"{trigger}, {gen['scene'].get('subject_phrase', 'a person')}",
             appearance=", ".join(appearance[k] for k in APPEARANCE_FIELDS if appearance.get(k)),
-            style=", ".join(style[k] for k in STYLE_FIELDS if style.get(k)),
             scene=scene,
-            constraints=[*BASE_CONSTRAINTS, *persona.constraints.rules],
-            negative=list(persona.constraints.negative),
-            emphasis=[e for e in dict.fromkeys(emphasis or []) if e],
+            style=", ".join(style[k] for k in STYLE_FIELDS if style.get(k)),
+            directives=[d for d in dict.fromkeys(extra) if d],
+            negative=self.negative.build(sheet, single_subject=single_subject),
+            version=PROMPT_BUILDER_VERSION,
         )
-        sections.text = render_text(sections)
+        sections.text = ", ".join(p for p in (sections.subject, sections.appearance, sections.scene,
+                                              sections.style, *sections.directives) if p)
         return sections
-
-
-def render_text(s: PromptSections) -> str:
-    identity = "\n".join(p for p in (s.identity_directive, s.identity_traits, *s.emphasis) if p)
-    blocks = [
-        ("IDENTITY", identity),
-        ("APPEARANCE", s.appearance),
-        ("STYLE", s.style),
-        ("SCENE", s.scene),
-        ("CONSTRAINTS", "\n".join(s.constraints)),
-    ]
-    return "\n\n".join(f"[{name}]\n{body}" for name, body in blocks if body)

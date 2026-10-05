@@ -1,0 +1,19 @@
+{
+  "_comment": "Configuracao do sistema do Persona Engine V1 (o que vale para todas as personas). O que e de cada persona fica na Persona Sheet (personas/<id>/persona_sheet.json).",
+  "global_negative": [
+    "extra limbs", "duplicated person", "duplicated head", "duplicated torso", "fused limbs", "disconnected limbs",
+    "malformed anatomy", "floating limbs", "unnatural proportions", "deformed hands", "extra fingers", "missing limbs",
+    "duplicate body", "multiple copies of subject"
+  ],
+  "retry": {
+    "max_attempts_default": 3,
+    "max_attempts_limit": 6,
+    "face_relock_before_regenerate": 1
+  },
+  "cost": {
+    "fallback_gpu_price_per_hour": null,
+    "note": "Sem preco do provedor (RUNPOD_API_KEY/RUNPOD_POD_ID), o custo fica NOT MEASURED; nunca supor outra GPU."
+  },
+  "chroma_fallback": false,
+  "trigger_leak_ocr_check": false
+}

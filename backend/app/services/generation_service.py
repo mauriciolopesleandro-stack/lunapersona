@@ -146,11 +146,16 @@ class GenerationService:
         model_manager: ModelManager,
         persona_manager: PersonaManager,
         llm_client: OllamaClient | None = None,
+        allow_chroma_fallback: bool = False,
     ) -> None:
         self.comfyui_client = comfyui_client
         self.workflow_manager = workflow_manager
         self.model_manager = model_manager
         self.persona_manager = persona_manager
+        # Persona com LoRA do Z-Image e a LoRA fora do pod: antes caia calado no
+        # Chroma (outra persona, outras metricas). Agora falha, salvo se ligado
+        # de proposito em config/persona_engine.json ("chroma_fallback").
+        self.allow_chroma_fallback = allow_chroma_fallback
         # Traduz o texto digitado (portugues) para ingles antes de gerar.
         self.llm_client = llm_client
 
@@ -434,6 +439,11 @@ class GenerationService:
             persona = self.persona_manager.get_persona(req.persona_id)
             lora = persona.lora
             zimage_ready = bool(lora and lora.zimage_file) and await self._lora_available(lora.zimage_file)
+            if lora and lora.zimage_file and not zimage_ready and not self.allow_chroma_fallback:
+                raise WorkflowParamError(
+                    f"A LoRA da persona no Z-Image ({lora.zimage_file}) nao esta no pod. "
+                    "Sem ela a persona nao e gerada (o Chroma nao e usado como substituto)."
+                )
             if zimage_ready and req.reference_image:
                 # Foto de referencia com a LoRA do Z-Image: troca (pessoa
                 # inteira ou so a cabeca) ou reinterpretar - sem o Chroma.

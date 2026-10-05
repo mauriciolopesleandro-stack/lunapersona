@@ -1,104 +1,142 @@
-"""Medidas da validacao pelo ComfyUI do pod.
+"""Medidores do Persona Engine V1 no ComfyUI do pod (os mesmos do benchmark).
 
-LunaFacesAnalyzer: rostos pelo InsightFace (no LunaFaces,
-comfyui_nodes/luna_faces) - semelhanca ArcFace, sexo, idade, para onde o
-rosto esta virado e os 5 pontos do rosto. Roda na CPU, segundos por imagem.
+ComfyImageAnalyzer: num grafo so, todos os rostos (no LunaFaces: InsightFace
+antelopev2, semelhanca ArcFace com a master_face, idade, sexo) e todos os
+corpos (DWPose, pontos de 18 juntas). ~8 s por imagem no benchmark.
 
-FlorenceFeatureChecker: procura os tracos marcantes da persona (ex.:
-"necklace") na descricao do Florence-2. Medida fraca: so diz se a descricao
-menciona o traco.
+FlorenceTextReader: OCR do Florence-2 para achar o gatilho da LoRA escrito
+na cena. Desligado por padrao (config/persona_engine.json) - nao foi medido
+no benchmark e carrega mais um modelo na GPU.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
+import json
+import time
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from app.clients.comfyui_client import ComfyUIClient, ComfyUIError
-from app.core.validation.analysis import DetectedFace
+from app.core.validation.analysis import DetectedBody, DetectedFace, ImageAnalysis
 from app.providers.base import ProviderImage, ReferenceImage
-from app.services.person_swap import luna_faces
-from app.services.scene_describer import describe_image
-from app.workflow_manager.manager import WorkflowManager
 
-NODE = "LunaFaces"
+DWPOSE = {"detect_hand": "enable", "detect_body": "enable", "detect_face": "disable", "resolution": 1024,
+          "bbox_detector": "yolox_l.onnx", "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
+          "scale_stick_for_xinsr_cn": "disable"}
+NODES = ("LunaFaces", "DWPreprocessor", "PreviewAny")
+
+
+def parse_pose(text: str) -> list[list[tuple[float, float, float]]]:
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = ast.literal_eval(text)
+    frame = data[0] if isinstance(data, list) else data
+    cw, ch = frame.get("canvas_width", 1), frame.get("canvas_height", 1)
+    people = []
+    for person in frame.get("people", []):
+        pts = person.get("pose_keypoints_2d") or []
+        triples = [tuple(float(v) for v in pts[i:i + 3]) for i in range(0, len(pts), 3)]
+        if triples and max(max(t[0], t[1]) for t in triples) <= 1.0:
+            triples = [(x * cw, y * ch, c) for x, y, c in triples]
+        people.append(triples)
+    return people
+
+
+def to_body(kp: list[tuple[float, float, float]], height: int) -> DetectedBody | None:
+    pts = [(x, y) for x, y, c in kp[:18] if c and c > 0.3]
+    visible = sum(1 for x in kp[:14] if x[2] > 0.3)
+    if visible < 4:
+        return None
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    return DetectedBody(kp, (min(xs), min(ys), max(xs), max(ys)), round((max(ys) - min(ys)) / height, 3), visible)
 
 
 def to_face(data: dict[str, Any]) -> DetectedFace:
     return DetectedFace(
         bbox=tuple(float(v) for v in data["bbox"]),  # type: ignore[arg-type]
-        det_score=float(data.get("score", 0.0)),
-        sex=data.get("sex"),
-        age=float(data["age"]) if data.get("age") else None,
-        yaw=data.get("yaw"),
         similarity=float(data["sim"]) if data.get("sim") is not None else None,
-        kps=[(float(x), float(y)) for x, y in data.get("kps", [])],
+        age=float(data["age"]) if data.get("age") else None,
+        sex=data.get("sex"), det_score=float(data.get("score", 0.0)), yaw=data.get("yaw"),
     )
 
 
-class LunaFacesAnalyzer:
-    def __init__(self, comfyui_client: ComfyUIClient) -> None:
-        self.client = comfyui_client
+class ComfyImageAnalyzer:
+    def __init__(self, client: ComfyUIClient) -> None:
+        self.client = client
         self._uploaded: dict[str, str] = {}
-        self._reference_faces: dict[str, DetectedFace | None] = {}
 
     async def check_ready(self) -> list[str]:
         try:
             info = await self.client.get_object_info()
         except ComfyUIError as exc:
             return [f"ComfyUI fora do ar: {exc}"]
-        if NODE not in info:
-            return ["O no LunaFaces nao esta no pod (scripts/setup_instantid.sh): sem ele nao ha como conferir o rosto."]
-        return []
+        return [f"No {n} nao esta no pod (sem ele nao ha validacao)." for n in NODES if n not in info]
 
-    async def _upload(self, filename: str, content: bytes) -> str:
+    async def _upload(self, name: str, content: bytes) -> str:
         key = hashlib.sha1(content).hexdigest()
         if key not in self._uploaded:
-            self._uploaded[key] = await self.client.upload_image(
-                f"engine_{key[:16]}{Path(filename).suffix or '.png'}", content
-            )
+            self._uploaded[key] = await self.client.upload_image(f"val_{key[:16]}{Path(name).suffix or '.png'}", content)
         return self._uploaded[key]
 
     async def _image_name(self, image: ProviderImage) -> str:
         if image.provider == "comfyui":
             return image.locator
-        # Imagem de outro provider: baixa e manda para o ComfyUI medir.
         async with httpx.AsyncClient(timeout=60.0) as http:
             resp = await http.get(image.url)
             resp.raise_for_status()
-        return await self._upload(Path(image.locator).name or "gerada.png", resp.content)
+        return await self._upload(Path(image.locator).name or "imagem.png", resp.content)
 
-    async def _faces(self, image_name: str, reference_name: str | None) -> list[DetectedFace]:
-        graph = {"1": {"class_type": "LoadImage", "inputs": {"image": image_name}}}
-        if reference_name:
-            graph["2"] = {"class_type": "LoadImage", "inputs": {"image": reference_name}}
-        found = await luna_faces(self.client, graph, ["1", 0], ["2", 0] if reference_name else None)
-        return [to_face(f) for f in found or []]
+    async def analyze_reference(self, reference: ReferenceImage, master_face: ReferenceImage) -> ImageAnalysis:
+        name = await self._upload(reference.filename, reference.content)
+        return await self.analyze(ProviderImage("comfyui", name, ""), master_face)
 
-    async def reference_face(self, reference: ReferenceImage) -> DetectedFace | None:
-        key = hashlib.sha1(reference.content).hexdigest()
-        if key not in self._reference_faces:
-            faces = await self._faces(await self._upload(reference.filename, reference.content), None)
-            self._reference_faces[key] = faces[0] if faces else None
-        return self._reference_faces[key]
+    async def analyze(self, image: ProviderImage, master_face: ReferenceImage) -> ImageAnalysis:
+        start = time.monotonic()
+        name = await self._image_name(image)
+        master = await self._upload(master_face.filename, master_face.content)
+        graph = {
+            "1": {"class_type": "LoadImage", "inputs": {"image": name}},
+            "2": {"class_type": "LoadImage", "inputs": {"image": master}},
+            "lf": {"class_type": "LunaFaces", "inputs": {"image": ["1", 0], "det_size": 1024, "reference": ["2", 0]}},
+            "dw": {"class_type": "DWPreprocessor", "inputs": {"image": ["1", 0], **DWPOSE}},
+            "dwp": {"class_type": "PreviewAny", "inputs": {"source": ["dw", 1]}},
+        }
+        entry = await self.client.wait_for_completion(await self.client.queue_prompt(graph))
+        texts = {k: str(v["text"][0]) for k, v in entry.get("outputs", {}).items() if v.get("text")}
+        width, height = image.width or 0, image.height or 0
+        people = parse_pose(texts["dwp"]) if texts.get("dwp") else []
+        if not height and people:
+            height = 1216  # sem tamanho informado: so afeta a fracao de altura
+        bodies = [b for b in (to_body(kp, height or 1) for kp in people) if b]
+        faces = [to_face(f) for f in json.loads(texts.get("lf", "[]"))]
+        return ImageAnalysis(width, height, faces, bodies, round(time.monotonic() - start, 2))
 
-    async def generated_faces(self, image: ProviderImage, reference: ReferenceImage) -> list[DetectedFace]:
-        reference_name = await self._upload(reference.filename, reference.content)
-        return await self._faces(await self._image_name(image), reference_name)
 
+class FlorenceTextReader:
+    """OCR do Florence-2 large (task 'ocr')."""
 
-class FlorenceFeatureChecker:
-    def __init__(self, comfyui_client: ComfyUIClient, workflow_manager: WorkflowManager) -> None:
-        self.client = comfyui_client
-        self.workflows = workflow_manager
+    def __init__(self, client: ComfyUIClient) -> None:
+        self.client = client
 
-    async def check(self, image: ProviderImage, keywords: list[str]) -> tuple[list[str], list[str]] | None:
-        if image.provider != "comfyui":
+    async def read(self, image: ProviderImage) -> str | None:
+        graph = {
+            "1": {"class_type": "LoadImage", "inputs": {"image": image.locator}},
+            "2": {"class_type": "DownloadAndLoadFlorence2Model", "inputs": {"model": "microsoft/Florence-2-large", "precision": "fp16"}},
+            "3": {"class_type": "Florence2Run", "inputs": {
+                "image": ["1", 0], "florence2_model": ["2", 0], "text_input": "", "task": "ocr", "fill_mask": False,
+                "keep_model_loaded": False, "max_new_tokens": 256, "num_beams": 3, "do_sample": False,
+                "output_mask_select": "", "seed": 1}},
+            "4": {"class_type": "PreviewAny", "inputs": {"source": ["3", 2]}},
+        }
+        try:
+            entry = await self.client.wait_for_completion(await self.client.queue_prompt(graph))
+        except ComfyUIError:
             return None
-        caption = (await describe_image(self.client, self.workflows, image.locator)).lower()
-        if not caption:
-            return None
-        found = [k for k in keywords if k.lower() in caption]
-        return found, [k for k in keywords if k not in found]
+        for out in entry.get("outputs", {}).values():
+            if out.get("text"):
+                return str(out["text"][0])
+        return None

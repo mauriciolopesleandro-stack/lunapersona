@@ -1,5 +1,4 @@
-"""Logs estruturados do Persona Engine: uma linha JSON por evento
-(generation_started, identity_validation_completed, generation_rejected...).
+"""Logs estruturados do Persona Engine: uma linha JSON por evento.
 Campos com nome de segredo saem mascarados."""
 from __future__ import annotations
 
@@ -18,10 +17,12 @@ if not log.handlers:
     log.setLevel(logging.INFO)
 
 EVENTS = {
-    "generation_started",
-    "generation_completed",
-    "identity_validation_started",
-    "identity_validation_completed",
+    "scene_started",
+    "scene_completed",
+    "face_lock_started",
+    "face_lock_completed",
+    "validation_started",
+    "validation_completed",
     "generation_rejected",
     "regeneration_started",
     "generation_accepted",

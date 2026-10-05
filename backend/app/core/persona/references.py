@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.core.persona.images import image_info
 from app.core.storage import new_id, read_json, utcnow, write_json_atomic
@@ -29,6 +29,10 @@ MAX_BYTES = 20 * 1024 * 1024
 
 class InvalidReferenceError(ValueError):
     pass
+
+
+class MasterReferenceProtectedError(InvalidReferenceError):
+    """A foto e master na Persona Sheet: imutavel (so muda com nova versao da ficha)."""
 
 
 @dataclass
@@ -66,8 +70,19 @@ def validate_image(content: bytes) -> tuple[str, int, int]:
 
 
 class ReferenceManager:
-    def __init__(self, persona_manager: PersonaManager) -> None:
+    def __init__(
+        self, persona_manager: PersonaManager, protected_ids: Callable[[str], set[str]] | None = None
+    ) -> None:
         self.personas = persona_manager
+        # Ids das masters da Persona Sheet: nao podem ser removidas, trocadas nem alteradas.
+        self.protected_ids = protected_ids or (lambda persona_id: set())
+
+    def _guard(self, persona_id: str, reference_id: str, action: str) -> None:
+        if reference_id in self.protected_ids(persona_id):
+            raise MasterReferenceProtectedError(
+                f"Esta foto e uma master da Persona Sheet e nao pode ser {action}. "
+                "Masters so mudam numa nova versao da ficha."
+            )
 
     # --- caminhos --------------------------------------------------------
 
@@ -166,6 +181,8 @@ class ReferenceManager:
 
     def update(self, persona_id: str, reference_id: str, changes: dict[str, Any]) -> Reference:
         self.personas.get_persona(persona_id)
+        if set(changes) - {"label"}:
+            self._guard(persona_id, reference_id, "alterada")
         entries = self._index(persona_id)
         entry = self._find(entries, reference_id)
         ref_type = changes.get("type", entry.get("type", "OTHER"))
@@ -198,6 +215,7 @@ class ReferenceManager:
     def remove(self, persona_id: str, reference_id: str) -> None:
         """Tira da lista e guarda a foto em references/removed/."""
         self.personas.get_persona(persona_id)
+        self._guard(persona_id, reference_id, "removida")
         entries = self._index(persona_id)
         entry = self._find(entries, reference_id)
         remaining = [e for e in entries if e["id"] != reference_id]
@@ -216,6 +234,7 @@ class ReferenceManager:
     def replace(self, persona_id: str, reference_id: str, original_filename: str, content: bytes) -> Reference:
         """Foto nova no lugar de uma antiga: mesmo tipo, peso e, se era a
         principal, vira a principal."""
+        self._guard(persona_id, reference_id, "substituida")
         old = self._to_reference(persona_id, self._find(self._index(persona_id), reference_id))
         new = self.add(persona_id, original_filename, content, "OTHER" if old.is_primary else old.type, old.weight, old.label)
         if old.is_primary:

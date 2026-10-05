@@ -126,6 +126,9 @@ async def set_primary_reference(persona_id: str, reference_id: str, request: Req
 @router.delete("/personas/{persona_id}/references/{reference_id}")
 async def delete_reference(persona_id: str, reference_id: str, request: Request):
     manager = _persona_manager(request)
+    sheets = getattr(request.app.state, "persona_sheets", None)
+    if sheets is not None and reference_id in sheets.protected_reference_ids(persona_id):
+        raise HTTPException(status_code=409, detail="Esta foto e uma master da Persona Sheet e nao pode ser apagada.")
     try:
         manager.delete_reference(persona_id, reference_id)
     except ReferenceNotFoundError as exc:

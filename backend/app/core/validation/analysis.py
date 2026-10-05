@@ -1,39 +1,69 @@
-"""Interfaces do que mede a imagem. O validador nao sabe que por tras esta
-o InsightFace dentro do ComfyUI (app/validation_backends/) - trocar o
-detector de rosto nao mexe na nota."""
+"""O que se mede numa imagem, e as interfaces de quem mede.
+
+InsightFace e DWPose sao MEDIDORES (ver app/validation_backends): nenhum deles
+condiciona a geracao. Trocar o detector nao mexe nos validadores.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
+from app.core.validation.geometry import Keypoint
 from app.providers.base import ProviderImage, ReferenceImage
 
 
 @dataclass
 class DetectedFace:
     bbox: tuple[float, float, float, float]
-    det_score: float = 0.0
-    sex: str | None = None
+    similarity: float | None = None  # ArcFace com a master_face
     age: float | None = None
-    # Para onde a cabeca esta virada (0 = de frente; ~0.35+ = perfil).
+    sex: str | None = None
+    det_score: float = 0.0
     yaw: float | None = None
-    # Cosseno do ArcFace com o rosto da referencia (so na imagem gerada).
-    similarity: float | None = None
-    # 5 pontos: olho esq., olho dir., nariz, boca esq., boca dir.
-    kps: list[tuple[float, float]] = field(default_factory=list)
 
 
-class FaceAnalyzer(Protocol):
-    async def check_ready(self) -> list[str]:
-        """Problemas que impedem medir (lista vazia = pronto)."""
-
-    async def reference_face(self, reference: ReferenceImage) -> DetectedFace | None:
-        """O maior rosto da foto de referencia."""
-
-    async def generated_faces(self, image: ProviderImage, reference: ReferenceImage) -> list[DetectedFace]:
-        """Rostos da imagem gerada, cada um com a semelhanca com a referencia."""
+@dataclass
+class DetectedBody:
+    keypoints: list[Keypoint]
+    bbox: tuple[float, float, float, float]
+    height_frac: float  # altura do corpo / altura da imagem
+    visible_points: int
 
 
-class FeatureChecker(Protocol):
-    async def check(self, image: ProviderImage, keywords: list[str]) -> tuple[list[str], list[str]] | None:
-        """(achados, faltando) entre os tracos marcantes; None = nao deu para medir."""
+@dataclass
+class ImageAnalysis:
+    width: int
+    height: int
+    faces: list[DetectedFace] = field(default_factory=list)
+    bodies: list[DetectedBody] = field(default_factory=list)
+    seconds: float = 0.0
+
+    def main_body(self) -> DetectedBody | None:
+        return max(self.bodies, key=lambda b: (b.visible_points, b.height_frac)) if self.bodies else None
+
+    def persona_face(self) -> DetectedFace | None:
+        scored = [f for f in self.faces if f.similarity is not None]
+        return max(scored, key=lambda f: f.similarity) if scored else None
+
+
+class ImageAnalyzer(Protocol):
+    async def check_ready(self) -> list[str]: ...
+
+    async def analyze(self, image: ProviderImage, master_face: ReferenceImage) -> ImageAnalysis:
+        """Todos os rostos (com semelhanca com a master) e todos os corpos."""
+
+    async def analyze_reference(self, reference: ReferenceImage, master_face: ReferenceImage) -> ImageAnalysis:
+        """O mesmo para uma imagem que ainda nao esta no provider (ex.: master_body)."""
+
+
+class AnatomyDetector(Protocol):
+    """Detector de anatomia (membros extras, corpo duplicado...). Nao existe um
+    validado no projeto: sem ele o AnatomyValidator responde UNKNOWN."""
+
+    async def inspect(self, image: ProviderImage, analysis: ImageAnalysis) -> dict[str, Any]: ...
+
+
+class TextReader(Protocol):
+    """OCR para o vazamento do gatilho da LoRA em placas (opcional)."""
+
+    async def read(self, image: ProviderImage) -> str | None: ...
