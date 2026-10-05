@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import contextmanager
 from typing import Any, Literal
 
@@ -229,6 +230,7 @@ def _touch(request: Request) -> None:
 def _start(request: Request, job: dict[str, Any]) -> dict[str, Any]:
     orchestrator = request.app.state.generation_orchestrator
     notify = getattr(request.app.state, "engine_notify", None)
+    started = time.monotonic()
 
     async def work() -> None:
         try:
@@ -237,7 +239,7 @@ def _start(request: Request, job: dict[str, Any]) -> dict[str, Any]:
             log.exception("Persona Engine: geracao %s quebrou", job["id"])
             return
         if notify is not None:
-            notify(done)
+            notify(done, started)
 
     task = asyncio.create_task(work())
     _tasks.add(task)

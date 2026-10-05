@@ -10,7 +10,17 @@ from app.idle_shutdown import IdleShutdownTracker
 from app.model_manager.manager import ModelManager
 from app.persona_manager.manager import PersonaManager
 from app.jobs import running_jobs
+from app import notify
+from app.core.generation.history import GenerationHistory
+from app.core.generation.orchestrator import GenerationOrchestrator
+from app.core.generation.retry import RetryManager
 from app.core.persona import PersonaRepository
+from app.core.validation.config import IdentityValidationConfig, ThresholdPolicy
+from app.core.validation.failure import FailureAnalyzer
+from app.core.validation.gate import QualityGate
+from app.core.validation.validator import IdentityValidator
+from app.services.prompt_translator import to_english
+from app.validation_backends.comfyui import FlorenceFeatureChecker, LunaFacesAnalyzer
 from app.core.persona.references import ReferenceManager
 from app.providers.base import ProviderRegistry
 from app.providers.comfyui import ComfyUIAdapter
@@ -114,6 +124,48 @@ app.state.chat_service = ChatService(
 
 config_path = settings.workflows_dir.parent / "config" / "default.json"
 app.state.default_config = json.loads(config_path.read_text(encoding="utf-8"))
+
+# --- Persona Engine: gerar -> validar a identidade -> aceitar ou tentar de novo
+validation_config = IdentityValidationConfig.load(settings.workflows_dir.parent / "config" / "identity_validation.json")
+app.state.generation_history = GenerationHistory(settings.personas_dir)
+app.state.generation_history.mark_interrupted()
+
+
+async def _translate(text: str) -> str:
+    return await to_english(app.state.llm_client, text)
+
+
+app.state.generation_orchestrator = GenerationOrchestrator(
+    personas=app.state.persona_repository,
+    references=app.state.reference_manager,
+    providers=app.state.provider_registry,
+    validator=IdentityValidator(
+        LunaFacesAnalyzer(app.state.comfyui_client),
+        validation_config,
+        FlorenceFeatureChecker(app.state.comfyui_client, app.state.workflow_manager),
+    ),
+    gate=QualityGate(validation_config),
+    analyzer=FailureAnalyzer(validation_config),
+    retry=RetryManager(),
+    thresholds=ThresholdPolicy(validation_config),
+    history=app.state.generation_history,
+    translator=_translate,
+)
+
+
+def _engine_notify(job: dict, started: float) -> None:
+    best = next((r for r in job["results"] if r["id"] == job.get("best_result_id")), None)
+    photo = notify.photo_link(best["image_url"]) if best and best.get("image_url") else None
+    if job["status"] == "ACCEPTED":
+        text = f"✅ Persona aprovada na tentativa {job['attempt']} (identidade {best['identity_score'] * 100:.0f}%)"
+    elif job["status"] == "FAILED":
+        text = f"⚠️ {job['attempt']} tentativas reprovadas na validacao de identidade"
+    else:
+        text, photo = f"⚠️ A geracao com validacao falhou: {(job.get('error') or '')[:300]}", None
+    notify.fire(text, started, photo=photo)
+
+
+app.state.engine_notify = _engine_notify
 
 repo_root = settings.workflows_dir.parent
 
