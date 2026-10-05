@@ -1348,6 +1348,31 @@ label.checkbox-row input {
   padding: 8px 0 16px;
 }
 
+.check-status {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
+  background: var(--bg-panel-2);
+  color: var(--text-muted);
+}
+
+.check-status.check-pass {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.check-status.check-fail {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.check-status.check-unknown {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
 /* ---------- Meu perfil ---------- */
 
 .profile-card {

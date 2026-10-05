@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { GenerationJob } from "../api/client";
 import { getEngineGeneration, getPersonaGenerations, retryEngineGeneration } from "../api/client";
-import { IdentityScore } from "./IdentityScore";
+import { ValidationReportView } from "./ValidationReportView";
 
 const STATUS: Record<GenerationJob["status"], string> = {
   RUNNING: "⏳ gerando",
@@ -78,11 +78,10 @@ export function PersonaGenerationHistory({ personaId, ensureAwake }: Props) {
               <div className="history-row-body">
                 <p className="history-row-prompt">{job.scene_prompt}</p>
                 <p className="history-row-meta">
-                  {STATUS[job.status]} · {job.attempt}/{job.max_attempts} tentativas · melhor{" "}
-                  {job.best_result?.identity_score != null
-                    ? `${(job.best_result.identity_score * 100).toFixed(1)}%`
-                    : "—"}{" "}
-                  · limiar {Math.round(job.threshold * 100)}% · {new Date(job.created_at).toLocaleString("pt-BR")}
+                  {STATUS[job.status]} · {job.attempt}/{job.max_attempts} tentativas · rosto{" "}
+                  {job.best_result?.face_score != null ? job.best_result.face_score.toFixed(2) : "—"} · limiar{" "}
+                  {job.threshold.toFixed(2)} · persona v{job.persona_version ?? "?"}
+                  {job.execution_mode === "BATCH_MODE" ? " · lote" : ""} · {new Date(job.created_at).toLocaleString("pt-BR")}
                 </p>
               </div>
             </button>
@@ -104,7 +103,7 @@ export function PersonaGenerationHistory({ personaId, ensureAwake }: Props) {
                       )}
                       <div>
                         <p className="muted small">Tentativa {r.attempt}</p>
-                        <IdentityScore result={r} failures={open.failures} compact />
+                        <ValidationReportView result={r} failures={open.failures} compact />
                       </div>
                     </div>
                   ))}

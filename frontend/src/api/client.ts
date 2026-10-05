@@ -619,41 +619,56 @@ export interface EnginePersonaPatch {
   validation?: { threshold: number | null };
 }
 
-export interface MetricScore {
+export type CheckStatus = "PASS" | "FAIL" | "UNKNOWN" | "NOT_COMPARABLE" | "INFORMATIONAL";
+
+// Um validador do Persona Engine V1 (backend/app/core/validation/checks.py).
+export interface ValidationCheck {
   name: string;
-  weight: number;
+  status: CheckStatus;
+  blocking: boolean;
+  reason: string;
   score: number | null;
-  measured: boolean;
-  note: string;
-  raw: Record<string, unknown>;
+  threshold: number | null;
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  failure_type: string | null;
+  evidence: Record<string, unknown>;
 }
 
-export interface IdentityValidation {
-  identity_score: number | null;
-  face_similarity: number | null;
-  facial_structure_score: number | null;
-  appearance_score: number | null;
-  distinctive_features_score: number | null;
-  coverage: number;
-  face_found: boolean;
-  status: "ACCEPT" | "REJECT";
-  reasons: string[];
-  hard_failures: string[];
-  metrics: Record<string, MetricScore>;
+export interface ValidationReport {
+  // PASS_WITH_UNKNOWN: nada falhou, mas algo bloqueante nao foi verificado (ex.: anatomia).
+  status: "PASS" | "PASS_WITH_UNKNOWN" | "FAIL";
+  checks: Record<string, ValidationCheck>;
+  failures: string[];
+  unverified: string[];
+  seconds: number;
+}
+
+export interface GenerationMetrics {
+  execution_mode: "BATCH_MODE" | "SINGLE_REQUEST_MODE";
+  stage_seconds: Record<string, number>;
+  validation_seconds: number;
+  total_seconds: number;
+  model_switches: number;
+  gpu: string | null;
+  vram_used_mb_max: number | null;
+  gpu_price_per_hour: number | null;
+  price_source: string;
+  estimated_cost_usd: number | null;
 }
 
 export interface GenerationResult {
   id: string;
   job_id: string;
   attempt: number;
+  strategy: string;
   image_url: string | null;
-  identity_score: number | null;
+  base_image_url: string | null;
   face_score: number | null;
-  appearance_score: number | null;
   status: "ACCEPT" | "REJECT" | "ERROR";
-  validation: IdentityValidation | null;
-  parameters: { identity_strength: number; face_restore: boolean; seed: number | null };
-  duration_seconds: number | null;
+  validation: ValidationReport | null;
+  seeds: { scene: number; face_lock: number };
+  metrics: GenerationMetrics;
+  error: string | null;
   created_at: string;
 }
 
@@ -661,19 +676,23 @@ export interface GenerationFailure {
   id: string;
   result_id: string;
   failure_type: string;
-  severity: "low" | "medium" | "high";
-  details: string;
+  reason: string | null;
 }
 
 export interface GenerationJob {
   id: string;
   persona_id: string;
+  persona_version: string;
+  pipeline_version: string;
   provider: string;
+  mode: "FREE" | "POSE_CONTROLLED";
   scene_prompt: string;
   threshold: number;
+  threshold_source: "persona_sheet" | "pedido";
   max_attempts: number;
   status: "RUNNING" | "ACCEPTED" | "FAILED" | "ERROR";
   attempt: number;
+  execution_mode: "BATCH_MODE" | "SINGLE_REQUEST_MODE" | null;
   best_result_id: string | null;
   accepted_result_id: string | null;
   error: string | null;
@@ -682,14 +701,12 @@ export interface GenerationJob {
   best_result: GenerationResult | null;
   results?: GenerationResult[];
   failures?: GenerationFailure[];
-  retries?: { attempt_number: number; previous_score: number | null; failure_reason: string | null; changes: Record<string, unknown> }[];
+  retries?: { attempt_number: number; strategy: string; reason: string; failures: string[] }[];
 }
 
 export interface ProviderInfo {
   name: string;
   title: string;
-  identity_mechanisms: string[];
-  supports_face_restore: boolean;
 }
 
 export interface EngineGenerationBody {
@@ -697,10 +714,23 @@ export interface EngineGenerationBody {
   scene_prompt: string;
   provider?: string;
   style_overrides?: Record<string, string>;
-  identity_strength?: number;
-  face_restore?: boolean;
+  mode?: "FREE" | "POSE_CONTROLLED";
+  // Nome devolvido por uploadGenerationReference (imagem de pose).
+  pose_reference?: string;
   validation_threshold?: number;
   max_attempts?: number;
+}
+
+export interface PersonaSheetSummary {
+  persona_id: string;
+  persona_version: string;
+  status: string;
+  pipeline_version: string;
+  masters: Record<string, { reference_id: string; sha256: string; purpose: string }>;
+  age: { target?: number; accepted_range?: [number, number]; known_drift?: string };
+  locks: { hard: string[]; soft: string[]; variable: string[]; free: string[] };
+  pose_coverage: Record<string, string>;
+  known_limitations: string[];
 }
 
 function jsonInit(method: string, body?: unknown): RequestInit {
@@ -740,6 +770,10 @@ export async function removeEngineReference(personaId: string, referenceId: stri
   await handleResponse(
     await fetch(`${await apiBase()}/engine/personas/${personaId}/references/${referenceId}`, jsonInit("DELETE"))
   );
+}
+
+export async function getPersonaSheet(personaId: string): Promise<PersonaSheetSummary> {
+  return handleResponse(await fetch(`${await apiBase()}/engine/personas/${personaId}/sheet`));
 }
 
 export async function getEngineProviders(): Promise<{ providers: ProviderInfo[]; default: string }> {
