@@ -222,8 +222,8 @@ export function GeneratePanel({
 
       <div className="step-label">2. Foto de referência (opcional)</div>
       <p className="muted small reference-hint">
-        Suba uma foto com a cena que você quer: a IA mantém o cenário, a luz e a pose e coloca a persona escolhida no lugar da
-        pessoa.
+        Suba uma foto com a cena que você quer: a IA mantém o cenário, a luz, a pose e a roupa e troca o rosto e o cabelo da
+        pessoa pelos da persona.
       </p>
       {reference ? (
         <div className="reference-box">
@@ -233,7 +233,7 @@ export function GeneratePanel({
               <label className="voice-field">
                 Como usar a foto
                 <select value={keepScene ? "keep" : "reinterpret"} onChange={(e) => setKeepScene(e.target.value === "keep")}>
-                  <option value="keep">Manter a cena igual e trocar só a pessoa (recomendado)</option>
+                  <option value="keep">Manter a cena igual e trocar o rosto e o cabelo (corpo e roupa ficam os da foto)</option>
                   <option value="reinterpret">Reinterpretar a cena (a cena pode mudar)</option>
                 </select>
               </label>
