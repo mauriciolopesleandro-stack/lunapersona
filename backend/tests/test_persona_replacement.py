@@ -144,7 +144,7 @@ def test_skin_classifier():
 def test_face_and_body_requests():
     m, _ = masks_and_photo()
     f1 = build_request(CFG.stage("face_pass_1"), m, "img.png", "neg", 5, MASTER)
-    assert f1.identity_adapter == "instantid" and f1.reference is MASTER and f1.denoise == 0.45
+    assert f1.identity_adapter == "instantid" and f1.reference is MASTER and f1.denoise == 0.6
     b1 = build_request(CFG.stage("body_pass_1"), m, "img.png", "neg", 5, MASTER)
     assert b1.reference is None and (b1.mask * m.clothing).sum() == 0
     assert [stage_kind(CFG.stage(n)) for n in ("face_pass_1", "face_pass_2", "face_pass_3", "body_pass_1")] == [

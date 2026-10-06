@@ -59,7 +59,9 @@ def surroundings(person: np.ndarray, near: int = 4, far: int = 24) -> np.ndarray
 
 
 def texture_consistency(original: np.ndarray, result: np.ndarray, region: np.ndarray, person: np.ndarray) -> dict[str, float | None]:
-    ref, cur = noise_level(original, surroundings(person)), noise_level(result, erode_region(region))
+    # mesma regiao na foto original = mesma camera e mesmo assunto (o fundo tem detalhe de cena, nao grao)
+    ref = noise_level(original, erode_region(region)) or noise_level(original, surroundings(person))
+    cur = noise_level(result, erode_region(region))
     if not ref or cur is None:
         return {"reference_noise": ref, "region_noise": cur, "score": None}
     ratio = cur / ref

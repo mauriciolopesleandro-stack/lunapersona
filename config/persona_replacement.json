@@ -8,11 +8,12 @@
       "kind": "face",
       "mask": "face_full",
       "strength": 0.75,
-      "denoise": 0.45,
+      "denoise": 0.6,
       "lora": true,
       "identity_adapter": "instantid",
       "adapter_weight": 0.8,
-      "prompt": "lunavox, a woman, natural face proportions, natural skin texture, same lighting as the photo, realistic photo"
+      "prompt": "lunavox, a woman, natural face proportions, natural skin texture, same lighting as the photo, realistic photo",
+      "note": "teste 1: denoise 0,45 so levou a identidade de 0,21 a 0,46 (rosto de outra pessoa) -> 0,60"
     },
     {
       "name": "face_pass_2",
@@ -66,7 +67,9 @@
     "note": "luz/contraste da pessoa original na mesma regiao; cor so pela metade (tom de pele da persona)"
   },
   "texture": {
-    "match_grain": true
+    "match_grain": true,
+    "reference": "original_region",
+    "note": "grao de referencia = a PESSOA ORIGINAL na mesma regiao (mesma camera, mesmo assunto); o fundo tem detalhe de cena (mar, predios) que nao e grao - teste 1: grao do fundo envelheceu a pele (idade 61)"
   },
   "blending": {
     "edge_band_frac": 0.006

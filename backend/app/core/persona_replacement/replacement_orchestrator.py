@@ -140,8 +140,10 @@ class ReplacementOrchestrator:
         current = store.current
         region = np.clip(modified - masks.hair - masks.protect, 0, 1) * masks.person
         lit = match_lighting(current.pixels, original, region, float(cfg.lighting["luma"]), float(cfg.lighting["chroma"]))
-        grained = (match_grain(lit, region, noise_level(original, surroundings(masks.person)), seed)
-                   if cfg.texture.get("match_grain") else lit)
+        # grao de referencia: a pessoa ORIGINAL na mesma regiao (o fundo tem detalhe de cena, nao grao)
+        reference_noise = (noise_level(original, region) if cfg.texture.get("reference", "original_region") == "original_region"
+                           else noise_level(original, surroundings(masks.person)))
+        grained = match_grain(lit, region, reference_noise, seed) if cfg.texture.get("match_grain") else lit
         inside = dilate((masks.person > 0.5).astype(np.float32), 2) > 0.5
         integrated = np.where(inside[..., None], grained, original)
         rec = StageRecord("integration", "integration", mask="modified")
