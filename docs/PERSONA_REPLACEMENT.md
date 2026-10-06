@@ -112,3 +112,17 @@ A Luna **inteira** é gerada na pose da pessoa da foto, sem face swap e sem filt
 - Validação: identidade, mistura com a original (> 0,40 reprova), pose, fundo, roupa (fora da costura), luz, textura, borda e `integration_score`.
 - O critério final continua sendo **o olho**: "parece uma foto tirada da Luna?".
 - Código: `backend/app/core/persona_replacement/transfer.py`, `ComfyTransferTransformer` em `providers/comfyui/replacement.py`, `workflows/realvis-persona-transfer.json`, `scripts/transfer_teste1.py`. 310 testes.
+
+## Transfer teste 1 (quarto, 1 geração, US$ 0,036, 325 s de pod)
+
+Resultado: **FAIL**. A transferência foi recusada pelo rollback ("apareceu outra pessoa/rosto") e o final ficou a foto original.
+
+O que deu certo (olhando a imagem `repl_persona_transfer`):
+- Rosto natural, sem maquiagem pesada e sem cara de colagem. Pele com a luz da foto.
+- Pose, enquadramento e roupa mantidos. Cabelo escuro e ondulado.
+- Geração de 22 s.
+
+O que deu errado:
+1. **Folga de cabelo grande demais (23% da imagem):** a elipse cobriu a parede inteira acima da cabeça, e o modelo inventou um quadro com o rosto de uma mulher e um pôster com texto. O cenário foi regenerado (proibido pela spec), e o rosto do quadro disparou o rollback.
+2. **Proteção falsa (18% da imagem):** o grounding de acessórios pegou uma caixa enorme (top e mãos). As mãos ficaram as originais, com as tatuagens.
+3. **Identidade 0,42:** só a LoRA, com denoise 0,9, não basta. O refino de rosto não rodou porque a etapa foi recusada antes.
