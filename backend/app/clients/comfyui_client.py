@@ -171,6 +171,19 @@ class ComfyUIClient:
         options = node.get("input", {}).get("required", {}).get("name", [[]])[0]
         return list(options) if isinstance(options, list) else []
 
+    async def list_checkpoints(self) -> list[str]:
+        """Arquivos que o CheckpointLoaderSimple enxerga em models/checkpoints (V2: RealVisXL, Lustify)."""
+        try:
+            async with httpx.AsyncClient(timeout=self.connect_timeout) as client:
+                resp = await client.get(f"{self.base_url}/object_info/CheckpointLoaderSimple", headers=self._headers())
+        except httpx.RequestError as exc:
+            raise ComfyUIConnectionError(str(exc)) from exc
+        if resp.status_code != 200:
+            raise ComfyUIConnectionError(f"/object_info/CheckpointLoaderSimple retornou status {resp.status_code}")
+        node = resp.json().get("CheckpointLoaderSimple", {})
+        options = node.get("input", {}).get("required", {}).get("ckpt_name", [[]])[0]
+        return list(options) if isinstance(options, list) else []
+
     async def list_diffusion_models(self) -> list[str]:
         """Arquivos que o UNETLoader enxerga em models/diffusion_models."""
         try:

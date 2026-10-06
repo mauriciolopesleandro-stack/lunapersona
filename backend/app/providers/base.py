@@ -191,6 +191,19 @@ class SceneAdapter(ABC):
         )
 
 
+class ModelAdapter(SceneAdapter):
+    """V2: etapa de cena dirigida por um perfil de modelo (RealVisXL, Lustify...).
+    O nucleo escolhe o perfil por dado (generation_model); o adapter traduz
+    perfil + LoRA + negativo para o grafo do provider. Um adapter por perfil,
+    o mesmo orquestrador para todos."""
+
+    profile: Any  # app.core.generation.v2_config.ModelProfile
+
+    @property
+    def model_id(self) -> str:
+        return self.profile.id
+
+
 class FaceIdentityAdapter(ABC):
     name: str
 
