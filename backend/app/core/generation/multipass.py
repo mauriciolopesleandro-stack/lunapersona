@@ -136,6 +136,49 @@ def face_region(face: DetectedFace, mask: str, width: int, height: int) -> PassR
     return PassRegion(crop, shapes, 0.10 if mask == "face_full" else 0.08)
 
 
+ARM_SEGMENTS = ((2, 3), (3, 4), (5, 6), (6, 7))  # ombro-cotovelo, cotovelo-pulso (OpenPose 18)
+
+
+def hair_region(face: DetectedFace, width: int, height: int) -> PassRegion:
+    """Cabelo inteiro (cabeca + comprimento ate o peito), sem o miolo do rosto."""
+    x1, y1, x2, y2 = face.bbox
+    fw, fh = x2 - x1, y2 - y1
+    cx = (x1 + x2) / 2
+    top, bottom = y1 - fh * 1.0, y2 + fh * 2.6
+    crop = _clamp_box(cx, (top + bottom) / 2, fw * 3.4, bottom - top, width, height)
+    hx, hy = cx - crop.x, (top + bottom) / 2 - crop.y
+    shapes = (Shape("ellipse", hx, hy, fw * 1.55, (bottom - top) / 2),
+              Shape("ellipse", cx - crop.x, (y1 + y2) / 2 - crop.y + fh * 0.05, fw * 0.42, fh * 0.5, include=False))
+    return PassRegion(crop, shapes, 0.05)
+
+
+def arms_region(body: DetectedBody, face: DetectedFace | None, width: int, height: int) -> PassRegion | None:
+    """Bracos (ombro ate o pulso, sem as maos): onde ficam as tatuagens."""
+    kp = body.keypoints
+    pts = [(kp[i][0], kp[i][1]) for seg in ARM_SEGMENTS for i in seg if i < len(kp) and kp[i][2] > 0.3]
+    if len(pts) < 2:
+        return None
+    bh = body.bbox[3] - body.bbox[1]
+    r = max(14.0, bh * 0.055)
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    crop = _clamp_box((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, max(xs) - min(xs) + 4 * r, max(ys) - min(ys) + 4 * r,
+                      width, height)
+    shapes: list[Shape] = []
+    for a, b in ARM_SEGMENTS:
+        if max(a, b) < len(kp) and kp[a][2] > 0.3 and kp[b][2] > 0.3:
+            for t in (0.0, 0.25, 0.5, 0.75, 0.92):  # para antes do pulso: a mao fica como esta
+                x = kp[a][0] + (kp[b][0] - kp[a][0]) * t
+                y = kp[a][1] + (kp[b][1] - kp[a][1]) * t
+                shapes.append(Shape("ellipse", x - crop.x, y - crop.y, r, r))
+    if not shapes:
+        return None
+    if face is not None:
+        fx1, fy1, fx2, fy2 = face.bbox
+        shapes.append(Shape("ellipse", (fx1 + fx2) / 2 - crop.x, (fy1 + fy2) / 2 - crop.y, (fx2 - fx1) * 0.75,
+                            (fy2 - fy1) * 0.8, include=False))
+    return PassRegion(crop, tuple(shapes), 0.04)
+
+
 def body_region(body: DetectedBody, face: DetectedFace | None, mask: str, width: int, height: int) -> PassRegion:
     bx1, by1, bx2, by2 = body.bbox
     bw, bh = bx2 - bx1, by2 - by1
@@ -176,11 +219,15 @@ def judge(spec: PassSpec, before: Measure, after: Measure, rules: dict[str, Any]
         reasons.append("rosto da persona sumiu")
     elif before.face is not None and before.face - after.face > float(rules["max_identity_drop"]):
         reasons.append(f"identidade caiu {before.face - after.face:.3f} (> {rules['max_identity_drop']})")
+    if spec.kind == "prep":
+        # preparo (cabelo/bracos) parte do rosto da PESSOA DA FOTO: a identidade vem depois,
+        # nas passadas travadas. Aqui so nao pode mudar a pose nem criar pessoa/rosto.
+        reasons = [r for r in reasons if not r.startswith("identidade")]
     if spec.kind == "face" and before.face is not None and after.face is not None:
         gain = float(rules.get("min_face_gain", {}).get(spec.name, -1.0))
         if after.face - before.face < gain:
             reasons.append(f"identidade nao subiu o minimo ({after.face - before.face:+.3f} < {gain:+.3f})")
-    if before.age is not None and after.age is not None:
+    if spec.kind != "prep" and before.age is not None and after.age is not None:
         worse = abs(after.age - age_target) - abs(before.age - age_target)
         if worse > float(rules["max_age_worsening"]):
             reasons.append(f"idade se afastou do alvo {age_target} ({before.age:.0f} -> {after.age:.0f})")
@@ -230,7 +277,7 @@ class MultiPassRunner:
 
     async def run(self, request: SceneRequest, master: ReferenceImage, face_passes: list[PassSpec],
                   body_passes: list[PassSpec], prompts: dict[str, str], negative: str, lora: tuple[str, float],
-                  model: tuple[str, str]) -> MultiPassResult:
+                  model: tuple[str, str], pre_passes: list[PassSpec] | None = None) -> MultiPassResult:
         seed = request.parameters.seed or 0
         base_out = await self.base.generate(request)
         base = await self._check("base", base_out.image, master, None)
@@ -245,7 +292,7 @@ class MultiPassRunner:
         result = MultiPassResult(final=base, checkpoints=[base], records=[rec],
                                  base_parameters=dict(base_out.effective_parameters))
         current = base
-        for spec in [*face_passes, *body_passes]:
+        for spec in [*(pre_passes or []), *face_passes, *body_passes]:
             if not spec.enabled:
                 continue
             name = f"{spec.kind}_{spec.number}"
@@ -263,13 +310,24 @@ class MultiPassRunner:
                 rec.rollback, rec.rollback_reason = True, "sem rosto da persona para refinar"
                 result.decisions.append({"pass": name, "status": SKIPPED, "reasons": [rec.rollback_reason]})
                 continue
+            if spec.kind == "prep" and (face is None if spec.mask == "hair" else body is None):
+                rec.rollback, rec.rollback_reason = True, f"sem {'rosto' if spec.mask == 'hair' else 'corpo'} para o preparo"
+                result.decisions.append({"pass": name, "status": SKIPPED, "reasons": [rec.rollback_reason]})
+                continue
             if spec.kind == "body" and body is None:
                 rec.rollback, rec.rollback_reason = True, "sem corpo detectado para refinar"
                 result.decisions.append({"pass": name, "status": SKIPPED, "reasons": [rec.rollback_reason]})
                 continue
             w, h = current.analysis.width, current.analysis.height
-            region = (face_region(face, spec.mask, w, h) if spec.kind == "face"
-                      else body_region(body, face, spec.mask, w, h))
+            if spec.kind == "prep":
+                region = hair_region(face, w, h) if spec.mask == "hair" else arms_region(body, face, w, h)
+                if region is None:
+                    rec.rollback, rec.rollback_reason = True, "bracos nao visiveis"
+                    result.decisions.append({"pass": name, "status": SKIPPED, "reasons": [rec.rollback_reason]})
+                    continue
+            else:
+                region = (face_region(face, spec.mask, w, h) if spec.kind == "face"
+                          else body_region(body, face, spec.mask, w, h))
             start = time.monotonic()
             try:
                 out = await self.region.refine(current.image, RegionPassRequest(
@@ -300,5 +358,5 @@ class MultiPassRunner:
         return result
 
 
-__all__ = ["ACCEPTED", "ERROR", "ROLLBACK", "SKIPPED", "Box", "Checkpoint", "Measure", "MultiPassResult",
+__all__ = ["ACCEPTED", "ERROR", "ROLLBACK", "SKIPPED", "Box", "arms_region", "hair_region", "Checkpoint", "Measure", "MultiPassResult",
            "MultiPassRunner", "PassRegion", "Shape", "body_region", "face_region", "judge", "measure"]

@@ -260,3 +260,58 @@ def test_replicate_settings_follow_the_users_decisions():
     assert rep["denoise"] == 0.65 and rep["max_drift_retries"] == 2 and rep["checks"]["min_final_face"] == 0.70
     assert "grain" not in rep["positive"] and "muted" not in rep["positive"]  # sem filtro inventado
     assert np is not None
+
+
+
+# --- regras da persona no modo replicar: cabelo dela, sem tatuagem ---------------------------
+
+
+def test_prep_passes_are_configured_for_hair_and_tattoos():
+    assert [(p.kind, p.mask, p.denoise) for p in CFG.pre_passes] == [("prep", "hair", 0.8), ("prep", "arms", 0.55)]
+    rep = CFG.replicate
+    assert "very dark brown" in rep["pre_pass_prompts"]["hair"] and "no tattoos" in rep["pre_pass_prompts"]["arms"]
+    assert "tattoos" in rep["extra_negative"] and "blonde hair" in rep["extra_negative"]
+
+
+def test_hair_region_covers_the_long_hair_but_not_the_face():
+    from app.core.generation.multipass import hair_region
+    f = woman()
+    reg = hair_region(f, 832, 1216)
+    inc = [s for s in reg.shapes if s.include][0]
+    exc = [s for s in reg.shapes if not s.include][0]
+    assert reg.crop.y + reg.crop.h > f.bbox[3] + 2 * (f.bbox[3] - f.bbox[1])  # ate abaixo do peito
+    assert exc.rx < (f.bbox[2] - f.bbox[0]) / 2 and inc.rx > exc.rx
+
+
+def test_arms_region_stops_before_the_hands_and_needs_arms():
+    from app.core.generation.multipass import arms_region
+    b = body()
+    reg = arms_region(b, woman(), 832, 1216)
+    inc = [s for s in reg.shapes if s.include]
+    wrist = b.keypoints[4]
+    assert len(inc) == 20 and all(abs(s.cx + reg.crop.x - wrist[0]) + abs(s.cy + reg.crop.y - wrist[1]) > 5 for s in inc)
+    no_arms = body([(x, y, 0.0 if i in (3, 4, 6, 7) else c) for i, (x, y, c) in enumerate(STANDING)])
+    assert arms_region(no_arms, None, 832, 1216) is None
+
+
+async def test_prep_runs_before_the_locked_passes_and_ignores_the_photo_persons_identity():
+    r, region = runner({"base": look(0.30), "prep_1": look(0.20), "prep_2": look(0.21), "face_1": look(0.78)})
+    prompts = {**CFG.pass_prompts, **CFG.replicate["pre_pass_prompts"], "body": "x"}
+    from app.providers.base import GenerationParameters, PromptSections, SceneRequest
+    res = await r.run(SceneRequest(PromptSections("lunavox, a woman", "", "x", ""), GenerationParameters(seed=1), {}), MASTER,
+                      list(CFG.face_passes), list(CFG.body_passes), prompts, "neg", (CFG.lora.file, 1.0), ("realvisxl", "x"),
+                      pre_passes=list(CFG.pre_passes))
+    names = [c[1].name for c in region.calls]
+    assert names[:3] == ["prep_1", "prep_2", "face_1"]
+    assert region.calls[1][0] == "prep_1" and region.calls[2][0] == "prep_2"  # cada passada parte da anterior
+    assert [d["status"] for d in res.decisions[:2]] == ["ACCEPTED", "ACCEPTED"]  # rosto da pessoa da foto caiu: nao importa
+
+
+async def test_prep_that_moves_the_pose_is_rolled_back():
+    from tests.fakes import WALKING
+    r, region = runner({"base": look(0.30), "prep_1": look(0.30, kps=WALKING)})
+    from app.providers.base import GenerationParameters, PromptSections, SceneRequest
+    prompts = {**CFG.pass_prompts, **CFG.replicate["pre_pass_prompts"], "body": "x"}
+    res = await r.run(SceneRequest(PromptSections("a", "", "x", ""), GenerationParameters(seed=1), {}), MASTER,
+                      [], [], prompts, "neg", (CFG.lora.file, 1.0), ("realvisxl", "x"), pre_passes=list(CFG.pre_passes))
+    assert res.decisions[0]["status"] == "ROLLBACK" and "pose mudou" in res.decisions[0]["reasons"][0]

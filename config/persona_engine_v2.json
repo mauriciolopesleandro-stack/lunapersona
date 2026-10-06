@@ -238,6 +238,44 @@
       "min_final_face": 0.7,
       "max_pose_distance_to_reference": 0.15,
       "max_background_changed": 0.01
-    }
+    },
+    "pre_passes": [
+      {
+        "name": "hair",
+        "enabled": true,
+        "mask": "hair",
+        "strength": 1.0,
+        "denoise": 0.8,
+        "lora": true
+      },
+      {
+        "name": "arms",
+        "enabled": true,
+        "mask": "arms",
+        "strength": 0.9,
+        "denoise": 0.55,
+        "lora": true
+      }
+    ],
+    "pre_pass_prompts": {
+      "hair": "lunavox, a woman, long very dark brown loose wavy hair with subtle copper highlights falling below the chest, natural hair texture, realistic photo",
+      "arms": "bare arms with clean natural skin, no tattoos, realistic photo"
+    },
+    "extra_negative": [
+      "tattoo",
+      "tattoos",
+      "tattooed arms",
+      "ink on skin",
+      "blonde hair",
+      "platinum hair",
+      "bleached hair",
+      "short hair"
+    ],
+    "persona_rules": {
+      "hair": "sempre o cabelo da Luna (ficha: castanho muito escuro, comprido abaixo do peito, ondulado, reflexos acobreados); trocar so quando o usuario pedir",
+      "tattoos": "nenhuma (ficha: lock HARD)",
+      "sunglasses": "mantidos quando a foto tem (o rosto medido pode ficar abaixo do limiar por causa deles)"
+    },
+    "pre_pass_note": "passadas de preparo do modo replicar, depois da troca e antes das passadas travadas de rosto/corpo: cabelo (forte, troca cor/comprimento) e bracos (apaga tatuagem). Presas a mascara da pessoa. Nao mexem na receita travada do rosto."
   }
 }

@@ -75,7 +75,7 @@ async def main() -> int:
     passes = [p for p in (*cfg.face_passes, *cfg.body_passes) if p.enabled]
     plan = ExperimentPlan("V2 replicar foto", "trocar a pessoa da foto pela Luna mantendo pose, ambiente e luz",
                           "SAM2 + RealVisXL/LoRA a partir dos pixels + passadas travadas dao rosto >= 0,70 com fundo intacto",
-                          images=len(photos), seconds_per_image=60 + 30 * len(passes), overhead_seconds=150,
+                          images=len(photos), seconds_per_image=60 + 30 * (len(passes) + len(cfg.pre_passes)), overhead_seconds=150,
                           price_per_hour=PRICE)
     budget = BudgetGuard(cfg.benchmark_limit_usd).check(plan, args.autorizado)
 
@@ -134,8 +134,9 @@ async def main() -> int:
         print(photo.name, "leitura:", ref.camera, "|", ref.description()[:160], "|", ref.warnings, flush=True)
         scene = f"{ref.description()}, {rep['positive']}"  # luz e camera vem da foto: sem estilo inventado
         prompt = builder.build(sheet, profile, scene, {}, [], single_subject=True)
-        negative = ", ".join(dict.fromkeys([*prompt.negative.all_terms(), *cfg.negative_for(model)]))
+        negative = ", ".join(dict.fromkeys([*prompt.negative.all_terms(), *cfg.negative_for(model), *rep.get("extra_negative", [])]))
         prompts = {k: v.replace("{style}", rep["positive"]) for k, v in cfg.pass_prompts.items() if k != "body"}
+        prompts.update(rep.get("pre_pass_prompts", {}))  # cabelo da Luna e bracos sem tatuagem
         prompts["body"] = "lunavox, a woman, " + cfg.pass_prompts["body"].replace("{scene}", ref.description()).replace("{style}", rep["positive"])
         runner = MultiPassRunner(base=replacer.bind(ref), region=region, analyzer=analyzer, skin_analyzer=skin_meter,
                                  rules=cfg.acceptance, age_target=cfg.age_target,
@@ -145,7 +146,7 @@ async def main() -> int:
             seed = args.semente + 100 * n + 17 * attempt
             res = await runner.run(SceneRequest(prompt=prompt, parameters=GenerationParameters(seed=seed), lora={}),
                                    master, list(cfg.face_passes), list(cfg.body_passes), prompts, negative,
-                                   (cfg.lora.file, cfg.lora.strength), (model.id, model.title))
+                                   (cfg.lora.file, cfg.lora.strength), (model.id, model.title), pre_passes=list(cfg.pre_passes))
             final = res.final
             skin = await skin_meter.analyze(final.image, final.analysis.persona_face(), sheet.validation["skin_realism"])
             validation = await engine.run(ValidationContext(sheet=sheet, image=final.image, analysis=final.analysis, skin=skin))

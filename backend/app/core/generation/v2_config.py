@@ -18,6 +18,7 @@ from typing import Any
 
 FACE_MASKS = ("face_full", "face_inner", "face_skin")
 BODY_MASKS = ("body_full", "body_regions")
+PREP_MASKS = ("hair", "arms")  # modo replicar: cabelo da persona e bracos sem tatuagem
 
 
 class V2ConfigError(ValueError):
@@ -106,6 +107,7 @@ class V2Config:
     identity_adapters: dict[str, Any] = field(default_factory=dict)
     identity_lock: dict[str, Any] = field(default_factory=dict)
     replicate: dict[str, Any] = field(default_factory=dict)
+    pre_passes: tuple[PassSpec, ...] = ()
 
     def model(self, model_id: str | None = None) -> ModelProfile:
         key = model_id or self.generation_model
@@ -186,6 +188,7 @@ def parse_v2_config(data: dict[str, Any]) -> V2Config:
             if data.get("style") else None,
             identity_adapters=dict(data.get("identity_adapters", {})),
             replicate=dict(data.get("replicate", {})),
+            pre_passes=_passes((data.get("replicate") or {}).get("pre_passes", []), "prep", PREP_MASKS, 2),
         )
         for spec in cfg.face_passes:
             if spec.identity_adapter and spec.identity_adapter not in cfg.identity_adapters:
@@ -232,5 +235,5 @@ def load_v2_config(path: Path) -> V2Config:
     return parse_v2_config(json.loads(path.read_text(encoding="utf-8")))
 
 
-__all__ = ["BODY_MASKS", "FACE_MASKS", "LOCKED_FIELDS", "identity_fingerprint", "LoraSpec", "ModelProfile", "PassSpec", "Sampling", "StyleProfile", "V2Config",
+__all__ = ["BODY_MASKS", "FACE_MASKS", "PREP_MASKS", "LOCKED_FIELDS", "identity_fingerprint", "LoraSpec", "ModelProfile", "PassSpec", "Sampling", "StyleProfile", "V2Config",
            "V2ConfigError", "load_v2_config", "parse_v2_config"]
