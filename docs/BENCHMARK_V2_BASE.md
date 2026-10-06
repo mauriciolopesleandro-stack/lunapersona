@@ -104,3 +104,42 @@ Validação final: FAIL `face_identity_low` (0,486 < 0,55). Pessoas: PASS. Anato
 - **Cenas que faltam:** selfie no espelho e toalha. Faltam ~US$ 0,07 para as duas, nesta velocidade.
 - **Velocidade:** a análise precisa sair do ComfyUI, ou o ComfyUI precisa de cache maior (`--cache-lru`, o que muda os argumentos do pod). Qualquer uma das duas exige autorização.
 - **Identidade abaixo de 0,55:** as opções são mais denoise ou um recorte maior na 1ª passada de rosto (experimento separado), ou um adaptador de identidade.
+
+---
+
+# Teste 3: realismo da referência + velocidade (2026-10-06)
+
+O alvo de realismo é a selfie de celular que o usuário mandou, gerada com RealVisXL. Está em `personas/luna/style_refs/realismo_ref_01.webp`, fora do git, com sha256 `63800d9f…`.
+
+**Mudanças**
+- **Perfil de estilo `smartphone_raw_v1`:**
+  - texto positivo: selfie de celular crua, sardas leves, poros, pouca maquiagem, fios soltos, luz de janela, cores levemente lavadas;
+  - texto negativo: maquiagem pesada, contorno, batom, pele retocada, luz de estúdio.
+- **Passadas de rosto:**
+  - a 1ª ficou mais forte (denoise 0,42, opacidade 0,85, recorte mais próximo);
+  - a de microdetalhe passou a rodar **sem a LoRA**, só para devolver textura.
+- **Velocidade:** a análise de rosto e corpo passou a manter o checkpoint no cache do ComfyUI.
+
+**Rodada:** ~US$ 0,065, pod desligado aos 8 min 11 s. A academia e a selfie terminaram. A toalha ficou de fora para caber no limite, e eu desliguei o pod antes da trava.
+
+| Cena | Base | Rosto 1 | Rosto 2 | Rosto 3 | Corpo 1 | Corpo 2 | Final | Idade final | Tempo |
+|---|---|---|---|---|---|---|---|---|---|
+| academia | 0,300 | 0,399 | 0,412 | 0,424 | rollback (rosto novo apareceu) | 0,424 | **0,424** | 31 | 172 s |
+| selfie | 0,371 | 0,507 | 0,494 | 0,493 | 0,498 | 0,498 | **0,498** | 31 | 148 s |
+
+**Leitura**
+- **Realismo: chegou perto da referência.** A pele ficou fosca, com sardas e poros, sem a maquiagem marcada, com fios soltos e luz natural. É bem diferente da academia do teste 2.
+- **Identidade:** caiu um pouco em relação ao teste 2 (0,42–0,50 contra 0,49). O estilo afasta do "visual produzido" que a LoRA aprendeu. Continua abaixo de 0,55.
+- **Idade:** ~31. O estilo cru envelhece um pouco, e a 1ª passada chegou a ~35 antes de voltar.
+- **Velocidade:** com o modelo no cache, cada passada caiu de ~21 s para ~11 s no ComfyUI. O gargalo agora é a análise entre as passadas (~10–15 s cada).
+- **Fidelidade ao pedido:**
+  - a "selfie no espelho" saiu como foto de frente segurando o celular, sem espelho;
+  - na academia ela segura halteres em vez da garrafa.
+- **Guarda:** desfez a passada de corpo 1 da academia, que fez aparecer um segundo rosto.
+
+**Próximos passos possíveis (cada um com autorização)**
+1. **Identidade ≥ 0,55 sem perder o estilo:**
+   - InstantID só na 1ª passada de rosto, seguido da passada sem LoRA para devolver a textura;
+   - ou mais denoise na 1ª passada.
+2. **Velocidade:** não rodar o DWPose nas passadas de rosto. A máscara de rosto não alcança o corpo, então a pose não tem como mudar.
+3. **Estilo:** manter `smartphone_raw_v1` como padrão da V2, que é a trava pedida pelo usuário.
