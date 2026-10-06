@@ -53,16 +53,19 @@ async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("model")
     ap.add_argument("--autorizado", type=float, default=None)
+    ap.add_argument("--teto", type=float, default=None, help="teto absoluto do usuario (abaixa o limite)")
+    ap.add_argument("--overhead", type=float, default=420, help="segundos de pod fora da geracao (ligar, baixar)")
     args = ap.parse_args()
 
     cfg = load_v2_config(ROOT / "config" / "persona_engine_v2.json")
-    guard = BudgetGuard(cfg.benchmark_limit_usd)
-    # Teste 1 inteiro (os 2 modelos): ligar pod + subir LoRA + baixar 2 checkpoints + 6 imagens.
-    plan = ExperimentPlan("V2 teste 1 (base)", "comparar a qualidade BASE RealVisXL x Lustify",
+    limit = min(cfg.benchmark_limit_usd, args.teto) if args.teto else cfg.benchmark_limit_usd
+    guard = BudgetGuard(limit)
+    # Ligar pod + subir LoRA + baixar o checkpoint (overhead) + as imagens deste modelo.
+    plan = ExperimentPlan(f"V2 teste 1 (base, {args.model})", "qualidade BASE do checkpoint com a LoRA SDXL da Luna",
                           "um checkpoint SDXL fotografico com a LoRA da Luna da pele mais natural que a V1, "
-                          "com identidade menor (sem troca de cabeca)", images=6, seconds_per_image=30,
-                          overhead_seconds=420, price_per_hour=PRICE)
-    budget = guard.check(plan, args.autorizado)
+                          "com identidade menor (sem troca de cabeca)", images=len(SCENES), seconds_per_image=30,
+                          overhead_seconds=args.overhead, price_per_hour=PRICE)
+    budget = guard.check(plan, None if args.teto else args.autorizado)
 
     personas = ROOT / "personas_run"
     sheet = PersonaSheetRepository(personas).get("luna")
