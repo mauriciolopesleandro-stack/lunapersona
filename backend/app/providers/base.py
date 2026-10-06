@@ -220,6 +220,7 @@ class RegionPassRequest:
     identity_adapter: str | None = None  # ex.: "instantid": identidade vinda de `reference`
     adapter_weight: float | None = None
     reference: Any = None  # ReferenceImage (master_face) quando ha adaptador de identidade
+    clip_mask: str | None = None  # modo replicar: mascara da pessoa; a passada nunca sai dela
 
 
 class RegionPassAdapter(ABC):

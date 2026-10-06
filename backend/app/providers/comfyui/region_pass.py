@@ -61,6 +61,18 @@ def render_mask(region: dict[str, Any], strength: float) -> bytes:
     return buf.getvalue()
 
 
+def clip_to_person(graph: dict[str, Any], clip_mask: str, crop: dict[str, Any]) -> None:
+    """Modo replicar: a mascara da passada vezes a mascara da pessoa (recortada no
+    mesmo lugar) - a passada nunca mexe no fundo da foto."""
+    graph["c1"] = {"class_type": "LoadImage", "inputs": {"image": clip_mask}}
+    graph["c2"] = {"class_type": "ImageToMask", "inputs": {"image": ["c1", 0], "channel": "red"}}
+    graph["c3"] = {"class_type": "CropMask", "inputs": {"mask": ["c2", 0], "x": int(crop["x"]), "y": int(crop["y"]),
+                                                       "width": int(crop["w"]), "height": int(crop["h"])}}
+    graph["c4"] = {"class_type": "MaskComposite", "inputs": {"destination": ["17", 0], "source": ["c3", 0], "x": 0, "y": 0,
+                                                            "operation": "multiply"}}
+    graph["18"]["inputs"]["mask"] = ["c4", 0]
+
+
 class ComfyRegionPassAdapter(RegionPassAdapter):
     def __init__(self, session: ComfySession, profile: ModelProfile, lora: LoraSpec, steps: int = 20,
                  face_workflow: str = "realvis-face-pass", body_workflow: str = "realvis-body-pass",
@@ -139,7 +151,8 @@ class ComfyRegionPassAdapter(RegionPassAdapter):
             values.update(REFERENCE=await self._reference_name(request.reference), ID_WEIGHT=request.adapter_weight,
                           INSTANTID=adapter["model"], INSTANTID_CONTROLNET=adapter["controlnet"])
         switch = self.session.mark(self.profile.id)
-        prompt_id, out, seconds = await self.session.run(workflow, values)
+        patch = (lambda g: clip_to_person(g, request.clip_mask, crop)) if request.clip_mask else None
+        prompt_id, out, seconds = await self.session.run(workflow, values, patch)
         return StageOutput(
             image=ProviderImage("comfyui", output_name(out), out.url, image.width, image.height),
             stage=request.name, adapter=self.name, seconds=round(seconds, 2), seed=request.seed,
@@ -154,4 +167,4 @@ class ComfyRegionPassAdapter(RegionPassAdapter):
         )
 
 
-__all__ = ["ComfyRegionPassAdapter", "render_mask", "work_size"]
+__all__ = ["ComfyRegionPassAdapter", "clip_to_person", "render_mask", "work_size"]

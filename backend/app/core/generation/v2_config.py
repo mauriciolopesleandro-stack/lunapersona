@@ -105,6 +105,7 @@ class V2Config:
     style: StyleProfile | None = None
     identity_adapters: dict[str, Any] = field(default_factory=dict)
     identity_lock: dict[str, Any] = field(default_factory=dict)
+    replicate: dict[str, Any] = field(default_factory=dict)
 
     def model(self, model_id: str | None = None) -> ModelProfile:
         key = model_id or self.generation_model
@@ -184,6 +185,7 @@ def parse_v2_config(data: dict[str, Any]) -> V2Config:
                                data["style"].get("reference", ""), data["style"].get("reference_sha256", ""))
             if data.get("style") else None,
             identity_adapters=dict(data.get("identity_adapters", {})),
+            replicate=dict(data.get("replicate", {})),
         )
         for spec in cfg.face_passes:
             if spec.identity_adapter and spec.identity_adapter not in cfg.identity_adapters:

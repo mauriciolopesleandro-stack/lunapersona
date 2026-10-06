@@ -223,5 +223,21 @@
     "rule": "imagem com rosto final abaixo de min_final_face e marcada como PERSONA_DRIFT e nao entra no resultado aprovado",
     "unlock": "so com pedido explicito do usuario e nova version",
     "fingerprint": "14e6af91fd928300bb26dd8b2bf2e58763c688513c36961e73174d31ec5933e9"
+  },
+  "replicate": {
+    "workflow": "realvis-person-replace",
+    "denoise": 0.65,
+    "mask_grow": 16,
+    "edge_blur": 10,
+    "sam_model": "sam2_hiera_base_plus.safetensors",
+    "max_reference_side": 1600,
+    "max_drift_retries": 2,
+    "positive": "natural skin texture with visible pores, light freckles across nose and cheeks, minimal makeup, natural eyebrows, natural lips, realistic unretouched photo",
+    "note": "modo padrao com foto: troca a pessoa e mantem a foto (decisao do usuario 2026-10-06). Sem estilo de camera/luz inventado: luz e camera vem da propria foto. Sem ControlNet de pose por enquanto.",
+    "checks": {
+      "min_final_face": 0.7,
+      "max_pose_distance_to_reference": 0.15,
+      "max_background_changed": 0.01
+    }
   }
 }

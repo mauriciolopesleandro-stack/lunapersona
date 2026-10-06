@@ -100,6 +100,7 @@ class MultiPassResult:
     checkpoints: list[Checkpoint] = field(default_factory=list)
     records: list[PassRecord] = field(default_factory=list)
     decisions: list[dict[str, Any]] = field(default_factory=list)
+    base_parameters: dict[str, Any] = field(default_factory=dict)  # parametros efetivos da base (ex.: clip_mask)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -108,6 +109,7 @@ class MultiPassResult:
                              "measure": c.measure.to_dict()} for c in self.checkpoints],
             "records": [r.to_dict() for r in self.records],
             "decisions": self.decisions,
+            "base_parameters": self.base_parameters,
         }
 
 
@@ -235,11 +237,13 @@ class MultiPassRunner:
         body0 = base.analysis.main_body()
         base_pose = body0.keypoints if body0 else None
         base.measure.pose = 0.0 if base_pose else None
+        clip_mask = base_out.effective_parameters.get("clip_mask")  # replicar foto: passadas so dentro da pessoa
         rec = base_record(model=model[0], model_version=model[1], lora=lora[0], lora_strength=lora[1], seed=seed,
                           prompt=base_out.effective_parameters.get("prompt", ""), negative=negative)
         self._fill(rec, base.measure, base_out.seconds, base_out.gpu)
         rec.image = base_out.image.url
-        result = MultiPassResult(final=base, checkpoints=[base], records=[rec])
+        result = MultiPassResult(final=base, checkpoints=[base], records=[rec],
+                                 base_parameters=dict(base_out.effective_parameters))
         current = base
         for spec in [*face_passes, *body_passes]:
             if not spec.enabled:
@@ -272,7 +276,7 @@ class MultiPassRunner:
                     region=region.to_dict(), prompt=prompt, negative=negative, denoise=spec.denoise,
                     strength=spec.strength, seed=rec.seed, name=name, use_lora=spec.lora,
                     identity_adapter=spec.identity_adapter, adapter_weight=spec.adapter_weight,
-                    reference=master if spec.identity_adapter else None))
+                    reference=master if spec.identity_adapter else None, clip_mask=clip_mask))
             except ProviderError as exc:
                 rec.rollback, rec.rollback_reason = True, f"erro do provider: {exc}"
                 result.decisions.append({"pass": name, "status": ERROR, "reasons": [str(exc)]})
