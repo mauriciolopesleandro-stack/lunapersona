@@ -1,0 +1,1323 @@
+{
+ "budget": {
+  "name": "V2 replicar foto",
+  "objective": "trocar a pessoa da foto pela Luna mantendo pose, ambiente e luz",
+  "hypothesis": "SAM2 + RealVisXL/LoRA a partir dos pixels + passadas travadas dao rosto >= 0,70 com fundo intacto",
+  "images": 1,
+  "seconds_per_image": 270,
+  "overhead_seconds": 150,
+  "price_per_hour": 0.57,
+  "total_seconds": 420,
+  "estimated_cost_usd": 0.0665,
+  "limit_usd": 0.1,
+  "authorized_usd": 0.1,
+  "allowed_usd": 0.1
+ },
+ "identity_lock": {
+  "version": "luna-face-v2.0",
+  "fingerprint": "14e6af91fd928300bb26dd8b2bf2e58763c688513c36961e73174d31ec5933e9"
+ },
+ "replicate": {
+  "workflow": "realvis-person-replace",
+  "denoise": 0.5,
+  "mask_grow": 16,
+  "edge_blur": 10,
+  "sam_model": "sam2_hiera_base_plus.safetensors",
+  "max_reference_side": 1600,
+  "max_drift_retries": 2,
+  "positive": "natural skin texture with visible pores, light freckles across nose and cheeks, minimal makeup, natural eyebrows, natural lips, realistic unretouched photo",
+  "note": "modo padrao com foto: troca a pessoa e mantem a foto (decisao do usuario 2026-10-06). Sem estilo de camera/luz inventado: luz e camera vem da propria foto. Sem ControlNet de pose por enquanto.",
+  "checks": {
+   "min_final_face": 0.7,
+   "max_pose_distance_to_reference": 0.15,
+   "max_background_changed": 0.01
+  },
+  "pre_passes": [
+   {
+    "name": "hair",
+    "enabled": true,
+    "mask": "hair",
+    "strength": 1.0,
+    "denoise": 0.85,
+    "lora": true
+   },
+   {
+    "name": "arms",
+    "enabled": true,
+    "mask": "arms",
+    "strength": 0.9,
+    "denoise": 0.55,
+    "lora": true
+   }
+  ],
+  "pre_pass_prompts": {
+   "hair": "lunavox, a woman, long very dark brown loose wavy hair with subtle copper highlights falling below the chest, natural hair texture, realistic photo",
+   "arms": "bare arms with clean natural skin, no tattoos, realistic photo"
+  },
+  "extra_negative": [
+   "tattoo",
+   "tattoos",
+   "tattooed arms",
+   "ink on skin",
+   "blonde hair",
+   "platinum hair",
+   "bleached hair",
+   "short hair"
+  ],
+  "persona_rules": {
+   "hair": "sempre o cabelo da Luna (ficha: castanho muito escuro, comprido abaixo do peito, ondulado, reflexos acobreados); trocar so quando o usuario pedir",
+   "tattoos": "nenhuma (ficha: lock HARD)",
+   "sunglasses": "mantidos quando a foto tem (o rosto medido pode ficar abaixo do limiar por causa deles)"
+  },
+  "pre_pass_note": "passadas de preparo do modo replicar, depois da troca e antes das passadas travadas de rosto/corpo: cabelo (forte, troca cor/comprimento) e bracos (apaga tatuagem). Presas a mascara da pessoa. Nao mexem na receita travada do rosto.",
+  "restore_accessories": {
+   "sunglasses": true,
+   "note": "oculos escuros da foto voltam no fim (pixels originais) - regra do usuario"
+  },
+  "round2_note": "2026-10-06 rodada 2 (depois do teste com 5 fotos): base 0.65 -> 0.50 (roupa mudava), cabelo 0.80 -> 0.85 e pose tolerada ate 0.15 no preparo (cabelo loiro ficava no carro), oculos restaurados, expressao da foto (sem a expressao padrao da persona)"
+ },
+ "photos": [
+  {
+   "photo": "5_varanda_copacabana_oculos.png",
+   "size": [
+    977,
+    1080
+   ],
+   "attempts": [
+    {
+     "seed": 7601,
+     "multipass": {
+      "final": {
+       "name": "body_2",
+       "image": "http://127.0.0.1:8188/view?filename=luna_v2_body_2_00024_.png&subfolder=&type=output",
+       "measure": {
+        "face": 0.826,
+        "age": 23.0,
+        "skin": 0.084,
+        "pose": 0.019,
+        "persona_instances": 1,
+        "faces": 1,
+        "body": null
+       }
+      },
+      "checkpoints": [
+       {
+        "name": "base",
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_replace_00007_.png&subfolder=&type=output",
+        "locator": "luna_v2_replace_00007_.png [output]",
+        "measure": {
+         "face": 0.198,
+         "age": 22.0,
+         "skin": 0.689,
+         "pose": 0.0,
+         "persona_instances": 0,
+         "faces": 1,
+         "body": null
+        }
+       },
+       {
+        "name": "prep_1",
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_prep_1_00007_.png&subfolder=&type=output",
+        "locator": "luna_v2_prep_1_00007_.png [output]",
+        "measure": {
+         "face": 0.178,
+         "age": 23.0,
+         "skin": 0.519,
+         "pose": 0.018,
+         "persona_instances": 0,
+         "faces": 1,
+         "body": null
+        }
+       },
+       {
+        "name": "prep_2",
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_prep_2_00007_.png&subfolder=&type=output",
+        "locator": "luna_v2_prep_2_00007_.png [output]",
+        "measure": {
+         "face": 0.176,
+         "age": 23.0,
+         "skin": 0.519,
+         "pose": 0.024,
+         "persona_instances": 0,
+         "faces": 1,
+         "body": null
+        }
+       },
+       {
+        "name": "face_1",
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_1_00026_.png&subfolder=&type=output",
+        "locator": "luna_v2_face_1_00026_.png [output]",
+        "measure": {
+         "face": 0.829,
+         "age": 23.0,
+         "skin": 0.207,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        }
+       },
+       {
+        "name": "face_2",
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_2_00025_.png&subfolder=&type=output",
+        "locator": "luna_v2_face_2_00025_.png [output]",
+        "measure": {
+         "face": 0.828,
+         "age": 23.0,
+         "skin": 0.142,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        }
+       },
+       {
+        "name": "face_3",
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_3_00025_.png&subfolder=&type=output",
+        "locator": "luna_v2_face_3_00025_.png [output]",
+        "measure": {
+         "face": 0.828,
+         "age": 23.0,
+         "skin": 0.108,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        }
+       },
+       {
+        "name": "body_1",
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_body_1_00024_.png&subfolder=&type=output",
+        "locator": "luna_v2_body_1_00024_.png [output]",
+        "measure": {
+         "face": 0.826,
+         "age": 23.0,
+         "skin": 0.084,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        }
+       },
+       {
+        "name": "body_2",
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_body_2_00024_.png&subfolder=&type=output",
+        "locator": "luna_v2_body_2_00024_.png [output]",
+        "measure": {
+         "face": 0.826,
+         "age": 23.0,
+         "skin": 0.084,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        }
+       }
+      ],
+      "records": [
+       {
+        "model": "realvisxl",
+        "model_version": "RealVisXL V5.0 (fp16)",
+        "lora": "lunavox_sdxl_v1.safetensors",
+        "lora_strength": 1.0,
+        "seed": 7601,
+        "prompt_hash": "bf6792fe91647072",
+        "negative_hash": "2b56c6bb6e0ad0f5",
+        "pass_type": "base",
+        "pass_number": 0,
+        "mask_type": null,
+        "denoise": 1.0,
+        "strength": null,
+        "face_identity_score": 0.198,
+        "age_score": 0.5,
+        "skin_score": 0.689,
+        "body_score": null,
+        "pose_score": 0.0,
+        "anatomy_score": null,
+        "subject_count": 0,
+        "duration": 23.7,
+        "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+        "vram": 7156,
+        "cost": 0.00375,
+        "rollback": false,
+        "rollback_reason": null,
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_replace_00007_.png&subfolder=&type=output",
+        "identity_adapter": null,
+        "adapter_weight": null
+       },
+       {
+        "model": "realvisxl",
+        "model_version": "RealVisXL V5.0 (fp16)",
+        "lora": "lunavox_sdxl_v1.safetensors",
+        "lora_strength": 1.0,
+        "seed": 7701,
+        "prompt_hash": "ec973184f5c953ef",
+        "negative_hash": "2b56c6bb6e0ad0f5",
+        "pass_type": "prep",
+        "pass_number": 1,
+        "mask_type": "hair",
+        "denoise": 0.85,
+        "strength": 1.0,
+        "face_identity_score": 0.178,
+        "age_score": 0.6,
+        "skin_score": 0.519,
+        "body_score": null,
+        "pose_score": 0.018,
+        "anatomy_score": null,
+        "subject_count": 0,
+        "duration": 22.73,
+        "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+        "vram": 7156,
+        "cost": 0.00197,
+        "rollback": false,
+        "rollback_reason": null,
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_prep_1_00007_.png&subfolder=&type=output",
+        "identity_adapter": null,
+        "adapter_weight": null
+       },
+       {
+        "model": "realvisxl",
+        "model_version": "RealVisXL V5.0 (fp16)",
+        "lora": "lunavox_sdxl_v1.safetensors",
+        "lora_strength": 1.0,
+        "seed": 7801,
+        "prompt_hash": "18aec9b8cb0304c7",
+        "negative_hash": "2b56c6bb6e0ad0f5",
+        "pass_type": "prep",
+        "pass_number": 2,
+        "mask_type": "arms",
+        "denoise": 0.55,
+        "strength": 0.9,
+        "face_identity_score": 0.176,
+        "age_score": 0.6,
+        "skin_score": 0.519,
+        "body_score": null,
+        "pose_score": 0.024,
+        "anatomy_score": null,
+        "subject_count": 0,
+        "duration": 20.76,
+        "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+        "vram": 7156,
+        "cost": 0.00168,
+        "rollback": false,
+        "rollback_reason": null,
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_prep_2_00007_.png&subfolder=&type=output",
+        "identity_adapter": null,
+        "adapter_weight": null
+       },
+       {
+        "model": "realvisxl",
+        "model_version": "RealVisXL V5.0 (fp16)",
+        "lora": "lunavox_sdxl_v1.safetensors",
+        "lora_strength": 1.0,
+        "seed": 7901,
+        "prompt_hash": "5d7c64e2fa9f8e18",
+        "negative_hash": "2b56c6bb6e0ad0f5",
+        "pass_type": "face",
+        "pass_number": 1,
+        "mask_type": "face_full",
+        "denoise": 0.42,
+        "strength": 0.85,
+        "face_identity_score": 0.829,
+        "age_score": 0.6,
+        "skin_score": 0.207,
+        "body_score": null,
+        "pose_score": 0.019,
+        "anatomy_score": null,
+        "subject_count": 1,
+        "duration": 45.2,
+        "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+        "vram": 7963,
+        "cost": 0.00542,
+        "rollback": false,
+        "rollback_reason": null,
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_1_00026_.png&subfolder=&type=output",
+        "identity_adapter": "instantid",
+        "adapter_weight": 0.8
+       },
+       {
+        "model": "realvisxl",
+        "model_version": "RealVisXL V5.0 (fp16)",
+        "lora": "lunavox_sdxl_v1.safetensors",
+        "lora_strength": 1.0,
+        "seed": 8001,
+        "prompt_hash": "fd66cac0d72e7129",
+        "negative_hash": "2b56c6bb6e0ad0f5",
+        "pass_type": "face",
+        "pass_number": 2,
+        "mask_type": "face_inner",
+        "denoise": 0.22,
+        "strength": 0.5,
+        "face_identity_score": 0.828,
+        "age_score": 0.6,
+        "skin_score": 0.142,
+        "body_score": null,
+        "pose_score": 0.019,
+        "anatomy_score": null,
+        "subject_count": 1,
+        "duration": 24.84,
+        "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+        "vram": 7156,
+        "cost": 0.00229,
+        "rollback": false,
+        "rollback_reason": null,
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_2_00025_.png&subfolder=&type=output",
+        "identity_adapter": null,
+        "adapter_weight": null
+       },
+       {
+        "model": "realvisxl",
+        "model_version": "RealVisXL V5.0 (fp16)",
+        "lora": "nenhuma",
+        "lora_strength": 0.0,
+        "seed": 8101,
+        "prompt_hash": "5f95c2fc9b9356cb",
+        "negative_hash": "2b56c6bb6e0ad0f5",
+        "pass_type": "face",
+        "pass_number": 3,
+        "mask_type": "face_skin",
+        "denoise": 0.18,
+        "strength": 0.45,
+        "face_identity_score": 0.828,
+        "age_score": 0.6,
+        "skin_score": 0.108,
+        "body_score": null,
+        "pose_score": 0.019,
+        "anatomy_score": null,
+        "subject_count": 1,
+        "duration": 27.51,
+        "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+        "vram": 7156,
+        "cost": 0.00252,
+        "rollback": false,
+        "rollback_reason": null,
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_3_00025_.png&subfolder=&type=output",
+        "identity_adapter": null,
+        "adapter_weight": null
+       },
+       {
+        "model": "realvisxl",
+        "model_version": "RealVisXL V5.0 (fp16)",
+        "lora": "lunavox_sdxl_v1.safetensors",
+        "lora_strength": 1.0,
+        "seed": 8201,
+        "prompt_hash": "abe29b6d2a28c2f9",
+        "negative_hash": "2b56c6bb6e0ad0f5",
+        "pass_type": "body",
+        "pass_number": 1,
+        "mask_type": "body_full",
+        "denoise": 0.25,
+        "strength": 0.6,
+        "face_identity_score": 0.826,
+        "age_score": 0.6,
+        "skin_score": 0.084,
+        "body_score": null,
+        "pose_score": 0.019,
+        "anatomy_score": null,
+        "subject_count": 1,
+        "duration": 28.09,
+        "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+        "vram": 7156,
+        "cost": 0.00279,
+        "rollback": false,
+        "rollback_reason": null,
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_body_1_00024_.png&subfolder=&type=output",
+        "identity_adapter": null,
+        "adapter_weight": null
+       },
+       {
+        "model": "realvisxl",
+        "model_version": "RealVisXL V5.0 (fp16)",
+        "lora": "lunavox_sdxl_v1.safetensors",
+        "lora_strength": 1.0,
+        "seed": 8301,
+        "prompt_hash": "abe29b6d2a28c2f9",
+        "negative_hash": "2b56c6bb6e0ad0f5",
+        "pass_type": "body",
+        "pass_number": 2,
+        "mask_type": "body_regions",
+        "denoise": 0.15,
+        "strength": 0.3,
+        "face_identity_score": 0.826,
+        "age_score": 0.6,
+        "skin_score": 0.084,
+        "body_score": null,
+        "pose_score": 0.019,
+        "anatomy_score": null,
+        "subject_count": 1,
+        "duration": 25.93,
+        "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+        "vram": 7156,
+        "cost": 0.00236,
+        "rollback": false,
+        "rollback_reason": null,
+        "image": "http://127.0.0.1:8188/view?filename=luna_v2_body_2_00024_.png&subfolder=&type=output",
+        "identity_adapter": null,
+        "adapter_weight": null
+       }
+      ],
+      "decisions": [
+       {
+        "pass": "prep_1",
+        "region": {
+         "crop": {
+          "x": 271,
+          "y": 55,
+          "w": 376,
+          "h": 752
+         },
+         "shapes": [
+          {
+           "kind": "ellipse",
+           "cx": 191.29999999999995,
+           "cy": 377.4,
+           "rx": 173.5999999999999,
+           "ry": 377.20000000000005,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 191.29999999999995,
+           "cy": 254.39999999999998,
+           "rx": 47.03999999999998,
+           "ry": 82.0,
+           "include": false
+          }
+         ],
+         "feather": 0.05
+        },
+        "before": {
+         "face": 0.198,
+         "age": 22.0,
+         "skin": 0.689,
+         "pose": 0.0,
+         "persona_instances": 0,
+         "faces": 1,
+         "body": null
+        },
+        "after": {
+         "face": 0.178,
+         "age": 23.0,
+         "skin": 0.519,
+         "pose": 0.018,
+         "persona_instances": 0,
+         "faces": 1,
+         "body": null
+        },
+        "reasons": [],
+        "pass_seconds": 12.47,
+        "status": "ACCEPTED",
+        "kept": "prep_1"
+       },
+       {
+        "pass": "prep_2",
+        "region": {
+         "crop": {
+          "x": 42,
+          "y": 332,
+          "w": 888,
+          "h": 480
+         },
+         "shapes": [
+          {
+           "kind": "ellipse",
+           "cx": 327.0972512869371,
+           "cy": 117.46559231479966,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 305.3269345975584,
+           "cy": 151.6054071231435,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 283.55661790817976,
+           "cy": 185.74522193148732,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 261.7863012188011,
+           "cy": 219.8850367398311,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 246.9824858700236,
+           "cy": 243.10011080950494,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 240.01598452942244,
+           "cy": 254.02485154817498,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 201.91793032300973,
+           "cy": 257.9830909462438,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 163.81987611659702,
+           "cy": 261.94133034431263,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 125.7218219101843,
+           "cy": 265.89956974238146,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 99.81514504982366,
+           "cy": 268.5911725330683,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 544.8004181807239,
+           "cy": 87.77879682928335,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 572.5080939672059,
+           "cy": 127.85597073473048,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 600.2157697536878,
+           "cy": 167.9331446401776,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 627.9234455401697,
+           "cy": 208.01031854562473,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 646.7646650749775,
+           "cy": 235.26279680132882,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 655.6311213266517,
+           "cy": 248.08749245107185,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 693.2343956083059,
+           "cy": 284.70120688320867,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 730.83766988996,
+           "cy": 321.3149213153455,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 768.4409441716141,
+           "cy": 357.9286357474823,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 794.011170683139,
+           "cy": 382.82596156133536,
+           "rx": 43.43178179531048,
+           "ry": 43.43178179531048,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 419.05,
+           "cy": -28.80000000000001,
+           "rx": 86.92499999999998,
+           "ry": 129.11999999999998,
+           "include": false
+          }
+         ],
+         "feather": 0.04
+        },
+        "before": {
+         "face": 0.178,
+         "age": 23.0,
+         "skin": 0.519,
+         "pose": 0.018,
+         "persona_instances": 0,
+         "faces": 1,
+         "body": null
+        },
+        "after": {
+         "face": 0.176,
+         "age": 23.0,
+         "skin": 0.519,
+         "pose": 0.024,
+         "persona_instances": 0,
+         "faces": 1,
+         "body": null
+        },
+        "reasons": [],
+        "pass_seconds": 10.6,
+        "status": "ACCEPTED",
+        "kept": "prep_2"
+       },
+       {
+        "pass": "face_1",
+        "region": {
+         "crop": {
+          "x": 315,
+          "y": 158,
+          "w": 288,
+          "h": 288
+         },
+         "shapes": [
+          {
+           "kind": "ellipse",
+           "cx": 146.10000000000002,
+           "cy": 145.35000000000002,
+           "rx": 71.796,
+           "ry": 100.13000000000002,
+           "include": true
+          }
+         ],
+         "feather": 0.1
+        },
+        "before": {
+         "face": 0.176,
+         "age": 23.0,
+         "skin": 0.519,
+         "pose": 0.024,
+         "persona_instances": 0,
+         "faces": 1,
+         "body": null
+        },
+        "after": {
+         "face": 0.829,
+         "age": 23.0,
+         "skin": 0.207,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        },
+        "reasons": [],
+        "pass_seconds": 34.21,
+        "status": "ACCEPTED",
+        "kept": "face_1"
+       },
+       {
+        "pass": "face_2",
+        "region": {
+         "crop": {
+          "x": 338,
+          "y": 183,
+          "w": 240,
+          "h": 240
+         },
+         "shapes": [
+          {
+           "kind": "ellipse",
+           "cx": 123.20000000000005,
+           "cy": 122.55000000000001,
+           "rx": 47.04000000000002,
+           "ry": 64.218,
+           "include": true
+          }
+         ],
+         "feather": 0.08
+        },
+        "before": {
+         "face": 0.829,
+         "age": 23.0,
+         "skin": 0.207,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        },
+        "after": {
+         "face": 0.828,
+         "age": 23.0,
+         "skin": 0.142,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        },
+        "reasons": [],
+        "pass_seconds": 14.45,
+        "status": "ACCEPTED",
+        "kept": "face_2"
+       },
+       {
+        "pass": "face_3",
+        "region": {
+         "crop": {
+          "x": 339,
+          "y": 183,
+          "w": 240,
+          "h": 240
+         },
+         "shapes": [
+          {
+           "kind": "ellipse",
+           "cx": 122.20000000000005,
+           "cy": 122.69999999999999,
+           "rx": 61.60000000000004,
+           "ry": 83.82,
+           "include": true
+          }
+         ],
+         "feather": 0.08
+        },
+        "before": {
+         "face": 0.828,
+         "age": 23.0,
+         "skin": 0.142,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        },
+        "after": {
+         "face": 0.828,
+         "age": 23.0,
+         "skin": 0.108,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        },
+        "reasons": [],
+        "pass_seconds": 15.92,
+        "status": "ACCEPTED",
+        "kept": "face_3"
+       },
+       {
+        "pass": "body_1",
+        "region": {
+         "crop": {
+          "x": 16,
+          "y": 163,
+          "w": 936,
+          "h": 912
+         },
+         "shapes": [
+          {
+           "kind": "rect",
+           "cx": 470.2144132248229,
+           "cy": 519.5775097890032,
+           "rx": 406.3422452516027,
+           "ry": 418.38260612934823,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 445.1,
+           "cy": 142.75,
+           "rx": 84.0,
+           "ry": 121.51999999999998,
+           "include": false
+          }
+         ],
+         "feather": 0.04
+        },
+        "before": {
+         "face": 0.828,
+         "age": 23.0,
+         "skin": 0.108,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        },
+        "after": {
+         "face": 0.826,
+         "age": 23.0,
+         "skin": 0.084,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        },
+        "reasons": [],
+        "pass_seconds": 17.61,
+        "status": "ACCEPTED",
+        "kept": "body_1"
+       },
+       {
+        "pass": "body_2",
+        "region": {
+         "crop": {
+          "x": 21,
+          "y": 164,
+          "w": 928,
+          "h": 912
+         },
+         "shapes": [
+          {
+           "kind": "ellipse",
+           "cx": 263.52874034146475,
+           "cy": 420.72042159736156,
+           "rx": 55.239621886611005,
+           "ry": 55.239621886611005,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 106.09980350732803,
+           "cy": 440.64813512066985,
+           "rx": 55.239621886611005,
+           "ry": 55.239621886611005,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 691.974581092596,
+           "cy": 432.6770497113466,
+           "rx": 55.239621886611005,
+           "ry": 55.239621886611005,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 825.4902616987627,
+           "cy": 564.1999589651823,
+           "rx": 55.239621886611005,
+           "ry": 55.239621886611005,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 323.31188091139006,
+           "cy": 908.9494029184182,
+           "rx": 55.239621886611005,
+           "ry": 55.239621886611005,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 424.943219880263,
+           "cy": 912.93494562308,
+           "rx": 55.239621886611005,
+           "ry": 55.239621886611005,
+           "include": true
+          },
+          {
+           "kind": "ellipse",
+           "cx": 440.15,
+           "cy": 141.75,
+           "rx": 83.92500000000003,
+           "ry": 121.51999999999998,
+           "include": false
+          }
+         ],
+         "feather": 0.04
+        },
+        "before": {
+         "face": 0.826,
+         "age": 23.0,
+         "skin": 0.084,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        },
+        "after": {
+         "face": 0.826,
+         "age": 23.0,
+         "skin": 0.084,
+         "pose": 0.019,
+         "persona_instances": 1,
+         "faces": 1,
+         "body": null
+        },
+        "reasons": [],
+        "pass_seconds": 14.9,
+        "status": "ACCEPTED",
+        "kept": "body_2"
+       }
+      ],
+      "base_parameters": {
+       "workflow": "realvis-person-replace",
+       "mode": "replicate",
+       "prompt": "lunavox, a woman, photo taken by a friend with a smartphone, standing with arms stretched out to the sides, white lace corset and blue jeans, large hoop earrings, balcony overlooking Rio de Janeiro, Brazil, with ocean, greenery, mountains, and clear blue sky, looking directly at the camera with a sultry expression, ambient light, cool tones, natural skin texture with visible pores, light freckles across nose and cheeks, minimal makeup, natural eyebrows, natural lips, realistic unretouched photo",
+       "negative": "extra limbs, duplicated person, duplicated head, duplicated torso, fused limbs, disconnected limbs, malformed anatomy, floating limbs, unnatural proportions, deformed hands, extra fingers, missing limbs, duplicate body, multiple copies of subject, tattoos, blonde or light hair, short hair, pale skin, different face, thin or skinny body, teenage or elderly appearance, second copy of the same woman, mirror reflection of her, twins, plastic skin, waxy skin, porcelain skin, airbrushed skin, beauty filter, CGI skin, 3D render, doll face, oversmoothed skin, excessive glossy skin, heavy makeup, cartoon, illustration, painting, anime, nude, nsfw, topless, lingerie, bokeh, blurred background, shallow depth of field, background blur, studio, studio lighting, softbox, rim light, perfect lighting, professional photography, professional photoshoot, DSLR, 85mm, cinematic, magazine, editorial, posed model, contour makeup, lipstick, glossy lips, thick eyeliner, false eyelashes, smooth skin, retouched skin, beauty retouch, perfect skin, instagram filter",
+       "denoise": 0.5,
+       "crop": [
+        66,
+        152,
+        840,
+        928
+       ],
+       "work_size": [
+        928,
+        1024
+       ],
+       "sam_points": {
+        "positive": "[{\"x\": 460, \"y\": 308}, {\"x\": 460, \"y\": 207}, {\"x\": 453, \"y\": 623}]",
+        "negative": "[{\"x\": 972, \"y\": 1075}]"
+       },
+       "clip_mask": "${FILENAME_PREFIX}_mask_00007_.png [output]",
+       "reference": "ref_5_varanda_copacabana_oculos.png"
+      }
+     },
+     "final_validation": {
+      "status": "PASS_WITH_UNKNOWN",
+      "checks": {
+       "face_identity": {
+        "name": "face_identity",
+        "status": "PASS",
+        "blocking": true,
+        "reason": "ArcFace 0.826 >= 0.55 contra a master_face.",
+        "score": 0.826,
+        "threshold": 0.55,
+        "confidence": "MEDIUM",
+        "failure_type": null,
+        "evidence": {
+         "metric": "ArcFace cosseno (InsightFace antelopev2) contra master_face",
+         "faces": 1,
+         "bbox": [
+          405.2,
+          229.8,
+          517.1,
+          381.7
+         ],
+         "age": 23.0
+        }
+       },
+       "subject_count": {
+        "name": "subject_count",
+        "status": "PASS",
+        "blocking": true,
+        "reason": "1 instancia da persona; 0 outra(s) pessoa(s) com rosto, permitidas.",
+        "score": 1.0,
+        "threshold": 1.0,
+        "confidence": "LOW",
+        "failure_type": null,
+        "evidence": {
+         "persona_instances": 1,
+         "persona_similarities": [
+          0.826
+         ],
+         "other_faces": 0,
+         "other_similarities": [],
+         "bodies": 1,
+         "prominent_bodies": 1,
+         "background_bodies": 0
+        }
+       },
+       "anatomy": {
+        "name": "anatomy",
+        "status": "UNKNOWN",
+        "blocking": true,
+        "reason": "Sem detector de anatomia validado: nao verificado (nao e PASS).",
+        "score": null,
+        "threshold": null,
+        "confidence": "LOW",
+        "failure_type": null,
+        "evidence": {
+         "detector": null,
+         "main_body_points": 12
+        }
+       },
+       "age": {
+        "name": "age",
+        "status": "INFORMATIONAL",
+        "blocking": false,
+        "reason": "Idade estimada 23 (dentro de 23-31; alvo 27).",
+        "score": 23.0,
+        "threshold": null,
+        "confidence": "LOW",
+        "failure_type": null,
+        "evidence": {
+         "target": 27,
+         "range": [
+          23,
+          31
+         ],
+         "inside": true,
+         "consistency": 0.6,
+         "known_drift": "a troca de cabeca (Qwen BFS) deixa a idade estimada em 20-25 (benchmark E1: 22.2; estresse: 23.7). Registrado, nao corrigido na V1."
+        }
+       },
+       "skin_realism": {
+        "name": "skin_realism",
+        "status": "FAIL",
+        "blocking": false,
+        "reason": "Microtextura 0.08 (FAIL); faixas provisorias.",
+        "score": 0.084,
+        "threshold": 0.5,
+        "confidence": "LOW",
+        "failure_type": null,
+        "evidence": {
+         "grade": "FAIL",
+         "reasons": [
+          "SKIN_REALISM_LOW",
+          "SKIN_TEXTURE_LOW"
+         ],
+         "unknown_aspects": [
+          "cgi_appearance",
+          "porcelain_appearance",
+          "artificial_symmetry"
+         ],
+         "iod_px": 53.2,
+         "patches_used": 3,
+         "patch_std": [
+          1.483,
+          1.21,
+          0.717
+         ],
+         "regions": "kps",
+         "texture_component": 0.084,
+         "smoothness_component": 0.75,
+         "texture": 1.21,
+         "oversmoothed_fraction": 0.25,
+         "calibration_status": "PROVISIONAL"
+        }
+       }
+      },
+      "failures": [],
+      "unverified": [
+       "anatomy"
+      ],
+      "warnings": [
+       "skin_realism"
+      ],
+      "seconds": 0.0
+     },
+     "pose_to_reference": 0.021,
+     "background_changed": 0.00083,
+     "persona_drift": false,
+     "checks": {
+      "rosto": true,
+      "pose": true,
+      "fundo": true
+     }
+    }
+   ],
+   "reading": {
+    "image": "ref_5_varanda_copacabana_oculos.png",
+    "width": 977,
+    "height": 1080,
+    "target_face": {
+     "bbox": [
+      407.5,
+      230.6,
+      512.6,
+      386.0
+     ],
+     "similarity": 0.216,
+     "age": 45.0,
+     "sex": "F",
+     "det_score": 0.86,
+     "yaw": 0.013,
+     "kps": [
+      [
+       435.1,
+       294.6
+      ],
+      [
+       484.8,
+       294.2
+      ],
+      [
+       460.6,
+       323.5
+      ],
+      [
+       441.8,
+       347.6
+      ],
+      [
+       480.0,
+       346.9
+      ]
+     ]
+    },
+    "target_body": {
+     "keypoints": [
+      [
+       460.9243320259784,
+       314.11183663871554,
+       1.0
+      ],
+      [
+       477.7122054249048,
+       436.5645602544149,
+       1.0
+      ],
+      [
+       370.0723112788464,
+       454.3399556179842,
+       1.0
+      ],
+      [
+       275.2702026731438,
+       590.6179867386817,
+       1.0
+      ],
+      [
+       129.1169519060188,
+       602.4682503143946,
+       1.0
+      ],
+      [
+       585.3520995709632,
+       418.78916489084565,
+       1.0
+      ],
+      [
+       699.9046474695206,
+       578.767723162969,
+       1.0
+      ],
+      [
+       846.0578982366455,
+       728.8710617886649,
+       1.0
+      ],
+      [
+       352.29691591527717,
+       805.8977750307985,
+       1.0
+      ],
+      [
+       342.4216962688499,
+       1056.7283540500534,
+       1.0
+      ],
+      [
+       354.27195984456284,
+       1036.977914757199,
+       1.0
+      ],
+      [
+       506.3503423995444,
+       813.7979507479403,
+       1.0
+      ],
+      [
+       447.09902452098004,
+       1070.5536615550518,
+       1.0
+      ],
+      [
+       0.0,
+       0.0,
+       0.0
+      ],
+      [
+       435.2487609452671,
+       292.3863534165754,
+       1.0
+      ],
+      [
+       484.624859177404,
+       290.41130948728994,
+       1.0
+      ],
+      [
+       401.67301414741405,
+       310.16174878014465,
+       1.0
+      ],
+      [
+       520.1756499045423,
+       302.26157306300263,
+       1.0
+      ]
+     ],
+     "bbox": [
+      129.1169519060188,
+      290.41130948728994,
+      846.0578982366455,
+      1070.5536615550518
+     ],
+     "height_frac": 0.722,
+     "visible_points": 13
+    },
+    "others": [],
+    "caption": "A woman standing on a balcony overlooking Rio de Janeiro, Brazil, wearing a white lace corset and blue jeans. the woman, who appears to be in her late twenties, has blonde hair styled in a sleek, straight look and is wearing large hoop earrings. she is standing confidently with her arms stretched out to the sides, looking directly at the camera with a sultry expression. her body is slim and toned, and she has a tattoo on her left arm. in the background, we can see the vast expanse of the ocean, lush greenery, and distant mountains, with a clear blue sky above. the woman is standing in the middle of the image, with the ocean stretching out behind her, creating a stunning backdrop for her outfit. the overall aesthetic of the image is vibrant and eye-catching, with a focus on the woman's outfit and the beauty of the cityscape.",
+    "fields": {
+     "pose": "standing with arms stretched out to the sides",
+     "clothing": "white lace corset and blue jeans",
+     "objects": "large hoop earrings",
+     "environment": "balcony overlooking Rio de Janeiro, Brazil, with ocean, greenery, mountains, and clear blue sky",
+     "expression": "looking directly at the camera with a sultry expression"
+    },
+    "camera": "third_person",
+    "light": {
+     "brightness": 131.0,
+     "contrast": 54.2,
+     "warmth": -24.8,
+     "saturation": 0.335,
+     "clipped_highlights": 0.0001,
+     "face_to_scene": 0.864,
+     "label": "ambient light, cool tones"
+    },
+    "warnings": [],
+    "person_box": [
+     66.95695190601882,
+     152.89999999999998,
+     908.2178982366455,
+     1080.0
+    ],
+    "description": "photo taken by a friend with a smartphone, standing with arms stretched out to the sides, white lace corset and blue jeans, large hoop earrings, balcony overlooking Rio de Janeiro, Brazil, with ocean, greenery, mountains, and clear blue sky, looking directly at the camera with a sultry expression, ambient light, cool tones"
+   },
+   "wall_seconds": 387.0
+  }
+ ]
+}

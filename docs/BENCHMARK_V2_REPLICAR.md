@@ -40,3 +40,27 @@
 6. **Câmera:** "front camera" na descrição conta como selfie. A foto 1 tinha sido classificada como "outra pessoa".
 
 **Ainda não medido:** fidelidade da roupa e de objetos na mão (só a olho), anatomia das mãos, e a cor da pele em relação à luz da foto.
+
+---
+
+# Rodada 2: só a foto da varanda (2026-10-06, ~US$ 0,09, V2)
+
+| | Rodada 1 | Rodada 2 |
+|---|---|---|
+| Rosto | 0,776 | **0,826** |
+| Pose × foto | 0,040 | 0,019 |
+| Fundo alterado | 0,0% | 0,08% |
+| Idade | 23 | 23 |
+| Leitura da roupa (Qwen) | falhou | **ok**: "white lace corset and blue jeans, large hoop earrings" |
+| Cabelo | escuro | escuro, **mas com borrão escuro em volta da cabeça e uma forma de mão perto do rosto** |
+| Óculos escuros | sumiram | **sumiram**: a descrição do Florence não citou óculos, então a restauração não foi acionada |
+| Roupa | corset virou blusinha | **corset virou regata branca** |
+
+**Causas encontradas**
+1. **A região da passada de cabelo é uma elipse grande, que desce até o peito.** Ela redesenha o top com força 0,85, e por isso a roupa muda mesmo com a troca base mais suave. Como ela fica presa ao contorno da pessoa original (rabo de cavalo fino), o cabelo comprido da Luna não tem onde crescer, e vira um borrão na borda.
+2. **A detecção dos óculos dependia da descrição.** O Florence não citou os óculos, e eles não foram restaurados.
+
+**Correção proposta (não rodada)**
+- **Cabelo:** recortar o cabelo de verdade com SAM2/Florence "hair", como a V1 já faz no pack, em vez da elipse. Deixar o cabelo crescer um pouco para fora da silhueta só em volta da cabeça. Isso muda alguns pixels do fundo ali, e o usuário precisa aceitar.
+- **Óculos:** detecção própria (Florence "sunglasses"), sem depender da descrição.
+- **Roupa:** o torso sai da área do cabelo, e a passada dos braços fica mais estreita.
