@@ -78,7 +78,9 @@
       "mask": "face_full",
       "strength": 0.85,
       "denoise": 0.42,
-      "lora": true
+      "lora": true,
+      "identity_adapter": "instantid",
+      "adapter_weight": 0.8
     },
     {
       "name": "facial_refinement",
@@ -158,5 +160,25 @@
       "instagram filter"
     ],
     "reference_sha256": "63800d9f1199fa4a6789c402f4455f04a87434cb99c69929a1dae8e102df86c7"
+  },
+  "identity_adapters": {
+    "instantid": {
+      "workflow": "realvis-face-pass-instantid",
+      "model": "instantid_ip-adapter.bin",
+      "controlnet": "instantid_controlnet.safetensors",
+      "sources": {
+        "instantid_ip-adapter.bin": {
+          "url": "https://huggingface.co/InstantX/InstantID/resolve/main/ip-adapter.bin",
+          "size_bytes": 1691134141,
+          "sha256": "02b3618e36d803784166660520098089a81388e61a93ef8002aa79a5b1c546e1"
+        },
+        "instantid_controlnet.safetensors": {
+          "url": "https://huggingface.co/InstantX/InstantID/resolve/main/ControlNetModel/diffusion_pytorch_model.safetensors",
+          "size_bytes": 2502139136,
+          "sha256": "c8127be9f174101ebdafee9964d856b49b634435cf6daa396d3f593cf0bbbb05"
+        }
+      },
+      "note": "so na 1a passada de rosto; a passada de microdetalhe sem LoRA devolve a textura que o InstantID costuma alisar"
+    }
   }
 }

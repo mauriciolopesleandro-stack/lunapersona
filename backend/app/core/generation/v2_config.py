@@ -66,6 +66,8 @@ class PassSpec:
     denoise: float
     enabled: bool = False
     lora: bool = True  # False = passada sem a LoRA (so textura); peso da LoRA nunca muda
+    identity_adapter: str | None = None  # ex.: "instantid" (so onde a config pedir)
+    adapter_weight: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -100,6 +102,7 @@ class V2Config:
     pass_prompts: dict[str, str] = field(default_factory=dict)
     acceptance: dict[str, Any] = field(default_factory=dict)
     style: StyleProfile | None = None
+    identity_adapters: dict[str, Any] = field(default_factory=dict)
 
     def model(self, model_id: str | None = None) -> ModelProfile:
         key = model_id or self.generation_model
@@ -138,7 +141,8 @@ def _passes(items: list[dict[str, Any]], kind: str, masks: tuple[str, ...], limi
             raise V2ConfigError(f"Mascara '{item.get('mask')}' invalida para passada de {kind} ({', '.join(masks)}).")
         out.append(PassSpec(kind, n, str(item["name"]), item["mask"], _unit(item.get("strength"), f"{kind} {n} strength"),
                             _unit(item.get("denoise"), f"{kind} {n} denoise"), bool(item.get("enabled", False)),
-                            bool(item.get("lora", True))))
+                            bool(item.get("lora", True)), item.get("identity_adapter"),
+                            _unit(item["adapter_weight"], f"{kind} {n} adapter_weight") if item.get("identity_adapter") else None))
     return tuple(out)
 
 
@@ -177,7 +181,11 @@ def parse_v2_config(data: dict[str, Any]) -> V2Config:
             style=StyleProfile(data["style"]["id"], data["style"]["positive"], tuple(data["style"].get("negative", [])),
                                data["style"].get("reference", ""), data["style"].get("reference_sha256", ""))
             if data.get("style") else None,
+            identity_adapters=dict(data.get("identity_adapters", {})),
         )
+        for spec in cfg.face_passes:
+            if spec.identity_adapter and spec.identity_adapter not in cfg.identity_adapters:
+                raise V2ConfigError(f"Adaptador de identidade '{spec.identity_adapter}' sem configuracao em identity_adapters.")
         enabled = [p for p in (*cfg.face_passes, *cfg.body_passes) if p.enabled]
         if enabled:
             needed = {p.name for p in cfg.face_passes if p.enabled} | ({"body"} if any(p.kind == "body" for p in enabled) else set())

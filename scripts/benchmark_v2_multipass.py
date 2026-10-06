@@ -95,7 +95,7 @@ async def main() -> int:
     session = ComfySession(client, WorkflowManager(ROOT / "workflows"))
     model = cfg.model("realvisxl")
     base = v2_model_adapters(session, cfg)["realvisxl"]
-    region = ComfyRegionPassAdapter(session, model, cfg.lora, steps=cfg.pass_steps)
+    region = ComfyRegionPassAdapter(session, model, cfg.lora, steps=cfg.pass_steps, identity_adapters=cfg.identity_adapters)
     problems = [*await base.validate_configuration(), *await region.validate_configuration()]
     if problems:
         print("CONFIG", problems, flush=True)

@@ -217,6 +217,9 @@ class RegionPassRequest:
     seed: int
     name: str = ""
     use_lora: bool = True  # False = passada so de textura (LoRA com peso 0 nesta passada)
+    identity_adapter: str | None = None  # ex.: "instantid": identidade vinda de `reference`
+    adapter_weight: float | None = None
+    reference: Any = None  # ReferenceImage (master_face) quando ha adaptador de identidade
 
 
 class RegionPassAdapter(ABC):

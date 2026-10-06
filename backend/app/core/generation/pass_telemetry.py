@@ -46,6 +46,8 @@ class PassRecord:
     rollback: bool = False
     rollback_reason: str | None = None
     image: str | None = None
+    identity_adapter: str | None = None
+    adapter_weight: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -250,7 +250,8 @@ class MultiPassRunner:
                              lora_strength=lora[1] if spec.lora else 0.0,
                              seed=(seed + 100 * len(result.records)) % 2**32, prompt_hash=text_hash(prompt),
                              negative_hash=text_hash(negative), pass_type=spec.kind, pass_number=spec.number,
-                             mask_type=spec.mask, denoise=spec.denoise, strength=spec.strength)
+                             mask_type=spec.mask, denoise=spec.denoise, strength=spec.strength,
+                             identity_adapter=spec.identity_adapter, adapter_weight=spec.adapter_weight)
             result.records.append(rec)
             face = current.analysis.persona_face()
             body = current.analysis.main_body()
@@ -269,7 +270,9 @@ class MultiPassRunner:
             try:
                 out = await self.region.refine(current.image, RegionPassRequest(
                     region=region.to_dict(), prompt=prompt, negative=negative, denoise=spec.denoise,
-                    strength=spec.strength, seed=rec.seed, name=name, use_lora=spec.lora))
+                    strength=spec.strength, seed=rec.seed, name=name, use_lora=spec.lora,
+                    identity_adapter=spec.identity_adapter, adapter_weight=spec.adapter_weight,
+                    reference=master if spec.identity_adapter else None))
             except ProviderError as exc:
                 rec.rollback, rec.rollback_reason = True, f"erro do provider: {exc}"
                 result.decisions.append({"pass": name, "status": ERROR, "reasons": [str(exc)]})
