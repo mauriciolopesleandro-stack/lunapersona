@@ -42,12 +42,13 @@ from app.core.validation.checks import (  # noqa: E402
 )
 from app.core.validation.engine import ValidationEngine  # noqa: E402
 from app.core.validation.geometry import pose_distance  # noqa: E402
-from app.providers.base import GenerationParameters, ProviderImage, ReferenceImage, SceneRequest  # noqa: E402
+from app.core.generation.reference import accessory_regions  # noqa: E402
+from app.providers.base import GenerationParameters, PromptSections, ProviderImage, ReferenceImage, SceneRequest  # noqa: E402
 from app.providers.comfyui.person_replace import ComfyPersonReplaceAdapter  # noqa: E402
 from app.providers.comfyui.region_pass import ComfyRegionPassAdapter  # noqa: E402
 from app.providers.comfyui.session import ComfySession  # noqa: E402
 from app.validation_backends.comfyui import ComfyImageAnalyzer  # noqa: E402
-from app.validation_backends.reference import ComfyReferenceReader, background_change  # noqa: E402
+from app.validation_backends.reference import ComfyReferenceReader, background_change, restore_regions  # noqa: E402
 from app.validation_backends.skin import PillowSkinTextureAnalyzer, _split_locator  # noqa: E402
 from app.workflow_manager.manager import WorkflowManager  # noqa: E402
 
@@ -91,7 +92,9 @@ async def main() -> int:
     llm = OllamaClient("http://127.0.0.1:11434", args.llm_model) if args.llm_model else None
 
     async def ask(prompt: str) -> str:
-        return await llm.chat([ChatMessage("user", prompt)], timeout=120)
+        # chat devolve (texto, modelo); keep_alive "0" tira o Qwen da GPU (a geracao precisa da VRAM)
+        text, _ = await llm.chat([ChatMessage("user", prompt)], keep_alive="0", timeout=120)
+        return text
 
     reader = ComfyReferenceReader(client, ask=ask if llm else None)
     replacer = ComfyPersonReplaceAdapter(session, model, cfg.lora, cfg.negative_for(model), rep)
@@ -133,7 +136,10 @@ async def main() -> int:
         entry["reading"] = ref.to_dict()
         print(photo.name, "leitura:", ref.camera, "|", ref.description()[:160], "|", ref.warnings, flush=True)
         scene = f"{ref.description()}, {rep['positive']}"  # luz e camera vem da foto: sem estilo inventado
-        prompt = builder.build(sheet, profile, scene, {}, [], single_subject=True)
+        built = builder.build(sheet, profile, scene, {}, [], single_subject=True)
+        # modo replicar: expressao e roupa vem da FOTO, nao do padrao da persona
+        prompt = PromptSections(subject=built.subject, appearance="", scene=scene, style="", directives=list(built.directives),
+                                negative=built.negative, version=built.version)
         negative = ", ".join(dict.fromkeys([*prompt.negative.all_terms(), *cfg.negative_for(model), *rep.get("extra_negative", [])]))
         prompts = {k: v.replace("{style}", rep["positive"]) for k, v in cfg.pass_prompts.items() if k != "body"}
         prompts.update(rep.get("pre_pass_prompts", {}))  # cabelo da Luna e bracos sem tatuagem
@@ -148,6 +154,17 @@ async def main() -> int:
                                    master, list(cfg.face_passes), list(cfg.body_passes), prompts, negative,
                                    (cfg.lora.file, cfg.lora.strength), (model.id, model.title), pre_passes=list(cfg.pre_passes))
             final = res.final
+            keep = accessory_regions(ref) if rep.get("restore_accessories", {}).get("sunglasses") else []
+            if keep:  # oculos escuros da foto voltam (pixels originais), e o rosto e medido de novo
+                restored = restore_regions(await fetch(client, final.image.locator), img, keep)
+                buf2 = io.BytesIO()
+                restored.save(buf2, "PNG")
+                name = await client.upload_image(f"restored_{photo.stem[:30]}_{seed}.png", buf2.getvalue())
+                final_image = ProviderImage("comfyui", name, "", img.width, img.height)
+                final.analysis = await analyzer.analyze(final_image, master)
+                pf = final.analysis.persona_face()
+                final.measure.face = pf.similarity if pf else None
+                final.image = final_image
             skin = await skin_meter.analyze(final.image, final.analysis.persona_face(), sheet.validation["skin_realism"])
             validation = await engine.run(ValidationContext(sheet=sheet, image=final.image, analysis=final.analysis, skin=skin))
             body = final.analysis.main_body()

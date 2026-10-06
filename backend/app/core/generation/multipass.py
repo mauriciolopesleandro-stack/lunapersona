@@ -231,8 +231,10 @@ def judge(spec: PassSpec, before: Measure, after: Measure, rules: dict[str, Any]
         worse = abs(after.age - age_target) - abs(before.age - age_target)
         if worse > float(rules["max_age_worsening"]):
             reasons.append(f"idade se afastou do alvo {age_target} ({before.age:.0f} -> {after.age:.0f})")
-    if after.pose is not None and after.pose > float(rules["max_pose_distance"]):
-        reasons.append(f"pose mudou ({after.pose:.3f} > {rules['max_pose_distance']})")
+    max_pose = float(rules.get("max_pose_distance_prep", rules["max_pose_distance"]) if spec.kind == "prep"
+                     else rules["max_pose_distance"])
+    if after.pose is not None and after.pose > max_pose:
+        reasons.append(f"pose mudou ({after.pose:.3f} > {max_pose})")
     if after.persona_instances > max(1, before.persona_instances):
         reasons.append(f"mais de uma Luna ({after.persona_instances})")
     if after.faces > before.faces:

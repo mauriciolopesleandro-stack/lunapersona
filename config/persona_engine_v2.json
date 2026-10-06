@@ -137,7 +137,8 @@
     },
     "max_age_worsening": 3,
     "max_pose_distance": 0.05,
-    "note": "pele e telemetria (nao decide). Corpo e anatomia sem medida comparavel fora da pose da master: registrados, nao decidem."
+    "note": "pele e telemetria (nao decide). Corpo e anatomia sem medida comparavel fora da pose da master: registrados, nao decidem.",
+    "max_pose_distance_prep": 0.15
   },
   "style": {
     "id": "smartphone_raw_v2",
@@ -226,7 +227,7 @@
   },
   "replicate": {
     "workflow": "realvis-person-replace",
-    "denoise": 0.65,
+    "denoise": 0.5,
     "mask_grow": 16,
     "edge_blur": 10,
     "sam_model": "sam2_hiera_base_plus.safetensors",
@@ -245,7 +246,7 @@
         "enabled": true,
         "mask": "hair",
         "strength": 1.0,
-        "denoise": 0.8,
+        "denoise": 0.85,
         "lora": true
       },
       {
@@ -276,6 +277,11 @@
       "tattoos": "nenhuma (ficha: lock HARD)",
       "sunglasses": "mantidos quando a foto tem (o rosto medido pode ficar abaixo do limiar por causa deles)"
     },
-    "pre_pass_note": "passadas de preparo do modo replicar, depois da troca e antes das passadas travadas de rosto/corpo: cabelo (forte, troca cor/comprimento) e bracos (apaga tatuagem). Presas a mascara da pessoa. Nao mexem na receita travada do rosto."
+    "pre_pass_note": "passadas de preparo do modo replicar, depois da troca e antes das passadas travadas de rosto/corpo: cabelo (forte, troca cor/comprimento) e bracos (apaga tatuagem). Presas a mascara da pessoa. Nao mexem na receita travada do rosto.",
+    "restore_accessories": {
+      "sunglasses": true,
+      "note": "oculos escuros da foto voltam no fim (pixels originais) - regra do usuario"
+    },
+    "round2_note": "2026-10-06 rodada 2 (depois do teste com 5 fotos): base 0.65 -> 0.50 (roupa mudava), cabelo 0.80 -> 0.85 e pose tolerada ate 0.15 no preparo (cabelo loiro ficava no carro), oculos restaurados, expressao da foto (sem a expressao padrao da persona)"
   }
 }

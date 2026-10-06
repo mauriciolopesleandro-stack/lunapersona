@@ -144,7 +144,7 @@ def camera_type(caption: str, face: DetectedFace, body: DetectedBody | None, wid
     text = caption.lower()
     if "mirror" in text or "reflection" in text:
         return MIRROR
-    if "selfie" in text:
+    if "selfie" in text or "front camera" in text:
         return SELFIE
     face_frac = _area(face.bbox) / max(1.0, width * height)
     if body is not None and face_frac > 0.03:
@@ -178,6 +178,24 @@ def sam_points(sheet: ReferenceSheet) -> tuple[str, str]:
     return json.dumps(pos), json.dumps(neg)
 
 
+SUNGLASSES = re.compile(r"\bsun ?glasses\b|\bshades\b", re.I)
+
+
+def accessory_regions(sheet: ReferenceSheet) -> list[dict[str, float]]:
+    """Acessorios da foto que voltam no fim (pixels originais): hoje, oculos escuros.
+    Elipse sobre os olhos, pelos 5 pontos do rosto (ou pela caixa do rosto)."""
+    if not SUNGLASSES.search(sheet.caption or ""):
+        return []
+    f = sheet.target_face
+    x1, y1, x2, y2 = f.bbox
+    if len(f.kps) >= 2:
+        (lx, ly), (rx, ry) = f.kps[0], f.kps[1]
+        iod = max(1.0, ((rx - lx) ** 2 + (ry - ly) ** 2) ** 0.5)
+        return [{"cx": (lx + rx) / 2, "cy": (ly + ry) / 2, "rx": iod * 1.3, "ry": iod * 0.55, "what": "sunglasses"}]
+    w, h = x2 - x1, y2 - y1
+    return [{"cx": (x1 + x2) / 2, "cy": y1 + h * 0.38, "rx": w * 0.6, "ry": h * 0.18, "what": "sunglasses"}]
+
+
 FIELD_KEYS = ("pose", "clothing", "objects", "environment", "expression")
 STRUCTURE_PROMPT = (
     "Read this description of a photo and answer ONLY with a JSON object with these keys, in English, short phrases, "
@@ -201,5 +219,5 @@ def parse_fields(text: str) -> dict[str, str]:
     return {k: str(data[k]).strip() for k in FIELD_KEYS if isinstance(data.get(k), str) and data[k].strip()}
 
 
-__all__ = ["CAMERA_TEXT", "MIRROR", "SELFIE", "STRUCTURE_PROMPT", "THIRD", "LightStats", "ReferenceError",
+__all__ = ["accessory_regions", "CAMERA_TEXT", "MIRROR", "SELFIE", "STRUCTURE_PROMPT", "THIRD", "LightStats", "ReferenceError",
            "ReferenceReader", "ReferenceSheet", "camera_type", "choose_target", "parse_fields", "sam_points"]

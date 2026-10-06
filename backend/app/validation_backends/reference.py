@@ -76,6 +76,24 @@ def background_change(reference: Any, final: Any, person_mask: Any, threshold: i
     return round(float(changed[outside].mean()), 5)
 
 
+def restore_regions(final: Any, reference: Any, regions: list[dict[str, float]], feather: float = 0.25) -> Any:
+    """Cola de volta, com borda suave, os pixels ORIGINAIS da foto nas elipses pedidas
+    (ex.: oculos escuros que as passadas de rosto tinham redesenhado)."""
+    from PIL import ImageDraw, ImageFilter
+
+    if not regions:
+        return final
+    ref = reference.convert("RGB").resize(final.size)
+    mask = Image.new("L", final.size, 0)
+    draw = ImageDraw.Draw(mask)
+    blur = 2.0
+    for r in regions:
+        draw.ellipse([r["cx"] - r["rx"], r["cy"] - r["ry"], r["cx"] + r["rx"], r["cy"] + r["ry"]], fill=255)
+        blur = max(blur, min(r["rx"], r["ry"]) * feather)
+    mask = mask.filter(ImageFilter.GaussianBlur(blur))
+    return Image.composite(ref, final.convert("RGB"), mask)
+
+
 class ComfyReferenceReader:
     def __init__(self, client: ComfyUIClient, ask: Ask | None = None) -> None:
         self.client = client
@@ -133,4 +151,4 @@ class ComfyReferenceReader:
                               camera=camera_type(caption, face, body, width, height), light=light, warnings=warnings)
 
 
-__all__ = ["ComfyReferenceReader", "background_change", "light_stats"]
+__all__ = ["ComfyReferenceReader", "background_change", "light_stats", "restore_regions"]

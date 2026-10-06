@@ -213,7 +213,7 @@ async def test_person_replace_keeps_the_photo_and_returns_the_person_mask():
                        parameters=GenerationParameters(seed=11), lora={})
     out = await adapter.bind(s).generate(req)
     g = comfy.graphs[0]
-    assert g["10"]["inputs"]["image"] == "ref.png" and g["38"]["inputs"]["denoise"] == 0.65
+    assert g["10"]["inputs"]["image"] == "ref.png" and g["38"]["inputs"]["denoise"] == 0.5
     assert g["41"]["inputs"]["destination"] == ["10", 0]  # cola de volta na FOTO original
     x, y, w, h = replace_crop(s.person_box(), 832, 1216)
     assert (g["30"]["inputs"]["x"], g["30"]["inputs"]["width"]) == (x, w) and w % 8 == 0
@@ -257,7 +257,7 @@ async def test_runner_forwards_the_person_mask_to_every_pass():
 
 def test_replicate_settings_follow_the_users_decisions():
     rep = CFG.replicate
-    assert rep["denoise"] == 0.65 and rep["max_drift_retries"] == 2 and rep["checks"]["min_final_face"] == 0.70
+    assert rep["denoise"] == 0.5 and rep["max_drift_retries"] == 2 and rep["checks"]["min_final_face"] == 0.70
     assert "grain" not in rep["positive"] and "muted" not in rep["positive"]  # sem filtro inventado
     assert np is not None
 
@@ -267,7 +267,7 @@ def test_replicate_settings_follow_the_users_decisions():
 
 
 def test_prep_passes_are_configured_for_hair_and_tattoos():
-    assert [(p.kind, p.mask, p.denoise) for p in CFG.pre_passes] == [("prep", "hair", 0.8), ("prep", "arms", 0.55)]
+    assert [(p.kind, p.mask, p.denoise) for p in CFG.pre_passes] == [("prep", "hair", 0.85), ("prep", "arms", 0.55)]
     rep = CFG.replicate
     assert "very dark brown" in rep["pre_pass_prompts"]["hair"] and "no tattoos" in rep["pre_pass_prompts"]["arms"]
     assert "tattoos" in rep["extra_negative"] and "blonde hair" in rep["extra_negative"]
@@ -315,3 +315,35 @@ async def test_prep_that_moves_the_pose_is_rolled_back():
     res = await r.run(SceneRequest(PromptSections("a", "", "x", ""), GenerationParameters(seed=1), {}), MASTER,
                       [], [], prompts, "neg", (CFG.lora.file, 1.0), ("realvisxl", "x"), pre_passes=list(CFG.pre_passes))
     assert res.decisions[0]["status"] == "ROLLBACK" and "pose mudou" in res.decisions[0]["reasons"][0]
+
+
+
+# --- rodada 2: cabelo nao pode ser desfeito por pose minima, oculos voltam, selfie ---------------
+
+
+async def test_hair_pass_tolerates_its_own_small_pose_shift():
+    from tests.fakes import STANDING
+    shifted = [(x + (60 if i in (3, 4, 6, 7) else 0), y, c) for i, (x, y, c) in enumerate(STANDING)]
+    r, _ = runner({"base": look(0.30), "prep_1": look(0.30, kps=shifted)})
+    from app.providers.base import GenerationParameters, PromptSections, SceneRequest
+    prompts = {**CFG.pass_prompts, **CFG.replicate["pre_pass_prompts"], "body": "x"}
+    res = await r.run(SceneRequest(PromptSections("a", "", "x", ""), GenerationParameters(seed=1), {}), MASTER,
+                      [], [], prompts, "neg", (CFG.lora.file, 1.0), ("realvisxl", "x"), pre_passes=list(CFG.pre_passes))
+    assert res.decisions[0]["status"] == "ACCEPTED" and 0.05 < res.decisions[0]["after"]["pose"] <= 0.15
+
+
+def test_front_camera_caption_is_a_selfie():
+    assert camera_type("A photo-realistic shoot from a front camera angle", woman(), body(), 832, 1216) == SELFIE
+
+
+def test_sunglasses_come_back_from_the_original_photo():
+    from app.core.generation.reference import accessory_regions
+    from app.validation_backends.reference import restore_regions
+    s = sheet(caption="a woman wearing sunglasses on a balcony")
+    regions = accessory_regions(s)
+    assert len(regions) == 1 and regions[0]["what"] == "sunglasses" and regions[0]["cx"] == 420
+    assert accessory_regions(sheet(caption="a woman on a balcony")) == []
+    ref = Image.new("RGB", (832, 1216), (0, 0, 0))
+    final = Image.new("RGB", (832, 1216), (200, 200, 200))
+    out = restore_regions(final, ref, regions)
+    assert out.getpixel((420, 100)) == (0, 0, 0) and out.getpixel((100, 900)) == (200, 200, 200)
