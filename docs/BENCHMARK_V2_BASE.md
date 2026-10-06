@@ -143,3 +143,29 @@ O alvo de realismo é a selfie de celular que o usuário mandou, gerada com Real
    - ou mais denoise na 1ª passada.
 2. **Velocidade:** não rodar o DWPose nas passadas de rosto. A máscara de rosto não alcança o corpo, então a pose não tem como mudar.
 3. **Estilo:** manter `smartphone_raw_v1` como padrão da V2, que é a trava pedida pelo usuário.
+
+---
+
+# Teste 4: InstantID na 1ª passada de rosto + estilo da referência (2026-10-06)
+
+- **Cena:** selfie no supermercado, pós-treino, com o carrinho cheio de compras variadas e suor visível. Duas sementes: 7311 e 7312.
+- **Pipeline:** RealVisXL + LoRA, base, rosto 1 (**InstantID** com a master_face, peso 0,8, denoise 0,42), rosto 2 (com LoRA), rosto 3 (sem LoRA, para a textura), corpo 1 e corpo 2.
+- **Custo:** ~US$ 0,083; o pod ficou 8 min 45 s ligado.
+- **Download:** os modelos do InstantID (4,2 GB) e o RealVisXL foram baixados no disco temporário do pod em ~67 s e apagados no fim.
+
+| Variação | Base | Rosto 1 (InstantID) | Rosto 2 | Rosto 3 (sem LoRA) | Corpo 1 | Corpo 2 = final | Idade final | Validação final | Tempo |
+|---|---|---|---|---|---|---|---|---|---|
+| A (7311) | 0,265 | **0,798** | 0,795 | 0,792 | 0,793 | **0,793** | **27** | **PASS_WITH_UNKNOWN** (anatomia sem detector) | 192 s |
+| B (7312) | 0,406 | **0,827** | 0,817 | 0,803 | 0,800 | **0,800** | 25 | **PASS_WITH_UNKNOWN** | 155 s |
+
+**Leitura**
+- **Identidade:** passou do limiar com folga. A média de 0,80 equivale à V1 (0,81–0,85 com o Qwen). O ganho veio todo da passada com InstantID; as seguintes perderam no máximo 0,02. Pose ≤ 0,011 e uma pessoa só.
+- **Pele:** continuou natural, com sardas, bochechas coradas, pouca maquiagem e textura. O InstantID alisou um pouco em relação à base, e a passada sem LoRA devolveu parte da textura.
+- **Idade:** chegou a 25–27, no alvo. As rodadas sem InstantID ficavam em ~30–35.
+- **Fidelidade ao pedido:**
+  - o carrinho aparece com bananas (A) ou com pouco do conteúdo visível (B), e não com "compras variadas";
+  - quase não se vê suor;
+  - ela empurra o carrinho olhando para a câmera, em vez de segurar as bananas numa selfie de braço esticado.
+- **Validação:** as duas passam na validação final (rosto, pessoas, idade). Anatomia continua sem detector.
+
+**Conclusão parcial:** RealVisXL + LoRA + estilo `smartphone_raw_v1` + InstantID na 1ª passada de rosto é a primeira configuração da V2 que junta **identidade de nível V1** com **pele natural**. Ainda não foi comparada lado a lado com a V1 nas mesmas cenas, e a amostra é de 2 imagens.
