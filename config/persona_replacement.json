@@ -7,13 +7,13 @@
       "name": "face_pass_1",
       "kind": "face",
       "mask": "face_full",
-      "strength": 0.75,
-      "denoise": 0.75,
+      "strength": 0.8,
+      "denoise": 0.85,
       "lora": true,
       "identity_adapter": "instantid",
       "adapter_weight": 1.0,
-      "prompt": "lunavox, a woman, natural face proportions, natural skin texture, same lighting as the photo, realistic photo",
-      "note": "teste 2: 0,60 levou so a 0,47 (rosto de outra pessoa, olhos cobertos) -> 0,75, InstantID 1,0, mascara com maxilar e bochechas"
+      "prompt": "lunavox, a woman, natural face, minimal natural makeup, natural skin texture with pores, same lighting as the photo, realistic photo",
+      "note": "teste 3: o quarto ficou com tracos/maquiagem da original misturados -> denoise 0,85 (identidade completa, sem mistura)"
     },
     {
       "name": "face_pass_2",
@@ -21,8 +21,9 @@
       "mask": "face_inner",
       "strength": 0.4,
       "denoise": 0.3,
-      "lora": true,
-      "prompt": "lunavox, a woman, detailed natural eyes, natural nose and lips, natural expression, realistic photo"
+      "lora": false,
+      "prompt": "natural detailed eyes, natural nose and lips, minimal natural makeup, natural skin texture, realistic unretouched photo",
+      "note": "sem a LoRA (treinada com fotos produzidas: puxava maquiagem)"
     },
     {
       "name": "face_pass_3",
@@ -31,7 +32,7 @@
       "strength": 0.15,
       "denoise": 0.15,
       "lora": false,
-      "prompt": "natural skin texture matching the photo, same lighting and shadows, seamless skin, realistic unretouched photo"
+      "prompt": "natural skin texture with pores matching the photo, same lighting and shadows, seamless skin, realistic unretouched photo"
     },
     {
       "name": "tattoo_pass",
@@ -64,18 +65,19 @@
   ],
   "hair": {
     "enabled": true,
-    "recolor_if_luma_above": 95,
+    "recolor_if_luma_above": 90,
     "target_luma": 48,
     "target_cb": 122,
     "target_cr": 140,
-    "strength": 0.85,
+    "strength": 0.9,
     "note": "cabelo da Luna (castanho muito escuro, reflexos acobreados) por RECOLOR: fios, luz e volume da foto ficam; comprimento nao e reconstruido",
-    "edge_grow_frac": 0.004
+    "edge_grow_frac": 0.004,
+    "percentile": 75
   },
   "lighting": {
     "luma": 1.0,
-    "chroma": 0.5,
-    "note": "luz/contraste da pessoa original na mesma regiao; cor so pela metade (tom de pele da persona)"
+    "chroma": 0.85,
+    "note": "cor da pele do rosto casada 85% com a pele da foto no mesmo lugar (teste 3: rosto laranja contra o pescoco)"
   },
   "texture": {
     "match_grain": true,
@@ -90,8 +92,9 @@
     "max_clothing_changed": 0.06,
     "max_pose_distance": 0.08,
     "max_identity_drop": 0.02,
-    "max_identity_drop_integration": 0.01,
-    "min_final_face": 0.7
+    "max_identity_drop_integration": 0.03,
+    "min_final_face": 0.7,
+    "max_original_similarity": 0.4
   },
   "negative_extra": [
     "tattoo",
@@ -104,11 +107,27 @@
     "different lighting",
     "pasted face",
     "halo",
-    "blurry edges"
+    "blurry edges",
+    "heavy makeup",
+    "contour makeup",
+    "false eyelashes",
+    "glossy lipstick",
+    "blush",
+    "double face",
+    "ghosting",
+    "face blending",
+    "blurry face",
+    "distorted eyes",
+    "asymmetrical eyes",
+    "malformed lips",
+    "warped nose",
+    "waxy skin",
+    "smooth skin"
   ],
   "budget": {
     "limit_usd": 0.05,
     "rule": "teste pago acima de US$ 0,05 so com autorizacao explicita"
   },
-  "protect_objects": "sunglasses. bracelet. earrings. watch"
+  "protect_objects": "sunglasses. bracelet. earrings. watch",
+  "spec": "IMAGE IDENTITY REPLACEMENT - LUNA (prompt do usuario, 2026-10-06): identidade completa, sem mistura, sem maquiagem copiada, pele com a luz da foto, acessorios preservados"
 }

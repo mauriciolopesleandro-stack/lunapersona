@@ -69,6 +69,16 @@ class ReplacementOrchestrator:
         self.duplicate_similarity = duplicate_similarity
         self.price = price_per_hour
 
+    @staticmethod
+    def encode(pixels: np.ndarray) -> bytes:
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.fromarray(pixels.astype(np.uint8), "RGB").save(buf, "PNG")
+        return buf.getvalue()
+
     async def _measure(self, image: str, w: int, h: int, master: ReferenceImage, base_pose):
         analysis = await self.analyzer.analyze(ProviderImage("comfyui", image, "", w, h), master)
         return measure(analysis, None, base_pose, self.duplicate_similarity)
@@ -107,7 +117,8 @@ class ReplacementOrchestrator:
 
         # 1. cabelo da persona por recolor (fios, luz e volume da foto ficam)
         hair = cfg.hair
-        if hair.get("enabled") and needs_hair_recolor(original, masks.hair, float(hair["recolor_if_luma_above"])):
+        if hair.get("enabled") and needs_hair_recolor(original, masks.hair, float(hair["recolor_if_luma_above"]),
+                                                       float(hair.get("percentile", 75))):
             t0 = time.monotonic()
             grow = max(2, int(min(h, w) * float(hair.get("edge_grow_frac", 0.004))))
             hair_soft = feather(np.clip(dilate(masks.hair, grow) * (1 - masks.skin) * masks.person + masks.hair, 0, 1), grow)
@@ -158,6 +169,15 @@ class ReplacementOrchestrator:
         edge_width = max(3, int(min(h, w) * float(cfg.blending.get("edge_band_frac", 0.006))))
         report = validate(original, final.pixels, masks, region if region.any() else masks.person, final.measure,
                           cfg.checks, edge_width)
+        # UMA identidade so: o resultado nao pode continuar parecido com a pessoa original
+        original_ref = ReferenceImage("original", "original.png", self.encode(original), "")
+        mixed = await self.analyzer.analyze(ProviderImage("comfyui", final.image, "", w, h), original_ref)
+        pf = mixed.persona_face()
+        report.original_similarity = pf.similarity if pf else None
+        limit = float(cfg.checks.get("max_original_similarity", 0.4))
+        if report.original_similarity is not None and report.original_similarity > limit:
+            report.failures.append("identity_mixing")
+            report.status = "FAIL"
         return ReplacementResult(final, report, records, store.names(), masks.areas(), sheet.to_dict())
 
 

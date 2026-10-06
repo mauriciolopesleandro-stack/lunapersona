@@ -52,9 +52,13 @@ def match_lighting(new: np.ndarray, original: np.ndarray, region: np.ndarray, lu
     return (adjusted * m + new.astype(np.float32) * (1 - m)).round().astype(np.uint8)
 
 
-def needs_hair_recolor(rgb: np.ndarray, hair: np.ndarray, max_mean_luma: float) -> bool:
-    s = _stats(to_ycc(rgb), hair)
-    return s is not None and float(s[0][0]) > max_mean_luma
+def needs_hair_recolor(rgb: np.ndarray, hair: np.ndarray, max_luma: float, percentile: float = 75.0) -> bool:
+    """Cabelo fora do da persona: quando uma parte relevante dele (percentil, nao a media) e clara -
+    pontas loiras e luzes contam."""
+    sel = hair > 0.5
+    if sel.sum() < 30:
+        return False
+    return float(np.percentile(to_ycc(rgb)[..., 0][sel], percentile)) > max_luma
 
 
 def recolor_hair(rgb: np.ndarray, hair: np.ndarray, target_luma: float, target_cb: float, target_cr: float,

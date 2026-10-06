@@ -116,7 +116,8 @@ def build_masks(raw: RawSegments, face_bbox, face_kps, rgb: np.ndarray) -> MaskS
     skin = skin_pixels(rgb) * person
     face_zone = dilate(full, max(2, int((face_bbox[3] - face_bbox[1]) * 0.08)))
     radius = max(3, int(min(h, w) * 0.008))
-    tattoos = np.clip(tattoo_holes(skin, person, radius) - face_zone - hair - protect, 0, 1)
+    detected = (raw.tattoos > 0.5).astype(np.float32) * person if raw.tattoos is not None else 0.0
+    tattoos = np.clip(np.maximum(tattoo_holes(skin, person, radius), detected) - face_zone - hair - protect, 0, 1)
     body_skin = np.clip(skin + tattoos - face_zone - hair - protect, 0, 1)
     clothing = np.clip(person - skin - tattoos - hair - face_zone, 0, 1)
     # nada que esteja protegido entra em etapa nenhuma

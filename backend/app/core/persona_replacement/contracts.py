@@ -116,6 +116,7 @@ class RawSegments:
     person: np.ndarray
     hair: np.ndarray | None = None
     protect_boxes: list[tuple[float, float, float, float]] = field(default_factory=list)
+    tattoos: np.ndarray | None = None  # tatuagens detectadas na imagem (alem dos buracos na pele)
 
 
 class Segmenter(Protocol):

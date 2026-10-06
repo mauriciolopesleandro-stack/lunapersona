@@ -96,6 +96,7 @@ class ReplacementReport:
     texture: dict[str, Any] = field(default_factory=dict)
     edge: dict[str, Any] = field(default_factory=dict)
     integration_score: float | None = None  # INFORMATIVO
+    original_similarity: float | None = None  # semelhanca com a PESSOA ORIGINAL (mistura de identidades)
     body: str = UNKNOWN
     anatomy: str = UNKNOWN
     failures: list[str] = field(default_factory=list)

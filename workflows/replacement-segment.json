@@ -4,7 +4,7 @@
     "hidden": true,
     "compatible_models": [],
     "title": "Persona Replacement - segmentacao (so mede, nao gera)",
-    "description": "Mascaras do replacement: pessoa (SAM2 com os pontos da ficha da foto), cabelo (Florence-2 'hair', o mesmo da V1) e caixas de oculos escuros (Florence-2 grounding). Nada e gerado. PROTECT: objetos protegidos (oculos, pulseiras, brincos, relogio).",
+    "description": "Mascaras do replacement: pessoa (SAM2 com os pontos da ficha da foto), cabelo (Florence-2 'hair', o mesmo da V1) e caixas de oculos escuros (Florence-2 grounding). Nada e gerado. PROTECT: objetos protegidos (oculos, pulseiras, brincos, relogio). Tatuagens: Florence-2 'tattoo' (segmentacao).",
     "required_params": [
       "IMAGE",
       "POINTS_POS",
@@ -146,6 +146,47 @@
           "f5",
           3
         ]
+      }
+    },
+    "t1": {
+      "class_type": "Florence2Run",
+      "inputs": {
+        "image": [
+          "1",
+          0
+        ],
+        "florence2_model": [
+          "f1",
+          0
+        ],
+        "text_input": "tattoo",
+        "task": "referring_expression_segmentation",
+        "fill_mask": true,
+        "keep_model_loaded": true,
+        "max_new_tokens": 512,
+        "num_beams": 3,
+        "do_sample": false,
+        "output_mask_select": "",
+        "seed": 1
+      }
+    },
+    "t2": {
+      "class_type": "MaskToImage",
+      "inputs": {
+        "mask": [
+          "t1",
+          1
+        ]
+      }
+    },
+    "t3": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "t2",
+          0
+        ],
+        "filename_prefix": "${FILENAME_PREFIX}_tattoo"
       }
     }
   }

@@ -108,7 +108,8 @@ class ComfySegmenter:
         person = await mask_of("person")
         if person is None:
             raise ProviderError("a segmentacao nao devolveu a mascara da pessoa")
-        return RawSegments(person=person, hair=await mask_of("hair"), protect_boxes=parse_boxes(texts.get("f6", "")))
+        return RawSegments(person=person, hair=await mask_of("hair"), protect_boxes=parse_boxes(texts.get("f6", "")),
+                           tattoos=await mask_of("tattoo"))
 
 
 class ComfyReplacementTransformer:

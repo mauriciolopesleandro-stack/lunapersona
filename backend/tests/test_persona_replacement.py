@@ -146,7 +146,7 @@ def test_skin_classifier():
 def test_face_and_body_requests():
     m, _ = masks_and_photo()
     f1 = build_request(CFG.stage("face_pass_1"), m, "img.png", "neg", 5, MASTER)
-    assert f1.identity_adapter == "instantid" and f1.reference is MASTER and f1.denoise == 0.75 and f1.adapter_weight == 1.0
+    assert f1.identity_adapter == "instantid" and f1.reference is MASTER and f1.denoise == 0.85 and f1.adapter_weight == 1.0
     b1 = build_request(CFG.stage("body_pass_1"), m, "img.png", "neg", 5, MASTER)
     assert b1.reference is None and (b1.mask * m.clothing).sum() == 0
     assert [stage_kind(CFG.stage(n)) for n in ("face_pass_1", "face_pass_2", "face_pass_3", "body_pass_1")] == [
@@ -258,7 +258,7 @@ def test_rollback_rules_per_stage_kind():
     assert stage_reasons("identity", before, Measure(0.80, 27.0, None, 0.01, 1, 1), {}, CFG.checks) == []
     assert "nao aumentou" in stage_reasons("identity", before, Measure(0.38, 27.0, None, 0.0, 0, 1), {}, CFG.checks)[0]
     mid = Measure(0.80, 27.0, None, 0.0, 1, 1)
-    assert stage_reasons("integration", mid, Measure(0.785, 27.0, None, 0.0, 1, 1), {}, CFG.checks)  # > 0.01
+    assert stage_reasons("integration", mid, Measure(0.76, 27.0, None, 0.0, 1, 1), {}, CFG.checks)  # > 0.03
     assert stage_reasons("face", mid, Measure(0.785, 27.0, None, 0.0, 1, 1), {}, CFG.checks) == []  # <= 0.02
     reasons = stage_reasons("body", mid, mid, {"background_changed": 0.05, "clothing_changed": 0.2}, CFG.checks)
     assert any("fundo" in r for r in reasons) and any("roupa" in r for r in reasons)
@@ -321,19 +321,23 @@ class Transformer:
 
 
 class Analyzer:
-    def __init__(self, faces):
-        self.faces = faces  # nome da etapa -> semelhanca
+    def __init__(self, faces, original_similarity=0.1):
+        self.faces = faces  # nome da etapa -> semelhanca com a master
+        self.original_similarity = original_similarity  # semelhanca com a pessoa ORIGINAL
 
     async def analyze(self, image, master):
+        if master.reference_id == "original":
+            return analysis([face(self.original_similarity, age=27)], [body(STANDING)])
         name = next((k for k in self.faces if image.locator.startswith(k)), "foto")
         return analysis([face(self.faces[name], age=27)], [body(STANDING)])
 
 
-def orchestrator(faces, img=None):
+def orchestrator(faces, img=None, original_similarity=0.1):
     img = img if img is not None else photo()[0]
     store = Store(img)
     tr = Transformer(store)
-    orch = ReplacementOrchestrator(reader=Reader(), segmenter=Segmenter(), transformer=tr, analyzer=Analyzer(faces),
+    orch = ReplacementOrchestrator(reader=Reader(), segmenter=Segmenter(), transformer=tr,
+                                   analyzer=Analyzer(faces, original_similarity),
                                    store=store, config=CFG, duplicate_similarity=0.9, price_per_hour=0.57)
     return orch, tr, store
 
@@ -440,3 +444,31 @@ def test_tattoo_ink_is_a_skin_hole_not_clothing():
     assert m.tattoos[170, 80] == 0  # a camisa (faixa larga) nao vira tatuagem
     req = build_request(CFG.stage("tattoo_pass"), m, "img.png", "neg", 1, None)
     assert req.mask[160, 46] == 1 and req.denoise == 0.65 and "without tattoos" in req.prompt
+
+
+
+async def test_identity_mixing_with_the_original_person_fails():
+    faces = {"foto": 0.30, "hair": 0.30, "face_pass_1": 0.80, "face_pass_2": 0.80, "face_pass_3": 0.80,
+             "body_pass_1": 0.80, "body_pass_2": 0.80, "integrated": 0.80}
+    clean, _, _ = orchestrator(faces, original_similarity=0.12)
+    ok = await clean.run("foto.png", MASTER, "neg", 7)
+    assert ok.report.original_similarity == 0.12 and "identity_mixing" not in ok.report.failures
+    mixed, _, _ = orchestrator(faces, original_similarity=0.55)
+    bad = await mixed.run("foto.png", MASTER, "neg", 7)
+    assert "identity_mixing" in bad.report.failures and bad.report.status == "FAIL"
+
+
+def test_light_hair_ends_trigger_the_recolor():
+    img, person, hair = photo()
+    img[hair > 0] = (60, 45, 35)  # raiz escura
+    img[34:40, 50:110] = BLONDE  # pontas loiras (30% do cabelo)
+    assert not needs_hair_recolor(img, hair, 90, percentile=50)
+    assert needs_hair_recolor(img, hair, 90, percentile=75)
+
+
+def test_detected_tattoos_join_the_tattoo_mask():
+    img, person, hair = photo()
+    detected = np.zeros((H, W), np.float32)
+    detected[120:140, 40:52] = 1  # tatuagem grande no braco (cobre a largura toda: nao e "buraco")
+    m = build_masks(RawSegments(person, hair, [], detected), FACE_BOX, KPS, img)
+    assert m.tattoos[130, 45] == 1 and m.clothing[130, 45] == 0
