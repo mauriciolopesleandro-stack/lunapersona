@@ -65,3 +65,42 @@ A nota da pele contradisse o olho mais uma vez. A imagem 7101 da V2 tem pele vis
 - **Aparência CGI, porcelana e simetria:** não são medidas.
 - **Fidelidade ao prompt:** roupa, objeto na mão e enquadramento não são medidos automaticamente.
 - **Tempo de geração:** os 13,7–15,2 s incluem a carga do checkpoint na primeira imagem. Validação e análise de rosto e corpo não estão nesse número.
+
+---
+
+# Teste 2: multi-pass RealVisXL (2026-10-06)
+
+O usuário pediu 3 cenas: academia, selfie no espelho do quarto e toalha na cabeça se maquiando. Cada uma com RealVisXL + LoRA, 3 passadas de rosto e 2 de corpo.
+
+- **Limite:** padrão da tarefa, US$ 0,10.
+- **Trava:** desligou o pod aos 10 min.
+- **Resultado:** **só a academia terminou.** O pod novo levou ~2 min para liberar o SSH, e cada passada foi ~3× mais lenta que o estimado. A selfie parou no meio e a toalha não começou.
+- **Gasto total:** ~US$ 0,10, contando ligar o pod de novo ~1,5 min só para buscar os resultados no volume.
+- **Dados:** `docs/testes/bench_v2_multipass_academia.json`.
+- **Folha:** `docs/testes/v2_multipass_academia.jpg` (fora do git).
+
+| Passada | denoise / strength | Rosto | Idade | Pele (telemetria) | Pose (dist. da base) | Decisão | Tempo |
+|---|---|---|---|---|---|---|---|
+| base | 1.0 / — | 0,297 | 30 | 0,96 | 0 | — | 27,7 s |
+| rosto 1 (estrutura) | 0,30 / 0,75 | **0,450** | 29 | 0,65 | 0,004 | aceita | 36,0 s |
+| rosto 2 (refino) | 0,20 / 0,42 | 0,477 | 29 | 0,61 | 0,004 | aceita | 31,6 s |
+| rosto 3 (microdetalhe) | 0,12 / 0,22 | 0,482 | 29 | 0,60 | 0,005 | aceita | 30,7 s |
+| corpo 1 (estrutura) | 0,25 / 0,60 | 0,486 | 29 | 0,61 | 0,012 | aceita | 30,1 s |
+| corpo 2 (refino) | 0,15 / 0,30 | 0,486 | 29 | 0,61 | 0,011 | aceita | 32,9 s |
+
+Validação final: FAIL `face_identity_low` (0,486 < 0,55). Pessoas: PASS. Anatomia: UNKNOWN. Corpo: NOT_COMPARABLE.
+
+## Leitura
+
+- **Identidade:** subiu de 0,30 para 0,49 (+0,19). Quase tudo veio da 1ª passada de rosto (+0,15); as passadas 2 e 3 somaram +0,03, e as de corpo não mexem no rosto. Ainda fica abaixo do limiar de 0,55.
+- **Preservação:** pose, roupa, cenário e cabelo continuaram iguais (pose ≤ 0,012). Nenhuma passada precisou de rollback.
+- **Pele, no olho:** fotográfica, mas com maquiagem marcada (sobrancelha e boca). Fica entre a base do teste 1 e a V1.
+- **Fidelidade ao pedido:** em vez de segurar a garrafa de água, ela segura um halter. Isso vem da imagem base.
+- **Tempo:** 214 s por imagem, contra os ~80 s estimados. Cada passada levou ~21 s no ComfyUI, porque a análise de rosto e corpo entre as passadas tira o checkpoint SDXL da memória e ele recarrega toda vez (cache clássico do ComfyUI).
+- **Custo:** ~US$ 0,034 por imagem.
+
+## Pendências
+
+- **Cenas que faltam:** selfie no espelho e toalha. Faltam ~US$ 0,07 para as duas, nesta velocidade.
+- **Velocidade:** a análise precisa sair do ComfyUI, ou o ComfyUI precisa de cache maior (`--cache-lru`, o que muda os argumentos do pod). Qualquer uma das duas exige autorização.
+- **Identidade abaixo de 0,55:** as opções são mais denoise ou um recorte maior na 1ª passada de rosto (experimento separado), ou um adaptador de identidade.

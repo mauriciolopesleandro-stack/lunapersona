@@ -1,0 +1,790 @@
+{
+ "budget": {
+  "name": "V2 teste 2 (multi-pass RealVisXL)",
+  "objective": "subir a identidade da base RealVisXL (0,37) sem perder a pele natural",
+  "hypothesis": "passadas de rosto com a LoRA em recorte ampliado aumentam a semelhanca; rollback segura as que pioram",
+  "images": 3,
+  "seconds_per_image": 79,
+  "overhead_seconds": 180.0,
+  "price_per_hour": 0.57,
+  "total_seconds": 417.0,
+  "estimated_cost_usd": 0.066,
+  "limit_usd": 0.1,
+  "authorized_usd": null,
+  "allowed_usd": 0.1
+ },
+ "passes": [
+  {
+   "kind": "face",
+   "number": 1,
+   "name": "identity_structure",
+   "mask": "face_full",
+   "strength": 0.75,
+   "denoise": 0.3,
+   "enabled": true
+  },
+  {
+   "kind": "face",
+   "number": 2,
+   "name": "facial_refinement",
+   "mask": "face_inner",
+   "strength": 0.42,
+   "denoise": 0.2,
+   "enabled": true
+  },
+  {
+   "kind": "face",
+   "number": 3,
+   "name": "microdetail",
+   "mask": "face_skin",
+   "strength": 0.22,
+   "denoise": 0.12,
+   "enabled": true
+  },
+  {
+   "kind": "body",
+   "number": 1,
+   "name": "body_structure",
+   "mask": "body_full",
+   "strength": 0.6,
+   "denoise": 0.25,
+   "enabled": true
+  },
+  {
+   "kind": "body",
+   "number": 2,
+   "name": "body_refinement",
+   "mask": "body_regions",
+   "strength": 0.3,
+   "denoise": 0.15,
+   "enabled": true
+  }
+ ],
+ "scenes": [
+  {
+   "seed": 7201,
+   "label": "academia",
+   "scene": "full body photo in a modern gym, wearing a black sports top and grey high-waisted leggings, white sneakers, standing next to a dumbbell rack, holding a water bottle, bright gym lighting",
+   "prompts": {
+    "identity_structure": "lunavox, a woman, close-up photo of her face, natural face proportions, natural skin texture, realistic photo",
+    "facial_refinement": "lunavox, a woman, detailed eyes, natural nose and lips, natural expression, realistic photo",
+    "microdetail": "lunavox, a woman, natural skin texture with visible pores, subtle skin imperfections, matte skin, unretouched photo",
+    "body": "lunavox, a woman, full body photo in a modern gym, wearing a black sports top and grey high-waisted leggings, white sneakers, standing next to a dumbbell rack, holding a water bottle, bright gym lighting, natural body proportions, natural anatomy, realistic hands, realistic photo"
+   },
+   "negative": "extra limbs, duplicated person, duplicated head, duplicated torso, fused limbs, disconnected limbs, malformed anatomy, floating limbs, unnatural proportions, deformed hands, extra fingers, missing limbs, duplicate body, multiple copies of subject, tattoos, blonde or light hair, short hair, pale skin, different face, thin or skinny body, teenage or elderly appearance, second copy of the same woman, mirror reflection of her, twins, plastic skin, waxy skin, porcelain skin, airbrushed skin, beauty filter, CGI skin, 3D render, doll face, oversmoothed skin, excessive glossy skin, heavy makeup, cartoon, illustration, painting, anime, nude, nsfw, topless, lingerie",
+   "multipass": {
+    "final": {
+     "name": "body_2",
+     "image": "http://127.0.0.1:8188/view?filename=luna_v2_body_2_00001_.png&subfolder=&type=output",
+     "measure": {
+      "face": 0.486,
+      "age": 29.0,
+      "skin": 0.61,
+      "pose": 0.011,
+      "persona_instances": 1,
+      "faces": 1,
+      "body": null
+     }
+    },
+    "checkpoints": [
+     {
+      "name": "base",
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_realvisxl_00004_.png&subfolder=&type=output",
+      "locator": "luna_v2_realvisxl_00004_.png [output]",
+      "measure": {
+       "face": 0.297,
+       "age": 30.0,
+       "skin": 0.961,
+       "pose": 0.0,
+       "persona_instances": 0,
+       "faces": 1,
+       "body": null
+      }
+     },
+     {
+      "name": "face_1",
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_1_00001_.png&subfolder=&type=output",
+      "locator": "luna_v2_face_1_00001_.png [output]",
+      "measure": {
+       "face": 0.45,
+       "age": 29.0,
+       "skin": 0.654,
+       "pose": 0.004,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      }
+     },
+     {
+      "name": "face_2",
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_2_00001_.png&subfolder=&type=output",
+      "locator": "luna_v2_face_2_00001_.png [output]",
+      "measure": {
+       "face": 0.477,
+       "age": 29.0,
+       "skin": 0.609,
+       "pose": 0.004,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      }
+     },
+     {
+      "name": "face_3",
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_3_00001_.png&subfolder=&type=output",
+      "locator": "luna_v2_face_3_00001_.png [output]",
+      "measure": {
+       "face": 0.482,
+       "age": 29.0,
+       "skin": 0.6,
+       "pose": 0.005,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      }
+     },
+     {
+      "name": "body_1",
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_body_1_00001_.png&subfolder=&type=output",
+      "locator": "luna_v2_body_1_00001_.png [output]",
+      "measure": {
+       "face": 0.486,
+       "age": 29.0,
+       "skin": 0.61,
+       "pose": 0.012,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      }
+     },
+     {
+      "name": "body_2",
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_body_2_00001_.png&subfolder=&type=output",
+      "locator": "luna_v2_body_2_00001_.png [output]",
+      "measure": {
+       "face": 0.486,
+       "age": 29.0,
+       "skin": 0.61,
+       "pose": 0.011,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      }
+     }
+    ],
+    "records": [
+     {
+      "model": "realvisxl",
+      "model_version": "RealVisXL V5.0 (fp16)",
+      "lora": "lunavox_sdxl_v1.safetensors",
+      "lora_strength": 1.0,
+      "seed": 7201,
+      "prompt_hash": "8f4c3578a6a172ee",
+      "negative_hash": "bfed9129dbcbe80d",
+      "pass_type": "base",
+      "pass_number": 0,
+      "mask_type": null,
+      "denoise": 1.0,
+      "strength": null,
+      "face_identity_score": 0.297,
+      "age_score": 0.7,
+      "skin_score": 0.961,
+      "body_score": null,
+      "pose_score": 0.0,
+      "anatomy_score": null,
+      "subject_count": 0,
+      "duration": 27.66,
+      "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+      "vram": 7004,
+      "cost": 0.00438,
+      "rollback": false,
+      "rollback_reason": null,
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_realvisxl_00004_.png&subfolder=&type=output"
+     },
+     {
+      "model": "realvisxl",
+      "model_version": "RealVisXL V5.0 (fp16)",
+      "lora": "lunavox_sdxl_v1.safetensors",
+      "lora_strength": 1.0,
+      "seed": 7301,
+      "prompt_hash": "aa23cb20dd9890e2",
+      "negative_hash": "bfed9129dbcbe80d",
+      "pass_type": "face",
+      "pass_number": 1,
+      "mask_type": "face_full",
+      "denoise": 0.3,
+      "strength": 0.75,
+      "face_identity_score": 0.45,
+      "age_score": 0.8,
+      "skin_score": 0.654,
+      "body_score": null,
+      "pose_score": 0.004,
+      "anatomy_score": null,
+      "subject_count": 1,
+      "duration": 35.95,
+      "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+      "vram": 7165,
+      "cost": 0.0034,
+      "rollback": false,
+      "rollback_reason": null,
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_1_00001_.png&subfolder=&type=output"
+     },
+     {
+      "model": "realvisxl",
+      "model_version": "RealVisXL V5.0 (fp16)",
+      "lora": "lunavox_sdxl_v1.safetensors",
+      "lora_strength": 1.0,
+      "seed": 7401,
+      "prompt_hash": "f45d872c61b92ca1",
+      "negative_hash": "bfed9129dbcbe80d",
+      "pass_type": "face",
+      "pass_number": 2,
+      "mask_type": "face_inner",
+      "denoise": 0.2,
+      "strength": 0.42,
+      "face_identity_score": 0.477,
+      "age_score": 0.8,
+      "skin_score": 0.609,
+      "body_score": null,
+      "pose_score": 0.004,
+      "anatomy_score": null,
+      "subject_count": 1,
+      "duration": 31.57,
+      "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+      "vram": 7165,
+      "cost": 0.00341,
+      "rollback": false,
+      "rollback_reason": null,
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_2_00001_.png&subfolder=&type=output"
+     },
+     {
+      "model": "realvisxl",
+      "model_version": "RealVisXL V5.0 (fp16)",
+      "lora": "lunavox_sdxl_v1.safetensors",
+      "lora_strength": 1.0,
+      "seed": 7501,
+      "prompt_hash": "bad88e12f90c4430",
+      "negative_hash": "bfed9129dbcbe80d",
+      "pass_type": "face",
+      "pass_number": 3,
+      "mask_type": "face_skin",
+      "denoise": 0.12,
+      "strength": 0.22,
+      "face_identity_score": 0.482,
+      "age_score": 0.8,
+      "skin_score": 0.6,
+      "body_score": null,
+      "pose_score": 0.005,
+      "anatomy_score": null,
+      "subject_count": 1,
+      "duration": 30.65,
+      "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+      "vram": 7165,
+      "cost": 0.00339,
+      "rollback": false,
+      "rollback_reason": null,
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_face_3_00001_.png&subfolder=&type=output"
+     },
+     {
+      "model": "realvisxl",
+      "model_version": "RealVisXL V5.0 (fp16)",
+      "lora": "lunavox_sdxl_v1.safetensors",
+      "lora_strength": 1.0,
+      "seed": 7601,
+      "prompt_hash": "2a44c67a4e93a352",
+      "negative_hash": "bfed9129dbcbe80d",
+      "pass_type": "body",
+      "pass_number": 1,
+      "mask_type": "body_full",
+      "denoise": 0.25,
+      "strength": 0.6,
+      "face_identity_score": 0.486,
+      "age_score": 0.8,
+      "skin_score": 0.61,
+      "body_score": null,
+      "pose_score": 0.012,
+      "anatomy_score": null,
+      "subject_count": 1,
+      "duration": 30.14,
+      "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+      "vram": 7165,
+      "cost": 0.00318,
+      "rollback": false,
+      "rollback_reason": null,
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_body_1_00001_.png&subfolder=&type=output"
+     },
+     {
+      "model": "realvisxl",
+      "model_version": "RealVisXL V5.0 (fp16)",
+      "lora": "lunavox_sdxl_v1.safetensors",
+      "lora_strength": 1.0,
+      "seed": 7701,
+      "prompt_hash": "2a44c67a4e93a352",
+      "negative_hash": "bfed9129dbcbe80d",
+      "pass_type": "body",
+      "pass_number": 2,
+      "mask_type": "body_regions",
+      "denoise": 0.15,
+      "strength": 0.3,
+      "face_identity_score": 0.486,
+      "age_score": 0.8,
+      "skin_score": 0.61,
+      "body_score": null,
+      "pose_score": 0.011,
+      "anatomy_score": null,
+      "subject_count": 1,
+      "duration": 32.87,
+      "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+      "vram": 7165,
+      "cost": 0.00316,
+      "rollback": false,
+      "rollback_reason": null,
+      "image": "http://127.0.0.1:8188/view?filename=luna_v2_body_2_00001_.png&subfolder=&type=output"
+     }
+    ],
+    "decisions": [
+     {
+      "pass": "face_1",
+      "region": {
+       "crop": {
+        "x": 234,
+        "y": 0,
+        "w": 392,
+        "h": 392
+       },
+       "shapes": [
+        {
+         "kind": "ellipse",
+         "cx": 198.29999999999995,
+         "cy": 124.2,
+         "rx": 77.376,
+         "ry": 111.35199999999999,
+         "include": true
+        }
+       ],
+       "feather": 0.1
+      },
+      "before": {
+       "face": 0.297,
+       "age": 30.0,
+       "skin": 0.961,
+       "pose": 0.0,
+       "persona_instances": 0,
+       "faces": 1,
+       "body": null
+      },
+      "after": {
+       "face": 0.45,
+       "age": 29.0,
+       "skin": 0.654,
+       "pose": 0.004,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      },
+      "reasons": [],
+      "pass_seconds": 21.48,
+      "status": "ACCEPTED",
+      "kept": "face_1"
+     },
+     {
+      "pass": "face_2",
+      "region": {
+       "crop": {
+        "x": 271,
+        "y": 0,
+        "w": 320,
+        "h": 320
+       },
+       "shapes": [
+        {
+         "kind": "ellipse",
+         "cx": 161.60000000000002,
+         "cy": 124.45,
+         "rx": 52.5,
+         "ry": 75.222,
+         "include": true
+        }
+       ],
+       "feather": 0.08
+      },
+      "before": {
+       "face": 0.45,
+       "age": 29.0,
+       "skin": 0.654,
+       "pose": 0.004,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      },
+      "after": {
+       "face": 0.477,
+       "age": 29.0,
+       "skin": 0.609,
+       "pose": 0.004,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      },
+      "reasons": [],
+      "pass_seconds": 21.53,
+      "status": "ACCEPTED",
+      "kept": "face_2"
+     },
+     {
+      "pass": "face_3",
+      "region": {
+       "crop": {
+        "x": 271,
+        "y": 0,
+        "w": 320,
+        "h": 320
+       },
+       "shapes": [
+        {
+         "kind": "ellipse",
+         "cx": 161.55,
+         "cy": 124.35,
+         "rx": 68.695,
+         "ry": 98.50500000000002,
+         "include": true
+        }
+       ],
+       "feather": 0.08
+      },
+      "before": {
+       "face": 0.477,
+       "age": 29.0,
+       "skin": 0.609,
+       "pose": 0.004,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      },
+      "after": {
+       "face": 0.482,
+       "age": 29.0,
+       "skin": 0.6,
+       "pose": 0.005,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      },
+      "reasons": [],
+      "pass_seconds": 21.38,
+      "status": "ACCEPTED",
+      "kept": "face_3"
+     },
+     {
+      "pass": "body_1",
+      "region": {
+       "crop": {
+        "x": 96,
+        "y": 0,
+        "w": 720,
+        "h": 1216
+       },
+       "shapes": [
+        {
+         "kind": "rect",
+         "cx": 361.97882048754644,
+         "cy": 729.8480754485354,
+         "rx": 309.8354443823298,
+         "ry": 660.8160383204618,
+         "include": true
+        },
+        {
+         "kind": "ellipse",
+         "cx": 336.65,
+         "cy": 124.35,
+         "rx": 93.67500000000003,
+         "ry": 143.28000000000003,
+         "include": false
+        }
+       ],
+       "feather": 0.04
+      },
+      "before": {
+       "face": 0.482,
+       "age": 29.0,
+       "skin": 0.6,
+       "pose": 0.005,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      },
+      "after": {
+       "face": 0.486,
+       "age": 29.0,
+       "skin": 0.61,
+       "pose": 0.012,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      },
+      "reasons": [],
+      "pass_seconds": 20.09,
+      "status": "ACCEPTED",
+      "kept": "body_1"
+     },
+     {
+      "pass": "body_2",
+      "region": {
+       "crop": {
+        "x": 85,
+        "y": 0,
+        "w": 728,
+        "h": 1216
+       },
+       "shapes": [
+        {
+         "kind": "ellipse",
+         "cx": 213.80846364982426,
+         "cy": 558.413122901693,
+         "rx": 87.24945646524431,
+         "ry": 87.24945646524431,
+         "include": true
+        },
+        {
+         "kind": "ellipse",
+         "cx": 87.21885047480464,
+         "cy": 455.1938998512924,
+         "rx": 87.24945646524431,
+         "ry": 87.24945646524431,
+         "include": true
+        },
+        {
+         "kind": "ellipse",
+         "cx": 574.101978071034,
+         "cy": 589.5736430678517,
+         "rx": 87.24945646524431,
+         "ry": 87.24945646524431,
+         "include": true
+        },
+        {
+         "kind": "ellipse",
+         "cx": 650.0557459760457,
+         "cy": 817.434946782887,
+         "rx": 87.24945646524431,
+         "ry": 87.24945646524431,
+         "include": true
+        },
+        {
+         "kind": "ellipse",
+         "cx": 287.8146990444511,
+         "cy": 1166.0432661417872,
+         "rx": 87.24945646524431,
+         "ry": 87.24945646524431,
+         "include": true
+        },
+        {
+         "kind": "ellipse",
+         "cx": 291.70976406522095,
+         "cy": 1353.0063871387392,
+         "rx": 87.24945646524431,
+         "ry": 87.24945646524431,
+         "include": true
+        },
+        {
+         "kind": "ellipse",
+         "cx": 451.40742991678417,
+         "cy": 1148.515473548323,
+         "rx": 87.24945646524431,
+         "ry": 87.24945646524431,
+         "include": true
+        },
+        {
+         "kind": "ellipse",
+         "cx": 449.45989740639925,
+         "cy": 1191.361188776791,
+         "rx": 87.24945646524431,
+         "ry": 87.24945646524431,
+         "include": true
+        },
+        {
+         "kind": "ellipse",
+         "cx": 347.7,
+         "cy": 124.5,
+         "rx": 93.75,
+         "ry": 142.88000000000002,
+         "include": false
+        }
+       ],
+       "feather": 0.04
+      },
+      "before": {
+       "face": 0.486,
+       "age": 29.0,
+       "skin": 0.61,
+       "pose": 0.012,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      },
+      "after": {
+       "face": 0.486,
+       "age": 29.0,
+       "skin": 0.61,
+       "pose": 0.011,
+       "persona_instances": 1,
+       "faces": 1,
+       "body": null
+      },
+      "reasons": [],
+      "pass_seconds": 19.94,
+      "status": "ACCEPTED",
+      "kept": "body_2"
+     }
+    ]
+   },
+   "final_validation": {
+    "status": "FAIL",
+    "checks": {
+     "face_identity": {
+      "name": "face_identity",
+      "status": "FAIL",
+      "blocking": true,
+      "reason": "ArcFace 0.486 < 0.55 contra a master_face.",
+      "score": 0.486,
+      "threshold": 0.55,
+      "confidence": "MEDIUM",
+      "failure_type": "face_identity_low",
+      "evidence": {
+       "metric": "ArcFace cosseno (InsightFace antelopev2) contra master_face",
+       "faces": 1,
+       "bbox": [
+        370.2,
+        35.2,
+        495.2,
+        213.8
+       ],
+       "age": 29.0
+      }
+     },
+     "subject_count": {
+      "name": "subject_count",
+      "status": "PASS",
+      "blocking": true,
+      "reason": "1 instancia da persona; 0 outra(s) pessoa(s) com rosto, permitidas.",
+      "score": 1.0,
+      "threshold": 1.0,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "persona_instances": 1,
+       "persona_similarities": [
+        0.486
+       ],
+       "other_faces": 0,
+       "other_similarities": [],
+       "bodies": 1,
+       "prominent_bodies": 1,
+       "background_bodies": 0
+      }
+     },
+     "anatomy": {
+      "name": "anatomy",
+      "status": "UNKNOWN",
+      "blocking": true,
+      "reason": "Sem detector de anatomia validado: nao verificado (nao e PASS).",
+      "score": null,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "detector": null,
+       "main_body_points": 14
+      }
+     },
+     "pose": {
+      "name": "pose",
+      "status": "INFORMATIONAL",
+      "blocking": false,
+      "reason": "Pose livre (sem pose pedida).",
+      "score": null,
+      "threshold": null,
+      "confidence": "MEDIUM",
+      "failure_type": null,
+      "evidence": {
+       "main_body_points": 14
+      }
+     },
+     "body_consistency": {
+      "name": "body_consistency",
+      "status": "NOT_COMPARABLE",
+      "blocking": false,
+      "reason": "Sem corpo ou sem esqueleto da master_body.",
+      "score": null,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "pose_match": false
+      }
+     },
+     "age": {
+      "name": "age",
+      "status": "INFORMATIONAL",
+      "blocking": false,
+      "reason": "Idade estimada 29 (dentro de 23-31; alvo 27).",
+      "score": 29.0,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "target": 27,
+       "range": [
+        23,
+        31
+       ],
+       "inside": true,
+       "consistency": 0.8,
+       "known_drift": "a troca de cabeca (Qwen BFS) deixa a idade estimada em 20-25 (benchmark E1: 22.2; estresse: 23.7). Registrado, nao corrigido na V1."
+      }
+     },
+     "skin_realism": {
+      "name": "skin_realism",
+      "status": "PASS",
+      "blocking": false,
+      "reason": "Microtextura 0.61 (ACCEPTABLE); faixas provisorias.",
+      "score": 0.61,
+      "threshold": 0.5,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "grade": "ACCEPTABLE",
+       "reasons": [],
+       "unknown_aspects": [
+        "cgi_appearance",
+        "porcelain_appearance",
+        "artificial_symmetry"
+       ],
+       "iod_px": 58.5,
+       "patches_used": 3,
+       "patch_std": [
+        0.817,
+        2.525,
+        3.253
+       ],
+       "regions": "kps",
+       "texture_component": 0.61,
+       "smoothness_component": 0.852,
+       "texture": 2.525,
+       "oversmoothed_fraction": 0.148,
+       "calibration_status": "PROVISIONAL"
+      }
+     }
+    },
+    "failures": [
+     "face_identity_low"
+    ],
+    "unverified": [
+     "anatomy"
+    ],
+    "warnings": [],
+    "seconds": 0.0
+   },
+   "wall_seconds": 214.3
+  }
+ ]
+}
