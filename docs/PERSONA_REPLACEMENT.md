@@ -71,3 +71,24 @@ Mudanças: rosto 1 com maxilar e bochechas (InstantID 1,0, denoise 0,75); tatuag
 - **Cabelo:** recolorir quando uma parte relevante do cabelo for clara (percentil 75 do brilho), e não pela média.
 - **Maquiagem:** negativo com "heavy makeup, blush, glossy lipstick, contour" no replacement.
 - **Teste:** só a foto do quarto (1 imagem, ~US$ 0,06), como regressão.
+
+---
+
+# Teste 4: spec "IMAGE IDENTITY REPLACEMENT" (2026-10-06, ~US$ 0,13, com ~4 min de pod travado no boot)
+
+| Foto | Luna | Semelhança com a ORIGINAL | Idade | Fundo | Roupa | Status |
+|---|---|---|---|---|---|---|
+| Quarto | **0,845** | **0,025** (sem mistura) | 26 | 0% | 0,3% | PASS (pelas métricas) |
+| Varanda (óculos) | 0,484 | 0,457 (misturado) | 56 | 0% | 2,0% | FAIL `identity_low`, `identity_mixing` |
+
+## Leitura visual (honesta): ainda não está boa
+- **Quarto:** pelas métricas virou a Luna sem mistura, mas **o rosto continua maquiado e "produzido"** (contorno, bochechas laranja-rosadas, boca brilhante, cílios marcados). Há uma **mancha clara na testa/raiz do cabelo**, um **contorno fantasma no antebraço direito** (da passada de tatuagem) e a tatuagem do ombro esquerdo ficou.
+- **Varanda:** a integração de grão deixou **a pele do rosto e do colo manchada/suja**, e a idade estimada foi a 56. Os óculos impedem a identidade. Ficaram fios claros na raiz.
+
+## Por que as métricas aprovaram o que o olho reprova
+Identidade, mistura, fundo, roupa, luz e textura são medidas **numéricas**. Nenhuma enxerga maquiagem pesada, mancha, contorno fantasma ou pele suja. Elas são necessárias, mas não bastam.
+
+## Diagnóstico de fundo
+- O **InstantID** (identidade forte) tende a gerar rostos contrastados e "maquiados"; a LoRA reforça.
+- As correções por pixel (recoloração, grão) resolvem um problema e criam outro (mancha, pele suja).
+- O método atual chegou ao limite: **ou integra e não troca, ou troca e fica produzido.**

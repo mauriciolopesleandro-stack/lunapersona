@@ -1,0 +1,842 @@
+{
+ "budget": {
+  "name": "Persona Replacement 1o teste",
+  "objective": "integrar a Luna na foto da varanda sem parecer colada",
+  "hypothesis": "transformacao localizada + luz/grao da propria foto melhora a integracao sem perder identidade",
+  "images": 2,
+  "seconds_per_image": 240,
+  "overhead_seconds": 150,
+  "price_per_hour": 0.57,
+  "total_seconds": 630,
+  "estimated_cost_usd": 0.0997,
+  "limit_usd": 0.05,
+  "authorized_usd": 0.15,
+  "allowed_usd": 0.15
+ },
+ "config_version": "replacement-v1.0",
+ "results": [
+  {
+   "foto": "fotos_ref/5_varanda_copacabana_oculos.png",
+   "input": "repl_input_5_varanda_copacabana_oculos.png",
+   "final": {
+    "name": "integrated",
+    "image": "repl_integrated_d3852765.png"
+   },
+   "report": {
+    "status": "FAIL",
+    "identity": 0.484,
+    "age": 56.0,
+    "pose": 0.01,
+    "subject_count": 1,
+    "background_changed": 0.0,
+    "clothing_changed": 0.01985,
+    "lighting": {
+     "delta_luma": -0.49,
+     "delta_chroma": 0.11,
+     "score": 0.984
+    },
+    "texture": {
+     "reference_noise": 7.23,
+     "region_noise": 7.256,
+     "ratio": 1.004,
+     "score": 0.997
+    },
+    "edge": {
+     "halo": 2.365,
+     "sharpness_ratio": 0.984,
+     "score": 0.831
+    },
+    "integration_score": 0.831,
+    "original_similarity": 0.457,
+    "body": "UNKNOWN",
+    "anatomy": "UNKNOWN",
+    "failures": [
+     "identity_low",
+     "identity_mixing"
+    ]
+   },
+   "records": [
+    {
+     "stage": "hair_recolor",
+     "kind": "hair",
+     "mask": "hair",
+     "strength": 0.9,
+     "denoise": null,
+     "seed": null,
+     "identity_adapter": null,
+     "lora": null,
+     "image": "repl_hair_recolor_a0fc591b.png",
+     "identity": 0.206,
+     "age": 42.0,
+     "pose": 0.004,
+     "metrics": {
+      "background_changed": 0.00049,
+      "clothing_changed": 0.0
+     },
+     "seconds": 10.32,
+     "gpu": null,
+     "cost_usd": null,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "face_pass_1",
+     "kind": "face",
+     "mask": "face_full",
+     "strength": 0.8,
+     "denoise": 0.85,
+     "seed": 7802,
+     "identity_adapter": "instantid",
+     "lora": true,
+     "image": "repl_face_pass_1_375eb822.png",
+     "identity": 0.503,
+     "age": 40.0,
+     "pose": 0.004,
+     "metrics": {
+      "background_changed": 0.00049,
+      "clothing_changed": 0.0
+     },
+     "seconds": 36.85,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.00583,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "face_pass_2",
+     "kind": "face",
+     "mask": "face_inner",
+     "strength": 0.4,
+     "denoise": 0.3,
+     "seed": 7903,
+     "identity_adapter": null,
+     "lora": false,
+     "image": "repl_face_pass_2_7d223b5f.png",
+     "identity": 0.506,
+     "age": 40.0,
+     "pose": 0.004,
+     "metrics": {
+      "background_changed": 0.00049,
+      "clothing_changed": 0.0
+     },
+     "seconds": 12.3,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.00195,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "face_pass_3",
+     "kind": "face",
+     "mask": "face_transition",
+     "strength": 0.15,
+     "denoise": 0.15,
+     "seed": 8004,
+     "identity_adapter": null,
+     "lora": false,
+     "image": "repl_face_pass_3_d74f422a.png",
+     "identity": 0.512,
+     "age": 41.0,
+     "pose": 0.004,
+     "metrics": {
+      "background_changed": 0.00049,
+      "clothing_changed": 0.0
+     },
+     "seconds": 11.36,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.0018,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "tattoo_pass",
+     "kind": "body",
+     "mask": "tattoos",
+     "strength": 0.95,
+     "denoise": 0.65,
+     "seed": 8105,
+     "identity_adapter": null,
+     "lora": true,
+     "image": "repl_tattoo_pass_c74a6920.png",
+     "identity": 0.512,
+     "age": 41.0,
+     "pose": 0.008,
+     "metrics": {
+      "background_changed": 0.00051,
+      "clothing_changed": 0.00932
+     },
+     "seconds": 13.49,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.00214,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "body_pass_1",
+     "kind": "body",
+     "mask": "body_skin",
+     "strength": 0.5,
+     "denoise": 0.45,
+     "seed": 8206,
+     "identity_adapter": null,
+     "lora": true,
+     "image": "repl_body_pass_1_a46cdf96.png",
+     "identity": 0.511,
+     "age": 40.0,
+     "pose": 0.011,
+     "metrics": {
+      "background_changed": 0.00065,
+      "clothing_changed": 0.0177
+     },
+     "seconds": 12.03,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.0019,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "body_pass_2",
+     "kind": "body",
+     "mask": "body_skin",
+     "strength": 0.25,
+     "denoise": 0.2,
+     "seed": 8307,
+     "identity_adapter": null,
+     "lora": true,
+     "image": "repl_body_pass_2_1e93e904.png",
+     "identity": 0.51,
+     "age": 40.0,
+     "pose": 0.016,
+     "metrics": {
+      "background_changed": 0.00068,
+      "clothing_changed": 0.01985
+     },
+     "seconds": 12.11,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.00192,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "integration",
+     "kind": "integration",
+     "mask": "modified",
+     "strength": null,
+     "denoise": null,
+     "seed": null,
+     "identity_adapter": null,
+     "lora": null,
+     "image": "repl_integrated_d3852765.png",
+     "identity": 0.484,
+     "age": 56.0,
+     "pose": 0.01,
+     "metrics": {
+      "background_changed": 0.0,
+      "clothing_changed": 0.01985
+     },
+     "seconds": null,
+     "gpu": null,
+     "cost_usd": null,
+     "accepted": true,
+     "rollback_reason": null
+    }
+   ],
+   "checkpoints": [
+    "original",
+    "hair_recolor",
+    "face_pass_1",
+    "face_pass_2",
+    "face_pass_3",
+    "tattoo_pass",
+    "body_pass_1",
+    "body_pass_2",
+    "integrated"
+   ],
+   "mask_areas": {
+    "person": 0.23467,
+    "hair": 0.00589,
+    "face_full": 0.01101,
+    "face_inner": 0.00325,
+    "face_transition": 0.00871,
+    "skin": 0.10888,
+    "body_skin": 0.08786,
+    "tattoos": 0.00719,
+    "clothing": 0.11728,
+    "protect": 0.01521
+   },
+   "reading": {
+    "image": "repl_input_5_varanda_copacabana_oculos.png",
+    "width": 977,
+    "height": 1080,
+    "target_face": {
+     "bbox": [
+      407.5,
+      230.6,
+      512.6,
+      386.0
+     ],
+     "similarity": 0.216,
+     "age": 45.0,
+     "sex": "F",
+     "det_score": 0.86,
+     "yaw": 0.013,
+     "kps": [
+      [
+       435.1,
+       294.6
+      ],
+      [
+       484.8,
+       294.2
+      ],
+      [
+       460.6,
+       323.5
+      ],
+      [
+       441.8,
+       347.6
+      ],
+      [
+       480.0,
+       346.9
+      ]
+     ]
+    },
+    "target_body": {
+     "keypoints": [
+      [
+       460.9243320259784,
+       314.11183663871554,
+       1.0
+      ],
+      [
+       477.7122054249048,
+       436.5645602544149,
+       1.0
+      ],
+      [
+       370.0723112788464,
+       454.3399556179842,
+       1.0
+      ],
+      [
+       275.2702026731438,
+       590.6179867386817,
+       1.0
+      ],
+      [
+       129.1169519060188,
+       602.4682503143946,
+       1.0
+      ],
+      [
+       585.3520995709632,
+       418.78916489084565,
+       1.0
+      ],
+      [
+       699.9046474695206,
+       578.767723162969,
+       1.0
+      ],
+      [
+       846.0578982366455,
+       728.8710617886649,
+       1.0
+      ],
+      [
+       352.29691591527717,
+       805.8977750307985,
+       1.0
+      ],
+      [
+       342.4216962688499,
+       1056.7283540500534,
+       1.0
+      ],
+      [
+       354.27195984456284,
+       1036.977914757199,
+       1.0
+      ],
+      [
+       506.3503423995444,
+       813.7979507479403,
+       1.0
+      ],
+      [
+       447.09902452098004,
+       1070.5536615550518,
+       1.0
+      ],
+      [
+       0.0,
+       0.0,
+       0.0
+      ],
+      [
+       435.2487609452671,
+       292.3863534165754,
+       1.0
+      ],
+      [
+       484.624859177404,
+       290.41130948728994,
+       1.0
+      ],
+      [
+       401.67301414741405,
+       310.16174878014465,
+       1.0
+      ],
+      [
+       520.1756499045423,
+       302.26157306300263,
+       1.0
+      ]
+     ],
+     "bbox": [
+      129.1169519060188,
+      290.41130948728994,
+      846.0578982366455,
+      1070.5536615550518
+     ],
+     "height_frac": 0.722,
+     "visible_points": 13
+    },
+    "others": [],
+    "caption": "A woman standing on a balcony overlooking Rio de Janeiro, Brazil, wearing a white lace corset and blue jeans. the woman, who appears to be in her late twenties, has blonde hair styled in a sleek, straight look and is wearing large hoop earrings. she is standing confidently with her arms stretched out to the sides, looking directly at the camera with a sultry expression. her body is slim and toned, and she has a tattoo on her left arm. in the background, we can see the vast expanse of the ocean, lush greenery, and distant mountains, with a clear blue sky above. the woman is standing in the middle of the image, with the ocean stretching out behind her, creating a stunning backdrop for her outfit. the overall aesthetic of the image is vibrant and eye-catching, with a focus on the woman's outfit and the beauty of the cityscape.",
+    "fields": {},
+    "camera": "third_person",
+    "light": {
+     "brightness": 131.0,
+     "contrast": 54.2,
+     "warmth": -24.8,
+     "saturation": 0.335,
+     "clipped_highlights": 0.0001,
+     "face_to_scene": 0.864,
+     "label": "ambient light, cool tones"
+    },
+    "warnings": [],
+    "person_box": [
+     66.95695190601882,
+     152.89999999999998,
+     908.2178982366455,
+     1080.0
+    ],
+    "description": "photo taken by a friend with a smartphone, A woman standing on a balcony overlooking Rio de Janeiro, Brazil, wearing a white lace corset and blue jeans. the woman, who appears to be in her late twenties, has blonde hair styled in a sleek, straight look and is wearing large hoop earrings. she is standing confidently with her arms stretched out to the sides, looking directly at the camera with a sultry expression. her body is slim and toned, and she has a tattoo on her left arm. in the background, we can see the vast expanse of the ocean, lush greenery, and distant mountains, with a clear blue sky above. the woman is standing in the middle of the image, with the ocean stretching out behind her, creating a stunning backdrop for her outfit. the overall aesthetic of the image is vibrant and eye-catching, with a focus on the woman's outfit and the beauty of the cityscape, ambient light, cool tones"
+   }
+  },
+  {
+   "foto": "fotos_ref/1_quarto_top_preto.png",
+   "input": "repl_input_1_quarto_top_preto.png",
+   "final": {
+    "name": "integrated",
+    "image": "repl_integrated_b86e3697.png"
+   },
+   "report": {
+    "status": "PASS",
+    "identity": 0.845,
+    "age": 26.0,
+    "pose": 0.045,
+    "subject_count": 1,
+    "background_changed": 0.0,
+    "clothing_changed": 0.0029,
+    "lighting": {
+     "delta_luma": -0.51,
+     "delta_chroma": 0.19,
+     "score": 0.981
+    },
+    "texture": {
+     "reference_noise": 2.356,
+     "region_noise": 2.286,
+     "ratio": 0.97,
+     "score": 0.973
+    },
+    "edge": {
+     "halo": 4.438,
+     "sharpness_ratio": 1.117,
+     "score": 0.624
+    },
+    "integration_score": 0.624,
+    "original_similarity": 0.025,
+    "body": "UNKNOWN",
+    "anatomy": "UNKNOWN",
+    "failures": []
+   },
+   "records": [
+    {
+     "stage": "hair_recolor",
+     "kind": "hair",
+     "mask": "hair",
+     "strength": 0.9,
+     "denoise": null,
+     "seed": null,
+     "identity_adapter": null,
+     "lora": null,
+     "image": "repl_hair_recolor_ec9b1ef3.png",
+     "identity": 0.046,
+     "age": 31.0,
+     "pose": 0.003,
+     "metrics": {
+      "background_changed": 0.0029,
+      "clothing_changed": 0.00024
+     },
+     "seconds": 10.25,
+     "gpu": null,
+     "cost_usd": null,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "face_pass_1",
+     "kind": "face",
+     "mask": "face_full",
+     "strength": 0.8,
+     "denoise": 0.85,
+     "seed": 7802,
+     "identity_adapter": "instantid",
+     "lora": true,
+     "image": "repl_face_pass_1_4025012a.png",
+     "identity": 0.837,
+     "age": 26.0,
+     "pose": 0.005,
+     "metrics": {
+      "background_changed": 0.00301,
+      "clothing_changed": 0.00024
+     },
+     "seconds": 32.03,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.00507,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "face_pass_2",
+     "kind": "face",
+     "mask": "face_inner",
+     "strength": 0.4,
+     "denoise": 0.3,
+     "seed": 7903,
+     "identity_adapter": null,
+     "lora": false,
+     "image": "repl_face_pass_2_0d4a50c3.png",
+     "identity": 0.846,
+     "age": 25.0,
+     "pose": 0.004,
+     "metrics": {
+      "background_changed": 0.00301,
+      "clothing_changed": 0.00024
+     },
+     "seconds": 15.46,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.00245,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "face_pass_3",
+     "kind": "face",
+     "mask": "face_transition",
+     "strength": 0.15,
+     "denoise": 0.15,
+     "seed": 8004,
+     "identity_adapter": null,
+     "lora": false,
+     "image": "repl_face_pass_3_851e2b73.png",
+     "identity": 0.847,
+     "age": 25.0,
+     "pose": 0.004,
+     "metrics": {
+      "background_changed": 0.00301,
+      "clothing_changed": 0.00024
+     },
+     "seconds": 12.44,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.00197,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "tattoo_pass",
+     "kind": "body",
+     "mask": "tattoos",
+     "strength": 0.95,
+     "denoise": 0.65,
+     "seed": 8105,
+     "identity_adapter": null,
+     "lora": true,
+     "image": "repl_tattoo_pass_f37c7fa1.png",
+     "identity": 0.846,
+     "age": 25.0,
+     "pose": 0.024,
+     "metrics": {
+      "background_changed": 0.00314,
+      "clothing_changed": 0.00251
+     },
+     "seconds": 15.52,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.00246,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "body_pass_1",
+     "kind": "body",
+     "mask": "body_skin",
+     "strength": 0.5,
+     "denoise": 0.45,
+     "seed": 8206,
+     "identity_adapter": null,
+     "lora": true,
+     "image": "repl_body_pass_1_ad7f5092.png",
+     "identity": 0.845,
+     "age": 25.0,
+     "pose": 0.048,
+     "metrics": {
+      "background_changed": 0.00319,
+      "clothing_changed": 0.00278
+     },
+     "seconds": 12.75,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.00202,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "body_pass_2",
+     "kind": "body",
+     "mask": "body_skin",
+     "strength": 0.25,
+     "denoise": 0.2,
+     "seed": 8307,
+     "identity_adapter": null,
+     "lora": true,
+     "image": "repl_body_pass_2_3c12fa64.png",
+     "identity": 0.845,
+     "age": 25.0,
+     "pose": 0.044,
+     "metrics": {
+      "background_changed": 0.00322,
+      "clothing_changed": 0.0029
+     },
+     "seconds": 12.36,
+     "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+     "cost_usd": 0.00196,
+     "accepted": true,
+     "rollback_reason": null
+    },
+    {
+     "stage": "integration",
+     "kind": "integration",
+     "mask": "modified",
+     "strength": null,
+     "denoise": null,
+     "seed": null,
+     "identity_adapter": null,
+     "lora": null,
+     "image": "repl_integrated_b86e3697.png",
+     "identity": 0.845,
+     "age": 26.0,
+     "pose": 0.045,
+     "metrics": {
+      "background_changed": 0.0,
+      "clothing_changed": 0.0029
+     },
+     "seconds": null,
+     "gpu": null,
+     "cost_usd": null,
+     "accepted": true,
+     "rollback_reason": null
+    }
+   ],
+   "checkpoints": [
+    "original",
+    "hair_recolor",
+    "face_pass_1",
+    "face_pass_2",
+    "face_pass_3",
+    "tattoo_pass",
+    "body_pass_1",
+    "body_pass_2",
+    "integrated"
+   ],
+   "mask_areas": {
+    "person": 0.49515,
+    "hair": 0.06722,
+    "face_full": 0.10807,
+    "face_inner": 0.04014,
+    "face_transition": 0.05465,
+    "skin": 0.34048,
+    "body_skin": 0.1488,
+    "tattoos": 0.01869,
+    "clothing": 0.11656,
+    "protect": 0.17989
+   },
+   "reading": {
+    "image": "repl_input_1_quarto_top_preto.png",
+    "width": 779,
+    "height": 1240,
+    "target_face": {
+     "bbox": [
+      198.7,
+      312.6,
+      431.1,
+      653.0
+     ],
+     "similarity": 0.041,
+     "age": 30.0,
+     "sex": "F",
+     "det_score": 0.864,
+     "yaw": 0.194,
+     "kps": [
+      [
+       262.6,
+       478.0
+      ],
+      [
+       372.6,
+       448.1
+      ],
+      [
+       338.9,
+       539.0
+      ],
+      [
+       296.2,
+       588.4
+      ],
+      [
+       390.0,
+       562.3
+      ]
+     ]
+    },
+    "target_body": {
+     "keypoints": [
+      [
+       340.81716426213575,
+       526.7594526807466,
+       1.0
+      ],
+      [
+       327.5653152465821,
+       762.8080132702987,
+       1.0
+      ],
+      [
+       107.25332536300027,
+       785.1705084840457,
+       1.0
+      ],
+      [
+       0.0,
+       0.0,
+       0.0
+      ],
+      [
+       37.68111803134286,
+       1103.2148848573368,
+       1.0
+      ],
+      [
+       547.8773051301639,
+       740.4455180565517,
+       1.0
+      ],
+      [
+       691.9911631743112,
+       972.352875828743,
+       1.0
+      ],
+      [
+       594.2587766846023,
+       978.97880033652,
+       1.0
+      ],
+      [
+       238.11533439159393,
+       1212.5426392356555,
+       1.0
+      ],
+      [
+       0.0,
+       0.0,
+       0.0
+      ],
+      [
+       0.0,
+       0.0,
+       0.0
+      ],
+      [
+       546.2208240032196,
+       1200.947271347046,
+       1.0
+      ],
+      [
+       0.0,
+       0.0,
+       0.0
+      ],
+      [
+       0.0,
+       0.0,
+       0.0
+      ],
+      [
+       257.9931079149246,
+       478.72149999936437,
+       1.0
+      ],
+      [
+       370.6338245471318,
+       445.59187746047974,
+       1.0
+      ],
+      [
+       186.7644194563229,
+       520.1335281729698,
+       1.0
+      ],
+      [
+       430.26714511712396,
+       453.874283095201,
+       1.0
+      ]
+     ],
+     "bbox": [
+      37.68111803134286,
+      445.59187746047974,
+      691.9911631743112,
+      1212.5426392356555
+     ],
+     "height_frac": 0.619,
+     "visible_points": 9
+    },
+    "others": [],
+    "caption": "A photo-realistic shoot from a front camera angle about a young woman sitting in an office chair, smiling at the camera, wearing a black tube top. the image also shows a modern interior with white walls and a hanging macrame chair in the background. on the middle of the image, a 20-year-old woman with light skin, dark brown hair, and brown eyes appears to be smiling at the viewer. she has a slim body and is wearing a black tube top that is pulled up to reveal her bare shoulders and chest area. her hair is styled in loose waves and falls down her back. she has a tattoo on her left arm and is wearing hoop earrings. her eyes are looking directly at the viewer with a neutral expression. her lips are painted a soft pink color and she has freckles on her cheeks. the lighting in the image is bright and natural, highlighting her features. the overall mood of the image is casual and relaxed.",
+    "fields": {},
+    "camera": "selfie",
+    "light": {
+     "brightness": 123.0,
+     "contrast": 61.3,
+     "warmth": 16.4,
+     "saturation": 0.21,
+     "clipped_highlights": 0.0003,
+     "face_to_scene": 1.095,
+     "label": "ambient light"
+    },
+    "warnings": [],
+    "person_box": [
+     0.0,
+     142.40000000000003,
+     779.0,
+     1240.0
+    ],
+    "description": "front camera selfie, phone held at arm's length, A photo-realistic shoot from a front camera angle about a young woman sitting in an office chair, smiling at the camera, wearing a black tube top. the image also shows a modern interior with white walls and a hanging macrame chair in the background. on the middle of the image, a 20-year-old woman with light skin, dark brown hair, and brown eyes appears to be smiling at the viewer. she has a slim body and is wearing a black tube top that is pulled up to reveal her bare shoulders and chest area. her hair is styled in loose waves and falls down her back. she has a tattoo on her left arm and is wearing hoop earrings. her eyes are looking directly at the viewer with a neutral expression. her lips are painted a soft pink color and she has freckles on her cheeks. the lighting in the image is bright and natural, highlighting her features. the overall mood of the image is casual and relaxed, ambient light"
+   }
+  }
+ ]
+}
