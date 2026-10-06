@@ -1,0 +1,329 @@
+{
+  "meta": {
+    "id": "realvis-persona-transfer",
+    "hidden": true,
+    "compatible_models": [],
+    "title": "Persona Transfer - a persona inteira gerada na pose da pessoa da foto",
+    "description": "Persona Replacement, modo transferencia. A regiao da pessoa (sem a roupa e sem acessorios: a mascara vem do backend) e GERADA de novo com RealVisXL + LoRA da persona, com a pose da pessoa original como condicao (DWPose do proprio recorte -> ControlNet Union SDXL promax, tipo openpose). Fora da mascara (fundo, roupa, acessorios) ficam os pixels da foto, que tambem servem de contexto.",
+    "required_params": [
+      "IMAGE",
+      "MASK",
+      "PROMPT",
+      "NEGATIVE",
+      "SEED",
+      "DENOISE",
+      "LORA_NAME",
+      "CROP_X",
+      "CROP_Y",
+      "CROP_W",
+      "CROP_H",
+      "WORK_W",
+      "WORK_H"
+    ],
+    "optional_params": {
+      "CKPT": "RealVisXL_V5.0_fp16.safetensors",
+      "LORA_STRENGTH": 1.0,
+      "STEPS": 30,
+      "CFG": 5.0,
+      "SAMPLER": "dpmpp_2m_sde",
+      "SCHEDULER": "karras",
+      "CONTROLNET": "controlnet-union-sdxl-1.0-promax.safetensors",
+      "CN_TYPE": "openpose",
+      "CN_STRENGTH": 0.8,
+      "CN_END": 0.8,
+      "FILENAME_PREFIX": "luna_transfer"
+    }
+  },
+  "graph": {
+    "1": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "${CKPT}"
+      }
+    },
+    "2": {
+      "class_type": "LoraLoaderModelOnly",
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "lora_name": "${LORA_NAME}",
+        "strength_model": "${LORA_STRENGTH}"
+      }
+    },
+    "3": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "1",
+          1
+        ],
+        "text": "${PROMPT}"
+      }
+    },
+    "4": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "clip": [
+          "1",
+          1
+        ],
+        "text": "${NEGATIVE}"
+      }
+    },
+    "10": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "${IMAGE}"
+      }
+    },
+    "11": {
+      "class_type": "ImageCrop",
+      "inputs": {
+        "image": [
+          "10",
+          0
+        ],
+        "width": "${CROP_W}",
+        "height": "${CROP_H}",
+        "x": "${CROP_X}",
+        "y": "${CROP_Y}"
+      }
+    },
+    "12": {
+      "class_type": "ImageScale",
+      "inputs": {
+        "image": [
+          "11",
+          0
+        ],
+        "upscale_method": "lanczos",
+        "width": "${WORK_W}",
+        "height": "${WORK_H}",
+        "crop": "disabled"
+      }
+    },
+    "20": {
+      "class_type": "DWPreprocessor",
+      "inputs": {
+        "image": [
+          "12",
+          0
+        ],
+        "detect_hand": "enable",
+        "detect_body": "enable",
+        "detect_face": "enable",
+        "resolution": 1024,
+        "bbox_detector": "yolox_l.onnx",
+        "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
+        "scale_stick_for_xinsr_cn": "enable"
+      }
+    },
+    "21": {
+      "class_type": "ControlNetLoader",
+      "inputs": {
+        "control_net_name": "${CONTROLNET}"
+      }
+    },
+    "22": {
+      "class_type": "SetUnionControlNetType",
+      "inputs": {
+        "control_net": [
+          "21",
+          0
+        ],
+        "type": "${CN_TYPE}"
+      }
+    },
+    "23": {
+      "class_type": "ControlNetApplyAdvanced",
+      "inputs": {
+        "positive": [
+          "3",
+          0
+        ],
+        "negative": [
+          "4",
+          0
+        ],
+        "control_net": [
+          "22",
+          0
+        ],
+        "image": [
+          "20",
+          0
+        ],
+        "strength": "${CN_STRENGTH}",
+        "start_percent": 0.0,
+        "end_percent": "${CN_END}",
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "30": {
+      "class_type": "LoadImageMask",
+      "inputs": {
+        "image": "${MASK}",
+        "channel": "red"
+      }
+    },
+    "31": {
+      "class_type": "CropMask",
+      "inputs": {
+        "mask": [
+          "30",
+          0
+        ],
+        "x": "${CROP_X}",
+        "y": "${CROP_Y}",
+        "width": "${CROP_W}",
+        "height": "${CROP_H}"
+      }
+    },
+    "32": {
+      "class_type": "MaskToImage",
+      "inputs": {
+        "mask": [
+          "31",
+          0
+        ]
+      }
+    },
+    "33": {
+      "class_type": "ImageScale",
+      "inputs": {
+        "image": [
+          "32",
+          0
+        ],
+        "upscale_method": "bilinear",
+        "width": "${WORK_W}",
+        "height": "${WORK_H}",
+        "crop": "disabled"
+      }
+    },
+    "34": {
+      "class_type": "ImageToMask",
+      "inputs": {
+        "image": [
+          "33",
+          0
+        ],
+        "channel": "red"
+      }
+    },
+    "13": {
+      "class_type": "VAEEncode",
+      "inputs": {
+        "pixels": [
+          "12",
+          0
+        ],
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "35": {
+      "class_type": "SetLatentNoiseMask",
+      "inputs": {
+        "samples": [
+          "13",
+          0
+        ],
+        "mask": [
+          "34",
+          0
+        ]
+      }
+    },
+    "14": {
+      "class_type": "KSampler",
+      "inputs": {
+        "model": [
+          "2",
+          0
+        ],
+        "positive": [
+          "23",
+          0
+        ],
+        "negative": [
+          "23",
+          1
+        ],
+        "latent_image": [
+          "35",
+          0
+        ],
+        "seed": "${SEED}",
+        "steps": "${STEPS}",
+        "cfg": "${CFG}",
+        "sampler_name": "${SAMPLER}",
+        "scheduler": "${SCHEDULER}",
+        "denoise": "${DENOISE}"
+      }
+    },
+    "15": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": [
+          "14",
+          0
+        ],
+        "vae": [
+          "1",
+          2
+        ]
+      }
+    },
+    "16": {
+      "class_type": "ImageScale",
+      "inputs": {
+        "image": [
+          "15",
+          0
+        ],
+        "upscale_method": "lanczos",
+        "width": "${CROP_W}",
+        "height": "${CROP_H}",
+        "crop": "disabled"
+      }
+    },
+    "18": {
+      "class_type": "ImageCompositeMasked",
+      "inputs": {
+        "destination": [
+          "10",
+          0
+        ],
+        "source": [
+          "16",
+          0
+        ],
+        "x": "${CROP_X}",
+        "y": "${CROP_Y}",
+        "resize_source": false,
+        "mask": [
+          "31",
+          0
+        ]
+      }
+    },
+    "19": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "18",
+          0
+        ],
+        "filename_prefix": "${FILENAME_PREFIX}"
+      }
+    }
+  }
+}

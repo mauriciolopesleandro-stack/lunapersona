@@ -1,0 +1,75 @@
+{
+  "_comment": "Persona Transfer (Persona Replacement, modo transferencia - spec 'PERSONA REPLACEMENT - INTEGRACAO FOTOGRAFICA', 2026-10-06): a Luna INTEIRA gerada na pose da pessoa da foto, sem face swap. Roupa, acessorios e cenario sao os pixels da foto. Modelo/LoRA lidos da receita travada (so leitura).",
+  "version": "transfer-v1.0",
+  "generation_config": "config/persona_engine_v2.json",
+  "transfer": {
+    "denoise": 0.9,
+    "lora_strength_from_generation": true,
+    "steps": 30,
+    "cfg": 5.0,
+    "controlnet": {
+      "file": "controlnet-union-sdxl-1.0-promax.safetensors",
+      "type": "openpose",
+      "strength": 0.8,
+      "end_percent": 0.8,
+      "source": "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors",
+      "size_bytes": 2513342408,
+      "sha256": "9fae2e50cb431bfcbe05822b59ec2228df545ef27f711dea8949e9f4ed9f7cdc"
+    },
+    "hair_room": 0.35,
+    "prompt": "lunavox, a woman, {description}, natural skin with pores, natural minimal makeup, same lighting as the photo, realistic unretouched photo"
+  },
+  "face_refinement": {
+    "enabled": true,
+    "only_if_identity_below": 0.65,
+    "denoise": 0.35,
+    "strength": 0.6,
+    "lora": true,
+    "identity_adapter": null,
+    "prompt": "lunavox, a woman, natural face, natural minimal makeup, natural skin texture, realistic photo"
+  },
+  "integration": {
+    "enabled": true,
+    "denoise": 0.18,
+    "strength": 0.6,
+    "lora": false,
+    "edge_ring": 6,
+    "prompt": "natural skin texture matching the photo, same lighting and shadows, seamless, realistic unretouched photo"
+  },
+  "post_lighting_match": {
+    "enabled": false,
+    "note": "spec: sem filtro/grao depois; a geracao resolve a luz"
+  },
+  "checks": {
+    "max_background_changed": 0.01,
+    "max_clothing_changed": 0.02,
+    "max_pose_distance": 0.12,
+    "max_identity_drop": 0.02,
+    "max_identity_drop_integration": 0.03,
+    "min_final_face": 0.7,
+    "max_original_similarity": 0.4
+  },
+  "negative_extra": [
+    "heavy makeup",
+    "contour makeup",
+    "false eyelashes",
+    "glossy lipstick",
+    "blush",
+    "beauty filter",
+    "plastic skin",
+    "waxy skin",
+    "smooth skin",
+    "studio lighting",
+    "tattoo",
+    "tattoos",
+    "double face",
+    "ghosting",
+    "deformed hands",
+    "extra fingers",
+    "halo",
+    "pasted face"
+  ],
+  "budget": {
+    "limit_usd": 0.05
+  }
+}

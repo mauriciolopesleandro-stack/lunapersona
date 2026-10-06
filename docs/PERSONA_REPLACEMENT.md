@@ -92,3 +92,23 @@ Identidade, mistura, fundo, roupa, luz e textura são medidas **numéricas**. Ne
 - O **InstantID** (identidade forte) tende a gerar rostos contrastados e "maquiados"; a LoRA reforça.
 - As correções por pixel (recoloração, grão) resolvem um problema e criam outro (mancha, pele suja).
 - O método atual chegou ao limite: **ou integra e não troca, ou troca e fica produzido.**
+
+---
+
+# Modo transferência: spec "PERSONA REPLACEMENT — INTEGRAÇÃO FOTOGRÁFICA" (2026-10-06, só código, sem GPU)
+
+A Luna **inteira** é gerada na pose da pessoa da foto, sem face swap e sem filtro depois.
+
+| Etapa | O que faz | Config (`config/persona_transfer.json`) |
+|---|---|---|
+| 1. Leitura + pose | pessoa, rosto e pose (DWPose) da foto | — |
+| 2. Máscara | pessoa − roupa − acessórios (óculos, pulseira...) + folga de cabelo em volta da cabeça | `hair_room` 0,35 |
+| 3. Transferência | RealVisXL + LoRA lunavox @1.0 + ControlNet Union promax (openpose) | denoise 0,9, 30 passos, CFG 5, pose 0,8 até 80% |
+| 4. Refino de rosto | **só se** a identidade ficar abaixo de 0,65; sem InstantID | denoise 0,35 |
+| 5. Integração | região + costura com a roupa, sem LoRA, sem mexer no fundo | denoise 0,18 |
+| 6. Composição | fora da máscara, os pixels da foto, garantido no código | — |
+
+- Checkpoints: `original`, `persona_transfer`, `face_refinement`, `integration`. Com rollback; se a transferência for recusada, o processo para (`transfer_rejected`), porque refinar só o rosto seria face swap.
+- Validação: identidade, mistura com a original (> 0,40 reprova), pose, fundo, roupa (fora da costura), luz, textura, borda e `integration_score`.
+- O critério final continua sendo **o olho**: "parece uma foto tirada da Luna?".
+- Código: `backend/app/core/persona_replacement/transfer.py`, `ComfyTransferTransformer` em `providers/comfyui/replacement.py`, `workflows/realvis-persona-transfer.json`, `scripts/transfer_teste1.py`. 310 testes.

@@ -23,9 +23,10 @@ from app.core.generation.reference import ReferenceSheet, sam_points
 from app.core.persona_replacement.blending import feather
 from app.core.persona_replacement.contracts import RawSegments, TransformRequest, TransformResult
 from app.providers.base import ProviderError, ProviderImage, RegionPassRequest
-from app.providers.comfyui.region_pass import ComfyRegionPassAdapter
+from app.providers.comfyui.region_pass import ComfyRegionPassAdapter, work_size
 from app.providers.comfyui.session import ComfySession, output_name
 from app.validation_backends.skin import _split_locator
+from app.workflow_manager.manager import WorkflowNotFoundError
 
 SEGMENT_WORKFLOW = "replacement-segment"
 
@@ -139,4 +140,71 @@ class ComfyReplacementTransformer:
         return TransformResult(out.image.locator, out.seconds, out.gpu, {**out.effective_parameters, "clip_mask": clip})
 
 
-__all__ = ["ComfyImageStore", "ComfyReplacementTransformer", "ComfySegmenter", "crop_for", "mask_png", "parse_boxes", "to_png"]
+TRANSFER_WORKFLOW = "realvis-persona-transfer"
+TRANSFER_NODES = ("DWPreprocessor", "SetUnionControlNetType", "ControlNetApplyAdvanced", "ControlNetLoader")
+
+
+class ComfyTransferTransformer:
+    """Persona Transfer: a etapa "persona_transfer" vai para o workflow com pose
+    (DWPose -> ControlNet Union openpose, regiao inteira gerada com a LoRA); as
+    demais (refino de rosto, integracao) reusam o transformer do replacement."""
+
+    def __init__(self, session: ComfySession, base: ComfyReplacementTransformer, profile, lora, transfer: dict[str, Any],
+                 feather_frac: float = 0.006) -> None:
+        self.session = session
+        self.base = base
+        self.profile = profile
+        self.lora = lora
+        self.transfer = transfer
+        self.feather_frac = feather_frac
+
+    async def validate_configuration(self) -> list[str]:
+        problems: list[str] = []
+        try:
+            self.session.workflows.get_workflow(TRANSFER_WORKFLOW)
+        except WorkflowNotFoundError:
+            problems.append(f"Workflow {TRANSFER_WORKFLOW} nao encontrado.")
+        try:
+            info = await self.session.client.get_object_info()
+        except ComfyUIError as exc:
+            return problems + [f"Nao consegui conferir os nos do ComfyUI: {exc}"]
+        problems += [f"No {n} nao esta no pod." for n in TRANSFER_NODES if n not in info]
+        options = info.get("ControlNetLoader", {}).get("input", {}).get("required", {}).get("control_net_name", [[]])[0] or []
+        if self.transfer["controlnet"]["file"] not in options:
+            problems.append(f"ControlNet {self.transfer['controlnet']['file']} nao esta no pod.")
+        return problems
+
+    async def transform(self, request: TransformRequest) -> TransformResult:
+        from app.core.persona_replacement.transfer import TRANSFER
+
+        if request.name != TRANSFER:
+            return await self.base.transform(request)
+        crop = crop_for(request.mask, margin=0.12)
+        if crop is None:
+            raise ProviderError(f"{request.name}: mascara vazia")
+        ww, wh = work_size(crop["w"], crop["h"])
+        soft = feather(request.mask, max(2, int(min(crop["w"], crop["h"]) * self.feather_frac)))
+        try:
+            mask = await self.session.client.upload_image(f"xfermask_{uuid.uuid4().hex[:10]}.png", mask_png(soft))
+        except ComfyUIError as exc:
+            raise ProviderError(f"nao consegui enviar a mascara: {exc}") from exc
+        t, cn, s = self.transfer, self.transfer["controlnet"], self.profile.sampling
+        values = {
+            "IMAGE": request.image, "MASK": mask, "PROMPT": request.prompt, "NEGATIVE": request.negative,
+            "SEED": request.seed, "DENOISE": request.denoise, "CKPT": self.profile.checkpoint,
+            "LORA_NAME": self.lora.file, "LORA_STRENGTH": self.lora.strength if request.use_lora else 0.0,
+            "STEPS": int(t.get("steps", 30)), "CFG": float(t.get("cfg", s.cfg)), "SAMPLER": s.sampler,
+            "SCHEDULER": s.scheduler, "CONTROLNET": cn["file"], "CN_TYPE": cn["type"], "CN_STRENGTH": float(cn["strength"]),
+            "CN_END": float(cn["end_percent"]), "CROP_X": crop["x"], "CROP_Y": crop["y"], "CROP_W": crop["w"],
+            "CROP_H": crop["h"], "WORK_W": ww, "WORK_H": wh, "FILENAME_PREFIX": "luna_transfer",
+        }
+        self.session.mark(self.profile.id)
+        prompt_id, out, seconds = await self.session.run(TRANSFER_WORKFLOW, values)
+        return TransformResult(output_name(out), round(seconds, 2), await self.session.gpu(),
+                               {"workflow": TRANSFER_WORKFLOW, "prompt_id": prompt_id, "crop": crop, "work_size": [ww, wh],
+                                **{k: values[k] for k in ("DENOISE", "STEPS", "CFG", "CONTROLNET", "CN_TYPE",
+                                                          "CN_STRENGTH", "CN_END", "LORA_STRENGTH", "PROMPT")}})
+
+
+__all__ = ["ComfyImageStore", "ComfyReplacementTransformer", "ComfySegmenter", "ComfyTransferTransformer", "TRANSFER_WORKFLOW",
+           "crop_for", "mask_png", "parse_boxes", "to_png"]
