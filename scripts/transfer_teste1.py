@@ -71,7 +71,8 @@ async def main() -> int:
     client = ComfyUIClient(base_url="http://127.0.0.1:8188", connect_timeout=10.0, generation_timeout=900.0)
     session = ComfySession(client, WorkflowManager(ROOT / "workflows"))
     store = ComfyImageStore(client)
-    region = ComfyRegionPassAdapter(session, gen.model(), gen.lora, steps=gen.pass_steps, identity_adapters=gen.identity_adapters)
+    # sem InstantID no modo transferencia (spec): nada de adaptador de identidade nem download dele
+    region = ComfyRegionPassAdapter(session, gen.model(), gen.lora, steps=gen.pass_steps, identity_adapters={})
     transformer = ComfyTransferTransformer(session, ComfyReplacementTransformer(region, client), gen.model(), gen.lora,
                                            cfg.transfer)
     problems = await region.validate_configuration() + await transformer.validate_configuration()
