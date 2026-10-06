@@ -69,14 +69,19 @@ async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--teto", type=float, default=None)
     ap.add_argument("--overhead", type=float, default=180)
+    ap.add_argument("--cena", action="append", default=[],
+                    help="semente|rotulo|texto em ingles (repetir para varias); sem isso, as 3 cenas do teste 2")
+    ap.add_argument("--saida", default="bench_v2_multipass.json")
     args = ap.parse_args()
+    scenes = [tuple(c.split("|", 2)) for c in args.cena] if args.cena else SCENES
+    scenes = [(int(s), lab, txt) for s, lab, txt in scenes]
 
     cfg = load_v2_config(ROOT / "config" / "persona_engine_v2.json")
     limit = min(cfg.benchmark_limit_usd, args.teto) if args.teto else cfg.benchmark_limit_usd
     passes = [p for p in (*cfg.face_passes, *cfg.body_passes) if p.enabled]
     plan = ExperimentPlan("V2 teste 2 (multi-pass RealVisXL)", "subir a identidade da base RealVisXL (0,37) sem perder a pele natural",
                           "passadas de rosto com a LoRA em recorte ampliado aumentam a semelhanca; rollback segura as que pioram",
-                          images=len(SCENES), seconds_per_image=14 + 13 * len(passes), overhead_seconds=args.overhead,
+                          images=len(scenes), seconds_per_image=14 + 13 * len(passes), overhead_seconds=args.overhead,
                           price_per_hour=PRICE)
     budget = BudgetGuard(limit).check(plan)
 
@@ -109,10 +114,10 @@ async def main() -> int:
     builder = PromptBuilder(NegativePromptBuilder(json.loads((ROOT / "config" / "persona_engine.json").read_text())["global_negative"]))
     skin_meter = PillowSkinTextureAnalyzer(client)
 
-    out_path = ROOT / "bench_v2_multipass.json"
+    out_path = ROOT / args.saida
     report = {"budget": budget, "passes": [p.to_dict() for p in passes], "style": cfg.style.id if cfg.style else None,
               "scenes": []}
-    for seed, label, scene in SCENES:
+    for seed, label, scene in scenes:
         prompt = builder.build(sheet, profile, cfg.styled(scene), {}, [], single_subject=True)
         negative = ", ".join(dict.fromkeys([*prompt.negative.all_terms(), *cfg.negative_for(model)]))
         prompts = {k: cfg.styled(v) for k, v in cfg.pass_prompts.items() if k != "body"}
