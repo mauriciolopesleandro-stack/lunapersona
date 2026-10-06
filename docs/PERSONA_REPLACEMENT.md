@@ -44,3 +44,30 @@ O método resolve o problema que motivou esta tarefa: a foto continua sendo a me
 2. **Tatuagem:** passada própria só onde há tatuagem (pele escura dentro da pele), com força maior, sem mexer na roupa.
 3. **Raiz do cabelo:** borda suave na recoloração.
 4. **Separar o efeito dos óculos:** testar também uma foto sem óculos, para saber quanto da identidade baixa é dos olhos cobertos.
+
+---
+
+# Teste 3: varanda (com óculos) + quarto (sem óculos), ~US$ 0,11
+
+Mudanças: rosto 1 com maxilar e bochechas (InstantID 1,0, denoise 0,75); tatuagem com máscara e passada próprias; raiz do cabelo com borda suave; pulseiras, brincos e relógio protegidos.
+
+| Foto | Identidade | Idade | Fundo | Roupa | Luz | Textura | Borda | Status |
+|---|---|---|---|---|---|---|---|---|
+| **Quarto (sem óculos)** | **0,825** (0,21 → 0,82 na passada 1) | 24 | **0,0%** | 0,4% | 0,97 | 0,99 | 0,88 | **PASS** |
+| Varanda (com óculos) | 0,493 | 38 | 0,07% | 2,0% | 0,95 | 0,18 | 0,67 | FAIL `identity_low` |
+
+## Leitura visual
+- **Quarto: virou a Luna e continua sendo a mesma foto.** A pose (mãos puxando o top), o fundo, a rede e a luz ficaram iguais, e a identidade foi alta. Não parece colagem.
+- **Varanda:** com os olhos cobertos pelos óculos, a identidade não passa de ~0,5. O resto (fundo, roupa, acessórios, cabelo escuro) está ótimo.
+
+## Ainda falha
+1. **Tatuagens continuam nos braços, nas duas fotos.** A detecção por "buracos na pele" só pega traço fino. Tatuagens grandes (rosa no ombro, antebraço) ficam fora: a máscara cobriu só 0,4–0,6% da imagem.
+2. **Cabelo do quarto:** as pontas claras (luzes) ficaram. A recoloração só dispara pela média de brilho do cabelo, que era castanha.
+3. **Maquiagem:** o rosto do quarto ficou mais "produzido" que o original (blush e boca marcados). O negativo do replacement não tem os termos de maquiagem do estilo da V2.
+4. **Óculos escuros:** é um limite físico. Sem os olhos, nem a pessoa nem o ArcFace reconhecem a identidade. Sugestão: limiar próprio (por exemplo, 0,50) para fotos com olhos cobertos, ou a opção de tirar os óculos.
+
+## Próximo passo proposto (só com autorização)
+- **Tatuagem:** detectar pela segmentação do Florence ("tattoo"), em vez de buracos na pele, e apagar com mais força só ali.
+- **Cabelo:** recolorir quando uma parte relevante do cabelo for clara (percentil 75 do brilho), e não pela média.
+- **Maquiagem:** negativo com "heavy makeup, blush, glossy lipstick, contour" no replacement.
+- **Teste:** só a foto do quarto (1 imagem, ~US$ 0,06), como regressão.
