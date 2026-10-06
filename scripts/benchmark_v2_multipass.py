@@ -45,6 +45,26 @@ SCENES = [
 PRICE = 0.57
 
 
+class KeepAliveAnalyzer:
+    """Mantem o checkpoint no cache do ComfyUI entre as passadas. Se o no extra
+    falhar no pod, desliga o truque (registrado no log) e segue sem ele."""
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.disabled_reason = None
+
+    async def analyze(self, image, master):
+        try:
+            return await self.inner.analyze(image, master)
+        except Exception as exc:
+            if not self.inner.keep_alive:
+                raise
+            self.disabled_reason = f"{exc.__class__.__name__}: {exc}"
+            print("KEEP_ALIVE desligado:", self.disabled_reason, flush=True)
+            self.inner.keep_alive = {}
+            return await self.inner.analyze(image, master)
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--teto", type=float, default=None)
@@ -75,7 +95,11 @@ async def main() -> int:
     if problems:
         print("CONFIG", problems, flush=True)
         return 2
-    analyzer = ComfyImageAnalyzer(client)
+    keep = {"ka1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": model.checkpoint}},
+            "ka2": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["ka1", 0], "lora_name": cfg.lora.file,
+                                                                    "strength_model": cfg.lora.strength}},
+            "ka3": {"class_type": "PreviewAny", "inputs": {"source": ["ka2", 0]}}}
+    analyzer = KeepAliveAnalyzer(ComfyImageAnalyzer(client, keep_alive=keep))
     runner = MultiPassRunner(base=base, region=region, analyzer=analyzer, skin_analyzer=PillowSkinTextureAnalyzer(client),
                              rules=cfg.acceptance, age_target=cfg.age_target,
                              duplicate_similarity=float(sheet.validation["subject_count"]["persona_duplicate_similarity"]),
@@ -86,11 +110,13 @@ async def main() -> int:
     skin_meter = PillowSkinTextureAnalyzer(client)
 
     out_path = ROOT / "bench_v2_multipass.json"
-    report = {"budget": budget, "passes": [p.to_dict() for p in passes], "scenes": []}
+    report = {"budget": budget, "passes": [p.to_dict() for p in passes], "style": cfg.style.id if cfg.style else None,
+              "scenes": []}
     for seed, label, scene in SCENES:
-        prompt = builder.build(sheet, profile, scene, {}, [], single_subject=True)
+        prompt = builder.build(sheet, profile, cfg.styled(scene), {}, [], single_subject=True)
         negative = ", ".join(dict.fromkeys([*prompt.negative.all_terms(), *cfg.negative_for(model)]))
-        prompts = {**cfg.pass_prompts, "body": "lunavox, a woman, " + cfg.pass_prompts["body"].format(scene=scene)}
+        prompts = {k: cfg.styled(v) for k, v in cfg.pass_prompts.items() if k != "body"}
+        prompts["body"] = "lunavox, a woman, " + cfg.styled(cfg.pass_prompts["body"].replace("{scene}", scene))
         t0 = time.monotonic()
         res = await runner.run(SceneRequest(prompt=prompt, parameters=GenerationParameters(seed=seed), lora={}), master,
                                list(cfg.face_passes), list(cfg.body_passes), prompts, negative,
@@ -99,6 +125,7 @@ async def main() -> int:
         skin = await skin_meter.analyze(final.image, final.analysis.persona_face(), sheet.validation["skin_realism"])
         validation = await engine.run(ValidationContext(sheet=sheet, image=final.image, analysis=final.analysis, skin=skin))
         wall = round(time.monotonic() - t0, 1)
+        report["keep_alive"] = analyzer.disabled_reason or "ligado"
         report["scenes"].append({"seed": seed, "label": label, "scene": scene, "prompts": prompts, "negative": negative,
                                  "multipass": res.to_dict(), "final_validation": validation.to_dict(), "wall_seconds": wall})
         out_path.write_text(json.dumps(report, indent=1, default=str))

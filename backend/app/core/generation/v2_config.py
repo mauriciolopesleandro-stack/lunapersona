@@ -65,9 +65,22 @@ class PassSpec:
     strength: float
     denoise: float
     enabled: bool = False
+    lora: bool = True  # False = passada sem a LoRA (so textura); peso da LoRA nunca muda
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class StyleProfile:
+    """Alvo de realismo fotografico (ex.: selfie de celular crua). Vai no prompt
+    da base e das passadas; o negativo soma ao negativo comum."""
+
+    id: str
+    positive: str
+    negative: tuple[str, ...] = ()
+    reference: str = ""
+    reference_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -86,6 +99,7 @@ class V2Config:
     pass_steps: int = 20
     pass_prompts: dict[str, str] = field(default_factory=dict)
     acceptance: dict[str, Any] = field(default_factory=dict)
+    style: StyleProfile | None = None
 
     def model(self, model_id: str | None = None) -> ModelProfile:
         key = model_id or self.generation_model
@@ -94,7 +108,15 @@ class V2Config:
         return self.models[key]
 
     def negative_for(self, profile: ModelProfile) -> list[str]:
-        return list(dict.fromkeys([*self.common_negative, *profile.extra_negative]))
+        style = list(self.style.negative) if self.style else []
+        return list(dict.fromkeys([*self.common_negative, *profile.extra_negative, *style]))
+
+    def styled(self, text: str) -> str:
+        """Texto com o estilo: `{style}` e substituido; sem o marcador, o estilo vai no fim."""
+        style = self.style.positive if self.style else ""
+        if "{style}" in text:
+            return text.replace("{style}", style).strip().rstrip(",").strip()
+        return f"{text}, {style}" if style else text
 
 
 def _unit(value: Any, what: str) -> float:
@@ -115,7 +137,8 @@ def _passes(items: list[dict[str, Any]], kind: str, masks: tuple[str, ...], limi
         if item.get("mask") not in masks:
             raise V2ConfigError(f"Mascara '{item.get('mask')}' invalida para passada de {kind} ({', '.join(masks)}).")
         out.append(PassSpec(kind, n, str(item["name"]), item["mask"], _unit(item.get("strength"), f"{kind} {n} strength"),
-                            _unit(item.get("denoise"), f"{kind} {n} denoise"), bool(item.get("enabled", False))))
+                            _unit(item.get("denoise"), f"{kind} {n} denoise"), bool(item.get("enabled", False)),
+                            bool(item.get("lora", True))))
     return tuple(out)
 
 
@@ -151,6 +174,9 @@ def parse_v2_config(data: dict[str, Any]) -> V2Config:
             pass_steps=int(data.get("pass_steps", 20)),
             pass_prompts=dict(data.get("pass_prompts", {})),
             acceptance=dict(data.get("acceptance", {})),
+            style=StyleProfile(data["style"]["id"], data["style"]["positive"], tuple(data["style"].get("negative", [])),
+                               data["style"].get("reference", ""), data["style"].get("reference_sha256", ""))
+            if data.get("style") else None,
         )
         enabled = [p for p in (*cfg.face_passes, *cfg.body_passes) if p.enabled]
         if enabled:
@@ -171,5 +197,5 @@ def load_v2_config(path: Path) -> V2Config:
     return parse_v2_config(json.loads(path.read_text(encoding="utf-8")))
 
 
-__all__ = ["BODY_MASKS", "FACE_MASKS", "LoraSpec", "ModelProfile", "PassSpec", "Sampling", "V2Config",
+__all__ = ["BODY_MASKS", "FACE_MASKS", "LoraSpec", "ModelProfile", "PassSpec", "Sampling", "StyleProfile", "V2Config",
            "V2ConfigError", "load_v2_config", "parse_v2_config"]

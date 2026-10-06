@@ -66,9 +66,12 @@ def to_face(data: dict[str, Any]) -> DetectedFace:
 
 
 class ComfyImageAnalyzer:
-    def __init__(self, client: ComfyUIClient) -> None:
+    def __init__(self, client: ComfyUIClient, keep_alive: dict[str, Any] | None = None) -> None:
         self.client = client
         self._uploaded: dict[str, str] = {}
+        # V2: nos extras (ex.: o checkpoint das passadas) que entram no grafo da
+        # analise so para o cache do ComfyUI nao descartar o modelo entre passadas.
+        self.keep_alive = dict(keep_alive or {})
 
     async def check_ready(self) -> list[str]:
         try:
@@ -105,6 +108,7 @@ class ComfyImageAnalyzer:
             "lf": {"class_type": "LunaFaces", "inputs": {"image": ["1", 0], "det_size": 1024, "reference": ["2", 0]}},
             "dw": {"class_type": "DWPreprocessor", "inputs": {"image": ["1", 0], **DWPOSE}},
             "dwp": {"class_type": "PreviewAny", "inputs": {"source": ["dw", 1]}},
+            **self.keep_alive,
         }
         entry = await self.client.wait_for_completion(await self.client.queue_prompt(graph))
         texts = {k: str(v["text"][0]) for k, v in entry.get("outputs", {}).items() if v.get("text")}

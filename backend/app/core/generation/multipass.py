@@ -126,7 +126,7 @@ def face_region(face: DetectedFace, mask: str, width: int, height: int) -> PassR
     fw, fh = x2 - x1, y2 - y1
     cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
     # recorte quadrado com contexto (cabelo, pescoco): o modelo precisa ver a cabeca inteira
-    side = max(fw, fh) * (2.2 if mask == "face_full" else 1.8)
+    side = max(fw, fh) * (1.8 if mask == "face_full" else 1.6)
     crop = _clamp_box(cx, cy, side, side, width, height)
     lx, ly = cx - crop.x, cy - crop.y
     scale = {"face_full": 0.62, "face_inner": 0.42, "face_skin": 0.55}[mask]
@@ -246,7 +246,8 @@ class MultiPassRunner:
                 continue
             name = f"{spec.kind}_{spec.number}"
             prompt = prompts[spec.kind if spec.kind == "body" else spec.name]
-            rec = PassRecord(model=model[0], model_version=model[1], lora=lora[0], lora_strength=lora[1],
+            rec = PassRecord(model=model[0], model_version=model[1], lora=lora[0] if spec.lora else "nenhuma",
+                             lora_strength=lora[1] if spec.lora else 0.0,
                              seed=(seed + 100 * len(result.records)) % 2**32, prompt_hash=text_hash(prompt),
                              negative_hash=text_hash(negative), pass_type=spec.kind, pass_number=spec.number,
                              mask_type=spec.mask, denoise=spec.denoise, strength=spec.strength)
@@ -268,7 +269,7 @@ class MultiPassRunner:
             try:
                 out = await self.region.refine(current.image, RegionPassRequest(
                     region=region.to_dict(), prompt=prompt, negative=negative, denoise=spec.denoise,
-                    strength=spec.strength, seed=rec.seed, name=name))
+                    strength=spec.strength, seed=rec.seed, name=name, use_lora=spec.lora))
             except ProviderError as exc:
                 rec.rollback, rec.rollback_reason = True, f"erro do provider: {exc}"
                 result.decisions.append({"pass": name, "status": ERROR, "reasons": [str(exc)]})

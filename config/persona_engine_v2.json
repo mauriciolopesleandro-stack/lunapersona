@@ -76,22 +76,25 @@
       "name": "identity_structure",
       "enabled": true,
       "mask": "face_full",
-      "strength": 0.75,
-      "denoise": 0.3
+      "strength": 0.85,
+      "denoise": 0.42,
+      "lora": true
     },
     {
       "name": "facial_refinement",
       "enabled": true,
       "mask": "face_inner",
-      "strength": 0.42,
-      "denoise": 0.2
+      "strength": 0.5,
+      "denoise": 0.22,
+      "lora": true
     },
     {
       "name": "microdetail",
       "enabled": true,
       "mask": "face_skin",
-      "strength": 0.22,
-      "denoise": 0.12
+      "strength": 0.45,
+      "denoise": 0.18,
+      "lora": false
     }
   ],
   "body_passes": [
@@ -100,17 +103,19 @@
       "enabled": true,
       "mask": "body_full",
       "strength": 0.6,
-      "denoise": 0.25
+      "denoise": 0.25,
+      "lora": true
     },
     {
       "name": "body_refinement",
       "enabled": true,
       "mask": "body_regions",
       "strength": 0.3,
-      "denoise": 0.15
+      "denoise": 0.15,
+      "lora": true
     }
   ],
-  "passes_note": "denoise = quanto o recorte e redesenhado (checkpoint + LoRA da persona com o peso configurado); strength = opacidade da mascara ao colar o resultado. Nenhuma passada mexe no peso da LoRA.",
+  "passes_note": "denoise = quanto o recorte e redesenhado; strength = opacidade da mascara ao colar. A LoRA roda com o peso configurado nas passadas com lora=true; com lora=false (microdetalhe) a passada so devolve textura sem puxar o visual de maquiagem do treino da LoRA - experimento registrado, guardado pelo rollback.",
   "age_target": 27,
   "benchmark": {
     "limit_usd": 0.1,
@@ -118,10 +123,10 @@
   },
   "pass_steps": 20,
   "pass_prompts": {
-    "identity_structure": "lunavox, a woman, close-up photo of her face, natural face proportions, natural skin texture, realistic photo",
-    "facial_refinement": "lunavox, a woman, detailed eyes, natural nose and lips, natural expression, realistic photo",
-    "microdetail": "lunavox, a woman, natural skin texture with visible pores, subtle skin imperfections, matte skin, unretouched photo",
-    "body": "{scene}, natural body proportions, natural anatomy, realistic hands, realistic photo"
+    "identity_structure": "lunavox, a woman, close-up photo of her face, natural face proportions, {style}",
+    "facial_refinement": "lunavox, a woman, detailed natural eyes, natural nose and lips, natural expression, {style}",
+    "microdetail": "close-up photo of a woman's face, {style}",
+    "body": "{scene}, natural body proportions, natural anatomy, realistic hands, {style}"
   },
   "acceptance": {
     "max_identity_drop": 0.02,
@@ -131,5 +136,27 @@
     "max_age_worsening": 3,
     "max_pose_distance": 0.05,
     "note": "pele e telemetria (nao decide). Corpo e anatomia sem medida comparavel fora da pose da master: registrados, nao decidem."
+  },
+  "style": {
+    "id": "smartphone_raw_v1",
+    "reference": "personas/luna/style_refs/realismo_ref_01.webp",
+    "reference_note": "selfie de celular gerada com RealVisXL, enviada pelo usuario em 2026-10-06 como alvo de realismo (fora do git)",
+    "positive": "candid smartphone selfie photo, raw unedited photo, natural skin texture with visible pores, light freckles across nose and cheeks, minimal makeup, natural eyebrows, natural lips, slightly messy hair with flyaway strands, natural window light, slightly muted colors, subtle grain",
+    "negative": [
+      "heavy makeup",
+      "contour makeup",
+      "lipstick",
+      "glossy lips",
+      "thick eyeliner",
+      "false eyelashes",
+      "smooth skin",
+      "retouched skin",
+      "beauty retouch",
+      "studio lighting",
+      "professional photoshoot",
+      "perfect skin",
+      "instagram filter"
+    ],
+    "reference_sha256": "63800d9f1199fa4a6789c402f4455f04a87434cb99c69929a1dae8e102df86c7"
   }
 }

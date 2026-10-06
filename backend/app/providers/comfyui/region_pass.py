@@ -95,7 +95,8 @@ class ComfyRegionPassAdapter(RegionPassAdapter):
         values = {
             "IMAGE": image.locator, "MASK": mask_name, "PROMPT": request.prompt, "NEGATIVE": request.negative,
             "SEED": request.seed, "DENOISE": request.denoise, "CKPT": self.profile.checkpoint,
-            "LORA_NAME": self.lora.file, "LORA_STRENGTH": self.lora.strength, "STEPS": self.steps, "CFG": s.cfg,
+            "LORA_NAME": self.lora.file, "LORA_STRENGTH": self.lora.strength if request.use_lora else 0.0,
+            "STEPS": self.steps, "CFG": s.cfg,
             "SAMPLER": s.sampler, "SCHEDULER": s.scheduler, "CROP_X": int(crop["x"]), "CROP_Y": int(crop["y"]),
             "CROP_W": int(crop["w"]), "CROP_H": int(crop["h"]), "WORK_W": ww, "WORK_H": wh,
             "FILENAME_PREFIX": f"luna_v2_{request.name}",
@@ -110,7 +111,8 @@ class ComfyRegionPassAdapter(RegionPassAdapter):
             effective_parameters={"workflow": self.workflows[kind], "denoise": request.denoise,
                                   "strength": request.strength, "crop": crop, "work_size": [ww, wh],
                                   "steps": self.steps, "cfg": s.cfg, "prompt": request.prompt, "mask": mask_name,
-                                  "lora": self.lora.file, "lora_strength": self.lora.strength},
+                                  "lora": self.lora.file if request.use_lora else None,
+                                  "lora_strength": values["LORA_STRENGTH"]},
         )
 
 

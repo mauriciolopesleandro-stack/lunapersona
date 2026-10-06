@@ -176,8 +176,10 @@ async def test_telemetry_has_one_record_per_pass_with_fixed_lora():
     assert [(x["pass_type"], x["pass_number"]) for x in recs] == [("base", 0), ("face", 1), ("face", 2), ("face", 3),
                                                                   ("body", 1), ("body", 2)]
     assert len({x["seed"] for x in recs}) == 6 and recs[0]["seed"] == 7201
-    assert {x["lora_strength"] for x in recs} == {1.0} and {x["lora"] for x in recs} == {"lunavox_sdxl_v1.safetensors"}
-    assert [x["denoise"] for x in recs[1:4]] == [0.30, 0.20, 0.12] and recs[1]["mask_type"] == "face_full"
+    # peso da LoRA nunca muda; a passada de microdetalhe roda SEM a LoRA (lora=false na config), registrado
+    assert [x["lora_strength"] for x in recs] == [1.0, 1.0, 1.0, 0.0, 1.0, 1.0]
+    assert recs[3]["lora"] == "nenhuma" and recs[1]["lora"] == "lunavox_sdxl_v1.safetensors"
+    assert [x["denoise"] for x in recs[1:4]] == [0.42, 0.22, 0.18] and recs[1]["mask_type"] == "face_full"
     assert recs[0]["cost"] == pytest.approx(0.57 * 14 / 3600, abs=1e-5) and recs[0]["vram"] == 7600
 
 
@@ -229,3 +231,43 @@ async def test_region_adapter_graph():
     assert (k["denoise"], k["steps"], k["cfg"], k["seed"]) == (0.30, 20, 5.0, 9)
     assert g["2"]["inputs"]["strength_model"] == 1.0 and g["1"]["inputs"]["ckpt_name"] == "RealVisXL_V5.0_fp16.safetensors"
     assert out.effective_parameters["workflow"] == "realvis-face-pass" and out.effective_parameters["strength"] == 0.75
+
+
+async def test_microdetail_pass_runs_without_lora():
+    r, region = runner({"base": look(0.40)})
+    await run(r)
+    by_name = {c[1].name: c[1] for c in region.calls}
+    assert by_name["face_1"].use_lora and not by_name["face_3"].use_lora
+
+
+async def test_region_adapter_without_lora_sets_weight_zero():
+    comfy = FakeComfyV2()
+    a = ComfyRegionPassAdapter(ComfySession(comfy, WorkflowManager(REPO / "workflows")), CFG.model("realvisxl"), CFG.lora)
+    from app.providers.base import RegionPassRequest
+    reg = face_region(face(0.5), "face_skin", 832, 1216).to_dict()
+    out = await a.refine(ProviderImage("comfyui", "x.png [output]", "u", 832, 1216),
+                         RegionPassRequest(reg, "skin", "neg", 0.18, 0.45, 3, "face_3", use_lora=False))
+    assert comfy.graphs[0]["2"]["inputs"]["strength_model"] == 0.0 and out.effective_parameters["lora"] is None
+
+
+def test_style_profile_goes_into_prompts_and_negative():
+    assert CFG.style.id == "smartphone_raw_v1" and len(CFG.style.reference_sha256) == 64
+    styled = CFG.styled(CFG.pass_prompts["microdetail"])
+    assert "{style}" not in styled and "light freckles" in styled and "visible pores" in styled
+    assert CFG.styled("in a gym").startswith("in a gym, candid smartphone selfie photo")
+    neg = CFG.negative_for(CFG.model("realvisxl"))
+    assert "heavy makeup" in neg and "plastic skin" in neg and "nude" in neg
+
+
+async def test_analyzer_keep_alive_nodes_join_the_graph():
+    from app.validation_backends.comfyui import ComfyImageAnalyzer
+
+    class C(FakeComfyV2):
+        async def wait_for_completion(self, prompt_id):
+            return {"prompt_id": prompt_id, "outputs": {"lf": {"text": ["[]"]}}}
+
+    comfy = C()
+    keep = {"ka1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "RealVisXL_V5.0_fp16.safetensors"}}}
+    await ComfyImageAnalyzer(comfy, keep_alive=keep).analyze(ProviderImage("comfyui", "a.png [output]", "", 832, 1216), MASTER)
+    await ComfyImageAnalyzer(comfy).analyze(ProviderImage("comfyui", "a.png [output]", "", 832, 1216), MASTER)
+    assert "ka1" in comfy.graphs[0] and "ka1" not in comfy.graphs[1]  # V1 continua igual

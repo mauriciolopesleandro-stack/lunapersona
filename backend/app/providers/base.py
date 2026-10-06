@@ -216,6 +216,7 @@ class RegionPassRequest:
     strength: float
     seed: int
     name: str = ""
+    use_lora: bool = True  # False = passada so de textura (LoRA com peso 0 nesta passada)
 
 
 class RegionPassAdapter(ABC):
