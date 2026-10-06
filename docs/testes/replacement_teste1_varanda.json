@@ -1,0 +1,400 @@
+{
+ "budget": {
+  "name": "Persona Replacement 1o teste",
+  "objective": "integrar a Luna na foto da varanda sem parecer colada",
+  "hypothesis": "transformacao localizada + luz/grao da propria foto melhora a integracao sem perder identidade",
+  "images": 1,
+  "seconds_per_image": 200,
+  "overhead_seconds": 150,
+  "price_per_hour": 0.57,
+  "total_seconds": 350,
+  "estimated_cost_usd": 0.0554,
+  "limit_usd": 0.05,
+  "authorized_usd": 0.07,
+  "allowed_usd": 0.07
+ },
+ "config_version": "replacement-v1.0",
+ "input": "repl_input_5_varanda_copacabana_oculos.png",
+ "final": {
+  "name": "body_pass_2",
+  "image": "repl_body_pass_2_fd8346bc.png"
+ },
+ "report": {
+  "status": "FAIL",
+  "identity": 0.432,
+  "age": 42.0,
+  "pose": 0.01,
+  "subject_count": 1,
+  "background_changed": 0.00015,
+  "clothing_changed": 0.02419,
+  "lighting": {
+   "delta_luma": -1.18,
+   "delta_chroma": 0.72,
+   "score": 0.947
+  },
+  "texture": {
+   "reference_noise": 8.168,
+   "region_noise": 2.935,
+   "ratio": 0.359,
+   "score": 0.068
+  },
+  "edge": {
+   "halo": 2.44,
+   "sharpness_ratio": 0.703,
+   "score": 0.583
+  },
+  "integration_score": 0.068,
+  "body": "UNKNOWN",
+  "anatomy": "UNKNOWN",
+  "failures": [
+   "identity_low"
+  ]
+ },
+ "records": [
+  {
+   "stage": "hair_recolor",
+   "kind": "hair",
+   "mask": "hair",
+   "strength": 0.85,
+   "denoise": null,
+   "seed": null,
+   "identity_adapter": null,
+   "lora": null,
+   "image": "repl_hair_recolor_280d2c39.png",
+   "identity": 0.212,
+   "age": 40.0,
+   "pose": 0.004,
+   "metrics": {
+    "background_changed": 6e-05,
+    "clothing_changed": 0.0
+   },
+   "seconds": 10.23,
+   "gpu": null,
+   "cost_usd": null,
+   "accepted": true,
+   "rollback_reason": null
+  },
+  {
+   "stage": "face_pass_1",
+   "kind": "face",
+   "mask": "face_full",
+   "strength": 0.75,
+   "denoise": 0.45,
+   "seed": 7802,
+   "identity_adapter": "instantid",
+   "lora": true,
+   "image": "repl_face_pass_1_6e713948.png",
+   "identity": 0.461,
+   "age": 40.0,
+   "pose": 0.003,
+   "metrics": {
+    "background_changed": 6e-05,
+    "clothing_changed": 0.0
+   },
+   "seconds": 39.28,
+   "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+   "cost_usd": 0.00622,
+   "accepted": true,
+   "rollback_reason": null
+  },
+  {
+   "stage": "face_pass_2",
+   "kind": "face",
+   "mask": "face_inner",
+   "strength": 0.4,
+   "denoise": 0.3,
+   "seed": 7903,
+   "identity_adapter": null,
+   "lora": true,
+   "image": "repl_face_pass_2_c901855b.png",
+   "identity": 0.446,
+   "age": 40.0,
+   "pose": 0.003,
+   "metrics": {
+    "background_changed": 6e-05,
+    "clothing_changed": 0.0
+   },
+   "seconds": 10.72,
+   "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+   "cost_usd": 0.0017,
+   "accepted": true,
+   "rollback_reason": null
+  },
+  {
+   "stage": "face_pass_3",
+   "kind": "face",
+   "mask": "face_transition",
+   "strength": 0.15,
+   "denoise": 0.15,
+   "seed": 8004,
+   "identity_adapter": null,
+   "lora": false,
+   "image": "repl_face_pass_3_2450f8e0.png",
+   "identity": 0.448,
+   "age": 40.0,
+   "pose": 0.003,
+   "metrics": {
+    "background_changed": 6e-05,
+    "clothing_changed": 0.0
+   },
+   "seconds": 13.54,
+   "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+   "cost_usd": 0.00214,
+   "accepted": true,
+   "rollback_reason": null
+  },
+  {
+   "stage": "body_pass_1",
+   "kind": "body",
+   "mask": "body_skin",
+   "strength": 0.5,
+   "denoise": 0.45,
+   "seed": 8105,
+   "identity_adapter": null,
+   "lora": true,
+   "image": "repl_body_pass_1_8dde28ee.png",
+   "identity": 0.438,
+   "age": 42.0,
+   "pose": 0.008,
+   "metrics": {
+    "background_changed": 0.00011,
+    "clothing_changed": 0.02112
+   },
+   "seconds": 14.86,
+   "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+   "cost_usd": 0.00235,
+   "accepted": true,
+   "rollback_reason": null
+  },
+  {
+   "stage": "body_pass_2",
+   "kind": "body",
+   "mask": "body_skin",
+   "strength": 0.25,
+   "denoise": 0.2,
+   "seed": 8206,
+   "identity_adapter": null,
+   "lora": true,
+   "image": "repl_body_pass_2_fd8346bc.png",
+   "identity": 0.432,
+   "age": 42.0,
+   "pose": 0.01,
+   "metrics": {
+    "background_changed": 0.00015,
+    "clothing_changed": 0.02419
+   },
+   "seconds": 12.59,
+   "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+   "cost_usd": 0.00199,
+   "accepted": true,
+   "rollback_reason": null
+  },
+  {
+   "stage": "integration",
+   "kind": "integration",
+   "mask": "modified",
+   "strength": null,
+   "denoise": null,
+   "seed": null,
+   "identity_adapter": null,
+   "lora": null,
+   "image": "repl_integrated_d3132171.png",
+   "identity": 0.41,
+   "age": 61.0,
+   "pose": 0.007,
+   "metrics": {
+    "background_changed": 0.0,
+    "clothing_changed": 0.02419
+   },
+   "seconds": null,
+   "gpu": null,
+   "cost_usd": null,
+   "accepted": false,
+   "rollback_reason": "identidade caiu 0.022 (> 0.01)"
+  }
+ ],
+ "checkpoints": [
+  "original",
+  "hair_recolor",
+  "face_pass_1",
+  "face_pass_2",
+  "face_pass_3",
+  "body_pass_1",
+  "body_pass_2",
+  "integrated"
+ ],
+ "mask_areas": {
+  "person": 0.23467,
+  "hair": 0.00589,
+  "face_full": 0.00845,
+  "face_inner": 0.00326,
+  "face_transition": 0.00932,
+  "skin": 0.10888,
+  "body_skin": 0.08899,
+  "clothing": 0.12329,
+  "protect": 0.00593
+ },
+ "reading": {
+  "image": "repl_input_5_varanda_copacabana_oculos.png",
+  "width": 977,
+  "height": 1080,
+  "target_face": {
+   "bbox": [
+    407.5,
+    230.6,
+    512.6,
+    386.0
+   ],
+   "similarity": 0.216,
+   "age": 45.0,
+   "sex": "F",
+   "det_score": 0.86,
+   "yaw": 0.013,
+   "kps": [
+    [
+     435.1,
+     294.6
+    ],
+    [
+     484.8,
+     294.2
+    ],
+    [
+     460.6,
+     323.5
+    ],
+    [
+     441.8,
+     347.6
+    ],
+    [
+     480.0,
+     346.9
+    ]
+   ]
+  },
+  "target_body": {
+   "keypoints": [
+    [
+     460.9243320259784,
+     314.11183663871554,
+     1.0
+    ],
+    [
+     477.7122054249048,
+     436.5645602544149,
+     1.0
+    ],
+    [
+     370.0723112788464,
+     454.3399556179842,
+     1.0
+    ],
+    [
+     275.2702026731438,
+     590.6179867386817,
+     1.0
+    ],
+    [
+     129.1169519060188,
+     602.4682503143946,
+     1.0
+    ],
+    [
+     585.3520995709632,
+     418.78916489084565,
+     1.0
+    ],
+    [
+     699.9046474695206,
+     578.767723162969,
+     1.0
+    ],
+    [
+     846.0578982366455,
+     728.8710617886649,
+     1.0
+    ],
+    [
+     352.29691591527717,
+     805.8977750307985,
+     1.0
+    ],
+    [
+     342.4216962688499,
+     1056.7283540500534,
+     1.0
+    ],
+    [
+     354.27195984456284,
+     1036.977914757199,
+     1.0
+    ],
+    [
+     506.3503423995444,
+     813.7979507479403,
+     1.0
+    ],
+    [
+     447.09902452098004,
+     1070.5536615550518,
+     1.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     435.2487609452671,
+     292.3863534165754,
+     1.0
+    ],
+    [
+     484.624859177404,
+     290.41130948728994,
+     1.0
+    ],
+    [
+     401.67301414741405,
+     310.16174878014465,
+     1.0
+    ],
+    [
+     520.1756499045423,
+     302.26157306300263,
+     1.0
+    ]
+   ],
+   "bbox": [
+    129.1169519060188,
+    290.41130948728994,
+    846.0578982366455,
+    1070.5536615550518
+   ],
+   "height_frac": 0.722,
+   "visible_points": 13
+  },
+  "others": [],
+  "caption": "A woman standing on a balcony overlooking Rio de Janeiro, Brazil, wearing a white lace corset and blue jeans. the woman, who appears to be in her late twenties, has blonde hair styled in a sleek, straight look and is wearing large hoop earrings. she is standing confidently with her arms stretched out to the sides, looking directly at the camera with a sultry expression. her body is slim and toned, and she has a tattoo on her left arm. in the background, we can see the vast expanse of the ocean, lush greenery, and distant mountains, with a clear blue sky above. the woman is standing in the middle of the image, with the ocean stretching out behind her, creating a stunning backdrop for her outfit. the overall aesthetic of the image is vibrant and eye-catching, with a focus on the woman's outfit and the beauty of the cityscape.",
+  "fields": {},
+  "camera": "third_person",
+  "light": {
+   "brightness": 131.0,
+   "contrast": 54.2,
+   "warmth": -24.8,
+   "saturation": 0.335,
+   "clipped_highlights": 0.0001,
+   "face_to_scene": 0.864,
+   "label": "ambient light, cool tones"
+  },
+  "warnings": [],
+  "person_box": [
+   66.95695190601882,
+   152.89999999999998,
+   908.2178982366455,
+   1080.0
+  ],
+  "description": "photo taken by a friend with a smartphone, A woman standing on a balcony overlooking Rio de Janeiro, Brazil, wearing a white lace corset and blue jeans. the woman, who appears to be in her late twenties, has blonde hair styled in a sleek, straight look and is wearing large hoop earrings. she is standing confidently with her arms stretched out to the sides, looking directly at the camera with a sultry expression. her body is slim and toned, and she has a tattoo on her left arm. in the background, we can see the vast expanse of the ocean, lush greenery, and distant mountains, with a clear blue sky above. the woman is standing in the middle of the image, with the ocean stretching out behind her, creating a stunning backdrop for her outfit. the overall aesthetic of the image is vibrant and eye-catching, with a focus on the woman's outfit and the beauty of the cityscape, ambient light, cool tones"
+ }
+}
