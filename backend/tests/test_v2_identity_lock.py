@@ -61,3 +61,10 @@ def test_influencer_scenes_are_natural_and_varied():
     for s in scenes:
         text = s["prompt"].lower()
         assert not any(w in text for w in ("studio", "bokeh", "dslr", "professional", "softbox"))
+
+
+def test_locked_persona_description_matches_the_config():
+    doc = json.loads((REPO / "personas" / "luna" / "luna_v2_travada.json").read_text(encoding="utf-8"))
+    assert doc["trava"]["impressao_sha256"] == RAW["identity_lock"]["fingerprint"] == identity_fingerprint(RAW)
+    assert doc["geracao"]["lora"]["file"] == RAW["lora"]["file"] and doc["geracao"]["modelo"]["sha256"] == RAW["models"]["realvisxl"]["sha256"]
+    assert doc["masters"]["master_face"]["sha256"] == RAW["identity_lock"]["master_face"]["sha256"]

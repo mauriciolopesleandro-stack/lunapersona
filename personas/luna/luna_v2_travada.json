@@ -1,0 +1,589 @@
+{
+  "_comment": "Luna V2 TRAVADA: descricao completa da persona e da receita de geracao que ficou aprovada. Gerado a partir de persona_sheet.json, persona.json, config/persona_engine_v2.json e dos resultados medidos.",
+  "persona": {
+    "id": "luna",
+    "nome": "Luna",
+    "persona_version": "1.0",
+    "perfil": "influencer digital brasileira, 27 anos, fotos de celular do dia a dia",
+    "identidade": {
+      "face": {
+        "face_shape": {
+          "value": "oval, levemente alongado; macas do rosto altas e marcadas",
+          "confidence": "HIGH"
+        },
+        "eyes": {
+          "value": "castanho-escuros, amendoados, palpebra levemente encoberta, cilios longos",
+          "confidence": "HIGH"
+        },
+        "eyebrows": {
+          "value": "grossas, escuras, quase retas com arco suave",
+          "confidence": "HIGH"
+        },
+        "nose": {
+          "value": "reto, ponte media, ponta levemente arredondada",
+          "confidence": "MEDIUM"
+        },
+        "mouth_lips": {
+          "value": "labios cheios, arco do cupido marcado, tom nude-rosado",
+          "confidence": "HIGH"
+        },
+        "jaw_chin": {
+          "value": "mandibula suave, queixo arredondado",
+          "confidence": "MEDIUM"
+        },
+        "skin_tone": {
+          "value": "bronzeado/oliva dourado",
+          "confidence": "HIGH"
+        },
+        "freckles": {
+          "value": "sardas leves no rosto e colo em pose_04; pouco visiveis em luna_15/luna_20",
+          "confidence": "LOW"
+        },
+        "asymmetries": {
+          "value": "UNKNOWN",
+          "confidence": "LOW"
+        }
+      },
+      "hair": {
+        "identity": {
+          "value": "castanho muito escuro, comprido (abaixo do peito), ondulado solto, reflexos acobreados",
+          "confidence": "HIGH"
+        },
+        "hairstyle_variation_allowed": [
+          "solto",
+          "preso",
+          "coque",
+          "molhado",
+          "repartido de lado ou ao meio"
+        ],
+        "note": "pose_04 mostra cabelo mais armado e mais acobreado que luna_15/luna_20"
+      },
+      "age": {
+        "target": 27,
+        "accepted_range": [
+          23,
+          31
+        ],
+        "source": "InsightFace na master_face (27)",
+        "confidence": "MEDIUM",
+        "known_drift": "a troca de cabeca (Qwen BFS) deixa a idade estimada em 20-25 (benchmark E1: 22.2; estresse: 23.7). Registrado, nao corrigido na V1."
+      },
+      "distinctive_features": {
+        "choker": {
+          "value": "gargantilha preta fina",
+          "confidence": "HIGH",
+          "lock": "SOFT"
+        },
+        "pendant": {
+          "value": "corrente fina com pingente oval de pedra preta",
+          "confidence": "HIGH",
+          "lock": "SOFT"
+        },
+        "earrings": {
+          "value": "argolas pequenas",
+          "confidence": "MEDIUM",
+          "lock": "VARIABLE"
+        },
+        "tattoos": {
+          "value": "nenhuma",
+          "confidence": "HIGH",
+          "lock": "HARD"
+        }
+      }
+    },
+    "gatilho_lora": "lunavox"
+  },
+  "trava": {
+    "versao": "luna-face-v2.0",
+    "travada_em": "2026-10-06",
+    "impressao_sha256": "14e6af91fd928300bb26dd8b2bf2e58763c688513c36961e73174d31ec5933e9",
+    "o_que_a_impressao_cobre": [
+      "modelo e checkpoint (sha256, amostragem)",
+      "LoRA (arquivo, peso, sha256)",
+      "passadas de rosto e corpo (mascara, strength, denoise, LoRA, InstantID)",
+      "adaptador InstantID (modelos)",
+      "passos das passadas",
+      "prompts das passadas de rosto"
+    ],
+    "fora_da_impressao": [
+      "estilo (smartphone_raw_v2)",
+      "cenas",
+      "negativo comum"
+    ],
+    "regra": "qualquer mudanca na receita impede a geracao ate destravar de proposito com nova versao",
+    "rosto_minimo_final": 0.7,
+    "abaixo_do_minimo": "PERSONA_DRIFT: a imagem nao entra no resultado aprovado",
+    "master_face": {
+      "file": "references/f7e81b9a6c974a3587d1c8d8bad405b9.png",
+      "sha256": "1c431d3c3c8ac85636de49dc0d2e7c7405b44fa0256ed746827afc24fc3c3269",
+      "note": "a identidade vem SEMPRE desta master (InstantID na 1a passada); masters nao mudam"
+    },
+    "resultado_de_referencia": {
+      "image": "generated/v2/luna_mercado_iid_b.png",
+      "sha256": "ed1d4a301eac87c5b38879d16d18dec60fbed52e318affc2eb82e316626d287d",
+      "scores": {
+        "base": 0.406,
+        "face_1": 0.827,
+        "face_2": 0.817,
+        "face_3": 0.803,
+        "final": 0.8
+      },
+      "age": 25,
+      "seed": 7312
+    }
+  },
+  "masters": {
+    "master_face": {
+      "arquivo": "references/f7e81b9a6c974a3587d1c8d8bad405b9.png",
+      "sha256": "1c431d3c3c8ac85636de49dc0d2e7c7405b44fa0256ed746827afc24fc3c3269",
+      "uso": "cabeca da troca BFS (Face Lock) e referencia do ArcFace"
+    },
+    "master_face_secondary": {
+      "arquivo": "references/31b2e73f9f384d219265d3ee7c493e98.png",
+      "sha256": "90b09a5ed541b8a552076f6dec288857221b893f27024ba3548f6874e8eb39eb",
+      "uso": "segunda referencia de rosto (reservada; nao usada na V1)"
+    },
+    "master_body": {
+      "arquivo": "references/db5b998d8a284347bbeb727d9d51bb6d.png",
+      "sha256": "70532015fada2be0f8816671acf38c93593cf405632b42d480654e177ac0842b",
+      "uso": "VALIDACAO de proporcoes (mesma classe de pose). PROIBIDO como imagem no Qwen: transfere roupa (10/10) e cenario (6/10)."
+    },
+    "master_body_seated": {
+      "arquivo": "references/f4b1a7e6020f40178e7083bdd20a342e.png",
+      "sha256": "d548a80375ec3576fab61a22b823451e0ff18d13bd4f7c8ac408e228af871ef5",
+      "uso": "referencia de corpo sentado (reservada; nao usada na V1)"
+    }
+  },
+  "geracao": {
+    "modelo": {
+      "id": "realvisxl",
+      "nome": "RealVisXL V5.0 (fp16)",
+      "arquivo": "RealVisXL_V5.0_fp16.safetensors",
+      "sha256": "6a35a7855770ae9820a3c931d4964c3817b6d9e3c6f9c4dabb5b3a94e5643b80",
+      "fonte": "https://huggingface.co/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors",
+      "amostragem": {
+        "steps": 30,
+        "cfg": 5.0,
+        "sampler": "dpmpp_2m_sde",
+        "scheduler": "karras"
+      }
+    },
+    "lora": {
+      "file": "lunavox_sdxl_v1.safetensors",
+      "strength": 1.0,
+      "sha256": "0a58a72e0d7850e360e410e9fdc2106003d681d109c19bd8c55d73b772f4dea3",
+      "source": "LoRA SDXL da Luna (treino 2026-09-24 sobre RealVisXL V5, 75 imagens, rank 32, so UNet, gatilho lunavox)",
+      "note": "luna_zimage_v1 (V1) NAO e compativel com SDXL. Peso 1.0 = o usado no teste de 2026-09-24; mudar = experimento separado."
+    },
+    "tamanho": {
+      "width": 832,
+      "height": 1216
+    },
+    "passadas": {
+      "rosto": [
+        {
+          "name": "identity_structure",
+          "enabled": true,
+          "mask": "face_full",
+          "strength": 0.85,
+          "denoise": 0.42,
+          "lora": true,
+          "identity_adapter": "instantid",
+          "adapter_weight": 0.8
+        },
+        {
+          "name": "facial_refinement",
+          "enabled": true,
+          "mask": "face_inner",
+          "strength": 0.5,
+          "denoise": 0.22,
+          "lora": true
+        },
+        {
+          "name": "microdetail",
+          "enabled": true,
+          "mask": "face_skin",
+          "strength": 0.45,
+          "denoise": 0.18,
+          "lora": false
+        }
+      ],
+      "corpo": [
+        {
+          "name": "body_structure",
+          "enabled": true,
+          "mask": "body_full",
+          "strength": 0.6,
+          "denoise": 0.25,
+          "lora": true
+        },
+        {
+          "name": "body_refinement",
+          "enabled": true,
+          "mask": "body_regions",
+          "strength": 0.3,
+          "denoise": 0.15,
+          "lora": true
+        }
+      ],
+      "passos": 20,
+      "significado": "denoise = quanto o recorte e redesenhado; strength = opacidade da mascara ao colar. A LoRA roda com o peso configurado nas passadas com lora=true; com lora=false (microdetalhe) a passada so devolve textura sem puxar o visual de maquiagem do treino da LoRA - experimento registrado, guardado pelo rollback."
+    },
+    "instantid": {
+      "workflow": "realvis-face-pass-instantid",
+      "model": "instantid_ip-adapter.bin",
+      "controlnet": "instantid_controlnet.safetensors",
+      "sources": {
+        "instantid_ip-adapter.bin": {
+          "url": "https://huggingface.co/InstantX/InstantID/resolve/main/ip-adapter.bin",
+          "size_bytes": 1691134141,
+          "sha256": "02b3618e36d803784166660520098089a81388e61a93ef8002aa79a5b1c546e1"
+        },
+        "instantid_controlnet.safetensors": {
+          "url": "https://huggingface.co/InstantX/InstantID/resolve/main/ControlNetModel/diffusion_pytorch_model.safetensors",
+          "size_bytes": 2502139136,
+          "sha256": "c8127be9f174101ebdafee9964d856b49b634435cf6daa396d3f593cf0bbbb05"
+        }
+      },
+      "note": "so na 1a passada de rosto; a passada de microdetalhe sem LoRA devolve a textura que o InstantID costuma alisar"
+    },
+    "criterios_de_aceite_por_passada": {
+      "max_identity_drop": 0.02,
+      "min_face_gain": {
+        "identity_structure": 0.0
+      },
+      "max_age_worsening": 3,
+      "max_pose_distance": 0.05,
+      "note": "pele e telemetria (nao decide). Corpo e anatomia sem medida comparavel fora da pose da master: registrados, nao decidem."
+    },
+    "prompts_das_passadas": {
+      "identity_structure": "lunavox, a woman, close-up photo of her face, natural face proportions, {style}",
+      "facial_refinement": "lunavox, a woman, detailed natural eyes, natural nose and lips, natural expression, {style}",
+      "microdetail": "close-up photo of a woman's face, {style}",
+      "body": "{scene}, natural body proportions, natural anatomy, realistic hands, {style}"
+    },
+    "estilo": {
+      "id": "smartphone_raw_v2",
+      "reference": "personas/luna/style_refs/realismo_ref_01.webp",
+      "reference_sha256": "63800d9f1199fa4a6789c402f4455f04a87434cb99c69929a1dae8e102df86c7",
+      "reference_note": "selfie de celular gerada com RealVisXL, enviada pelo usuario em 2026-10-06 como alvo de realismo (fora do git)",
+      "positive": "amateur smartphone photo, taken with a phone camera, raw unedited photo, everything in focus, sharp background, natural uneven ambient light, slightly imperfect exposure, natural skin texture with visible pores, light freckles across nose and cheeks, minimal makeup, natural eyebrows, natural lips, slightly messy hair with flyaway strands, candid natural pose, slightly muted colors, subtle phone camera grain",
+      "negative": [
+        "bokeh",
+        "blurred background",
+        "shallow depth of field",
+        "background blur",
+        "studio",
+        "studio lighting",
+        "softbox",
+        "rim light",
+        "perfect lighting",
+        "professional photography",
+        "professional photoshoot",
+        "DSLR",
+        "85mm",
+        "cinematic",
+        "magazine",
+        "editorial",
+        "posed model",
+        "heavy makeup",
+        "contour makeup",
+        "lipstick",
+        "glossy lips",
+        "thick eyeliner",
+        "false eyelashes",
+        "smooth skin",
+        "retouched skin",
+        "beauty retouch",
+        "perfect skin",
+        "instagram filter"
+      ],
+      "history": "v1 (smartphone_raw_v1) -> v2 em 2026-10-06: sem bokeh, sem luz perfeita, sem camera profissional, sem estudio (pedido do usuario)"
+    },
+    "negativo": {
+      "global_v1": [
+        "extra limbs",
+        "duplicated person",
+        "duplicated head",
+        "duplicated torso",
+        "fused limbs",
+        "disconnected limbs",
+        "malformed anatomy",
+        "floating limbs",
+        "unnatural proportions",
+        "deformed hands",
+        "extra fingers",
+        "missing limbs",
+        "duplicate body",
+        "multiple copies of subject"
+      ],
+      "comum_v2": [
+        "plastic skin",
+        "waxy skin",
+        "porcelain skin",
+        "airbrushed skin",
+        "beauty filter",
+        "CGI skin",
+        "3D render",
+        "doll face",
+        "oversmoothed skin",
+        "excessive glossy skin",
+        "heavy makeup",
+        "cartoon",
+        "illustration",
+        "painting",
+        "anime",
+        "nude",
+        "nsfw",
+        "topless",
+        "lingerie"
+      ],
+      "estilo": [
+        "bokeh",
+        "blurred background",
+        "shallow depth of field",
+        "background blur",
+        "studio",
+        "studio lighting",
+        "softbox",
+        "rim light",
+        "perfect lighting",
+        "professional photography",
+        "professional photoshoot",
+        "DSLR",
+        "85mm",
+        "cinematic",
+        "magazine",
+        "editorial",
+        "posed model",
+        "heavy makeup",
+        "contour makeup",
+        "lipstick",
+        "glossy lips",
+        "thick eyeliner",
+        "false eyelashes",
+        "smooth skin",
+        "retouched skin",
+        "beauty retouch",
+        "perfect skin",
+        "instagram filter"
+      ],
+      "persona": {
+        "persona": [
+          "tattoos",
+          "blonde or light hair",
+          "short hair",
+          "pale skin",
+          "different face",
+          "thin or skinny body",
+          "teenage or elderly appearance"
+        ],
+        "scene_single_subject": [
+          "second copy of the same woman",
+          "mirror reflection of her",
+          "twins"
+        ],
+        "note": "o negativo global e do sistema (config/persona_engine.json); cada adapter decide se aplica"
+      }
+    }
+  },
+  "validacao": {
+    "rosto_limiar_ficha": 0.55,
+    "rosto_minimo_trava": 0.7,
+    "idade_alvo": 27,
+    "pessoas": {
+      "persona_instances_expected": 1,
+      "persona_duplicate_similarity": 0.4,
+      "evidence": "rostos secundarios medidos: -0.066 a 0.001 (n=5); persona sem BFS 0.32-0.58",
+      "secondary_subjects": "ALLOWED",
+      "background_extras": "ALLOWED",
+      "limitation": "duplicata sem rosto visivel (de costas, corpo dentro de corpo) nao e detectavel com os medidores atuais",
+      "confidence": "LOW"
+    },
+    "pele": "nota de pele so como telemetria (confunde brilho com textura)"
+  },
+  "resultado_medido": {
+    "rodada": "10 cenas de influencer, 2026-10-06",
+    "aprovadas": "8/10",
+    "rosto_aprovadas": [
+      0.759,
+      0.815
+    ],
+    "idade_aprovadas": [
+      24.0,
+      29.0
+    ],
+    "por_cena": [
+      {
+        "cena": "cama_manha",
+        "semente": 7401,
+        "rosto_final": 0.781,
+        "idade": 27.0,
+        "validacao": "PASS_WITH_UNKNOWN",
+        "persona_perdida": false,
+        "passadas_desfeitas": []
+      },
+      {
+        "cena": "carro",
+        "semente": 7402,
+        "rosto_final": 0.444,
+        "idade": 33.0,
+        "validacao": "FAIL",
+        "persona_perdida": true,
+        "passadas_desfeitas": [
+          "face_1"
+        ]
+      },
+      {
+        "cena": "banheiro_espelho",
+        "semente": 7403,
+        "rosto_final": 0.759,
+        "idade": 29.0,
+        "validacao": "PASS_WITH_UNKNOWN",
+        "persona_perdida": false,
+        "passadas_desfeitas": [
+          "face_3"
+        ]
+      },
+      {
+        "cena": "cafe_bairro",
+        "semente": 7404,
+        "rosto_final": 0.794,
+        "idade": 26.0,
+        "validacao": "PASS_WITH_UNKNOWN",
+        "persona_perdida": false,
+        "passadas_desfeitas": []
+      },
+      {
+        "cena": "academia_espelho",
+        "semente": 7405,
+        "rosto_final": 0.815,
+        "idade": 24.0,
+        "validacao": "PASS_WITH_UNKNOWN",
+        "persona_perdida": false,
+        "passadas_desfeitas": []
+      },
+      {
+        "cena": "praia_tarde",
+        "semente": 7406,
+        "rosto_final": 0.441,
+        "idade": 32.0,
+        "validacao": "FAIL",
+        "persona_perdida": true,
+        "passadas_desfeitas": [
+          "face_1",
+          "body_1"
+        ]
+      },
+      {
+        "cena": "cozinha",
+        "semente": 7407,
+        "rosto_final": 0.808,
+        "idade": 29.0,
+        "validacao": "PASS_WITH_UNKNOWN",
+        "persona_perdida": false,
+        "passadas_desfeitas": []
+      },
+      {
+        "cena": "paulista_rua",
+        "semente": 7408,
+        "rosto_final": 0.802,
+        "idade": 26.0,
+        "validacao": "PASS_WITH_UNKNOWN",
+        "persona_perdida": false,
+        "passadas_desfeitas": [
+          "body_2"
+        ]
+      },
+      {
+        "cena": "elevador_espelho",
+        "semente": 7409,
+        "rosto_final": 0.804,
+        "idade": 27.0,
+        "validacao": "PASS_WITH_UNKNOWN",
+        "persona_perdida": false,
+        "passadas_desfeitas": []
+      },
+      {
+        "cena": "noite_flash",
+        "semente": 7410,
+        "rosto_final": 0.792,
+        "idade": 27.0,
+        "validacao": "PASS_WITH_UNKNOWN",
+        "persona_perdida": false,
+        "passadas_desfeitas": []
+      }
+    ],
+    "tempo_por_imagem_s": "~145-195 (RTX PRO 4000 24 GB)",
+    "custo_por_imagem_usd": "~0,025-0,03 a US$ 0,57/h"
+  },
+  "cenas_padrao": [
+    {
+      "seed": 7401,
+      "label": "cama_manha",
+      "descricao": "acordando na cama, selfie de manha",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, lying in bed in the morning, head on a white pillow, messy hair, wearing an oversized grey t-shirt, unmade wrinkled sheets, small Brazilian apartment bedroom, dim window light, slightly underexposed"
+    },
+    {
+      "seed": 7402,
+      "label": "carro",
+      "descricao": "selfie no carro estacionado",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, sitting in the driver's seat of a parked car, seatbelt on, sunglasses pushed up on her head, wearing a white tank top, harsh midday sun through the windshield, Sao Paulo street with parked cars visible through the window"
+    },
+    {
+      "seed": 7403,
+      "label": "banheiro_espelho",
+      "descricao": "selfie no espelho do banheiro de casa",
+      "prompt": "mirror selfie, holding a smartphone in front of the mirror, phone visible in the reflection, face fully visible, small apartment bathroom, white tiles, toothbrush and skincare bottles on the sink, towel hanging on the wall, overhead bathroom light, wearing a black sports top and grey sweatpants"
+    },
+    {
+      "seed": 7404,
+      "label": "cafe_bairro",
+      "descricao": "selfie num cafe de bairro com cafe gelado",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, sitting at a small table in a neighborhood cafe in Pinheiros, holding an iced coffee, other customers and the counter visible behind her, mixed window and indoor light, wearing a beige knit top"
+    },
+    {
+      "seed": 7405,
+      "label": "academia_espelho",
+      "descricao": "selfie no espelho da academia, pos-treino",
+      "prompt": "mirror selfie, holding a smartphone in front of the mirror, phone visible in the reflection, face fully visible, gym locker room mirror with smudges, post-workout, sweaty skin, sweat on chest and temples, damp hair in a messy ponytail, wearing a grey sports bra and black leggings, flat fluorescent ceiling lights"
+    },
+    {
+      "seed": 7406,
+      "label": "praia_tarde",
+      "descricao": "selfie na praia de Ipanema no fim da tarde",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, Ipanema beach in the late afternoon, wind blowing her hair across her face, squinting in the sun, wearing a white tank top over a bikini top, sand and beachgoers visible behind her, harsh low sun"
+    },
+    {
+      "seed": 7407,
+      "label": "cozinha",
+      "descricao": "selfie cozinhando em casa",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, in a small home kitchen, stirring a pan on the stove with the other hand, cluttered counter with vegetables and dishes, warm yellow ceiling light, wearing a loose white t-shirt, hair in a claw clip"
+    },
+    {
+      "seed": 7408,
+      "label": "paulista_rua",
+      "descricao": "selfie andando na Avenida Paulista, dia nublado",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, walking on Avenida Paulista on an overcast day, people and buildings behind her in focus, tote bag on her shoulder, wearing a denim jacket over a black top, flat grey daylight"
+    },
+    {
+      "seed": 7409,
+      "label": "elevador_espelho",
+      "descricao": "selfie no espelho do elevador, look do dia",
+      "prompt": "mirror selfie, holding a smartphone in front of the mirror, phone visible in the reflection, face fully visible, inside an apartment building elevator, outfit check, harsh top light, scratched steel walls, wearing jeans, white sneakers and a cropped beige cardigan, tote bag"
+    },
+    {
+      "seed": 7410,
+      "label": "noite_flash",
+      "descricao": "selfie com flash num barzinho a noite",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, at night at a crowded Brazilian bar with friends behind her, direct phone flash photo, harsh flash light on her face, dark background with string lights, holding a glass of caipirinha, wearing a black strappy top"
+    }
+  ],
+  "limitacoes": [
+    "2/10 cenas perderam a persona quando a passada de InstantID foi desfeita (rosto extra, idade) - refazer com outra semente",
+    "detalhes da cena nem sempre seguidos (objeto na mao, flash, acao)",
+    "poses repetitivas (frontal, centralizada)",
+    "anatomia sem detector (UNKNOWN); corpo so comparavel na pose da master_body",
+    "nota de pele nao e juiz"
+  ]
+}
