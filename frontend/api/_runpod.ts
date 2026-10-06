@@ -11,11 +11,14 @@
 //   2. tenta religar os pods do estudio parados (mais rapido: imagem ja
 //      baixada na maquina);
 //   3. cria um pod novo, com a GPU de menor custo por video livre, em cada volume da
-//      lista VOLUMES, na ordem (primeiro o US-MO-2, depois o EU-RO-1).
+//      lista VOLUMES, na ordem (primeiro o EU-RO-1, depois o US-MO-2).
 //
-// Os dois volumes tem o mesmo conteudo: o proprio pod sincroniza um com o
-// outro via API S3 da RunPod (scripts/volume_sync.py), entao tanto faz em
-// qual deles o estudio sobe.
+// O pod sincroniza codigo, personas e .env entre os volumes (scripts/volume_sync.py),
+// mas NAO os modelos: Z-Image, Qwen 2511, video e a V2 so foram instalados no
+// luna-models-ro (EU-RO-1). Volume sem os modelos (hasModels=false) nunca recebe o
+// estudio: um pod la liga, cobra e nao gera (2026-10-06: Europa sem GPU -> pod no
+// US-MO-2 -> nem a V1 gerava). Sem GPU no volume com modelos = erro de "sem GPU",
+// que o site ja trata com nova tentativa.
 import { backendApiToken } from "./_auth.js";
 import { s3Configured, s3ObjectExists } from "./_s3.js";
 import { storeConfigured, storeDelete, storeSetIfAbsent } from "./_store.js";
@@ -37,13 +40,15 @@ export interface StudioVolume {
   // gravado por scripts/volume_sync.py) - senao o estudio subiria sem
   // modelos, personas nem .env.
   original?: boolean;
+  // Os modelos de geracao (Z-Image, Qwen, video) estao neste volume. Sem eles
+  // o estudio nao e ligado aqui.
+  hasModels: boolean;
 }
 
-// Ordem = preferencia. O primeiro e o volume original (mais perto do
-// Brasil); o segundo e a copia sincronizada.
+// Ordem = preferencia: primeiro o volume com os modelos.
 export const VOLUMES: StudioVolume[] = [
-  { id: "1o5y5cpw99", dataCenterId: "US-MO-2", original: true }, // luna-models
-  { id: "7s449owvmb", dataCenterId: "EU-RO-1" }, // luna-models-ro
+  { id: "7s449owvmb", dataCenterId: "EU-RO-1", hasModels: true }, // luna-models-ro (165 GB, modelos)
+  { id: "1o5y5cpw99", dataCenterId: "US-MO-2", original: true, hasModels: false }, // luna-models (so FLUX/Chroma antigos)
 ];
 
 const READY_MARKER_KEY = ".luna-sync/ready.json";
@@ -402,6 +407,10 @@ async function wakeStudioUnlocked(): Promise<WakeResult> {
   const stuck: StudioPod[] = [];
   for (const pod of stopped) {
     const volume = VOLUMES.find((v) => v.id === pod.networkVolumeId);
+    if (volume && !volume.hasModels) {
+      attempts.push(`${pod.id}: volume ${volume.dataCenterId} sem os modelos de geracao - nao e religado`);
+      continue;
+    }
     if (!volume || !(await volumeUsable(volume))) {
       attempts.push(`${pod.id}: volume ${pod.dataCenterId ?? "?"} ainda sem a copia completa e sem chaves S3`);
       stuck.push(pod);
@@ -431,6 +440,10 @@ async function wakeStudioUnlocked(): Promise<WakeResult> {
     .sort((a, b) => a.pricePerHr / a.speed - b.pricePerHr / b.speed)
     .map((g) => g.id);
   for (const volume of VOLUMES) {
+    if (!volume.hasModels) {
+      attempts.push(`${volume.dataCenterId}: volume sem os modelos de geracao - pulado`);
+      continue;
+    }
     if (!(await volumeUsable(volume))) {
       attempts.push(`${volume.dataCenterId}: volume ainda sem a copia completa e sem chaves S3 para completar - pulado`);
       continue;
