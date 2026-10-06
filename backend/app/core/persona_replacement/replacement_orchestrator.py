@@ -26,6 +26,7 @@ from app.core.persona_replacement.contracts import (
     Segmenter,
 )
 from app.core.persona_replacement.face_transform import build_request, stage_kind
+from app.core.persona_replacement.blending import feather
 from app.core.persona_replacement.lighting import match_grain, match_lighting, needs_hair_recolor, noise_level, recolor_hair
 from app.core.persona_replacement.rollback import Checkpoint, CheckpointStore, stage_reasons
 from app.core.persona_replacement.segmentation import MaskSet, build_masks, dilate
@@ -108,7 +109,9 @@ class ReplacementOrchestrator:
         hair = cfg.hair
         if hair.get("enabled") and needs_hair_recolor(original, masks.hair, float(hair["recolor_if_luma_above"])):
             t0 = time.monotonic()
-            px = recolor_hair(original, masks.hair, float(hair["target_luma"]), float(hair["target_cb"]),
+            grow = max(2, int(min(h, w) * float(hair.get("edge_grow_frac", 0.004))))
+            hair_soft = feather(np.clip(dilate(masks.hair, grow) * (1 - masks.skin) * masks.person + masks.hair, 0, 1), grow)
+            px = recolor_hair(original, hair_soft, float(hair["target_luma"]), float(hair["target_cb"]),
                               float(hair["target_cr"]), float(hair["strength"]))
             rec = StageRecord("hair_recolor", "hair", mask="hair", strength=float(hair["strength"]))
             modified = await self._try(store, "hair_recolor", "hair", px, original, masks, master, base_pose, rec,

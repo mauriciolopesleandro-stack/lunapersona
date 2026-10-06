@@ -56,7 +56,7 @@ FACE_BOX = (60.0, 30.0, 100.0, 80.0)
 KPS = [(72.0, 50.0), (88.0, 50.0), (80.0, 60.0), (73.0, 70.0), (87.0, 70.0)]
 
 
-def photo():
+def photo(tattoo=False):
     """Foto sintetica: fundo azul, cabelo loiro, rosto/pescoco/braco de pele, camisa azul escura."""
     img = np.zeros((H, W, 3), np.uint8)
     img[:] = BG
@@ -68,6 +68,8 @@ def photo():
     img[110:230, 40:120] = SHIRT  # roupa
     img[110:230, 40:52] = SKIN  # braco de fora
     img[hair > 0] = BLONDE
+    if tattoo:
+        img[140:180, 44:49] = (30, 30, 35)  # tinta no braco
     return img, person, hair
 
 
@@ -81,20 +83,20 @@ def masks_and_photo(protect=()):
 
 def test_config_follows_the_spec():
     names = [s.name for s in CFG.stages]
-    assert names == ["face_pass_1", "face_pass_2", "face_pass_3", "body_pass_1", "body_pass_2"]
+    assert names == ["face_pass_1", "face_pass_2", "face_pass_3", "tattoo_pass", "body_pass_1", "body_pass_2"]
     s = {x.name: x for x in CFG.stages}
     assert 0.70 <= s["face_pass_1"].strength <= 0.80 and s["face_pass_1"].identity_adapter == "instantid"
     assert 0.30 <= s["face_pass_2"].strength <= 0.45
     assert 0.10 <= s["face_pass_3"].strength <= 0.20 and s["face_pass_3"].identity_adapter is None and not s["face_pass_3"].lora
     assert 0.40 <= s["body_pass_1"].strength <= 0.60 and 0.15 <= s["body_pass_2"].strength <= 0.30
-    assert all(x.mask == "body_skin" for x in CFG.stages if x.kind == "body")
+    assert {x.mask for x in CFG.stages if x.kind == "body"} == {"body_skin", "tattoos"}
     assert CFG.budget_limit_usd == 0.05 and CFG.generation_config == "config/persona_engine_v2.json"
 
 
 @pytest.mark.parametrize("mutate, message", [
     (lambda d: d["stages"][2].update(identity_adapter="instantid", adapter_weight=0.5), "INTEGRACAO"),
     (lambda d: d["stages"][2].update(denoise=0.4), "INTEGRACAO"),
-    (lambda d: d["stages"][3].update(mask="face_full"), "roupa"),
+    (lambda d: d["stages"][4].update(mask="face_full"), "roupa"),
     (lambda d: d["stages"][0].update(strength=1.3), "fora de 0-1"),
     (lambda d: d["stages"][1].update(mask="body"), "invalida"),
     (lambda d: d["checks"].pop("max_background_changed"), "max_background_changed"),
@@ -144,7 +146,7 @@ def test_skin_classifier():
 def test_face_and_body_requests():
     m, _ = masks_and_photo()
     f1 = build_request(CFG.stage("face_pass_1"), m, "img.png", "neg", 5, MASTER)
-    assert f1.identity_adapter == "instantid" and f1.reference is MASTER and f1.denoise == 0.6
+    assert f1.identity_adapter == "instantid" and f1.reference is MASTER and f1.denoise == 0.75 and f1.adapter_weight == 1.0
     b1 = build_request(CFG.stage("body_pass_1"), m, "img.png", "neg", 5, MASTER)
     assert b1.reference is None and (b1.mask * m.clothing).sum() == 0
     assert [stage_kind(CFG.stage(n)) for n in ("face_pass_1", "face_pass_2", "face_pass_3", "body_pass_1")] == [
@@ -338,10 +340,13 @@ def orchestrator(faces, img=None):
 
 async def test_orchestrator_runs_all_stages_and_preserves_the_background():
     faces = {"foto": 0.30, "hair": 0.30, "face_pass_1": 0.80, "face_pass_2": 0.81, "face_pass_3": 0.805,
-             "body_pass_1": 0.80, "body_pass_2": 0.80, "integrated": 0.80}
+             "tattoo_pass": 0.80, "body_pass_1": 0.80, "body_pass_2": 0.80, "integrated": 0.80}
     orch, tr, store = orchestrator(faces)
     res = await orch.run("foto.png", MASTER, "plastic skin", 7)
+    # sem tatuagem na foto: a passada de tatuagem e pulada (registrada), nao inventa pele
     assert [c.name for c in tr.calls] == ["face_pass_1", "face_pass_2", "face_pass_3", "body_pass_1", "body_pass_2"]
+    tattoo = next(r for r in res.records if r.stage == "tattoo_pass")
+    assert not tattoo.accepted and "vazia" in tattoo.rollback_reason
     assert res.checkpoints[:2] == ["original", "hair_recolor"] and res.checkpoints[-1] == "integrated"
     original = store.images["foto.png"]
     final = res.final.pixels
@@ -349,12 +354,12 @@ async def test_orchestrator_runs_all_stages_and_preserves_the_background():
     assert background_change(original, final, person) == 0.0  # o fundo sujo pelo modelo foi desfeito
     assert res.report.background_changed == 0.0 and res.report.identity == 0.80
     assert "tattoos" in tr.calls[0].negative and tr.calls[0].reference is MASTER
-    assert all(r.accepted for r in res.records) and res.records[1].cost_usd == pytest.approx(0.57 * 7 / 3600, abs=1e-5)
+    assert all(r.accepted for r in res.records if r.stage != "tattoo_pass") and res.records[1].cost_usd == pytest.approx(0.57 * 7 / 3600, abs=1e-5)
 
 
 async def test_orchestrator_rolls_back_a_stage_that_lowers_identity():
     faces = {"foto": 0.30, "hair": 0.30, "face_pass_1": 0.80, "face_pass_2": 0.70, "face_pass_3": 0.80,
-             "body_pass_1": 0.80, "body_pass_2": 0.80, "integrated": 0.80}
+             "tattoo_pass": 0.80, "body_pass_1": 0.80, "body_pass_2": 0.80, "integrated": 0.80}
     orch, tr, _ = orchestrator(faces)
     res = await orch.run("foto.png", MASTER, "neg", 7)
     rec = {r.stage: r for r in res.records}
@@ -425,3 +430,13 @@ def test_generation_engine_never_imports_the_replacement():
     for path in (BACKEND / "app" / "providers" / "comfyui").glob("*.py"):
         if path.name != "replacement.py":
             assert not pattern.search(path.read_text(encoding="utf-8")), path.name
+
+
+
+def test_tattoo_ink_is_a_skin_hole_not_clothing():
+    img, person, hair = photo(tattoo=True)
+    m = build_masks(RawSegments(person, hair, []), FACE_BOX, KPS, img)
+    assert m.tattoos[160, 46] == 1 and m.clothing[160, 46] == 0 and m.body_skin[160, 46] == 1
+    assert m.tattoos[170, 80] == 0  # a camisa (faixa larga) nao vira tatuagem
+    req = build_request(CFG.stage("tattoo_pass"), m, "img.png", "neg", 1, None)
+    assert req.mask[160, 46] == 1 and req.denoise == 0.65 and "without tattoos" in req.prompt

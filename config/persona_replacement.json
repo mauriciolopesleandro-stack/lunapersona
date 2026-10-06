@@ -8,12 +8,12 @@
       "kind": "face",
       "mask": "face_full",
       "strength": 0.75,
-      "denoise": 0.6,
+      "denoise": 0.75,
       "lora": true,
       "identity_adapter": "instantid",
-      "adapter_weight": 0.8,
+      "adapter_weight": 1.0,
       "prompt": "lunavox, a woman, natural face proportions, natural skin texture, same lighting as the photo, realistic photo",
-      "note": "teste 1: denoise 0,45 so levou a identidade de 0,21 a 0,46 (rosto de outra pessoa) -> 0,60"
+      "note": "teste 2: 0,60 levou so a 0,47 (rosto de outra pessoa, olhos cobertos) -> 0,75, InstantID 1,0, mascara com maxilar e bochechas"
     },
     {
       "name": "face_pass_2",
@@ -32,6 +32,16 @@
       "denoise": 0.15,
       "lora": false,
       "prompt": "natural skin texture matching the photo, same lighting and shadows, seamless skin, realistic unretouched photo"
+    },
+    {
+      "name": "tattoo_pass",
+      "kind": "body",
+      "mask": "tattoos",
+      "strength": 0.95,
+      "denoise": 0.65,
+      "lora": true,
+      "prompt": "lunavox, a woman, clean natural bare skin without tattoos, same skin tone and lighting as the photo, realistic photo",
+      "note": "regra da persona: sem tatuagem (ficha: lock HARD); so nos buracos escuros dentro da pele"
     },
     {
       "name": "body_pass_1",
@@ -59,7 +69,8 @@
     "target_cb": 122,
     "target_cr": 140,
     "strength": 0.85,
-    "note": "cabelo da Luna (castanho muito escuro, reflexos acobreados) por RECOLOR: fios, luz e volume da foto ficam; comprimento nao e reconstruido"
+    "note": "cabelo da Luna (castanho muito escuro, reflexos acobreados) por RECOLOR: fios, luz e volume da foto ficam; comprimento nao e reconstruido",
+    "edge_grow_frac": 0.004
   },
   "lighting": {
     "luma": 1.0,
@@ -98,5 +109,6 @@
   "budget": {
     "limit_usd": 0.05,
     "rule": "teste pago acima de US$ 0,05 so com autorizacao explicita"
-  }
+  },
+  "protect_objects": "sunglasses. bracelet. earrings. watch"
 }

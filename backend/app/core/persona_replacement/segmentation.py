@@ -28,6 +28,7 @@ class MaskSet:
     face_transition: np.ndarray
     skin: np.ndarray
     body_skin: np.ndarray
+    tattoos: np.ndarray
     clothing: np.ndarray
     protect: np.ndarray
 
@@ -37,7 +38,8 @@ class MaskSet:
     def areas(self) -> dict[str, float]:
         total = float(self.person.size)
         return {k: round(float((getattr(self, k) > 0.5).sum()) / total, 5) for k in
-                ("person", "hair", "face_full", "face_inner", "face_transition", "skin", "body_skin", "clothing", "protect")}
+                ("person", "hair", "face_full", "face_inner", "face_transition", "skin", "body_skin", "tattoos",
+                 "clothing", "protect")}
 
 
 def ellipse(h: int, w: int, cx: float, cy: float, rx: float, ry: float) -> np.ndarray:
@@ -78,11 +80,11 @@ def face_masks(h: int, w: int, bbox, kps) -> tuple[np.ndarray, np.ndarray, np.nd
         (lx, ly), (rx, ry), (nx, ny), (mlx, mly), (mrx, mry) = kps[:5]
         cx, cy = (lx + rx + mlx + mrx) / 4, (ly + ry + mly + mry) / 4
         iod = max(1.0, ((rx - lx) ** 2 + (ry - ly) ** 2) ** 0.5)
-        full = ellipse(h, w, cx, cy + iod * 0.05, iod * 1.25, iod * 1.55)
+        full = ellipse(h, w, cx, cy + iod * 0.2, iod * 1.45, iod * 1.85)  # inclui maxilar e bochechas
         inner = ellipse(h, w, cx, cy, iod * 0.95, iod * 1.0)
     else:
         cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-        full = ellipse(h, w, cx, cy, fw * 0.48, fh * 0.55)
+        full = ellipse(h, w, cx, cy + fh * 0.06, fw * 0.55, fh * 0.62)
         inner = ellipse(h, w, cx, cy, fw * 0.36, fh * 0.38)
     band = max(3, int(min(fw, fh) * 0.12))
     transition = np.clip(dilate(full, band) - erode(full, band), 0, 1)
@@ -90,6 +92,13 @@ def face_masks(h: int, w: int, bbox, kps) -> tuple[np.ndarray, np.ndarray, np.nd
     neck = ellipse(h, w, (x1 + x2) / 2, y2 + fh * 0.15, fw * 0.32, fh * 0.28)
     transition = np.clip(transition + neck, 0, 1)
     return full, inner, transition
+
+
+def tattoo_holes(skin: np.ndarray, person: np.ndarray, radius: int) -> np.ndarray:
+    """Tatuagem = buraco dentro da pele: fechamento (dilata e erode) da pele menos a pele.
+    Faixas largas (roupa) nao fecham com raio pequeno; tinta fina fecha."""
+    closed = erode(dilate(skin, radius), radius) * person
+    return np.clip(closed - skin, 0, 1)
 
 
 def build_masks(raw: RawSegments, face_bbox, face_kps, rgb: np.ndarray) -> MaskSet:
@@ -106,11 +115,13 @@ def build_masks(raw: RawSegments, face_bbox, face_kps, rgb: np.ndarray) -> MaskS
     transition = transition * person * (1 - hair)
     skin = skin_pixels(rgb) * person
     face_zone = dilate(full, max(2, int((face_bbox[3] - face_bbox[1]) * 0.08)))
-    body_skin = np.clip(skin - face_zone - hair - protect, 0, 1)
-    clothing = np.clip(person - skin - hair - face_zone, 0, 1)
+    radius = max(3, int(min(h, w) * 0.008))
+    tattoos = np.clip(tattoo_holes(skin, person, radius) - face_zone - hair - protect, 0, 1)
+    body_skin = np.clip(skin + tattoos - face_zone - hair - protect, 0, 1)
+    clothing = np.clip(person - skin - tattoos - hair - face_zone, 0, 1)
     # nada que esteja protegido entra em etapa nenhuma
     full, inner, transition = (np.clip(m - protect, 0, 1) for m in (full, inner, transition))
-    return MaskSet(person, hair, full, inner, transition, skin, body_skin, clothing, protect)
+    return MaskSet(person, hair, full, inner, transition, skin, body_skin, tattoos, clothing, protect)
 
 
-__all__ = ["MaskSet", "build_masks", "dilate", "ellipse", "erode", "face_masks", "skin_pixels"]
+__all__ = ["MaskSet", "build_masks", "tattoo_holes", "dilate", "ellipse", "erode", "face_masks", "skin_pixels"]

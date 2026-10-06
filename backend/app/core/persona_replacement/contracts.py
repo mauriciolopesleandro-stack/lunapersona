@@ -14,7 +14,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
-STAGE_MASKS = ("face_full", "face_inner", "face_transition", "body_skin")
+STAGE_MASKS = ("face_full", "face_inner", "face_transition", "body_skin", "tattoos")
 
 
 class ReplacementConfigError(ValueError):
@@ -73,7 +73,7 @@ def parse_replacement_config(data: dict[str, Any]) -> ReplacementConfig:
                 raise ReplacementConfigError(f"Mascara '{item['mask']}' invalida ({', '.join(STAGE_MASKS)}).")
             if item["kind"] not in ("face", "body"):
                 raise ReplacementConfigError(f"Etapa '{item['name']}' com tipo invalido: {item['kind']}.")
-            if item["kind"] == "body" and item["mask"] != "body_skin":
+            if item["kind"] == "body" and item["mask"] not in ("body_skin", "tattoos"):
                 raise ReplacementConfigError("Etapa de corpo so mexe na pele do corpo (body_skin), nunca na roupa.")
             stages.append(StageSpec(
                 name=item["name"], kind=item["kind"], mask=item["mask"],

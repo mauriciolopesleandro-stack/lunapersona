@@ -4,7 +4,7 @@
     "hidden": true,
     "compatible_models": [],
     "title": "Persona Replacement - segmentacao (so mede, nao gera)",
-    "description": "Mascaras do replacement: pessoa (SAM2 com os pontos da ficha da foto), cabelo (Florence-2 'hair', o mesmo da V1) e caixas de oculos escuros (Florence-2 grounding). Nada e gerado.",
+    "description": "Mascaras do replacement: pessoa (SAM2 com os pontos da ficha da foto), cabelo (Florence-2 'hair', o mesmo da V1) e caixas de oculos escuros (Florence-2 grounding). Nada e gerado. PROTECT: objetos protegidos (oculos, pulseiras, brincos, relogio).",
     "required_params": [
       "IMAGE",
       "POINTS_POS",
@@ -13,7 +13,8 @@
     "optional_params": {
       "SAM_MODEL": "sam2_hiera_base_plus.safetensors",
       "FLORENCE": "microsoft/Florence-2-large",
-      "FILENAME_PREFIX": "repl_seg"
+      "FILENAME_PREFIX": "repl_seg",
+      "PROTECT": "sunglasses. bracelet. earrings. watch"
     }
   },
   "graph": {
@@ -127,7 +128,7 @@
           "f1",
           0
         ],
-        "text_input": "sunglasses",
+        "text_input": "${PROTECT}",
         "task": "caption_to_phrase_grounding",
         "fill_mask": false,
         "keep_model_loaded": true,

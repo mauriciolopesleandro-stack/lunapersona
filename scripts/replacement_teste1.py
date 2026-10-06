@@ -39,7 +39,7 @@ PRICE = 0.57
 
 async def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--foto", required=True)
+    ap.add_argument("--foto", action="append", required=True, help="repetir para varias fotos")
     ap.add_argument("--autorizado", type=float, default=None)
     ap.add_argument("--semente", type=int, default=7701)
     ap.add_argument("--saida", default="replacement_teste1.json")
@@ -49,7 +49,7 @@ async def main() -> int:
     gen = load_v2_config(ROOT / cfg.generation_config)  # so leitura: modelo, LoRA, InstantID travados
     plan = ExperimentPlan("Persona Replacement 1o teste", "integrar a Luna na foto da varanda sem parecer colada",
                           "transformacao localizada + luz/grao da propria foto melhora a integracao sem perder identidade",
-                          images=1, seconds_per_image=200, overhead_seconds=150, price_per_hour=PRICE)
+                          images=len(args.foto), seconds_per_image=240, overhead_seconds=150, price_per_hour=PRICE)
     budget = BudgetGuard(cfg.budget_limit_usd).check(plan, args.autorizado)
 
     personas = ROOT / "personas_run"
@@ -75,20 +75,23 @@ async def main() -> int:
         store=store, config=cfg,
         duplicate_similarity=float(sheet.validation["subject_count"]["persona_duplicate_similarity"]), price_per_hour=PRICE)
 
-    img = Image.open(args.foto).convert("RGB")
-    img.thumbnail((1600, 1600), Image.LANCZOS)
-    buf = io.BytesIO()
-    img.save(buf, "PNG")
-    locator = await client.upload_image(f"repl_input_{Path(args.foto).stem[:30]}.png", buf.getvalue())
     negative = ", ".join(NegativePromptBuilder(json.loads((ROOT / "config" / "persona_engine.json").read_text())["global_negative"])
                          .build(sheet, single_subject=True).all_terms())
-    res = await orch.run(locator, master, negative, args.semente)
-    out = {"budget": budget, "config_version": cfg.version, "input": locator, **res.to_dict()}
-    (ROOT / args.saida).write_text(json.dumps(out, indent=1, default=str))
-    r = res.report
-    print("FINAL", res.final.name, "status", r.status, "identidade", r.identity, "fundo", r.background_changed,
-          "roupa", r.clothing_changed, "luz", r.lighting.get("score"), "textura", r.texture.get("score"),
-          "borda", r.edge.get("score"), "falhas", r.failures, flush=True)
+    results = []
+    for foto in args.foto:
+        img = Image.open(foto).convert("RGB")
+        img.thumbnail((1600, 1600), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, "PNG")
+        locator = await client.upload_image(f"repl_input_{Path(foto).stem[:30]}.png", buf.getvalue())
+        res = await orch.run(locator, master, negative, args.semente)
+        results.append({"foto": foto, "input": locator, **res.to_dict()})
+        (ROOT / args.saida).write_text(json.dumps({"budget": budget, "config_version": cfg.version, "results": results},
+                                                  indent=1, default=str))
+        r = res.report
+        print("FINAL", Path(foto).name, res.final.name, "status", r.status, "identidade", r.identity, "fundo",
+              r.background_changed, "roupa", r.clothing_changed, "luz", r.lighting.get("score"), "textura",
+              r.texture.get("score"), "borda", r.edge.get("score"), "falhas", r.failures, flush=True)
     return 0
 
 
