@@ -1,0 +1,151 @@
+{
+  "meta": {
+    "id": "replacement-segment",
+    "hidden": true,
+    "compatible_models": [],
+    "title": "Persona Replacement - segmentacao (so mede, nao gera)",
+    "description": "Mascaras do replacement: pessoa (SAM2 com os pontos da ficha da foto), cabelo (Florence-2 'hair', o mesmo da V1) e caixas de oculos escuros (Florence-2 grounding). Nada e gerado.",
+    "required_params": [
+      "IMAGE",
+      "POINTS_POS",
+      "POINTS_NEG"
+    ],
+    "optional_params": {
+      "SAM_MODEL": "sam2_hiera_base_plus.safetensors",
+      "FLORENCE": "microsoft/Florence-2-large",
+      "FILENAME_PREFIX": "repl_seg"
+    }
+  },
+  "graph": {
+    "1": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "${IMAGE}"
+      }
+    },
+    "24": {
+      "class_type": "DownloadAndLoadSAM2Model",
+      "inputs": {
+        "model": "${SAM_MODEL}",
+        "segmentor": "single_image",
+        "device": "cuda",
+        "precision": "fp16"
+      }
+    },
+    "25": {
+      "class_type": "Sam2Segmentation",
+      "inputs": {
+        "sam2_model": [
+          "24",
+          0
+        ],
+        "image": [
+          "1",
+          0
+        ],
+        "keep_model_loaded": false,
+        "coordinates_positive": "${POINTS_POS}",
+        "coordinates_negative": "${POINTS_NEG}",
+        "individual_objects": false
+      }
+    },
+    "26": {
+      "class_type": "MaskToImage",
+      "inputs": {
+        "mask": [
+          "25",
+          0
+        ]
+      }
+    },
+    "27": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "26",
+          0
+        ],
+        "filename_prefix": "${FILENAME_PREFIX}_person"
+      }
+    },
+    "f1": {
+      "class_type": "DownloadAndLoadFlorence2Model",
+      "inputs": {
+        "model": "${FLORENCE}",
+        "precision": "fp16"
+      }
+    },
+    "f2": {
+      "class_type": "Florence2Run",
+      "inputs": {
+        "image": [
+          "1",
+          0
+        ],
+        "florence2_model": [
+          "f1",
+          0
+        ],
+        "text_input": "hair",
+        "task": "referring_expression_segmentation",
+        "fill_mask": true,
+        "keep_model_loaded": true,
+        "max_new_tokens": 512,
+        "num_beams": 3,
+        "do_sample": false,
+        "output_mask_select": "",
+        "seed": 1
+      }
+    },
+    "f3": {
+      "class_type": "MaskToImage",
+      "inputs": {
+        "mask": [
+          "f2",
+          1
+        ]
+      }
+    },
+    "f4": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "f3",
+          0
+        ],
+        "filename_prefix": "${FILENAME_PREFIX}_hair"
+      }
+    },
+    "f5": {
+      "class_type": "Florence2Run",
+      "inputs": {
+        "image": [
+          "1",
+          0
+        ],
+        "florence2_model": [
+          "f1",
+          0
+        ],
+        "text_input": "sunglasses",
+        "task": "caption_to_phrase_grounding",
+        "fill_mask": false,
+        "keep_model_loaded": true,
+        "max_new_tokens": 512,
+        "num_beams": 3,
+        "do_sample": false,
+        "output_mask_select": "",
+        "seed": 1
+      }
+    },
+    "f6": {
+      "class_type": "PreviewAny",
+      "inputs": {
+        "source": [
+          "f5",
+          3
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "_comment": "Persona Replacement V1 (branch feature/persona-replacement-v1): transformar a pessoa de uma foto existente na persona, preservando a fotografia. Independente da geracao: modelo, LoRA e InstantID sao LIDOS de generation_config (receita travada), nada la e alterado. Valores iniciais, configuraveis.",
+  "version": "replacement-v1.0",
+  "generation_config": "config/persona_engine_v2.json",
+  "stages": [
+    {
+      "name": "face_pass_1",
+      "kind": "face",
+      "mask": "face_full",
+      "strength": 0.75,
+      "denoise": 0.45,
+      "lora": true,
+      "identity_adapter": "instantid",
+      "adapter_weight": 0.8,
+      "prompt": "lunavox, a woman, natural face proportions, natural skin texture, same lighting as the photo, realistic photo"
+    },
+    {
+      "name": "face_pass_2",
+      "kind": "face",
+      "mask": "face_inner",
+      "strength": 0.4,
+      "denoise": 0.3,
+      "lora": true,
+      "prompt": "lunavox, a woman, detailed natural eyes, natural nose and lips, natural expression, realistic photo"
+    },
+    {
+      "name": "face_pass_3",
+      "kind": "face",
+      "mask": "face_transition",
+      "strength": 0.15,
+      "denoise": 0.15,
+      "lora": false,
+      "prompt": "natural skin texture matching the photo, same lighting and shadows, seamless skin, realistic unretouched photo"
+    },
+    {
+      "name": "body_pass_1",
+      "kind": "body",
+      "mask": "body_skin",
+      "strength": 0.5,
+      "denoise": 0.45,
+      "lora": true,
+      "prompt": "lunavox, a woman, natural bare skin without tattoos, same lighting as the photo, realistic photo"
+    },
+    {
+      "name": "body_pass_2",
+      "kind": "body",
+      "mask": "body_skin",
+      "strength": 0.25,
+      "denoise": 0.2,
+      "lora": true,
+      "prompt": "natural skin, natural arms and hands, realistic unretouched photo"
+    }
+  ],
+  "hair": {
+    "enabled": true,
+    "recolor_if_luma_above": 95,
+    "target_luma": 48,
+    "target_cb": 122,
+    "target_cr": 140,
+    "strength": 0.85,
+    "note": "cabelo da Luna (castanho muito escuro, reflexos acobreados) por RECOLOR: fios, luz e volume da foto ficam; comprimento nao e reconstruido"
+  },
+  "lighting": {
+    "luma": 1.0,
+    "chroma": 0.5,
+    "note": "luz/contraste da pessoa original na mesma regiao; cor so pela metade (tom de pele da persona)"
+  },
+  "texture": {
+    "match_grain": true
+  },
+  "blending": {
+    "edge_band_frac": 0.006
+  },
+  "checks": {
+    "max_background_changed": 0.01,
+    "max_clothing_changed": 0.06,
+    "max_pose_distance": 0.08,
+    "max_identity_drop": 0.02,
+    "max_identity_drop_integration": 0.01,
+    "min_final_face": 0.7
+  },
+  "negative_extra": [
+    "tattoo",
+    "tattoos",
+    "ink on skin",
+    "plastic skin",
+    "airbrushed skin",
+    "beauty filter",
+    "studio lighting",
+    "different lighting",
+    "pasted face",
+    "halo",
+    "blurry edges"
+  ],
+  "budget": {
+    "limit_usd": 0.05,
+    "rule": "teste pago acima de US$ 0,05 so com autorizacao explicita"
+  }
+}
