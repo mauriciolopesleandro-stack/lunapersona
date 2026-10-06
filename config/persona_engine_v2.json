@@ -140,11 +140,29 @@
     "note": "pele e telemetria (nao decide). Corpo e anatomia sem medida comparavel fora da pose da master: registrados, nao decidem."
   },
   "style": {
-    "id": "smartphone_raw_v1",
+    "id": "smartphone_raw_v2",
     "reference": "personas/luna/style_refs/realismo_ref_01.webp",
+    "reference_sha256": "63800d9f1199fa4a6789c402f4455f04a87434cb99c69929a1dae8e102df86c7",
     "reference_note": "selfie de celular gerada com RealVisXL, enviada pelo usuario em 2026-10-06 como alvo de realismo (fora do git)",
-    "positive": "candid smartphone selfie photo, raw unedited photo, natural skin texture with visible pores, light freckles across nose and cheeks, minimal makeup, natural eyebrows, natural lips, slightly messy hair with flyaway strands, natural window light, slightly muted colors, subtle grain",
+    "positive": "amateur smartphone photo, taken with a phone camera, raw unedited photo, everything in focus, sharp background, natural uneven ambient light, slightly imperfect exposure, natural skin texture with visible pores, light freckles across nose and cheeks, minimal makeup, natural eyebrows, natural lips, slightly messy hair with flyaway strands, candid natural pose, slightly muted colors, subtle phone camera grain",
     "negative": [
+      "bokeh",
+      "blurred background",
+      "shallow depth of field",
+      "background blur",
+      "studio",
+      "studio lighting",
+      "softbox",
+      "rim light",
+      "perfect lighting",
+      "professional photography",
+      "professional photoshoot",
+      "DSLR",
+      "85mm",
+      "cinematic",
+      "magazine",
+      "editorial",
+      "posed model",
       "heavy makeup",
       "contour makeup",
       "lipstick",
@@ -154,12 +172,10 @@
       "smooth skin",
       "retouched skin",
       "beauty retouch",
-      "studio lighting",
-      "professional photoshoot",
       "perfect skin",
       "instagram filter"
     ],
-    "reference_sha256": "63800d9f1199fa4a6789c402f4455f04a87434cb99c69929a1dae8e102df86c7"
+    "history": "v1 (smartphone_raw_v1) -> v2 em 2026-10-06: sem bokeh, sem luz perfeita, sem camera profissional, sem estudio (pedido do usuario)"
   },
   "identity_adapters": {
     "instantid": {
@@ -180,5 +196,32 @@
       },
       "note": "so na 1a passada de rosto; a passada de microdetalhe sem LoRA devolve a textura que o InstantID costuma alisar"
     }
+  },
+  "identity_lock": {
+    "locked": true,
+    "version": "luna-face-v2.0",
+    "locked_at": "2026-10-06",
+    "master_face": {
+      "file": "references/f7e81b9a6c974a3587d1c8d8bad405b9.png",
+      "sha256": "1c431d3c3c8ac85636de49dc0d2e7c7405b44fa0256ed746827afc24fc3c3269",
+      "note": "a identidade vem SEMPRE desta master (InstantID na 1a passada); masters nao mudam"
+    },
+    "approved_result": {
+      "image": "generated/v2/luna_mercado_iid_b.png",
+      "sha256": "ed1d4a301eac87c5b38879d16d18dec60fbed52e318affc2eb82e316626d287d",
+      "scores": {
+        "base": 0.406,
+        "face_1": 0.827,
+        "face_2": 0.817,
+        "face_3": 0.803,
+        "final": 0.8
+      },
+      "age": 25,
+      "seed": 7312
+    },
+    "min_final_face": 0.7,
+    "rule": "imagem com rosto final abaixo de min_final_face e marcada como PERSONA_DRIFT e nao entra no resultado aprovado",
+    "unlock": "so com pedido explicito do usuario e nova version",
+    "fingerprint": "14e6af91fd928300bb26dd8b2bf2e58763c688513c36961e73174d31ec5933e9"
   }
 }

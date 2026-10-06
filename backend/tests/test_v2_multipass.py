@@ -251,12 +251,13 @@ async def test_region_adapter_without_lora_sets_weight_zero():
 
 
 def test_style_profile_goes_into_prompts_and_negative():
-    assert CFG.style.id == "smartphone_raw_v1" and len(CFG.style.reference_sha256) == 64
+    assert CFG.style.id == "smartphone_raw_v2" and len(CFG.style.reference_sha256) == 64
     styled = CFG.styled(CFG.pass_prompts["microdetail"])
     assert "{style}" not in styled and "light freckles" in styled and "visible pores" in styled
-    assert CFG.styled("in a gym").startswith("in a gym, candid smartphone selfie photo")
+    assert CFG.styled("in a gym").startswith("in a gym, amateur smartphone photo")
     neg = CFG.negative_for(CFG.model("realvisxl"))
     assert "heavy makeup" in neg and "plastic skin" in neg and "nude" in neg
+    assert "bokeh" in neg and "studio lighting" in neg and "DSLR" in neg  # sem cara de foto profissional
 
 
 async def test_analyzer_keep_alive_nodes_join_the_graph():

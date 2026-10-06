@@ -68,12 +68,16 @@ class KeepAliveAnalyzer:
 async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--teto", type=float, default=None)
+    ap.add_argument("--autorizado", type=float, default=None, help="valor que o usuario autorizou acima do limite")
     ap.add_argument("--overhead", type=float, default=180)
     ap.add_argument("--cena", action="append", default=[],
                     help="semente|rotulo|texto em ingles (repetir para varias); sem isso, as 3 cenas do teste 2")
     ap.add_argument("--saida", default="bench_v2_multipass.json")
+    ap.add_argument("--cenas-arquivo", default=None, help="JSON com {scenes: [{seed, label, prompt}]}")
     args = ap.parse_args()
     scenes = [tuple(c.split("|", 2)) for c in args.cena] if args.cena else SCENES
+    if args.cenas_arquivo:
+        scenes = [(s["seed"], s["label"], s["prompt"]) for s in json.loads(Path(args.cenas_arquivo).read_text())["scenes"]]
     scenes = [(int(s), lab, txt) for s, lab, txt in scenes]
 
     cfg = load_v2_config(ROOT / "config" / "persona_engine_v2.json")
@@ -81,9 +85,9 @@ async def main() -> int:
     passes = [p for p in (*cfg.face_passes, *cfg.body_passes) if p.enabled]
     plan = ExperimentPlan("V2 teste 2 (multi-pass RealVisXL)", "subir a identidade da base RealVisXL (0,37) sem perder a pele natural",
                           "passadas de rosto com a LoRA em recorte ampliado aumentam a semelhanca; rollback segura as que pioram",
-                          images=len(scenes), seconds_per_image=14 + 13 * len(passes), overhead_seconds=args.overhead,
+                          images=len(scenes), seconds_per_image=25 + 30 * len(passes), overhead_seconds=args.overhead,
                           price_per_hour=PRICE)
-    budget = BudgetGuard(limit).check(plan)
+    budget = BudgetGuard(limit).check(plan, args.autorizado)
 
     personas = ROOT / "personas_run"
     sheet = PersonaSheetRepository(personas).get("luna")
@@ -131,11 +135,15 @@ async def main() -> int:
         validation = await engine.run(ValidationContext(sheet=sheet, image=final.image, analysis=final.analysis, skin=skin))
         wall = round(time.monotonic() - t0, 1)
         report["keep_alive"] = analyzer.disabled_reason or "ligado"
+        lock_min = float(cfg.identity_lock.get("min_final_face", 0)) if cfg.identity_lock.get("locked") else None
+        drift = lock_min is not None and (final.measure.face is None or final.measure.face < lock_min)
+        report["identity_lock"] = {k: cfg.identity_lock.get(k) for k in ("version", "fingerprint", "min_final_face")}
         report["scenes"].append({"seed": seed, "label": label, "scene": scene, "prompts": prompts, "negative": negative,
-                                 "multipass": res.to_dict(), "final_validation": validation.to_dict(), "wall_seconds": wall})
+                                 "multipass": res.to_dict(), "final_validation": validation.to_dict(), "wall_seconds": wall,
+                                 "persona_drift": drift})
         out_path.write_text(json.dumps(report, indent=1, default=str))
         print(label, "base", res.checkpoints[0].measure.face, "final", final.name, final.measure.face,
-              [(d["pass"], d["status"]) for d in res.decisions], "wall", wall, flush=True)
+              [(d["pass"], d["status"]) for d in res.decisions], "wall", wall, "PERSONA_DRIFT" if drift else "ok", flush=True)
     return 0
 
 

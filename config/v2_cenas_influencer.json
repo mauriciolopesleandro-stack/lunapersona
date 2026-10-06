@@ -1,0 +1,66 @@
+{
+  "_comment": "Cenas de influencer digital para a Luna (V2): selfies em ambientes reais, luz imperfeita, sem camera profissional, sem bokeh, sem estudio. Texto em ingles vai para o modelo; o estilo smartphone_raw_v2 entra por cima.",
+  "created_at": "2026-10-06",
+  "scenes": [
+    {
+      "seed": 7401,
+      "label": "cama_manha",
+      "descricao": "acordando na cama, selfie de manha",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, lying in bed in the morning, head on a white pillow, messy hair, wearing an oversized grey t-shirt, unmade wrinkled sheets, small Brazilian apartment bedroom, dim window light, slightly underexposed"
+    },
+    {
+      "seed": 7402,
+      "label": "carro",
+      "descricao": "selfie no carro estacionado",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, sitting in the driver's seat of a parked car, seatbelt on, sunglasses pushed up on her head, wearing a white tank top, harsh midday sun through the windshield, Sao Paulo street with parked cars visible through the window"
+    },
+    {
+      "seed": 7403,
+      "label": "banheiro_espelho",
+      "descricao": "selfie no espelho do banheiro de casa",
+      "prompt": "mirror selfie, holding a smartphone in front of the mirror, phone visible in the reflection, face fully visible, small apartment bathroom, white tiles, toothbrush and skincare bottles on the sink, towel hanging on the wall, overhead bathroom light, wearing a black sports top and grey sweatpants"
+    },
+    {
+      "seed": 7404,
+      "label": "cafe_bairro",
+      "descricao": "selfie num cafe de bairro com cafe gelado",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, sitting at a small table in a neighborhood cafe in Pinheiros, holding an iced coffee, other customers and the counter visible behind her, mixed window and indoor light, wearing a beige knit top"
+    },
+    {
+      "seed": 7405,
+      "label": "academia_espelho",
+      "descricao": "selfie no espelho da academia, pos-treino",
+      "prompt": "mirror selfie, holding a smartphone in front of the mirror, phone visible in the reflection, face fully visible, gym locker room mirror with smudges, post-workout, sweaty skin, sweat on chest and temples, damp hair in a messy ponytail, wearing a grey sports bra and black leggings, flat fluorescent ceiling lights"
+    },
+    {
+      "seed": 7406,
+      "label": "praia_tarde",
+      "descricao": "selfie na praia de Ipanema no fim da tarde",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, Ipanema beach in the late afternoon, wind blowing her hair across her face, squinting in the sun, wearing a white tank top over a bikini top, sand and beachgoers visible behind her, harsh low sun"
+    },
+    {
+      "seed": 7407,
+      "label": "cozinha",
+      "descricao": "selfie cozinhando em casa",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, in a small home kitchen, stirring a pan on the stove with the other hand, cluttered counter with vegetables and dishes, warm yellow ceiling light, wearing a loose white t-shirt, hair in a claw clip"
+    },
+    {
+      "seed": 7408,
+      "label": "paulista_rua",
+      "descricao": "selfie andando na Avenida Paulista, dia nublado",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, walking on Avenida Paulista on an overcast day, people and buildings behind her in focus, tote bag on her shoulder, wearing a denim jacket over a black top, flat grey daylight"
+    },
+    {
+      "seed": 7409,
+      "label": "elevador_espelho",
+      "descricao": "selfie no espelho do elevador, look do dia",
+      "prompt": "mirror selfie, holding a smartphone in front of the mirror, phone visible in the reflection, face fully visible, inside an apartment building elevator, outfit check, harsh top light, scratched steel walls, wearing jeans, white sneakers and a cropped beige cardigan, tote bag"
+    },
+    {
+      "seed": 7410,
+      "label": "noite_flash",
+      "descricao": "selfie com flash num barzinho a noite",
+      "prompt": "front camera selfie, phone held at arm's length, slight wide-angle phone lens distortion, at night at a crowded Brazilian bar with friends behind her, direct phone flash photo, harsh flash light on her face, dark background with string lights, holding a glass of caipirinha, wearing a black strappy top"
+    }
+  ]
+}

@@ -10,8 +10,9 @@ ao carregar (erro explicito, nunca valor padrao escondido).
 """
 from __future__ import annotations
 
+import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -103,6 +104,7 @@ class V2Config:
     acceptance: dict[str, Any] = field(default_factory=dict)
     style: StyleProfile | None = None
     identity_adapters: dict[str, Any] = field(default_factory=dict)
+    identity_lock: dict[str, Any] = field(default_factory=dict)
 
     def model(self, model_id: str | None = None) -> ModelProfile:
         key = model_id or self.generation_model
@@ -198,12 +200,35 @@ def parse_v2_config(data: dict[str, Any]) -> V2Config:
     except KeyError as exc:
         raise V2ConfigError(f"Campo obrigatorio ausente na configuracao da V2: {exc}.") from exc
     cfg.model()  # generation_model precisa existir
+    lock = data.get("identity_lock") or {}
+    if lock.get("locked"):
+        actual = identity_fingerprint(data)
+        if actual != lock.get("fingerprint"):
+            raise V2ConfigError(
+                "A receita do rosto da persona esta TRAVADA e foi alterada (modelo, LoRA, passadas ou InstantID). "
+                f"Impressao esperada {str(lock.get('fingerprint'))[:12]}, atual {actual[:12]}. "
+                "Para mudar, destrave com nova versao (identity_lock) de proposito.")
+        cfg = replace(cfg, identity_lock=dict(lock, fingerprint=actual))
     return cfg
+
+
+# O que define o rosto da persona na V2. Mudar qualquer um destes campos muda a impressao.
+LOCKED_FIELDS = ("generation_model", "lora", "face_passes", "body_passes", "identity_adapters", "pass_steps")
+
+
+def identity_fingerprint(data: dict[str, Any]) -> str:
+    """sha256 da receita do rosto: modelo e checkpoint, LoRA, passadas (mascara, strength,
+    denoise, LoRA, adaptador), InstantID e passos. Estilo e cenas ficam de fora."""
+    model = data["models"][data["generation_model"]]
+    payload = {k: data.get(k) for k in LOCKED_FIELDS}
+    payload["checkpoint"] = {"file": model["checkpoint"], "sha256": model.get("sha256"), "sampling": model["sampling"]}
+    payload["prompts"] = {k: v for k, v in (data.get("pass_prompts") or {}).items() if k != "body"}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def load_v2_config(path: Path) -> V2Config:
     return parse_v2_config(json.loads(path.read_text(encoding="utf-8")))
 
 
-__all__ = ["BODY_MASKS", "FACE_MASKS", "LoraSpec", "ModelProfile", "PassSpec", "Sampling", "StyleProfile", "V2Config",
+__all__ = ["BODY_MASKS", "FACE_MASKS", "LOCKED_FIELDS", "identity_fingerprint", "LoraSpec", "ModelProfile", "PassSpec", "Sampling", "StyleProfile", "V2Config",
            "V2ConfigError", "load_v2_config", "parse_v2_config"]
