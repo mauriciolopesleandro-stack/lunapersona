@@ -169,3 +169,39 @@ O alvo de realismo é a selfie de celular que o usuário mandou, gerada com Real
 - **Validação:** as duas passam na validação final (rosto, pessoas, idade). Anatomia continua sem detector.
 
 **Conclusão parcial:** RealVisXL + LoRA + estilo `smartphone_raw_v1` + InstantID na 1ª passada de rosto é a primeira configuração da V2 que junta **identidade de nível V1** com **pele natural**. Ainda não foi comparada lado a lado com a V1 nas mesmas cenas, e a amostra é de 2 imagens.
+
+---
+
+# Rodada 5: 10 cenas de influencer com o rosto travado (2026-10-06)
+
+- **Rosto:** travado, versão `luna-face-v2.0`, impressão `14e6af91…`.
+- **Estilo:** `smartphone_raw_v2` (sem bokeh, luz imperfeita, celular amador).
+- **Cenas:** as de `config/v2_cenas_influencer.json`.
+- **Autorização e custo:** o usuário autorizou até US$ 0,40. Foram 29 min de pod, ~US$ 0,28.
+- **Imagens:** `generated/v2/influencer/`, com a folha `00_folha_10_cenas.jpg`.
+- **Dados:** `docs/testes/bench_v2_influencer_10.json`.
+
+| # | Cena | Rosto final | Idade | Validação | Passadas desfeitas |
+|---|---|---|---|---|---|
+| 1 | cama de manhã | 0,781 | 27 | aprovada | — |
+| 2 | carro | **0,444 (PERSONA_DRIFT)** | 33 | reprovada | rosto 1: o InstantID fez aparecer um 2º rosto |
+| 3 | espelho do banheiro | 0,759 | 29 | aprovada | rosto 3: identidade −0,028 |
+| 4 | café de bairro | 0,794 | 26 | aprovada | — |
+| 5 | espelho da academia | 0,815 | 24 | aprovada | — |
+| 6 | praia no fim da tarde | **0,441 (PERSONA_DRIFT)** | 32 | reprovada | rosto 1: idade 37 → 42; corpo 1: pose mudou |
+| 7 | cozinha | 0,808 | 29 | aprovada | — |
+| 8 | Paulista | 0,802 | 26 | aprovada | corpo 2: pose mudou |
+| 9 | espelho do elevador | 0,804 | 27 | aprovada | — |
+| 10 | barzinho à noite | 0,792 | 27 | aprovada | — |
+
+**Resumo**
+- **Aprovadas:** 8 de 10, com rosto médio 0,79 (de 0,76 a 0,82) e idade de 24 a 29.
+- **Persona perdida:** 2 de 10. Nas duas, a passada de InstantID foi desfeita pela guarda: no carro apareceu um segundo rosto, e na praia a idade subiu. Sem essa passada, o rosto ficou só com a LoRA (0,44), e a trava marcou PERSONA_DRIFT, como deveria.
+- **Visual:** natural, cara de celular, fundo em foco na maioria, luz de ambiente real. As selfies no espelho (3, 5 e 9) saíram com o celular visível.
+
+**Pedidos não seguidos**
+- **4 (café):** ela segura o celular no ouvido e o copo é um café quente, não gelado.
+- **7 (cozinha):** ela não está mexendo a panela.
+- **10 (barzinho):** não aparece o flash duro pedido; a luz é quente de bar, com o fundo um pouco desfocado.
+
+**Repetição entre as fotos:** quase todas são frontais e centradas, com o mesmo decote.
