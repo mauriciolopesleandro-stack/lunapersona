@@ -1,0 +1,778 @@
+{
+ "budget": {
+  "name": "V2 teste 1 (base, realvisxl)",
+  "objective": "qualidade BASE do checkpoint com a LoRA SDXL da Luna",
+  "hypothesis": "um checkpoint SDXL fotografico com a LoRA da Luna da pele mais natural que a V1, com identidade menor (sem troca de cabeca)",
+  "images": 3,
+  "seconds_per_image": 30,
+  "overhead_seconds": 240.0,
+  "price_per_hour": 0.57,
+  "total_seconds": 330.0,
+  "estimated_cost_usd": 0.0522,
+  "limit_usd": 0.06,
+  "authorized_usd": null,
+  "allowed_usd": 0.06
+ },
+ "results": [
+  {
+   "record": {
+    "model": "realvisxl",
+    "model_version": "RealVisXL V5.0 (fp16)",
+    "lora": "lunavox_sdxl_v1.safetensors",
+    "lora_strength": 1.0,
+    "seed": 7101,
+    "prompt_hash": "a6deeec062d35a74",
+    "negative_hash": "bfed9129dbcbe80d",
+    "pass_type": "base",
+    "pass_number": 0,
+    "mask_type": null,
+    "denoise": 1.0,
+    "strength": null,
+    "face_identity_score": 0.31,
+    "age_score": 0.6,
+    "skin_score": 0.183,
+    "body_score": null,
+    "pose_score": null,
+    "anatomy_score": null,
+    "subject_count": 4,
+    "duration": 15.23,
+    "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+    "vram": 6992,
+    "cost": 0.00241,
+    "rollback": false,
+    "rollback_reason": null,
+    "image": "http://127.0.0.1:8188/view?filename=luna_v2_realvisxl_00001_.png&subfolder=&type=output"
+   },
+   "scene": "full body photo, standing at the counter of a cozy coffee shop in Sao Paulo, holding a cup of coffee, wearing a white blouse and blue jeans, afternoon light",
+   "stage": {
+    "image": {
+     "provider": "comfyui",
+     "locator": "luna_v2_realvisxl_00001_.png [output]",
+     "url": "http://127.0.0.1:8188/view?filename=luna_v2_realvisxl_00001_.png&subfolder=&type=output",
+     "width": 832,
+     "height": 1216
+    },
+    "stage": "base",
+    "adapter": "realvisxl",
+    "seconds": 15.23,
+    "seed": 7101,
+    "model_ids": [
+     "RealVisXL_V5.0_fp16.safetensors",
+     "lunavox_sdxl_v1.safetensors"
+    ],
+    "provider_job_id": "9f53c668-0d4b-4a97-b192-f2d46ce98286",
+    "model_switch": null,
+    "gpu": {
+     "name": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+     "vram_total_mb": 23986,
+     "vram_used_mb": 6992
+    },
+    "effective_parameters": {
+     "workflow": "realvis-base",
+     "model": "realvisxl",
+     "prompt": "lunavox, a woman, confident mysterious gaze, subtle playful half smile, lips closed, full body photo, standing at the counter of a cozy coffee shop in Sao Paulo, holding a cup of coffee, wearing a white blouse and blue jeans, afternoon light",
+     "negative": "extra limbs, duplicated person, duplicated head, duplicated torso, fused limbs, disconnected limbs, malformed anatomy, floating limbs, unnatural proportions, deformed hands, extra fingers, missing limbs, duplicate body, multiple copies of subject, tattoos, blonde or light hair, short hair, pale skin, different face, thin or skinny body, teenage or elderly appearance, second copy of the same woman, mirror reflection of her, twins, plastic skin, waxy skin, porcelain skin, airbrushed skin, beauty filter, CGI skin, 3D render, doll face, oversmoothed skin, excessive glossy skin, heavy makeup, cartoon, illustration, painting, anime, nude, nsfw, topless, lingerie",
+     "negative_applied": true,
+     "lora": "lunavox_sdxl_v1.safetensors",
+     "lora_strength": 1.0,
+     "width": 832,
+     "height": 1216,
+     "seed": 7101,
+     "steps": 30,
+     "cfg": 5.0,
+     "sampler": "dpmpp_2m_sde",
+     "scheduler": "karras"
+    }
+   },
+   "validation": {
+    "status": "FAIL",
+    "checks": {
+     "face_identity": {
+      "name": "face_identity",
+      "status": "FAIL",
+      "blocking": true,
+      "reason": "ArcFace 0.310 < 0.55 contra a master_face.",
+      "score": 0.31,
+      "threshold": 0.55,
+      "confidence": "MEDIUM",
+      "failure_type": "face_identity_low",
+      "evidence": {
+       "metric": "ArcFace cosseno (InsightFace antelopev2) contra master_face",
+       "faces": 4,
+       "bbox": [
+        377.3,
+        134.7,
+        538.4,
+        372.0
+       ],
+       "age": 31.0
+      }
+     },
+     "subject_count": {
+      "name": "subject_count",
+      "status": "PASS",
+      "blocking": true,
+      "reason": "0 instancia da persona; 4 outra(s) pessoa(s) com rosto, permitidas.",
+      "score": 0.0,
+      "threshold": 1.0,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "persona_instances": 0,
+       "persona_similarities": [],
+       "other_faces": 4,
+       "other_similarities": [
+        0.31,
+        -0.056,
+        -0.016,
+        -0.027
+       ],
+       "bodies": 4,
+       "prominent_bodies": 2,
+       "background_bodies": 2
+      }
+     },
+     "anatomy": {
+      "name": "anatomy",
+      "status": "UNKNOWN",
+      "blocking": true,
+      "reason": "Sem detector de anatomia validado: nao verificado (nao e PASS).",
+      "score": null,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "detector": null,
+       "main_body_points": 11
+      }
+     },
+     "pose": {
+      "name": "pose",
+      "status": "INFORMATIONAL",
+      "blocking": false,
+      "reason": "Pose livre (sem pose pedida).",
+      "score": null,
+      "threshold": null,
+      "confidence": "MEDIUM",
+      "failure_type": null,
+      "evidence": {
+       "main_body_points": 11
+      }
+     },
+     "body_consistency": {
+      "name": "body_consistency",
+      "status": "NOT_COMPARABLE",
+      "blocking": false,
+      "reason": "Sem corpo ou sem esqueleto da master_body.",
+      "score": null,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "pose_match": false
+      }
+     },
+     "age": {
+      "name": "age",
+      "status": "INFORMATIONAL",
+      "blocking": false,
+      "reason": "Idade estimada 31 (dentro de 23-31; alvo 27).",
+      "score": 31.0,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "target": 27,
+       "range": [
+        23,
+        31
+       ],
+       "inside": true,
+       "consistency": 0.6,
+       "known_drift": "a troca de cabeca (Qwen BFS) deixa a idade estimada em 20-25 (benchmark E1: 22.2; estresse: 23.7). Registrado, nao corrigido na V1."
+      }
+     },
+     "skin_realism": {
+      "name": "skin_realism",
+      "status": "FAIL",
+      "blocking": false,
+      "reason": "Microtextura 0.18 (FAIL); faixas provisorias.",
+      "score": 0.183,
+      "threshold": 0.5,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "grade": "FAIL",
+       "reasons": [
+        "SKIN_REALISM_LOW",
+        "SKIN_TEXTURE_LOW"
+       ],
+       "unknown_aspects": [
+        "cgi_appearance",
+        "porcelain_appearance",
+        "artificial_symmetry"
+       ],
+       "iod_px": 78.1,
+       "patches_used": 3,
+       "patch_std": [
+        1.457,
+        4.772,
+        1.079
+       ],
+       "regions": "kps",
+       "texture_component": 0.183,
+       "smoothness_component": 1.0,
+       "texture": 1.457,
+       "oversmoothed_fraction": 0.0,
+       "calibration_status": "PROVISIONAL"
+      }
+     }
+    },
+    "failures": [
+     "face_identity_low"
+    ],
+    "unverified": [
+     "anatomy"
+    ],
+    "warnings": [
+     "skin_realism"
+    ],
+    "seconds": 31.88
+   },
+   "skin": {
+    "score": 0.183,
+    "status": "FAIL",
+    "grade": "FAIL",
+    "reasons": [
+     "SKIN_REALISM_LOW",
+     "SKIN_TEXTURE_LOW"
+    ],
+    "raw": {
+     "iod_px": 78.1,
+     "patches_used": 3,
+     "patch_std": [
+      1.457,
+      4.772,
+      1.079
+     ],
+     "regions": "kps",
+     "texture_component": 0.183,
+     "smoothness_component": 1.0,
+     "texture": 1.457,
+     "oversmoothed_fraction": 0.0,
+     "calibration_status": "PROVISIONAL"
+    },
+    "unknown_aspects": [
+     "cgi_appearance",
+     "porcelain_appearance",
+     "artificial_symmetry"
+    ],
+    "note": ""
+   },
+   "age": 31.0,
+   "validation_seconds": 31.88
+  },
+  {
+   "record": {
+    "model": "realvisxl",
+    "model_version": "RealVisXL V5.0 (fp16)",
+    "lora": "lunavox_sdxl_v1.safetensors",
+    "lora_strength": 1.0,
+    "seed": 7103,
+    "prompt_hash": "98065e066a8267c8",
+    "negative_hash": "bfed9129dbcbe80d",
+    "pass_type": "base",
+    "pass_number": 0,
+    "mask_type": null,
+    "denoise": 1.0,
+    "strength": null,
+    "face_identity_score": 0.446,
+    "age_score": 0.7,
+    "skin_score": 0.404,
+    "body_score": null,
+    "pose_score": null,
+    "anatomy_score": null,
+    "subject_count": 1,
+    "duration": 13.69,
+    "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+    "vram": 7121,
+    "cost": 0.00217,
+    "rollback": false,
+    "rollback_reason": null,
+    "image": "http://127.0.0.1:8188/view?filename=luna_v2_realvisxl_00002_.png&subfolder=&type=output"
+   },
+   "scene": "close-up portrait by an apartment window in Rio de Janeiro, soft overcast daylight, wearing a grey t-shirt, relaxed expression",
+   "stage": {
+    "image": {
+     "provider": "comfyui",
+     "locator": "luna_v2_realvisxl_00002_.png [output]",
+     "url": "http://127.0.0.1:8188/view?filename=luna_v2_realvisxl_00002_.png&subfolder=&type=output",
+     "width": 832,
+     "height": 1216
+    },
+    "stage": "base",
+    "adapter": "realvisxl",
+    "seconds": 13.69,
+    "seed": 7103,
+    "model_ids": [
+     "RealVisXL_V5.0_fp16.safetensors",
+     "lunavox_sdxl_v1.safetensors"
+    ],
+    "provider_job_id": "888bb702-7a37-41fb-b875-b686867b4c03",
+    "model_switch": false,
+    "gpu": {
+     "name": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+     "vram_total_mb": 23986,
+     "vram_used_mb": 7121
+    },
+    "effective_parameters": {
+     "workflow": "realvis-base",
+     "model": "realvisxl",
+     "prompt": "lunavox, a woman, close-up portrait by an apartment window in Rio de Janeiro, soft overcast daylight, wearing a grey t-shirt, relaxed expression",
+     "negative": "extra limbs, duplicated person, duplicated head, duplicated torso, fused limbs, disconnected limbs, malformed anatomy, floating limbs, unnatural proportions, deformed hands, extra fingers, missing limbs, duplicate body, multiple copies of subject, tattoos, blonde or light hair, short hair, pale skin, different face, thin or skinny body, teenage or elderly appearance, second copy of the same woman, mirror reflection of her, twins, plastic skin, waxy skin, porcelain skin, airbrushed skin, beauty filter, CGI skin, 3D render, doll face, oversmoothed skin, excessive glossy skin, heavy makeup, cartoon, illustration, painting, anime, nude, nsfw, topless, lingerie",
+     "negative_applied": true,
+     "lora": "lunavox_sdxl_v1.safetensors",
+     "lora_strength": 1.0,
+     "width": 832,
+     "height": 1216,
+     "seed": 7103,
+     "steps": 30,
+     "cfg": 5.0,
+     "sampler": "dpmpp_2m_sde",
+     "scheduler": "karras"
+    }
+   },
+   "validation": {
+    "status": "FAIL",
+    "checks": {
+     "face_identity": {
+      "name": "face_identity",
+      "status": "FAIL",
+      "blocking": true,
+      "reason": "ArcFace 0.446 < 0.55 contra a master_face.",
+      "score": 0.446,
+      "threshold": 0.55,
+      "confidence": "MEDIUM",
+      "failure_type": "face_identity_low",
+      "evidence": {
+       "metric": "ArcFace cosseno (InsightFace antelopev2) contra master_face",
+       "faces": 1,
+       "bbox": [
+        193.1,
+        138.2,
+        438.0,
+        463.0
+       ],
+       "age": 30.0
+      }
+     },
+     "subject_count": {
+      "name": "subject_count",
+      "status": "PASS",
+      "blocking": true,
+      "reason": "1 instancia da persona; 0 outra(s) pessoa(s) com rosto, permitidas.",
+      "score": 1.0,
+      "threshold": 1.0,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "persona_instances": 1,
+       "persona_similarities": [
+        0.446
+       ],
+       "other_faces": 0,
+       "other_similarities": [],
+       "bodies": 1,
+       "prominent_bodies": 1,
+       "background_bodies": 0
+      }
+     },
+     "anatomy": {
+      "name": "anatomy",
+      "status": "UNKNOWN",
+      "blocking": true,
+      "reason": "Sem detector de anatomia validado: nao verificado (nao e PASS).",
+      "score": null,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "detector": null,
+       "main_body_points": 10
+      }
+     },
+     "pose": {
+      "name": "pose",
+      "status": "INFORMATIONAL",
+      "blocking": false,
+      "reason": "Pose livre (sem pose pedida).",
+      "score": null,
+      "threshold": null,
+      "confidence": "MEDIUM",
+      "failure_type": null,
+      "evidence": {
+       "main_body_points": 10
+      }
+     },
+     "body_consistency": {
+      "name": "body_consistency",
+      "status": "NOT_COMPARABLE",
+      "blocking": false,
+      "reason": "Sem corpo ou sem esqueleto da master_body.",
+      "score": null,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "pose_match": false
+      }
+     },
+     "age": {
+      "name": "age",
+      "status": "INFORMATIONAL",
+      "blocking": false,
+      "reason": "Idade estimada 30 (dentro de 23-31; alvo 27).",
+      "score": 30.0,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "target": 27,
+       "range": [
+        23,
+        31
+       ],
+       "inside": true,
+       "consistency": 0.7,
+       "known_drift": "a troca de cabeca (Qwen BFS) deixa a idade estimada em 20-25 (benchmark E1: 22.2; estresse: 23.7). Registrado, nao corrigido na V1."
+      }
+     },
+     "skin_realism": {
+      "name": "skin_realism",
+      "status": "WARN",
+      "blocking": false,
+      "reason": "Microtextura 0.40 (WARN); faixas provisorias.",
+      "score": 0.404,
+      "threshold": 0.5,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "grade": "WARN",
+       "reasons": [
+        "SKIN_REALISM_LOW",
+        "SKIN_TEXTURE_LOW"
+       ],
+       "unknown_aspects": [
+        "cgi_appearance",
+        "porcelain_appearance",
+        "artificial_symmetry"
+       ],
+       "iod_px": 112.0,
+       "patches_used": 3,
+       "patch_std": [
+        1.854,
+        2.062,
+        2.009
+       ],
+       "regions": "kps",
+       "texture_component": 0.404,
+       "smoothness_component": 1.0,
+       "texture": 2.009,
+       "oversmoothed_fraction": 0.0,
+       "calibration_status": "PROVISIONAL"
+      }
+     }
+    },
+    "failures": [
+     "face_identity_low"
+    ],
+    "unverified": [
+     "anatomy"
+    ],
+    "warnings": [
+     "skin_realism"
+    ],
+    "seconds": 8.04
+   },
+   "skin": {
+    "score": 0.404,
+    "status": "WARN",
+    "grade": "WARN",
+    "reasons": [
+     "SKIN_REALISM_LOW",
+     "SKIN_TEXTURE_LOW"
+    ],
+    "raw": {
+     "iod_px": 112.0,
+     "patches_used": 3,
+     "patch_std": [
+      1.854,
+      2.062,
+      2.009
+     ],
+     "regions": "kps",
+     "texture_component": 0.404,
+     "smoothness_component": 1.0,
+     "texture": 2.009,
+     "oversmoothed_fraction": 0.0,
+     "calibration_status": "PROVISIONAL"
+    },
+    "unknown_aspects": [
+     "cgi_appearance",
+     "porcelain_appearance",
+     "artificial_symmetry"
+    ],
+    "note": ""
+   },
+   "age": 30.0,
+   "validation_seconds": 8.04
+  },
+  {
+   "record": {
+    "model": "realvisxl",
+    "model_version": "RealVisXL V5.0 (fp16)",
+    "lora": "lunavox_sdxl_v1.safetensors",
+    "lora_strength": 1.0,
+    "seed": 7106,
+    "prompt_hash": "0bc435f0b7dc5301",
+    "negative_hash": "bfed9129dbcbe80d",
+    "pass_type": "base",
+    "pass_number": 0,
+    "mask_type": null,
+    "denoise": 1.0,
+    "strength": null,
+    "face_identity_score": 0.367,
+    "age_score": 0.8,
+    "skin_score": 0.819,
+    "body_score": null,
+    "pose_score": null,
+    "anatomy_score": null,
+    "subject_count": 1,
+    "duration": 13.72,
+    "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+    "vram": 7121,
+    "cost": 0.00217,
+    "rollback": false,
+    "rollback_reason": null,
+    "image": "http://127.0.0.1:8188/view?filename=luna_v2_realvisxl_00003_.png&subfolder=&type=output"
+   },
+   "scene": "full body photo sitting on the grass in Ibirapuera park, Sao Paulo, wearing denim shorts and a white tank top, afternoon light",
+   "stage": {
+    "image": {
+     "provider": "comfyui",
+     "locator": "luna_v2_realvisxl_00003_.png [output]",
+     "url": "http://127.0.0.1:8188/view?filename=luna_v2_realvisxl_00003_.png&subfolder=&type=output",
+     "width": 832,
+     "height": 1216
+    },
+    "stage": "base",
+    "adapter": "realvisxl",
+    "seconds": 13.72,
+    "seed": 7106,
+    "model_ids": [
+     "RealVisXL_V5.0_fp16.safetensors",
+     "lunavox_sdxl_v1.safetensors"
+    ],
+    "provider_job_id": "34952f3d-a582-489c-8564-b6d8e504df2c",
+    "model_switch": false,
+    "gpu": {
+     "name": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : native",
+     "vram_total_mb": 23986,
+     "vram_used_mb": 7121
+    },
+    "effective_parameters": {
+     "workflow": "realvis-base",
+     "model": "realvisxl",
+     "prompt": "lunavox, a woman, confident mysterious gaze, subtle playful half smile, lips closed, full body photo sitting on the grass in Ibirapuera park, Sao Paulo, wearing denim shorts and a white tank top, afternoon light",
+     "negative": "extra limbs, duplicated person, duplicated head, duplicated torso, fused limbs, disconnected limbs, malformed anatomy, floating limbs, unnatural proportions, deformed hands, extra fingers, missing limbs, duplicate body, multiple copies of subject, tattoos, blonde or light hair, short hair, pale skin, different face, thin or skinny body, teenage or elderly appearance, second copy of the same woman, mirror reflection of her, twins, plastic skin, waxy skin, porcelain skin, airbrushed skin, beauty filter, CGI skin, 3D render, doll face, oversmoothed skin, excessive glossy skin, heavy makeup, cartoon, illustration, painting, anime, nude, nsfw, topless, lingerie",
+     "negative_applied": true,
+     "lora": "lunavox_sdxl_v1.safetensors",
+     "lora_strength": 1.0,
+     "width": 832,
+     "height": 1216,
+     "seed": 7106,
+     "steps": 30,
+     "cfg": 5.0,
+     "sampler": "dpmpp_2m_sde",
+     "scheduler": "karras"
+    }
+   },
+   "validation": {
+    "status": "FAIL",
+    "checks": {
+     "face_identity": {
+      "name": "face_identity",
+      "status": "FAIL",
+      "blocking": true,
+      "reason": "ArcFace 0.367 < 0.55 contra a master_face.",
+      "score": 0.367,
+      "threshold": 0.55,
+      "confidence": "MEDIUM",
+      "failure_type": "face_identity_low",
+      "evidence": {
+       "metric": "ArcFace cosseno (InsightFace antelopev2) contra master_face",
+       "faces": 1,
+       "bbox": [
+        374.4,
+        90.6,
+        547.4,
+        307.9
+       ],
+       "age": 29.0
+      }
+     },
+     "subject_count": {
+      "name": "subject_count",
+      "status": "PASS",
+      "blocking": true,
+      "reason": "0 instancia da persona; 1 outra(s) pessoa(s) com rosto, permitidas.",
+      "score": 0.0,
+      "threshold": 1.0,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "persona_instances": 0,
+       "persona_similarities": [],
+       "other_faces": 1,
+       "other_similarities": [
+        0.367
+       ],
+       "bodies": 5,
+       "prominent_bodies": 1,
+       "background_bodies": 4
+      }
+     },
+     "anatomy": {
+      "name": "anatomy",
+      "status": "UNKNOWN",
+      "blocking": true,
+      "reason": "Sem detector de anatomia validado: nao verificado (nao e PASS).",
+      "score": null,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "detector": null,
+       "main_body_points": 13
+      }
+     },
+     "pose": {
+      "name": "pose",
+      "status": "INFORMATIONAL",
+      "blocking": false,
+      "reason": "Pose livre (sem pose pedida).",
+      "score": null,
+      "threshold": null,
+      "confidence": "MEDIUM",
+      "failure_type": null,
+      "evidence": {
+       "main_body_points": 13
+      }
+     },
+     "body_consistency": {
+      "name": "body_consistency",
+      "status": "NOT_COMPARABLE",
+      "blocking": false,
+      "reason": "Sem corpo ou sem esqueleto da master_body.",
+      "score": null,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "pose_match": false
+      }
+     },
+     "age": {
+      "name": "age",
+      "status": "INFORMATIONAL",
+      "blocking": false,
+      "reason": "Idade estimada 29 (dentro de 23-31; alvo 27).",
+      "score": 29.0,
+      "threshold": null,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "target": 27,
+       "range": [
+        23,
+        31
+       ],
+       "inside": true,
+       "consistency": 0.8,
+       "known_drift": "a troca de cabeca (Qwen BFS) deixa a idade estimada em 20-25 (benchmark E1: 22.2; estresse: 23.7). Registrado, nao corrigido na V1."
+      }
+     },
+     "skin_realism": {
+      "name": "skin_realism",
+      "status": "PASS",
+      "blocking": false,
+      "reason": "Microtextura 0.82 (GOOD); faixas provisorias.",
+      "score": 0.819,
+      "threshold": 0.5,
+      "confidence": "LOW",
+      "failure_type": null,
+      "evidence": {
+       "grade": "GOOD",
+       "reasons": [],
+       "unknown_aspects": [
+        "cgi_appearance",
+        "porcelain_appearance",
+        "artificial_symmetry"
+       ],
+       "iod_px": 71.6,
+       "patches_used": 3,
+       "patch_std": [
+        1.245,
+        3.047,
+        3.94
+       ],
+       "regions": "kps",
+       "texture_component": 0.819,
+       "smoothness_component": 1.0,
+       "texture": 3.047,
+       "oversmoothed_fraction": 0.0,
+       "calibration_status": "PROVISIONAL"
+      }
+     }
+    },
+    "failures": [
+     "face_identity_low"
+    ],
+    "unverified": [
+     "anatomy"
+    ],
+    "warnings": [],
+    "seconds": 9.67
+   },
+   "skin": {
+    "score": 0.819,
+    "status": "PASS",
+    "grade": "GOOD",
+    "reasons": [],
+    "raw": {
+     "iod_px": 71.6,
+     "patches_used": 3,
+     "patch_std": [
+      1.245,
+      3.047,
+      3.94
+     ],
+     "regions": "kps",
+     "texture_component": 0.819,
+     "smoothness_component": 1.0,
+     "texture": 3.047,
+     "oversmoothed_fraction": 0.0,
+     "calibration_status": "PROVISIONAL"
+    },
+    "unknown_aspects": [
+     "cgi_appearance",
+     "porcelain_appearance",
+     "artificial_symmetry"
+    ],
+    "note": ""
+   },
+   "age": 29.0,
+   "validation_seconds": 9.67
+  }
+ ]
+}
