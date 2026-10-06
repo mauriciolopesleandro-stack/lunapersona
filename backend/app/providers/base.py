@@ -204,6 +204,33 @@ class ModelAdapter(SceneAdapter):
         return self.profile.id
 
 
+@dataclass
+class RegionPassRequest:
+    """V2: uma passada numa regiao (rosto ou corpo). `region` vem do nucleo:
+    {"crop": {x,y,w,h}, "shapes": [...], "feather": f} em coordenadas do recorte."""
+
+    region: dict[str, Any]
+    prompt: str
+    negative: str
+    denoise: float
+    strength: float
+    seed: int
+    name: str = ""
+
+
+class RegionPassAdapter(ABC):
+    """V2: redesenha so a regiao pedida, a partir da imagem anterior, e cola de volta
+    com a mascara (opacidade = strength). Nunca parte do zero."""
+
+    name: str
+
+    @abstractmethod
+    async def refine(self, image: ProviderImage, request: RegionPassRequest) -> StageOutput: ...
+
+    @abstractmethod
+    async def validate_configuration(self) -> list[str]: ...
+
+
 class FaceIdentityAdapter(ABC):
     name: str
 

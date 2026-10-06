@@ -74,21 +74,21 @@
   "face_passes": [
     {
       "name": "identity_structure",
-      "enabled": false,
+      "enabled": true,
       "mask": "face_full",
       "strength": 0.75,
       "denoise": 0.3
     },
     {
       "name": "facial_refinement",
-      "enabled": false,
+      "enabled": true,
       "mask": "face_inner",
       "strength": 0.42,
       "denoise": 0.2
     },
     {
       "name": "microdetail",
-      "enabled": false,
+      "enabled": true,
       "mask": "face_skin",
       "strength": 0.22,
       "denoise": 0.12
@@ -97,23 +97,39 @@
   "body_passes": [
     {
       "name": "body_structure",
-      "enabled": false,
+      "enabled": true,
       "mask": "body_full",
       "strength": 0.6,
       "denoise": 0.25
     },
     {
       "name": "body_refinement",
-      "enabled": false,
+      "enabled": true,
       "mask": "body_regions",
       "strength": 0.3,
       "denoise": 0.15
     }
   ],
-  "passes_note": "As passadas so rodam no teste 2, com autorizacao. O significado de 'strength' (peso de adaptador de identidade ou da LoRA na regiao) sera decidido antes disso.",
+  "passes_note": "denoise = quanto o recorte e redesenhado (checkpoint + LoRA da persona com o peso configurado); strength = opacidade da mascara ao colar o resultado. Nenhuma passada mexe no peso da LoRA.",
   "age_target": 27,
   "benchmark": {
     "limit_usd": 0.1,
     "rule": "acima do limite: parar, informar imagens/tempo/custo/objetivo/hipotese e aguardar autorizacao"
+  },
+  "pass_steps": 20,
+  "pass_prompts": {
+    "identity_structure": "lunavox, a woman, close-up photo of her face, natural face proportions, natural skin texture, realistic photo",
+    "facial_refinement": "lunavox, a woman, detailed eyes, natural nose and lips, natural expression, realistic photo",
+    "microdetail": "lunavox, a woman, natural skin texture with visible pores, subtle skin imperfections, matte skin, unretouched photo",
+    "body": "{scene}, natural body proportions, natural anatomy, realistic hands, realistic photo"
+  },
+  "acceptance": {
+    "max_identity_drop": 0.02,
+    "min_face_gain": {
+      "identity_structure": 0.0
+    },
+    "max_age_worsening": 3,
+    "max_pose_distance": 0.05,
+    "note": "pele e telemetria (nao decide). Corpo e anatomia sem medida comparavel fora da pose da master: registrados, nao decidem."
   }
 }

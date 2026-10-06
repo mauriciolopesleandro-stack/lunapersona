@@ -83,7 +83,9 @@ class V2Config:
     age_target: int
     benchmark_limit_usd: float
     status: str = "EXPERIMENTAL"
-    extra: dict[str, Any] = field(default_factory=dict)
+    pass_steps: int = 20
+    pass_prompts: dict[str, str] = field(default_factory=dict)
+    acceptance: dict[str, Any] = field(default_factory=dict)
 
     def model(self, model_id: str | None = None) -> ModelProfile:
         key = model_id or self.generation_model
@@ -146,7 +148,19 @@ def parse_v2_config(data: dict[str, Any]) -> V2Config:
             age_target=int(data["age_target"]),
             benchmark_limit_usd=float(data["benchmark"]["limit_usd"]),
             status=data.get("status", "EXPERIMENTAL"),
+            pass_steps=int(data.get("pass_steps", 20)),
+            pass_prompts=dict(data.get("pass_prompts", {})),
+            acceptance=dict(data.get("acceptance", {})),
         )
+        enabled = [p for p in (*cfg.face_passes, *cfg.body_passes) if p.enabled]
+        if enabled:
+            needed = {p.name for p in cfg.face_passes if p.enabled} | ({"body"} if any(p.kind == "body" for p in enabled) else set())
+            missing = sorted(needed - set(cfg.pass_prompts))
+            if missing:
+                raise V2ConfigError(f"Passadas ligadas sem prompt em pass_prompts: {', '.join(missing)}.")
+            for key in ("max_identity_drop", "max_age_worsening", "max_pose_distance"):
+                if key not in cfg.acceptance:
+                    raise V2ConfigError(f"Passadas ligadas sem o criterio de aceite '{key}'.")
     except KeyError as exc:
         raise V2ConfigError(f"Campo obrigatorio ausente na configuracao da V2: {exc}.") from exc
     cfg.model()  # generation_model precisa existir

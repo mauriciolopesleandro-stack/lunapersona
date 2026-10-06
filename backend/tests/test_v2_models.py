@@ -59,10 +59,12 @@ def test_real_config_has_both_candidates_and_sdxl_lora():
     assert cfg.age_target == 27 and cfg.benchmark_limit_usd == 0.10 and cfg.status == "EXPERIMENTAL"
     # mesmos parametros nos dois candidatos (comparacao justa)
     assert cfg.models["realvisxl"].sampling == cfg.models["lustify"].sampling
-    # passadas configuradas mas desligadas ate o teste 2
+    # 3 passadas de rosto e 2 de corpo, ligadas para o teste 2 (autorizado), com prompt e criterio de aceite
     assert [p.name for p in cfg.face_passes] == ["identity_structure", "facial_refinement", "microdetail"]
     assert [p.mask for p in cfg.body_passes] == ["body_full", "body_regions"]
-    assert not any(p.enabled for p in (*cfg.face_passes, *cfg.body_passes))
+    assert all(p.enabled for p in (*cfg.face_passes, *cfg.body_passes))
+    assert set(cfg.pass_prompts) >= {"identity_structure", "facial_refinement", "microdetail", "body"}
+    assert cfg.acceptance["max_identity_drop"] == 0.02
     assert [p.denoise for p in cfg.face_passes] == sorted([p.denoise for p in cfg.face_passes], reverse=True)
 
 
@@ -75,6 +77,8 @@ def test_real_config_has_both_candidates_and_sdxl_lora():
     (lambda d: d["lora"].update(file=""), "LoRA"),
     (lambda d: d["lora"].update(strength=0), "lora.strength"),
     (lambda d: d.pop("benchmark"), "ausente"),
+    (lambda d: d["pass_prompts"].pop("microdetail"), "sem prompt"),
+    (lambda d: d["acceptance"].pop("max_pose_distance"), "criterio de aceite"),
 ])
 def test_invalid_config_is_explicit_error(mutate, message):
     data = copy.deepcopy(RAW)
