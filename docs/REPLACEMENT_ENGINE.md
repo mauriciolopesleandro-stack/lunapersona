@@ -108,3 +108,51 @@ No backend, a telemetria vai também para `logs/engines_v2_telemetry.jsonl`.
 - **Argola/maquiagem:** vêm da referência principal da Luna (ela usa argola grande e maquiagem forte). Melhorar trocando a referência, não o pipeline.
 - **Lustify:** indisponível até o usuário fornecer o token do Civitai.
 - **InsightFace (antelopev2):** licença não comercial (ver `docs/MODEL_REGISTRY.md`).
+
+## Autoridade de atributos (spec 45)
+
+**Princípio:** a foto original fornece o CONTEXTO, e a Persona fornece a IDENTIDADE. "Preservar a foto" não é preservar os pixels da pessoa original: é obedecer à política de atributos. Nada que aparece na foto é "da Luna" por inferência.
+
+Código:
+- `backend/app/core/engines/attributes.py`: políticas e resolução.
+- `replacement.py`: máscaras, condicionamento e etapas.
+- `validation.py` (`attribute_policy`) e `retry.py`.
+- `skin.py`: entrada da reconstrução de pele.
+
+**Precedência:** padrão do Replacement < `replacement_policy` da Persona Sheet < pedido explícito (`preserve_attributes`, `remove_attributes`, `reconstruct_attributes` na API e na tela).
+
+| Atributo | Padrão | O motor aceita |
+|---|---|---|
+| pose, enquadramento, ângulo, perspectiva, roupa, cenário, luz, objetos | PRESERVE | só PRESERVE (não regenera roupa nem cenário) |
+| expressão | PRESERVE | PRESERVE / RECONSTRUCT |
+| acessórios (óculos, boné) | PRESERVE (regra da Luna: óculos mantidos) | PRESERVE / REMOVE |
+| rosto, pele | RECONSTRUCT | só RECONSTRUCT |
+| corpo, cabelo | RECONSTRUCT | RECONSTRUCT / PRESERVE |
+| tatuagens, cicatrizes, piercings, pintas, maquiagem, joias | REMOVE | REMOVE / PRESERVE (só quando pedido) |
+| outras marcas da pessoa original | REMOVE | só REMOVE |
+
+O mesmo atributo em duas listas, ou uma política que o motor não executa, dá erro 400 **antes** de usar GPU. Nomes livres em `preserve` (ex.: `black_top`) viram "keep the black top" no prompt. Nomes livres em `remove` vão para o negativo.
+
+**Persona Sheet da Luna** (`personas/luna/persona_sheet.json`):
+- `identity_attributes`: rosto, corpo, pele (com `skin_reference` = master_body, que orienta e não é copiada), cabelo, idade e traços próprios (gargantilha, pingente, argolas pequenas).
+- `identity_exclusions`: listas vazias, ou seja, a Luna não tem tatuagem, cicatriz, piercing nem pinta.
+- `replacement_policy`: o padrão dela.
+- É uma emenda da versão 1.0 (sem mudança de identidade nem de geração).
+
+**Onde a política age** (não só na UI):
+
+| Camada | O que faz |
+|---|---|
+| Prompt | camada positiva de exclusão ("clean natural skin, no tattoos...") e o que preservar ("same facial expression", "keep the black top"). Maquiagem PRESERVE tira o "no makeup" |
+| Negativo | marcas da pessoa original ("tattoo outline", "ink on skin"...). O que for PRESERVE sai do negativo |
+| Máscaras | `source_identity_mask`, `source_face_mask`, `source_hair_mask`, `source_body_mask` e `source_markings_mask` (prioridade de remoção, com buracos fechados e margem). Cabelo PRESERVE fica fora da geração. Cada caixa detectada segue o atributo do **rótulo**: óculos PRESERVE ficam protegidos e são colados de volta; brinco/pulseira REMOVE não são protegidos |
+| Inpaint | reconstrução de pele nas marcas: entrada sem a marca (push-pull, sem blocos) → RealVisXL **com a LoRA da Luna**, denoise 0,8, profundidade da pele limpa + pose → refino local leve (0,3) → integração de textura só na borda → resíduo medido. Nada de borrar, pintar cor ou clonar vizinho como resultado |
+| Validação | `attribute_policy`, um veredito por atributo. Violação de REMOVE ou PRESERVE, ou rosto original sobrando, é **REJECT mesmo com identidade alta**. Sem medida = UNKNOWN (listado) |
+| Retry | a violação vira a falha do atributo: marcas → máscara ampliada + reconstrução de pele; rosto original → reconstrução do rosto; pele → refino de pele; identidade → condicionamento de identidade |
+| Telemetria | `attributes`: política, origem de cada atributo, itens livres e a decisão por caixa detectada |
+
+**Limites honestos:**
+- O detector de marcas é o de **tinta/marca escura na pele**: ele não separa tatuagem de cicatriz.
+  - Com tatuagens PRESERVE, a limpeza não roda (apagaria a tatuagem pedida), e cicatriz/pinta ficam UNKNOWN.
+  - Piercing, joia e maquiagem também não têm detector: o rosto é reconstruído e o veredito é UNKNOWN (conferir no olho).
+- Tatuagem em **mão** continua sendo o caso mais difícil. A reconstrução nova (LoRA + pose + profundidade da pele limpa, sem blocos) ainda **não foi testada na GPU**.
