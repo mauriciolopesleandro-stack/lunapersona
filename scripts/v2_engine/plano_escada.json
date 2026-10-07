@@ -1,0 +1,20 @@
+{"segundos_por_imagem": 110, "overhead_segundos": 360,
+ "_nota": "Benchmark progressivo A->H, 1 semente por configuracao, Quarto e Varanda, so RealVisXL (Lustify bloqueado sem token). max_retries 0: mede o degrau, nao a nova tentativa.",
+ "execucoes": [
+  {"id": "quarto_A", "foto": "fotos_v2/quarto.png", "modo": "A", "semente": 7801, "max_retries": 0},
+  {"id": "quarto_B", "foto": "fotos_v2/quarto.png", "modo": "B", "semente": 7801, "max_retries": 0},
+  {"id": "quarto_C", "foto": "fotos_v2/quarto.png", "modo": "C", "semente": 7801, "max_retries": 0},
+  {"id": "quarto_D", "foto": "fotos_v2/quarto.png", "modo": "D", "semente": 7801, "max_retries": 0},
+  {"id": "quarto_E", "foto": "fotos_v2/quarto.png", "modo": "E", "semente": 7801, "max_retries": 0},
+  {"id": "quarto_F", "foto": "fotos_v2/quarto.png", "modo": "F", "semente": 7801, "max_retries": 0},
+  {"id": "quarto_G", "foto": "fotos_v2/quarto.png", "modo": "G", "semente": 7801, "max_retries": 0},
+  {"id": "quarto_H", "foto": "fotos_v2/quarto.png", "modo": "H", "semente": 7801, "max_retries": 0},
+  {"id": "varanda_A", "foto": "fotos_v2/varanda.png", "modo": "A", "semente": 7801, "max_retries": 0},
+  {"id": "varanda_B", "foto": "fotos_v2/varanda.png", "modo": "B", "semente": 7801, "max_retries": 0},
+  {"id": "varanda_C", "foto": "fotos_v2/varanda.png", "modo": "C", "semente": 7801, "max_retries": 0},
+  {"id": "varanda_D", "foto": "fotos_v2/varanda.png", "modo": "D", "semente": 7801, "max_retries": 0},
+  {"id": "varanda_E", "foto": "fotos_v2/varanda.png", "modo": "E", "semente": 7801, "max_retries": 0},
+  {"id": "varanda_F", "foto": "fotos_v2/varanda.png", "modo": "F", "semente": 7801, "max_retries": 0},
+  {"id": "varanda_G", "foto": "fotos_v2/varanda.png", "modo": "G", "semente": 7801, "max_retries": 0},
+  {"id": "varanda_H", "foto": "fotos_v2/varanda.png", "modo": "H", "semente": 7801, "max_retries": 0}
+ ]}

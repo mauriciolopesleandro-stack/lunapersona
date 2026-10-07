@@ -25,6 +25,11 @@ DEFAULT_THRESHOLDS: dict[str, Any] = {
     "face_body_tone_delta": {"pass": 6.0, "warn": 10.0},
     "body_shoulder_ratio": {"tolerance": 0.08},
     "composition_shift": {"pass": 0.01, "reject": 0.05},
+    # emenda: degrau de cor na borda da regiao alterada ALEM do que a foto ja tinha na mesma borda;
+    # blocos: bordas retas longas novas por mil pixels da regiao. Calibrado no smoke test de 2026-10-07
+    # (etapas limpas: emenda 5,1-5,9 / bordas 6,4-8,4; final com mancha e quadrados: 11,2 / 13,3) - preliminar, 1 foto.
+    "seam_excess": {"pass": 7.0, "reject": 10.0},
+    "straight_edges": {"pass": 9.0, "reject": 12.0},
 }
 
 
@@ -108,6 +113,73 @@ def changed_fraction(a: np.ndarray, b: np.ndarray, region: np.ndarray, threshold
     return float((np.abs(a.astype(np.int16) - b.astype(np.int16)).max(axis=2) > threshold)[sel].mean())
 
 
+def _box(y: np.ndarray, r: int) -> np.ndarray:
+    """Media numa janela (2r+1)^2 (soma acumulada; bordas replicadas)."""
+    k = 2 * r + 1
+    c = np.pad(np.pad(y.astype(np.float64), r, mode="edge").cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+    return ((c[k:, k:] - c[:-k, k:] - c[k:, :-k] + c[:-k, :-k]) / (k * k)).astype(np.float32)
+
+
+def _grow(m: np.ndarray, r: int) -> np.ndarray:
+    return _box((m > 0.5).astype(np.float32), r) > 1e-6
+
+
+def _shrink(m: np.ndarray, r: int) -> np.ndarray:
+    return _box((m > 0.5).astype(np.float32), r) > 1 - 1e-6
+
+
+def seam_excess(original: np.ndarray, final: np.ndarray, region: np.ndarray, radius: int = 3) -> float | None:
+    """Emenda na borda da regiao: media local de cada lado da borda (dentro x fora), o degrau de cor
+    resultante, MENOS o degrau que a foto original ja tinha na mesma borda (cabelo x parede existe nas
+    duas). Media do excesso no anel da borda; ~5 numa colagem limpa, >10 com mancha de borda dura."""
+    reg = region > 0.5
+    if reg.sum() < 50 or (~reg).sum() < 50:
+        return None
+    ins, out = reg.astype(np.float32), (~reg).astype(np.float32)
+    ring = _grow(reg, 2) & ~_shrink(reg, 2)
+    if not ring.any():
+        return None
+    di, do = np.maximum(_box(ins, radius), 1e-3), np.maximum(_box(out, radius), 1e-3)
+    steps = []
+    for src in (final, original):
+        src = src.astype(np.float32)
+        steps.append(np.max([np.abs(_box(src[..., c] * ins, radius) / di - _box(src[..., c] * out, radius) / do)
+                             for c in range(3)], axis=0))
+    return round(float(np.clip(steps[0] - steps[1], 0, None)[ring].mean()), 3)
+
+
+def _runs(b: np.ndarray, run: int) -> np.ndarray:
+    """Pixels em sequencias verticais (eixo 0) de True com comprimento >= run."""
+    h = b.shape[0]
+    if h < run:
+        return np.zeros_like(b)
+    c = np.concatenate([np.zeros((1, b.shape[1]), np.int32), b.astype(np.int32).cumsum(0)])
+    start = (c[run:] - c[:-run]) == run  # janela [i, i+run) toda True
+    d = np.zeros((h + 1, b.shape[1]), np.int32)
+    d[:h - run + 1] += start
+    d[run:] -= start
+    return d.cumsum(0)[:h] > 0
+
+
+def straight_edges(original: np.ndarray, final: np.ndarray, region: np.ndarray, run: int = 8, thr: float = 10.0) -> float | None:
+    """Bordas retas (horizontais/verticais) longas DENTRO da regiao que a foto original nao tinha, por mil
+    pixels da regiao: pega os quadrados/blocos de remendo que o olho ve na hora."""
+    inner = _shrink(region, 3)
+    if inner.sum() < 50:
+        return None
+
+    def straight(src):
+        y = luma(src)
+        vx = np.zeros(y.shape, bool)
+        vx[:, 1:] = _runs(np.abs(np.diff(y, axis=1)) > thr, run)
+        hy = np.zeros(y.shape, bool)
+        hy[1:, :] = _runs((np.abs(np.diff(y, axis=0)) > thr).T, run).T
+        return vx | hy
+
+    extra = straight(final) & ~_grow(straight(original), 2) & inner
+    return round(float(extra.sum()) / float(inner.sum()) * 1000.0, 3)
+
+
 # --- checks --------------------------------------------------------------------------------------
 
 def _band(name, score, thr, higher_is_better=True, unit_pass="pass", unit_rej="reject", reason=""):
@@ -129,6 +201,8 @@ def check_original_residual(original_sim, tattoo_residual, hair_residual, thr_fa
     """Residuo da pessoa ORIGINAL (separado de identidade)."""
     parts = {"rosto_original": original_sim, "tatuagem": tattoo_residual, "cabelo": hair_residual}
     worst, reasons = PASS, []
+    if original_sim is None:  # nao medido nao e "passou": o rosto original e justamente o que mais importa aqui
+        worst, reasons = WARN, ["semelhanca com o rosto original NAO medida"]
     if original_sim is not None and original_sim > thr_face["reject"]:
         worst, reasons = REJECT, reasons + [f"rosto original ainda presente ({original_sim:.2f})"]
     elif original_sim is not None and original_sim > thr_face["warn"]:
@@ -183,6 +257,23 @@ def check_body(shoulder_ratio, thr):
     return CheckResult("body", st, round(float(shoulder_ratio), 3), thr, "largura de ombros final/original (pose e escala mantidas)")
 
 
+def check_seams(seam, edges, thr_seam, thr_edges):
+    """Emendas e blocos visiveis na regiao alterada (o defeito que o olho ve primeiro)."""
+    meta = {"emenda": seam, "bordas_retas": edges}
+    if seam is None and edges is None:
+        return CheckResult("seams", UNKNOWN, None, {"seam": thr_seam, "edges": thr_edges}, "sem regiao alterada", meta)
+    worst, reasons = PASS, []
+    for nome, val, thr in (("emenda/mancha de borda", seam, thr_seam), ("blocos/bordas retas", edges, thr_edges)):
+        if val is None:
+            continue
+        if val > thr["reject"]:
+            worst, reasons = REJECT, reasons + [f"{nome} visivel ({val:.1f})"]
+        elif val > thr["pass"] and worst != REJECT:
+            worst, reasons = WARN, reasons + [f"{nome} ({val:.1f})"]
+    score = max(v for v in (seam, edges) if v is not None)
+    return CheckResult("seams", worst, round(float(score), 3), {"seam": thr_seam, "edges": thr_edges}, "; ".join(reasons), meta)
+
+
 def check_anatomy(person_found: bool):
     if not person_found:
         return CheckResult("anatomy", REJECT, 0.0, None, "pessoa principal desaparecida")
@@ -207,6 +298,7 @@ def validate_v2(m: dict[str, Any], thresholds: dict[str, Any] | None = None) -> 
                            t["face_body_tone_delta"]),
         "body": check_body(m.get("shoulder_ratio"), t["body_shoulder_ratio"]),
         "anatomy": check_anatomy(bool(m.get("person_found", True))),
+        "seams": check_seams(m.get("seam_excess"), m.get("straight_edges"), t["seam_excess"], t["straight_edges"]),
         "composition": _band("composition", m.get("composition_shift"), t["composition_shift"], False,
                              reason="deslocamento global da imagem (enquadramento)"),
     }

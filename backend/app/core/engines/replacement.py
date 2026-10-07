@@ -35,6 +35,8 @@ from app.core.engines.validation import (
     changed_fraction,
     lab_mean,
     luma,
+    seam_excess,
+    straight_edges,
     texture_energy,
     validate_v2,
 )
@@ -234,16 +236,40 @@ class ReplacementEngine:
         an = await self._identity_of(loc, w, h, req.master)
         face = an.persona_face()
         score = face.similarity if face else None
+        tel.passes[-1].update(identity=score)
+        acc = self.cfg["acceptance"]
+        seam_tol, edge_tol = float(acc.get("stage_seam_tolerance", 0.8)), float(acc.get("stage_edges_tolerance", 1.5))
 
-        async def try_stage(name, mask, prompt, denoise, seed_off, **kw):
+        def visual(px, region):
+            return seam_excess(orig, px, region), straight_edges(orig, px, region)
+
+        def visual_ok(before, after):
+            """Etapa so fica se nao criar emenda nem bloco novo (medido, nao confiado ao modelo)."""
+            (s0, e0), (s1, e1) = before, after
+            bad = []
+            if s0 is not None and s1 is not None and s1 > s0 + seam_tol:
+                bad.append(f"emenda {s0:.1f}->{s1:.1f}")
+            if e0 is not None and e1 is not None and e1 > e0 + edge_tol:
+                bad.append(f"blocos {e0:.1f}->{e1:.1f}")
+            return not bad, "; ".join(bad)
+
+        async def try_stage(name, mask, prompt, denoise, seed_off, min_gain=None, **kw):
             nonlocal cur, modified, score
             px2, loc2, secs = await self._pass(name, cur, mask, prompt, negative, denoise, req.seed + seed_off, plan, tel, **kw)
             an2 = await self._identity_of(loc2, w, h, req.master)
             f2 = an2.persona_face()
             s2 = f2.similarity if f2 else None
             ok = s2 is not None and (score is None or score - s2 <= drop)
-            tel.passes[-1].update(accepted=ok, identity=s2,
-                                  reason=None if ok else f"identidade caiu ({score} -> {s2}): mantido o anterior")
+            reason = None if ok else f"identidade caiu ({score} -> {s2}): mantido o anterior"
+            # refino com referencia so fica com GANHO real: a referencia tambem traz maquiagem/bronzeado
+            if ok and min_gain is not None and score is not None and s2 < score + min_gain:
+                ok, reason = False, f"ganho de identidade pequeno ({score} -> {s2}): mantido o anterior (mais natural)"
+            if ok:
+                region = np.maximum(modified, mask)
+                vok, why = visual_ok(visual(cur["pixels"], region), visual(px2, region))
+                if not vok:
+                    ok, reason = False, f"etapa criou defeito visivel ({why}): mantido o anterior"
+            tel.passes[-1].update(accepted=ok, identity=s2, reason=reason)
             inter[name] = loc2
             if ok:
                 cur, modified, score = {"pixels": px2, "image": loc2}, np.maximum(modified, mask), s2
@@ -252,7 +278,8 @@ class ReplacementEngine:
         if plan.refinement and (score is None or score < plan.face_refine_if_identity_below):
             idsp = IdentitySpec(use_lora=True, reference=req.master if plan.face_reference else None,
                                 reference_strength=plan.face_reference_strength if plan.face_reference else 0.0)
-            await try_stage("face_refine", scene.face_full, P["face"], plan.face_denoise, 101, identity=idsp,
+            gain = None if plan.name == "MAX_QUALITY" else float(acc.get("face_refine_min_gain", 0.02))
+            await try_stage("face_refine", scene.face_full, P["face"], plan.face_denoise, 101, min_gain=gain, identity=idsp,
                             controls=ControlSpec(structure=req.image))
         # hi-res do rosto (detalhe de pele/olhos, sem referencia)
         if plan.hires:
@@ -268,6 +295,9 @@ class ReplacementEngine:
         if plan.tattoo_cleanup and scene.ink_zone is not None and scene.ink_zone.any() and scene.masks is not None:
             boost = int(plan.extra.get("tattoo_margin_boost", 0))
             zone = dilate(scene.ink_zone, 3 * boost) * (1 - scene.masks.clothing) if boost else scene.ink_zone
+            # cabelo por cima do ombro e a regiao da identidade nunca entram (no smoke test a pele pintou o cabelo)
+            keep_out = np.maximum(dilate((scene.masks.hair > 0.5).astype(np.float32), 4), dilate((ident > 0.5).astype(np.float32), 3))
+            zone = np.clip(zone * (1 - keep_out), 0, 1)
             tt = self.cfg["tattoo"]
             soft = np.clip(feather(zone, max(2, int(min(h, w) * float(tt["feather_frac"])))) * (scene.body > 0.5), 0, 1)
             clean = fill_tattoos(cur["pixels"], zone, (scene.masks.skin > 0.5) & (zone < 0.5),
@@ -279,10 +309,15 @@ class ReplacementEngine:
                                                                  structure=clean_loc),
                                             identity=IdentitySpec(use_lora=False))
             known = (scene.masks.skin > 0.5) & (dilate(zone, max(6, int(min(h, w) * 0.02))) > 0.5) & ~(dilate(zone, 2) > 0.5)
+            inter["tattoo_raw"] = loc2
             px2 = soft_tone_match(px2, orig, soft, known, max(6, int(min(h, w) * float(tt["tone_radius_frac"]))))
             loc2 = await self.store.save(px2, "tattoo_tone")
-            cur, modified = {"pixels": px2, "image": loc2}, np.maximum(modified, soft)
             inter["tattoo_cleanup"] = loc2
+            region = np.maximum(modified, soft)
+            vok, why = visual_ok(visual(cur["pixels"], region), visual(px2, region))
+            tel.passes[-1].update(accepted=vok, reason=None if vok else f"limpeza criou defeito visivel ({why}): tatuagem mantida")
+            if vok:
+                cur, modified = {"pixels": px2, "image": loc2}, region
         # integracao fotografica (CPU)
         integ: dict[str, Any] = {}
         if plan.photographic_integration:
@@ -291,18 +326,29 @@ class ReplacementEngine:
                 body_skin = np.clip(scene.masks.skin * scene.masks.person - modified, 0, 1)
             t0 = time.monotonic()
             px2, integ = integrate(orig, cur["pixels"], modified, face=scene.face_full, body_skin=body_skin, seed=req.seed)
+            vok, why = visual_ok(visual(cur["pixels"], modified), visual(px2, modified))
             loc2 = await self.store.save(px2, "integrated")
-            cur = {"pixels": px2, "image": loc2}
-            tel.add_pass("photographic_integration", 0.0, {"cpu_seconds": round(time.monotonic() - t0, 2), **integ}, True)
             inter["integrated"] = loc2
+            if vok:
+                cur = {"pixels": px2, "image": loc2}
+            integ["aceita"] = vok
+            tel.add_pass("photographic_integration", 0.0, {"cpu_seconds": round(time.monotonic() - t0, 2), **integ}, vok,
+                         None if vok else f"integracao criou defeito visivel ({why}): mantida a imagem anterior")
         # fora do que foi alterado: a FOTO ORIGINAL (garantido aqui, nao confiado ao modelo)
         keep = dilate((modified > 0.02).astype(np.float32), 2) > 0.5
         final = np.where(keep[..., None], cur["pixels"], orig)
         final_loc = await self.store.save(final, "final")
-        return final, final_loc, inter, {"modified_area": round(float((modified > 0.5).mean()), 4), "integration": integ}
+        if req.keep_intermediates:
+            for nm, mk in (("mask_identity", ident), ("mask_modified", modified), ("mask_face", scene.face_full),
+                           ("mask_ink", scene.ink_zone), ("mask_hair", None if scene.masks is None else scene.masks.hair)):
+                if mk is not None:
+                    inter[nm] = await self.store.save(np.repeat((np.clip(mk, 0, 1) * 255).astype(np.uint8)[..., None], 3, 2), nm)
+        return final, final_loc, inter, {"modified_area": round(float((modified > 0.5).mean()), 4), "integration": integ,
+                                         "modified_mask": modified}
 
     # --- medidas para a validacao --------------------------------------------------------------
-    async def _measure(self, req: ReplacementRequest, scene: _Scene, final: np.ndarray, final_loc: str, modified_area: float) -> dict[str, Any]:
+    async def _measure(self, req: ReplacementRequest, scene: _Scene, final: np.ndarray, final_loc: str, modified_area: float,
+                       modified_mask: np.ndarray | None = None) -> dict[str, Any]:
         orig = scene.original
         h, w = orig.shape[:2]
         an = await self._identity_of(final_loc, w, h, req.master)
@@ -310,7 +356,10 @@ class ReplacementEngine:
         dup = float(self.cfg.get("duplicate_similarity", 0.45))
         persona_n = len([f for f in an.faces if f.similarity is not None and f.similarity >= dup])
         x1, y1, x2, y2 = (int(v) for v in scene.sheet.target_face.bbox)
-        crop = orig[max(0, y1 - 20):y2 + 20, max(0, x1 - 20):x2 + 20]
+        # recorte LARGO: com o rosto colado na borda o detector nao acha o rosto e a medida some (smoke test)
+        mg = float(self.cfg["acceptance"].get("original_crop_margin", 0.6))
+        mx, my = int((x2 - x1) * mg), int((y2 - y1) * mg)
+        crop = orig[max(0, y1 - my):y2 + my, max(0, x1 - mx):x2 + mx]
         orig_ref = ReferenceImage("original", "original.png", _png(crop), "")
         an_o = await self.analyzer.analyze(ProviderImage("comfyui", final_loc, "", w, h), orig_ref)
         fo = an_o.persona_face()
@@ -358,7 +407,9 @@ class ReplacementEngine:
                 "background": background, "tattoo_residual": tattoo_res, "hair_residual": hair_res, "texture_final": tex_final,
                 "texture_ref": tex_ref, "tone_delta": tone_delta, "persona_instances": persona_n, "faces": len(an.faces),
                 "shoulder_ratio": shoulder, "composition_shift": 0.0, "person_found": face is not None or len(an.faces) > 0,
-                "modified_area": modified_area}
+                "modified_area": modified_area,
+                "seam_excess": None if modified_mask is None else seam_excess(orig, final, modified_mask),
+                "straight_edges": None if modified_mask is None else straight_edges(orig, final, modified_mask)}
 
     # --- job completo --------------------------------------------------------------------------
     async def run(self, req: ReplacementRequest) -> ReplacementOutcome:
@@ -386,7 +437,7 @@ class ReplacementEngine:
             tel.denoise = {"identity": plan.identity_denoise, "face": plan.face_denoise, "tattoo": plan.tattoo_denoise,
                            "body": plan.body_denoise}
             final, loc, inter, info = await self._attempt(req, scene, plan, tel)
-            m = await self._measure(req, mscene, final, loc, info["modified_area"])
+            m = await self._measure(req, mscene, final, loc, info["modified_area"], info.get("modified_mask"))
             report = validate_v2(m, self.cfg.get("thresholds") or None)
             rec = {"attempt": attempt, "plan": plan.name, "status": report.status, "failures": report.failures(),
                    "warnings": report.warnings(), "image": loc, "identity": m["identity"]}
