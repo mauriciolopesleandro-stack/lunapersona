@@ -77,6 +77,38 @@ Limites: emenda PASS ≤ 7 e REJECT > 10; bordas retas PASS ≤ 9 e REJECT > 12.
 
 **Achado real que a imagem mostra:** a pele gerada da Luna saiu ~33 níveis mais escura que a pele original do corpo. É o bronzeado das referências. A integração não "pinta por cima"; a validação aponta.
 
-## Próximo: escada A→H (aguarda autorização de custo)
+## Reteste, 2026-10-07 (QUALITY, quarto + varanda; autorizado até US$ 0,15)
+
+| | |
+|---|---|
+| Pod | `8pyb19faz46ezj` (novo pelo failover), RTX PRO 4000 Blackwell |
+| Tempo e custo | 13,8 min, **~US$ 0,13** |
+| Downloads | 200 s desta vez (no smoke foram 70 s) |
+
+Os dois resultados foram **REJECT**, e a validação agora diz o porquê, por dimensão.
+
+### Quarto
+
+| Etapa | Identidade | Resultado |
+|---|---|---|
+| Passe de identidade | 0,325 | O rosto "natural" do passe 1 **não é a Luna** |
+| Refino com InstantID | 0,781 | **Descartado** pela trava nova por uma emenda 5,0 → 6,1, que ainda estava dentro do PASS. Erro da trava, corrigido: só derruba quando passa do limite aceitável |
+| Tatuagem | — | Descartada corretamente (blocos 5,3 → 11,0). O modelo vira a mão "massinha", e o ajuste de tom faz quadrados |
+| Final | | Fica a tinta original (0,45), sem estragar a imagem |
+
+Rosto original agora **medido**: 0,238.
+
+### Varanda (com óculos escuros)
+
+- **Identidade 0,03.**
+- O buraco dos óculos na máscara partia o rosto em dois pedaços pequenos, e o modelo gerou um rosto escuro e incoerente.
+- **Corrigido:** a máscara cobre os óculos, e os pixels originais deles voltam colados por cima depois de cada passe e no final. Regra do usuário: óculos mantidos.
+
+### Conclusões
+
+- A trava visual funciona: nenhuma emenda nem quadrado chegou ao final do quarto.
+- A tatuagem em mão e braço continua sem solução com inpaint SDXL. É limitação conhecida (testes 1 a 7) e está documentada.
+
+## Próximo: reteste das correções, depois a escada A→H (cada rodada só com autorização de custo)
 
 `scripts/v2_engine/plano_escada.json`: 8 degraus × 2 fotos (quarto, varanda), semente 7801, só RealVisXL. Depois, 3 sementes na melhor configuração e uma geração V1 de regressão.

@@ -108,3 +108,24 @@ async def test_face_refine_without_real_gain_is_not_kept():
     fr = next(p for p in out.telemetry.passes if p["pass"] == "face_refine")
     assert ident["identity"] == 0.65
     assert fr["accepted"] is False and "ganho de identidade pequeno" in fr["reason"]
+
+
+async def test_sunglasses_are_generated_over_and_pasted_back():
+    """Varanda (reteste): o buraco dos oculos partia o rosto. Agora a mascara cobre os oculos e os
+    pixels ORIGINAIS deles voltam por cima depois de cada passe."""
+    from app.core.persona_replacement.contracts import RawSegments
+    from tests.test_persona_transfer import wide_tattoo_photo
+
+    class GlassesSeg:
+        async def segment(self, image, sheet):
+            _, person, hair, clothes = wide_tattoo_photo()
+            return RawSegments(person, hair, [(64.0, 46.0, 96.0, 56.0)], clothes=clothes)
+
+    faces = {"foto": 0.1, "identity": 0.8, "face_refine": 0.8, "tattoo": 0.8, "integrated": 0.8, "final": 0.8}
+    eng, ad, store = engine(faces)
+    store.images["foto.png"][48:55, 66:94] = (15, 15, 20)  # lentes escuras
+    eng.segmenter = GlassesSeg()
+    out = await eng.run(req(advanced={"max_retries": 0}))
+    ident = ad.calls[0]
+    assert ident.stage == "identity" and ident.mask[51, 80] > 0.5  # oculos DENTRO da mascara de geracao
+    assert (out.pixels[50:53, 70:90] == (15, 15, 20)).all()  # e de volta por cima no final

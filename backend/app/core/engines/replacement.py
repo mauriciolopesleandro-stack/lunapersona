@@ -29,6 +29,7 @@ from app.core.engines.policies import StagePlan, plan_for
 from app.core.engines.retry import RetryPolicyV2
 from app.core.engines.telemetry import JobTelemetry
 from app.core.engines.validation import (
+    DEFAULT_THRESHOLDS,
     PASS,
     REJECT,
     ValidationReportV2,
@@ -136,6 +137,9 @@ class _Scene:
     raw_tattoos: np.ndarray | None
     base_pose: Any
     clothes_ok: bool
+    # oculos/acessorios do rosto: pixels ORIGINAIS colados por cima depois de cada passe (nao viram buraco
+    # na mascara - no reteste da varanda o buraco partiu o rosto em dois e o modelo gerou um rosto escuro)
+    accessory: np.ndarray | None = None
 
 
 class ReplacementEngine:
@@ -175,6 +179,23 @@ class ReplacementEngine:
         raw = replace(raw, protect_boxes=plausible_accessories(raw.protect_boxes, bbox, float(sg["max_accessory_face_ratio"])))
         masks = build_masks(raw, bbox, sheet.target_face.kps, original)
         ident = identity_mask(masks, bbox, float(sg["face_grow_frac"]))
+        accessory = None
+        if raw.protect_boxes:
+            box = np.zeros((h, w), np.float32)
+            for bx1, by1, bx2, by2 in raw.protect_boxes:
+                box[max(0, int(by1)):int(by2) + 1, max(0, int(bx1)):int(bx2) + 1] = 1
+            # so o que NAO e pele dentro da caixa (armacao e lentes); buracos pequenos fechados
+            acc = erode(dilate(box * (1 - skin_pixels(original)), 2), 2) * box
+            if acc.sum() > 20:
+                accessory = acc
+            # a mascara de geracao cobre o acessorio (rosto inteiro e coerente); ele volta colado depois
+            fx1, fy1, fx2, fy2 = bbox
+            gx, gy = (fx2 - fx1) * 0.25, (fy2 - fy1) * 0.25
+            head_box = np.zeros((h, w), np.float32)
+            head_box[max(0, int(fy1 - gy)):int(fy2 + gy) + 1, max(0, int(fx1 - gx)):int(fx2 + gx) + 1] = 1
+            on_head = masks.protect * masks.person * np.maximum(head_box, dilate(np.maximum(masks.face_full, masks.hair), 6))
+            ident = np.clip(ident + on_head, 0, 1)
+            masks = replace(masks, face_full=np.clip(masks.face_full + on_head, 0, 1))
         heuristic = masks.clothing > 0.5
         cov = (float(((raw.clothes > 0.5) & heuristic).sum()) / max(1.0, float(heuristic.sum()))
                if getattr(raw, "clothes", None) is not None else 0.0)
@@ -190,12 +211,13 @@ class ReplacementEngine:
             ink = tattoo_zones(original, body, masks.skin, masks.tattoos, masks.face_full, f("reach_frac"), f("edge_frac"),
                                float(tt["ink_dy"]), float(tt["ink_dcr"]), float(tt["ink_dcr_light"]),
                                float(tt["ink_dy_florence"]), float(tt["ink_dcr_florence"]), f("close_frac"), f("margin_frac"), guard)
-        return _Scene(original, sheet, masks, ident, masks.face_full, body, ink, raw.tattoos, base_pose, clothes_ok)
+        return _Scene(original, sheet, masks, ident, masks.face_full, body, ink, raw.tattoos, base_pose, clothes_ok, accessory)
 
     # --- uma passada ---------------------------------------------------------------------------
     async def _pass(self, name: str, cur: dict, mask: np.ndarray, prompt: str, negative: str, denoise: float, seed: int,
                     plan: StagePlan, tel: JobTelemetry, *, controls: ControlSpec | None = None, identity: IdentitySpec | None = None,
-                    image: str | None = None, work_side: int | None = None) -> tuple[np.ndarray, str, float]:
+                    image: str | None = None, work_side: int | None = None,
+                    accessory: tuple[np.ndarray, np.ndarray] | None = None) -> tuple[np.ndarray, str, float]:
         req = InpaintRequest(image=image or cur["image"], mask=mask, prompt=prompt, negative=negative, denoise=denoise,
                              seed=seed % 2**32, stage=name, controls=controls or ControlSpec(),
                              identity=identity or IdentitySpec(), steps=plan.steps, cfg=plan.cfg,
@@ -204,6 +226,10 @@ class ReplacementEngine:
         px = await self.store.load(res.image)
         keep = mask > 0.02  # fora da mascara: nada vem do modelo
         px = np.where(keep[..., None], px, cur["pixels"])
+        if accessory is not None:  # oculos originais por cima (borda de 1-2 px suave)
+            acc_mask, acc_src = accessory
+            a = np.clip(feather(acc_mask, 2), 0, 1)[..., None] * keep[..., None]
+            px = (acc_src.astype(np.float32) * a + px.astype(np.float32) * (1 - a) + 0.5).astype(np.uint8)
         loc = await self.store.save(px, name)
         tel.add_pass(name, res.seconds, res.parameters, True)
         return px, loc, res.seconds
@@ -229,8 +255,9 @@ class ReplacementEngine:
             ident = erode(ident, 4 * shrink)
         # PASSE 1: reconstrucao da identidade
         prompt = P["identity"].replace("{description}", scene.sheet.description())
+        paste = None if scene.accessory is None else (scene.accessory, orig)
         px, loc, _ = await self._pass("identity", cur, ident, prompt, negative, plan.identity_denoise, req.seed, plan, tel,
-                                      controls=structure)
+                                      controls=structure, accessory=paste)
         cur, modified = {"pixels": px, "image": loc}, np.maximum(modified, ident)
         inter["identity"] = loc
         an = await self._identity_of(loc, w, h, req.master)
@@ -243,19 +270,25 @@ class ReplacementEngine:
         def visual(px, region):
             return seam_excess(orig, px, region), straight_edges(orig, px, region)
 
+        thr = {**DEFAULT_THRESHOLDS, **(self.cfg.get("thresholds") or {})}
+        seam_ok, edge_ok = float(thr["seam_excess"]["pass"]), float(thr["straight_edges"]["pass"])
+
         def visual_ok(before, after):
-            """Etapa so fica se nao criar emenda nem bloco novo (medido, nao confiado ao modelo)."""
+            """Etapa so fica se nao levar emenda/blocos para ALEM do aceitavel. Piora pequena abaixo do limite
+            nao derruba a etapa: no reteste o refino que levou a identidade de 0,33 a 0,78 foi descartado por
+            uma emenda 5,0 -> 6,1 (ainda PASS) - a identidade e o objetivo principal."""
             (s0, e0), (s1, e1) = before, after
             bad = []
-            if s0 is not None and s1 is not None and s1 > s0 + seam_tol:
+            if s0 is not None and s1 is not None and s1 > max(s0 + seam_tol, seam_ok):
                 bad.append(f"emenda {s0:.1f}->{s1:.1f}")
-            if e0 is not None and e1 is not None and e1 > e0 + edge_tol:
+            if e0 is not None and e1 is not None and e1 > max(e0 + edge_tol, edge_ok):
                 bad.append(f"blocos {e0:.1f}->{e1:.1f}")
             return not bad, "; ".join(bad)
 
         async def try_stage(name, mask, prompt, denoise, seed_off, min_gain=None, **kw):
             nonlocal cur, modified, score
-            px2, loc2, secs = await self._pass(name, cur, mask, prompt, negative, denoise, req.seed + seed_off, plan, tel, **kw)
+            px2, loc2, secs = await self._pass(name, cur, mask, prompt, negative, denoise, req.seed + seed_off, plan, tel,
+                                               accessory=paste, **kw)
             an2 = await self._identity_of(loc2, w, h, req.master)
             f2 = an2.persona_face()
             s2 = f2.similarity if f2 else None
@@ -337,6 +370,9 @@ class ReplacementEngine:
         # fora do que foi alterado: a FOTO ORIGINAL (garantido aqui, nao confiado ao modelo)
         keep = dilate((modified > 0.02).astype(np.float32), 2) > 0.5
         final = np.where(keep[..., None], cur["pixels"], orig)
+        if scene.accessory is not None:  # integracao (grao/tom) tambem nao mexe nos oculos
+            a = np.clip(feather(scene.accessory, 2), 0, 1)[..., None]
+            final = (orig.astype(np.float32) * a + final.astype(np.float32) * (1 - a) + 0.5).astype(np.uint8)
         final_loc = await self.store.save(final, "final")
         if req.keep_intermediates:
             for nm, mk in (("mask_identity", ident), ("mask_modified", modified), ("mask_face", scene.face_full),
