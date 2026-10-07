@@ -20,8 +20,11 @@ import uuid
 from pathlib import Path
 
 
+UA = {"User-Agent": "Mozilla/5.0 luna-bench"}  # o proxy da RunPod (Cloudflare) recusa o user-agent padrao do Python (403)
+
+
 def http(url, data=None, headers=None, timeout=60):
-    req = urllib.request.Request(url, data=data, headers=headers or {})
+    req = urllib.request.Request(url, data=data, headers={**UA, **(headers or {})})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
