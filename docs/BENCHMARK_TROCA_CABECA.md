@@ -44,3 +44,15 @@
 
 ## Observação
 **Argola:** a referência principal da Luna (`f7e81b9a…`, `retrato_frontal_1`) usa argola grande, e todas as variantes a reproduzem. Para tirar a argola das trocas, a troca de referência é mais eficaz que o negativo.
+
+## Teste com a foto do quarto (2026-10-07, ~10 min de pod do estúdio, ≈ US$ 0,10)
+Fluxo completo:
+1. **Cabeça:** variante B (2511 fp8 + BFS), 2 sementes, com `compor_cabeca`. Semelhança **0,750 / 0,749** na final. Nada mudou fora da cabeça.
+2. **Tatuagens:** retoque com o ombro e o braço em denoise 0,65 e a mão em recorte próprio com denoise 0,45. **REPROVADO:** tom ΔE 5,6, blocos 0,010, pontinhos 15.
+
+**Leitura visual:**
+- **Cabeça:** a Luna clara, com cabelo longo e luz coerente. Mas o rosto ficou **muito maquiado e mais bronzeado que o corpo** (o estilo da referência) e **com argola nas duas orelhas** (da referência).
+- **Corpo:**
+  - **ombro esquerdo:** uma mancha cinza na borda;
+  - **peito, perto do braço:** riscos escuros, o "fantasma" da tatuagem;
+  - **mão:** ainda com aspecto de massa.
