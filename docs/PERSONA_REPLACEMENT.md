@@ -164,3 +164,17 @@ FOTO → máscara do ROSTO + máscara do CABELO → IDENTIDADE LUNA → BRAÇOS 
 - **Braços, mãos e roupa:** nenhuma passada os regenera, então a geometria é a da foto. Isso corrige o braço deformado do teste 2.
 - **Tatuagem:** só na pele, longe da borda da roupa, para corrigir a faixa manchada do top. Entrada sem a tinta, denoise 0,55, sem LoRA.
 - **Integração:** faixa em volta das áreas tratadas, sem o rosto, para corrigir a queda de identidade do teste 2. Denoise 0,18, sem LoRA.
+
+## Transfer teste 3 (v1.2, quarto, 1 geração, ~US$ 0,07, 453 s de pod)
+
+Métricas: identidade **0,751**, original 0,068, pose 0,029, fundo 0%, roupa 0%, borda 0,705. Todas as etapas foram aceitas.
+
+**Leitura visual:**
+- **Melhorou muito:**
+  - rosto natural da Luna, cabelo castanho escuro, fundo idêntico;
+  - top intacto, sem faixa manchada;
+  - braço e mão esquerdos idênticos à foto.
+- **Errado:**
+  1. **Braço direito:** a detecção de tatuagem (Florence) marcou o braço e a mão inteiros. O preenchimento liso com denoise 0,55 virou uma "massinha" lisa e laranja, com contorno duro e a mão sumida.
+  2. **Ombro esquerdo:** a tatuagem continua, porque a detecção não pegou.
+  3. **Objeto novo:** apareceu um brinco de argola grande. E ficou uma mecha clara no cabelo do lado esquerdo.

@@ -1,0 +1,332 @@
+{
+ "budget": {
+  "name": "Persona Transfer 1o teste",
+  "objective": "a Luna inteira na pose da foto, sem cara de colagem",
+  "hypothesis": "gerar a pessoa inteira com pose (ControlNet) integra melhor que transformar so o rosto",
+  "images": 1,
+  "seconds_per_image": 120,
+  "overhead_seconds": 300,
+  "price_per_hour": 0.57,
+  "total_seconds": 420,
+  "estimated_cost_usd": 0.0665,
+  "limit_usd": 0.05,
+  "authorized_usd": 0.1,
+  "allowed_usd": 0.1
+ },
+ "config_version": "transfer-v1.2",
+ "foto": "fotos_ref/1_quarto_top_preto.png",
+ "input": "xfer_input_1_quarto_top_preto.png",
+ "final": {
+  "name": "integration",
+  "image": "repl_integration_04f2d727.png"
+ },
+ "report": {
+  "status": "PASS",
+  "identity": 0.751,
+  "age": 26.0,
+  "pose": 0.029,
+  "subject_count": 1,
+  "background_changed": 0.0,
+  "clothing_changed": 0.0,
+  "lighting": {
+   "delta_luma": -11.33,
+   "delta_chroma": 4.16,
+   "score": 0.578
+  },
+  "texture": {
+   "reference_noise": 3.058,
+   "region_noise": 2.709,
+   "ratio": 0.886,
+   "score": 0.89
+  },
+  "edge": {
+   "halo": 0.0,
+   "sharpness_ratio": 1.505,
+   "score": 0.705
+  },
+  "integration_score": 0.578,
+  "original_similarity": 0.068,
+  "body": "UNKNOWN",
+  "anatomy": "UNKNOWN",
+  "failures": []
+ },
+ "records": [
+  {
+   "stage": "persona_transfer",
+   "kind": "identity",
+   "mask": "face+hair",
+   "strength": 1.0,
+   "denoise": 0.9,
+   "seed": 7801,
+   "identity_adapter": null,
+   "lora": true,
+   "image": "repl_persona_transfer_2bc1899b.png",
+   "identity": 0.375,
+   "age": 28.0,
+   "pose": 0.008,
+   "metrics": {
+    "background_changed": 0.0,
+    "clothing_changed": 0.0
+   },
+   "seconds": 24.27,
+   "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+   "cost_usd": 0.00384,
+   "accepted": true,
+   "rollback_reason": null
+  },
+  {
+   "stage": "face_refinement",
+   "kind": "face",
+   "mask": "face_full",
+   "strength": 0.7,
+   "denoise": 0.4,
+   "seed": 7902,
+   "identity_adapter": "instantid",
+   "lora": true,
+   "image": "repl_face_refinement_df5b42f3.png",
+   "identity": 0.75,
+   "age": 26.0,
+   "pose": 0.007,
+   "metrics": {
+    "background_changed": 0.0,
+    "clothing_changed": 0.0
+   },
+   "seconds": 32.25,
+   "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+   "cost_usd": 0.00511,
+   "accepted": true,
+   "rollback_reason": null
+  },
+  {
+   "stage": "tattoo_removal",
+   "kind": "body",
+   "mask": "tattoos(skin only)",
+   "strength": 1.0,
+   "denoise": 0.55,
+   "seed": 7952,
+   "identity_adapter": null,
+   "lora": false,
+   "image": "repl_tattoo_removal_a6929f98.png",
+   "identity": 0.751,
+   "age": 27.0,
+   "pose": 0.028,
+   "metrics": {
+    "background_changed": 0.0,
+    "clothing_changed": 0.0
+   },
+   "seconds": 14.17,
+   "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+   "cost_usd": 0.00224,
+   "accepted": true,
+   "rollback_reason": null
+  },
+  {
+   "stage": "integration",
+   "kind": "integration",
+   "mask": "edges-face",
+   "strength": 0.6,
+   "denoise": 0.18,
+   "seed": 8003,
+   "identity_adapter": null,
+   "lora": false,
+   "image": "repl_integration_04f2d727.png",
+   "identity": 0.751,
+   "age": 26.0,
+   "pose": 0.029,
+   "metrics": {
+    "background_changed": 0.0,
+    "clothing_changed": 0.0
+   },
+   "seconds": 12.22,
+   "gpu": "cuda:0 NVIDIA RTX PRO 4000 Blackwell : cudaMallocAsync",
+   "cost_usd": 0.00193,
+   "accepted": true,
+   "rollback_reason": null
+  }
+ ],
+ "checkpoints": [
+  "original",
+  "persona_transfer",
+  "face_refinement",
+  "tattoo_removal",
+  "integration"
+ ],
+ "mask_areas": {
+  "person": 0.49515,
+  "hair": 0.06722,
+  "face_full": 0.10807,
+  "face_inner": 0.04014,
+  "face_transition": 0.05465,
+  "skin": 0.34048,
+  "body_skin": 0.21021,
+  "tattoos": 0.02844,
+  "clothing": 0.11594,
+  "protect": 0.00155,
+  "identity": 0.17795,
+  "skin_tattoos": 0.02897,
+  "seam": 0.00133
+ },
+ "reading": {
+  "image": "xfer_input_1_quarto_top_preto.png",
+  "width": 779,
+  "height": 1240,
+  "target_face": {
+   "bbox": [
+    198.7,
+    312.6,
+    431.1,
+    653.0
+   ],
+   "similarity": 0.041,
+   "age": 30.0,
+   "sex": "F",
+   "det_score": 0.864,
+   "yaw": 0.194,
+   "kps": [
+    [
+     262.6,
+     478.0
+    ],
+    [
+     372.6,
+     448.1
+    ],
+    [
+     338.9,
+     539.0
+    ],
+    [
+     296.2,
+     588.4
+    ],
+    [
+     390.0,
+     562.3
+    ]
+   ]
+  },
+  "target_body": {
+   "keypoints": [
+    [
+     340.81716426213575,
+     526.7594526807466,
+     1.0
+    ],
+    [
+     326.73707468310994,
+     762.8080132702987,
+     1.0
+    ],
+    [
+     105.59684423605597,
+     785.1705084840457,
+     1.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     37.68111803134286,
+     1103.2148848573368,
+     1.0
+    ],
+    [
+     547.8773051301639,
+     740.4455180565517,
+     1.0
+    ],
+    [
+     691.9911631743112,
+     972.352875828743,
+     1.0
+    ],
+    [
+     594.2587766846023,
+     978.97880033652,
+     1.0
+    ],
+    [
+     238.11533439159393,
+     1212.5426392356555,
+     1.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     546.2208240032196,
+     1200.947271347046,
+     1.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     257.9931079149246,
+     478.72149999936437,
+     1.0
+    ],
+    [
+     370.6338245471318,
+     445.59187746047974,
+     1.0
+    ],
+    [
+     186.7644194563229,
+     520.1335281729698,
+     1.0
+    ],
+    [
+     430.26714511712396,
+     453.874283095201,
+     1.0
+    ]
+   ],
+   "bbox": [
+    37.68111803134286,
+    445.59187746047974,
+    691.9911631743112,
+    1212.5426392356555
+   ],
+   "height_frac": 0.619,
+   "visible_points": 9
+  },
+  "others": [],
+  "caption": "A photo-realistic shoot from a front camera angle about a young woman sitting in an office chair, smiling at the camera, wearing a black tube top. the image also shows a modern interior with white walls and a hanging macrame chair in the background. on the middle of the image, a 20-year-old woman with light skin, dark brown hair, and brown eyes appears to be smiling at the viewer. she has a slim body and is wearing a black tube top that is pulled up to reveal her bare shoulders and chest area. her hair is styled in loose waves and falls down her back. she has a tattoo on her left arm and is wearing hoop earrings. her eyes are looking directly at the viewer with a neutral expression. her lips are painted a soft pink color and she has freckles on her cheeks. the lighting in the image is bright and natural, highlighting her features. the overall mood of the image is casual and relaxed.",
+  "fields": {},
+  "camera": "selfie",
+  "light": {
+   "brightness": 123.0,
+   "contrast": 61.3,
+   "warmth": 16.4,
+   "saturation": 0.21,
+   "clipped_highlights": 0.0003,
+   "face_to_scene": 1.095,
+   "label": "ambient light"
+  },
+  "warnings": [],
+  "person_box": [
+   0.0,
+   142.40000000000003,
+   779.0,
+   1240.0
+  ],
+  "description": "front camera selfie, phone held at arm's length, A photo-realistic shoot from a front camera angle about a young woman sitting in an office chair, smiling at the camera, wearing a black tube top. the image also shows a modern interior with white walls and a hanging macrame chair in the background. on the middle of the image, a 20-year-old woman with light skin, dark brown hair, and brown eyes appears to be smiling at the viewer. she has a slim body and is wearing a black tube top that is pulled up to reveal her bare shoulders and chest area. her hair is styled in loose waves and falls down her back. she has a tattoo on her left arm and is wearing hoop earrings. her eyes are looking directly at the viewer with a neutral expression. her lips are painted a soft pink color and she has freckles on her cheeks. the lighting in the image is bright and natural, highlighting her features. the overall mood of the image is casual and relaxed, ambient light"
+ }
+}
