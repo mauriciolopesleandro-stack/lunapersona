@@ -190,3 +190,19 @@ def test_tone_match_fixes_small_patches_but_leaves_a_whole_arm_alone():
     assert (moved <= 8).all() and (moved >= 6).all()
     big = np.ones((80, 80), np.float32)  # tudo e zona: nao ha com o que comparar
     assert (tone_match(gen, base, big, np.zeros((80, 80), np.float32), radius=3) == gen).all()
+
+
+def test_markings_grow_into_ink_touching_the_top_but_not_into_the_black_top():
+    """Teste de 2026-10-07: o pedaco da tatuagem encostado no top ficava fora da mascara."""
+    from app.core.engines.markings import complete_markings
+
+    img = np.full((60, 60, 3), (200, 150, 125), np.uint8)  # pele saturada
+    img[:, :20] = (30, 33, 44)  # top preto (cinza azulado)
+    img[20:40, 20:34] = (107, 96, 88)  # tinta cinza-quente encostada no top
+    seeds = np.zeros((60, 60), np.float32)
+    seeds[24:36, 30:34] = 1  # o detector so pegou a parte longe do top
+    ref = np.full((60, 60, 3), (200, 150, 125), np.uint8)
+    out = complete_markings(img, seeds, ref, np.ones((60, 60), np.float32))
+    assert out[22:38, 21:30].all()  # completou ate o top
+    assert out[:, :20].sum() == 0  # o top nao entra
+    assert out[45:55, 40:55].sum() == 0  # pele limpa nao entra

@@ -33,6 +33,7 @@ from app.core.engines.attributes import (
     AttributePolicyError,
     resolve,
 )
+from app.core.engines.markings import clean_skin_reference, complete_markings
 from app.core.engines.skin import drop_small_blobs, structure_preserving_fill, tone_match
 from app.core.engines.integration import integrate
 from app.core.engines.policies import StagePlan, plan_for
@@ -290,6 +291,12 @@ class ReplacementEngine:
                 margin = max(2, int(px_min * float(tt.get("mask_margin_frac", 0.008))))
                 # pintinha/poro isolado nao e marca (viravam remendos quadrados no teste de 2026-10-07)
                 m = drop_small_blobs(m, max(2, int(px_min * float(tt.get("min_blob_frac", 0.003)))))
+                # completa o pedaco da tatuagem que encosta no top/borda (o detector so ve "buraco na pele"):
+                # cresce so por vizinho com cara de tinta (cinza quente, menos saturado e mais escuro que a pele)
+                if m.any() and attrs.removes_skin_markings():
+                    allowed = masks.person * (1 - masks.clothing) * (1 - masks.protect) * (1 - (ident > 0.5))                         * (1 - (dilate_round(masks.hair, 2) > 0.5))
+                    m = complete_markings(original, m, clean_skin_reference(original, m, masks.person), allowed,
+                                          max_grow=max(4, int(px_min * float(tt.get("complete_grow_frac", 0.03)))))
                 # dilatacao REDONDA (a quadrada fazia cantos retos que apareciam na pele)
                 m = erode_round(dilate_round(m, close), close)  # fecha buracos (tinta vista pelos furos no reteste)
                 m = dilate_round(m, margin)
