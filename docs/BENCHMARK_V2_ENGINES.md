@@ -165,6 +165,26 @@ Defeito que sobrou na 0,6: manchas claras redondas, fracas, no braço esquerdo e
 
 **Ainda sobra:** dois pedacinhos de tatuagem nas bordas protegidas: junto ao cabelo, no ombro esquerdo, e junto ao top, no antebraço direito.
 
-## Próximo: rodar a versão final inteira na GPU (confirma a prévia) e tratar as bordas protegidas
+## Versão final, foto do usuário (2026-10-07, autorizado)
+
+| | |
+|---|---|
+| Tempo e custo | 8,5 min, **~US$ 0,08** |
+| Pipeline | pele 0,6 + casamento de cor + máscara completada até a borda do top |
+
+| Medida | Valor |
+|---|---|
+| Identidade | 0,727 |
+| Rosto original | 0,021 |
+| Pose | 0,012 |
+| Fundo | 0,0 |
+
+**Na GPU:**
+- **Braço e mão direitos:** limpos. Punho e dedos intactos, a rosa saiu, e o pedaço junto ao top também saiu (sobrou um pontinho).
+- **Braço esquerdo:** mancha clara com borda no vinco da axila. A causa era a integração FINAL, que aplicava o degrau pele × pele (+13) na borda das zonas de marcas.
+
+**Correção (commit 50381b8):** a integração final só age em volta da identidade. O final foi recomputado em CPU com as imagens desta rodada (etapa determinística): a mancha sumiu e a emenda caiu de 6,9 para 5,5.
+
+**Limitação que fica:** um pedaço da flor no ombro esquerdo. Fica em pele na sombra, junto à cadeira escura; ali a tinta não é mais escura que a pele em volta, e a regra de cor não separa os dois com segurança.
 
 `scripts/v2_engine/plano_escada.json`: 8 degraus × 2 fotos (quarto, varanda), semente 7801, só RealVisXL. Depois, 3 sementes na melhor configuração e uma geração V1 de regressão.
