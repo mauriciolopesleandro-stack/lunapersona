@@ -104,6 +104,7 @@ class Config:
     # integracao
     sigma_correcao: float = 6.0
     semente: int = 7
+    grao_antes_do_modelo: bool = True   # passe 2: False = o modelo recebe a pele lisa; o grao entra so no integrar
 
     # checagem
     max_tinta_residual: float = 0.03  # fracao da area de tinta original
@@ -453,7 +454,7 @@ def _arrays(reg, grupos, permitido, e, cfg):
     return d, p, alfa.astype(np.float32), mm
 
 
-def pre_preencher(base_c, d, p, pl, e, rng):
+def pre_preencher(base_c, d, p, pl, e, rng, grao=True):
     """Tira a tinta antes do modelo: preenchimento suave a partir da pele limpa
     vizinha (nunca de cabelo, roupa ou fundo) + grao igual ao dela."""
     lab = _lab(base_c)
@@ -461,7 +462,7 @@ def pre_preencher(base_c, d, p, pl, e, rng):
     if validos.sum() < 30:
         validos = p & ~d
     lab2 = preencher_suave(lab, d, validos)
-    s = _grao(lab[..., 0], validos & _dil(d, 10 * e))
+    s = _grao(lab[..., 0], validos & _dil(d, 10 * e)) if grao else 0.0
     if s > 0:
         lab2[..., 0] += _ruido(d.shape, s, rng) * d
     out = base_c.copy()
@@ -669,7 +670,7 @@ def executar_passe(base_img, dura, det, cfg, reconstruir, saidas=None):
         d, p, alfa, mm = _arrays(reg, grupos, det.permitido, e, cfg)
         pl = det.pele_limpa[Y0:Y1, X0:X1]
         base_c = final[Y0:Y1, X0:X1]
-        pre = pre_preencher(base_c, d, p, pl, e, rng)
+        pre = pre_preencher(base_c, d, p, pl, e, rng, cfg.grao_antes_do_modelo)
         if reg["modo"] == "classico" or (reconstruir is None and saidas is None):
             rec = pre
         elif saidas is not None:
@@ -730,7 +731,7 @@ def _escrever_trabalho(pasta, original, base, prot, pessoa, incl, det, dura, cfg
     for reg in regs:
         X0, Y0, X1, Y1 = reg["caixa"]
         d, p, alfa, mm = _arrays(reg, grupos, det.permitido, e, cfg)
-        pre = pre_preencher(base[Y0:Y1, X0:X1], d, p, det.pele_limpa[Y0:Y1, X0:X1], e, rng)
+        pre = pre_preencher(base[Y0:Y1, X0:X1], d, p, det.pele_limpa[Y0:Y1, X0:X1], e, rng, cfg.grao_antes_do_modelo)
         if reg["modo"] == "modelo":
             ent, msk, meta = para_modelo(pre, mm, cfg)
             reg["meta"] = meta
