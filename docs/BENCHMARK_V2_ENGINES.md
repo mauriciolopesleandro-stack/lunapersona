@@ -1,0 +1,82 @@
+# Benchmark das engines V2 (Replacement)
+
+Branch `feature/persona-v2-hyperreal-replacement`. Scripts: `scripts/v2_engine/`.
+- `sessao_v2.py` roda o plano no pod.
+- `rodar_pod.sh` baixa os modelos no disco temporário, roda e limpa (sem tocar em arquivo do volume).
+- `coletar_v2.py` junta as imagens.
+
+Imagens em `generated/v2/engines/` (fora do git).
+
+## Smoke test, 2026-10-07
+
+**Configuração**
+
+| | |
+|---|---|
+| Pod | `fj609he9jnc8e6` (EU-RO-1; criado pelo failover, porque o host do pod anterior estava sem GPU) |
+| GPU | NVIDIA RTX PRO 4000 Blackwell, 24 GB, driver 580.159.04, CUDA 13.0 |
+| ComfyUI | 0.30.0 |
+| Preço | US$ 0,57/h |
+| Modelo | RealVisXL V5 fp16 (sha 6a35a785…, confere com o registro) |
+| LoRA | lunavox_sdxl_v1, força 1.0 (sha 0a58a72e…) |
+| ControlNet | Union promax (9fae2e50…) |
+| InstantID | c8127be9… / 02b3618e… |
+| Workflow | `sdxl-inpaint-control` |
+| Foto e modo | quarto (1_quarto_top_preto), modo QUALITY, semente 7801, sem nova tentativa |
+
+**Tempo e custo**
+
+| | |
+|---|---|
+| Downloads dos 4 modelos | ~70 s (13,6 GB, HF oficial) |
+| Job | 299 s de parede; 108 s de GPU nas passadas |
+| Pico de VRAM | 10,8 GB |
+| Pod ligado | 8,1 min, **~US$ 0,08** |
+
+**Medidas da validação (na época)**
+
+| Medida | Valor | Status |
+|---|---|---|
+| Identidade | 0,775 | PASS |
+| Pose | 0,023 | PASS |
+| Fundo | 0,0 | PASS |
+| Tatuagem | 0,123 | WARN |
+| Rosto original | **não medido** | não apareceu como falha |
+| Resultado geral | | **WARN** |
+
+**Olhando a imagem: NÃO aprovada.**
+
+| Etapa | O que fez |
+|---|---|
+| Passe de identidade | **muito bom**: rosto natural, sardas, cabelo crível, sem emenda |
+| Refino de rosto (InstantID com a master) | deixou o rosto "maquiado" (sobrancelha marcada, contorno), porque copia a maquiagem da referência |
+| Limpeza de tatuagem | pintou pele por cima dos fios de cabelo no ombro esquerdo; **quadrados cinza** no braço direito; parte da tinta ficou |
+| Integração | clareou cabelo e colo com **borda dura** (cabelo recortado na parede, mancha no colo). O degrau pele × pele (+21) era aplicado na borda inteira da região, cabelo × parede inclusive, e a harmonia de tom usava máscara sem transição |
+
+Medidas novas, calibradas nessas imagens (preliminar, 1 foto):
+
+| Etapa | Emenda | Bordas retas |
+|---|---|---|
+| identidade | 5,1 | 6,4 |
+| refino de rosto | 5,9 | 8,4 |
+| tatuagem | 4,8 | **13,3** |
+| final | **11,2** | **13,3** |
+
+Limites: emenda PASS ≤ 7 e REJECT > 10; bordas retas PASS ≤ 9 e REJECT > 12.
+
+**Correções (commit cc0e9ba, sem GPU)**
+- Validação: nova dimensão `seams` (emenda + blocos). "Rosto original não medido" agora é WARN, não passa calado.
+- Integração: o degrau só entra na pele perto da fronteira pele × pele, limitado a 12. A harmonia rosto × corpo tem transição suave e limite de 8.
+  - Na imagem do smoke test, a emenda caiu de 5,9 para 5,0, sem mexer no cabelo.
+- Engine:
+  - Refino de rosto, limpeza de tatuagem e integração só ficam se não criarem emenda nem bloco novo; senão, voltam à imagem anterior (registrado na telemetria).
+  - Refino com referência só fica com ganho de identidade ≥ 0,02 (fora do MAX_QUALITY).
+  - Cabelo e região da identidade ficam fora da zona de tatuagem.
+  - Recorte do rosto original com margem de 60% (o recorte apertado fazia o detector falhar).
+  - Máscaras e identidade por etapa vão para as intermediárias e a telemetria.
+
+**Achado real que a imagem mostra:** a pele gerada da Luna saiu ~33 níveis mais escura que a pele original do corpo. É o bronzeado das referências. A integração não "pinta por cima"; a validação aponta.
+
+## Próximo: escada A→H (aguarda autorização de custo)
+
+`scripts/v2_engine/plano_escada.json`: 8 degraus × 2 fotos (quarto, varanda), semente 7801, só RealVisXL. Depois, 3 sementes na melhor configuração e uma geração V1 de regressão.

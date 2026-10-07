@@ -181,3 +181,14 @@ primeira geração (MasterIntegrityError se o arquivo for outro).
   `/workspace/lunapersona/.venv-sync/bin/python scripts/volume_sync.py all`.
 - Memória do Claude sobre isso: `runpod-failover-estudio`,
   `regra-um-pod-ligado`, `lora-lunavox-sdxl`.
+
+## Persona Engine V2: três engines (2026-10-07)
+
+Branch `feature/persona-v2-hyperreal-replacement` (nada na main, nada publicado).
+- Geração: V1 sem mudança. Substituição e Troca de rosto: engines novas em `backend/app/core/engines/`.
+- Rotas `/api/v2/*` (com token, só processamento local) e aba **Persona V2** no site.
+- Docs: `docs/PERSONA_ENGINE.md` (seção V2), `docs/REPLACEMENT_ENGINE.md`, `docs/MODEL_REGISTRY.md`, `docs/BENCHMARK_V2_ENGINES.md`.
+- Testes: 385 passando (GPU mockada). E2E da tela com servidor local mockado: `.claude/launch.json` → `v2-e2e-mock`.
+- Smoke test real na GPU: funcionou (~US$ 0,08), mas a imagem foi **reprovada no olho** por emendas e blocos. Já está corrigido sem GPU (commit cc0e9ba); falta rodar de novo.
+- Lustify: bloqueado até o usuário fornecer o token do Civitai.
+- Sessão de GPU: `scripts/v2_engine/rodar_pod.sh` (o código vai para `/workspace/v2test`; os modelos ficam no disco temporário e são apagados no fim).
