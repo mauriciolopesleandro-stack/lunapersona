@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 
+from app.core.persona_replacement.blending import feather
 from app.core.persona_replacement.contracts import TransformRequest
 from app.core.persona_replacement.replacement_orchestrator import ReplacementOrchestrator, ReplacementResult
 from app.core.persona_replacement.rollback import Checkpoint, CheckpointStore
@@ -133,6 +134,63 @@ def ink_by_color(rgb: np.ndarray, body: np.ndarray, skin: np.ndarray, florence: 
     ink = erode(dilate(ink.astype(np.float32), close), close) > 0.5  # tracos proximos viram um desenho so
     ink = dilate(erode(ink.astype(np.float32), 1), 1) > 0.5  # pontinhos isolados (ruido) saem
     return (ink & inside).astype(np.float32)
+
+
+def dilate_round(mask: np.ndarray, r: int) -> np.ndarray:
+    """Dilatacao "redonda" (cruz e quadrado alternados = octogono): sem cantos retos nem blocos."""
+    out = (mask > 0.5).astype(np.float32)
+    for i in range(max(0, r)):
+        if i % 2 == 0:
+            p = np.pad(out, 1)
+            out = np.maximum.reduce([p[1:-1, 1:-1], p[:-2, 1:-1], p[2:, 1:-1], p[1:-1, :-2], p[1:-1, 2:]])
+        else:
+            out = dilate(out, 1)
+    return out
+
+
+def erode_round(mask: np.ndarray, r: int) -> np.ndarray:
+    return 1.0 - dilate_round(1.0 - (mask > 0.5).astype(np.float32), r)
+
+
+def tattoo_zones(rgb: np.ndarray, body: np.ndarray, skin: np.ndarray, florence: np.ndarray, face_full: np.ndarray,
+                 reach: int, edge: int, dy: float, dcr: float, dcr_light: float, dy_florence: float,
+                 dcr_florence: float, close: int, margin: int, face_guard: int) -> np.ndarray:
+    """Mascara ORGANICA em volta de cada tatuagem (nunca o braco/mao/colo inteiro): tinta escura
+    (mais escura E mais fria que a pele vizinha), tinta clara (bem mais fria/acinzentada) e, onde o
+    Florence marcou tatuagem, os tracos fracos. Pontinhos isolados saem, tracos vizinhos se juntam
+    (fechamento redondo) e entra uma margem pequena redonda. So na pele livre (sem cabelo, top,
+    acessorio) e longe do rosto."""
+    from app.core.persona_replacement.lighting import to_ycc
+
+    free = (body > 0.5) & ~(dilate(face_full, face_guard) > 0.5)
+    inside = erode_round(free.astype(np.float32), edge) > 0.5
+    known = (skin > 0.5) & inside
+    if not known.any():
+        return np.zeros(body.shape, np.float32)
+    ycc = to_ycc(rgb)
+    dark = ycc[..., 0] - local_mean(ycc[..., 0], known, reach)
+    cold = ycc[..., 2] - local_mean(ycc[..., 2], known, reach)
+    flo = florence > 0.5
+    core = inside & (((dark < -dy) & (cold < -dcr)) | (cold < -dcr_light)
+                     | (flo & ((dark < -dy_florence) | (cold < -dcr_florence))))
+    core = dilate_round(erode_round(core.astype(np.float32), 1), 1)  # ruido de 1-2 px sai
+    zone = erode_round(dilate_round(core, close), close)  # tracos vizinhos = um desenho so
+    zone = dilate_round(zone, margin)  # margem pequena (residuo, halo)
+    return (zone * free).astype(np.float32)
+
+
+def soft_tone_match(new: np.ndarray, reference: np.ndarray, weight: np.ndarray, known: np.ndarray, radius: int) -> np.ndarray:
+    """Tom/luz da pele refeita = o da pele ORIGINAL ali mesmo (pixels limpos entre os tracos e em
+    volta, raio pequeno: segue a sombra do braco), so baixa frequencia, ponderado pela mascara SUAVE
+    (transicao gradual, sem borda). Fora da mascara nada muda."""
+    wgt = np.clip(weight, 0, 1)
+    sel = wgt > 0.02
+    if not sel.any() or not known.any():
+        return new.copy()
+    target = local_mean(reference.astype(np.float32), known, radius)
+    current = local_mean(new.astype(np.float32), sel, radius)
+    out = new.astype(np.float32) + (target - current) * wgt[..., None]
+    return np.where(sel[..., None], out, new.astype(np.float32)).round().clip(0, 255).astype(np.uint8)
 
 
 def surgical_ink_mask(masks: MaskSet, ink: np.ndarray, identity: np.ndarray, margin: int, face_guard: int,
@@ -330,13 +388,32 @@ class TransferOrchestrator(ReplacementOrchestrator):
             reach_hair = max(4, int(min(h, w) * float(tr.get("hair_ink_reach_frac", 0.02))))
             hair_ink = hair_ink * (dilate(ink, reach_hair) > 0.5)
             ink = np.maximum(ink, hair_ink)
-        if surgical and ink.any():
+        zones = tr.get("mode") == "zones"
+        soft = None
+        if zones:
+            px_min = min(h, w)
+            frac = lambda k, d: max(1, int(px_min * float(tr.get(k, d))))  # noqa: E731
+            zone = tattoo_zones(original, body, masks.skin, masks.tattoos, masks.face_full, frac("reach_frac", 0.03),
+                                frac("edge_frac", 0.006), float(tr.get("ink_dy", 6)), float(tr.get("ink_dcr", 1.5)),
+                                float(tr.get("ink_dcr_light", 5)), float(tr.get("ink_dy_florence", 2)),
+                                float(tr.get("ink_dcr_florence", 0.5)), frac("ink_close_frac", 0.01),
+                                frac("ink_margin_frac", 0.006), guard)
+            ink = zone
+            # borda SUAVE (transicao gradual), so dentro da pele livre: nunca no top, cabelo ou rosto
+            free = (body > 0.5) & ~(dilate(masks.face_full, guard) > 0.5)
+            soft = np.clip(feather(zone, frac("feather_frac", 0.008)) * free, 0, 1).astype(np.float32)
+            body = soft
+            region = np.clip(identity + zone, 0, 1)
+        elif surgical and ink.any():
             body = surgical_ink_mask(masks, ink, identity, max(2, int(min(h, w) * float(tr.get("ink_margin_frac", 0.005)))),
                                      guard, max(2, int(min(h, w) * float(tr.get("clothing_guard_frac", 0.004)))),
                                      under_hair=hair_ink)
             region = np.clip(identity + body, 0, 1)
         ebox = earring_box(raw.protect_boxes, sheet.target_face.bbox) if tr.get("earring_cleanup") else None
-        ezone = earring_zone((h, w), ebox, masks.face_full, identity, guard) if ebox is not None else None
+        # a argola fica do lado do rosto: a protecao do brinco usa so o MIOLO do rosto (olhos/nariz/boca)
+        #    e a PELE do rosto (a argola fica sobre cabelo/pescoco, nunca sobre a bochecha)
+        ear_face = np.maximum(dilate(masks.face_inner, guard), masks.face_full * masks.skin) if zones else masks.face_full
+        ezone = earring_zone((h, w), ebox, ear_face, identity, 2 if zones else guard) if ebox is not None else None
         saved = {}
         for name, m in (("identity", identity), ("visible_skin", body), ("ink", ink), ("clothing", masks.clothing),
                         ("earring_zone", ezone if ezone is not None else np.zeros((h, w), np.float32))):
@@ -403,9 +480,20 @@ class TransferOrchestrator(ReplacementOrchestrator):
             modified = await self._stage(store, TATTOO, "body", body, tr["prompt"], neg, float(tr["denoise"]),
                                          float(tr["strength"]), (seed + 151) % 2**32, bool(tr.get("lora", False)),
                                          original, masks, master, base_pose, records, modified,
-                                         mask_name="tattoo ink + small margin" if surgical else
+                                         mask_name="organic tattoo zones (soft edge)" if zones else
+                                         "tattoo ink + small margin" if surgical else
                                          "visible skin (arms, hands, shoulders, chest)", source=source, control=image)
-            if surgical and store.current.name == TATTOO and tr.get("tone_match", True):
+            if zones and store.current.name == TATTOO and tr.get("tone_match", True):
+                # tom/luz da pele ORIGINAL ali mesmo (entre os tracos e em volta), gradual pela borda suave
+                # referencia: pixels de PELE da foto original ali (os tracos de tinta nao sao "pele")
+                ref_known = (masks.skin > 0.5) & (dilate(ink, max(6, int(min(h, w) * 0.02))) > 0.5)
+                px = soft_tone_match(store.current.pixels, original, soft, ref_known,
+                                     max(6, int(min(h, w) * float(tr.get("tone_radius_frac", 0.012)))))
+                rec = StageRecord(TONE, "body", mask="organic tattoo zones (soft edge)")
+                records.append(rec)
+                modified = await self._try(store, TONE, "body", px, original, masks, master, base_pose, rec, soft,
+                                           modified)
+            elif surgical and store.current.name == TATTOO and tr.get("tone_match", True):
                 # a cor/luz da pele refeita = a da pele original logo em volta (so baixa frequencia)
                 before = next(c for c in reversed(store.items) if c.name != TATTOO and c is not store.current)
                 px = match_local_tone(store.current.pixels, before.pixels, body, masks.skin,
@@ -428,6 +516,8 @@ class TransferOrchestrator(ReplacementOrchestrator):
 
         final = store.current
         face_zone = dilate(masks.face_full, 1) > 0.5
+        if ezone is not None:  # a zona da argola (lado do rosto) e medida a parte
+            face_zone &= ~(dilate(ezone, 2) > 0.5)
         face_changed = float((np.abs(final.pixels.astype(int) - face_before.astype(int)).max(axis=2) > 0)[face_zone].mean())
         edge_width = max(3, int(min(h, w) * 0.006))
         scored = replace(masks, clothing=masks.clothing * (1 - seam))  # a roupa e medida fora da costura
@@ -463,6 +553,6 @@ class TransferOrchestrator(ReplacementOrchestrator):
         return result
 
 
-__all__ = ["EARRING", "RESUMED", "TONE", "ink_by_color", "earring_box", "earring_zone", "match_local_tone", "surgical_ink_mask",
+__all__ = ["dilate_round", "erode_round", "soft_tone_match", "tattoo_zones", "EARRING", "RESUMED", "TONE", "ink_by_color", "earring_box", "earring_zone", "match_local_tone", "surgical_ink_mask",
            "luma", "local_mean", "skin_region", "FACE_REFINE", "INTEGRATION", "TATTOO", "TRANSFER", "TransferConfig", "TransferOrchestrator", "edge_ring",
            "fill_tattoos", "identity_mask", "load_transfer_config", "plausible_accessories", "skin_tattoo_mask"]

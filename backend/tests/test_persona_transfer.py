@@ -63,10 +63,10 @@ def test_config_follows_the_spec():
     assert fr["identity_adapter"] == "instantid" and fr["adapter_weight"] <= 0.6  # identidade das referencias, sem forcar
     assert CFG.checks["max_background_changed"] <= 0.002  # fundo TRAVADO
     assert CFG.tattoo_removal["denoise"] <= 0.7 and CFG.tattoo_removal["lora"] is False  # geometria da foto
-    assert {"orange skin", "darker skin", "white spots", "large hoop earrings", "tattoo ghosting", "altered black top",
-            "regenerated hair"} <= set(CFG.negative_extra)
+    assert {"orange skin", "square patch", "white spots", "large hoop earrings", "tattoo ghosting", "changed black top",
+            "global regeneration", "changed fingers"} <= set(CFG.negative_extra)
     tr = CFG.tattoo_removal
-    assert tr["require_clothes"] is True and tr["mode"] == "surgical" and tr["tone_match"] and tr["earring_cleanup"]
+    assert tr["require_clothes"] is True and tr["mode"] == "zones" and tr["tone_match"] and tr["earring_cleanup"]
     assert CFG.integration["enabled"] is False  # geracao localizada: sem passada global no fim
     cn = CFG.tattoo_removal["controlnet"]
     assert cn["type"] == "depth" and cn["strength"] >= 0.8  # bracos e maos seguem a estrutura da foto
@@ -416,3 +416,46 @@ async def test_resumed_identity_keeps_the_face_and_only_cleans_ink_and_earring()
     assert (res.final.pixels[40:85, 62:98] == luna[40:85, 62:98]).all()
     assert (res.final.pixels[160, 46] == luna[160, 46]).all()  # pele limpa intacta
     assert "face_touched_after_identity" not in res.report.failures
+
+
+# --- v1.6: zonas organicas (TESTE 7) ------------------------------------------------------
+
+
+def test_round_dilation_has_no_square_corners():
+    from app.core.persona_replacement.transfer import dilate_round
+
+    dot = np.zeros((41, 41), np.float32)
+    dot[20, 20] = 1
+    d = dilate_round(dot, 10)
+    assert d[20, 30] == 1 and d[30, 20] == 1  # raio 10 nos eixos
+    assert d[30, 30] == 0  # canto do quadrado fica de fora (formato redondo/octogono)
+
+
+def test_tattoo_zones_follow_the_ink_not_the_whole_arm():
+    from app.core.persona_replacement.transfer import tattoo_zones
+
+    img, person, hair, clothes = wide_tattoo_photo()
+    img[150:154, 42:50] = (150, 140, 150)  # traco CLARO acinzentado (tinta clara)
+    m = build_masks(RawSegments(person, hair, []), FACE_BOX, KPS, img)
+    ident = identity_mask(m, FACE_BOX, 0.12)
+    body, _ = skin_region(m, clothes, ident, img, 3, 10, 12)
+    zone = tattoo_zones(img, body, m.skin, np.zeros_like(body), m.face_full, 10, 1, 8, 2, 7, 2, 0.5, 2, 1, 2)
+    assert zone[128, 46] == 1 and zone[152, 46] == 1  # tinta escura e tinta clara
+    assert zone[185, 46] == 0  # pele limpa do braco fica a da foto
+    assert zone[170, 80] == 0 and zone[60, 80] == 0  # nem top nem rosto
+
+
+def test_soft_tone_match_is_gradual_and_local():
+    from app.core.persona_replacement.transfer import soft_tone_match
+
+    ref = np.full((60, 60, 3), (200, 150, 120), np.uint8)
+    new = ref.copy()
+    new[20:40, 20:40] = (150, 90, 50)
+    wgt = np.zeros((60, 60), np.float32)
+    wgt[20:40, 20:40] = 1
+    wgt[18:20, 20:40] = 0.5  # borda suave
+    known = np.ones((60, 60), bool)
+    known[20:40, 20:40] = False
+    out = soft_tone_match(new, ref, wgt, known, 6)
+    assert abs(int(out[30, 30, 0]) - 200) <= 4  # o miolo assume o tom da pele original em volta
+    assert (out[wgt <= 0.02] == new[wgt <= 0.02]).all()  # fora da mascara: nada muda

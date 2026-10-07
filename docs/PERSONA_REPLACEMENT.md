@@ -253,3 +253,16 @@ Métricas: identidade 0,756, rosto **0% alterado** (reaproveitado), fundo 0%, ro
 ### Teste 6b (combinação local, sem GPU)
 - **Montagem:** pele sem tatuagem do teste 5, só na zona das tatuagens (30% da pele, forma orgânica, borda suave), sobre o rosto aprovado, com o tom da pele original em volta.
 - **Resultado:** as tatuagens quase somem e o tom fica mais próximo do original. Mas o braço direito ficou com uma área **clara demais** com borda visível, os **pontinhos brancos** do teste 5 continuam e o contorno do braço ficou duro.
+
+## Transfer v1.6: spec "TESTE 7 — RECONSTRUÇÃO LOCAL DAS TATUAGENS" (só código, sem GPU)
+- **Rosto do teste 5 reaproveitado** (não é gerado de novo). Reprova se o rosto mudar.
+- **Máscara orgânica em volta de cada tatuagem** (`tattoo_zones`):
+  - **O que entra:** tinta escura (mais escura e fria que a pele vizinha), tinta clara (bem mais acinzentada) e, onde o Florence marcou tatuagem, os traços fracos.
+  - **Forma:** morfologia **redonda** (octógono): nada de quadrados.
+  - **Limpeza:** os pontinhos saem e os traços vizinhos se juntam. Margem pequena.
+  - **Limites:** nunca cabelo, top, acessório ou rosto.
+  - **Na foto real (calibração local):** cerca de 17% da pele visível. Pega o braço direito, a rosa da mão e o ombro esquerdo, mas não a pele limpa, a barriga ou o colo.
+- **Borda suave (feather), passada como máscara ao modelo:** transição gradual.
+- **Reconstrução:** profundidade da foto original, denoise 0,7, sem LoRA. Depois, o tom e a luz da **pele original ali mesmo** (pixels de pele entre os traços e em volta, raio pequeno, seguindo a sombra do braço), aplicados **gradualmente** pela borda suave. Só baixa frequência; a textura fica.
+- **Brinco:** a zona ao lado e abaixo do brinco original protege só o miolo do rosto (olhos, nariz e boca) e a pele do rosto. A argola fica sobre cabelo/pescoço. O brinco original continua com os pixels da foto.
+- **Sem integração global.** Negativo do usuário (68 termos).
