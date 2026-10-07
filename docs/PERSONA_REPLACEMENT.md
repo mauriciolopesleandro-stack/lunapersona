@@ -211,3 +211,18 @@ Métricas: identidade **0,769**, original 0,058, pose 0,01, fundo 0%, roupa 0%, 
 - **Brinco:** o brinco original continua protegido, e o prompt pede "small earring exactly as in the photo". O negativo inclui argola grande e brinco novo.
 - **Máscaras salvas em toda execução** (identidade, pele, tinta, roupa), para conferir depois.
 - **Negativo:** a lista do usuário (TEST 5, 75 termos). O rosto continua protegido depois da passada de identidade.
+
+## Transfer teste 5 (v1.4, quarto, 1 geração, ~US$ 0,08, 520 s; pod novo criado pelo failover, mesmo volume e preço)
+
+Métricas: identidade **0,757**, original 0,076, pose 0,016, fundo 0%, roupa 0%. Roupa pelo Florence com **cobertura de 95%**. Todas as etapas foram aceitas.
+
+**Leitura visual:**
+- **Certo:**
+  - tatuagens do braço, do antebraço e da mão direitos e quase toda a do ombro esquerdo **removidas**;
+  - mãos e braços na mesma posição e no mesmo formato;
+  - top e fundo intactos.
+- **Errado:**
+  1. **Tom da pele do corpo:** como toda a pele visível foi redesenhada (barriga, colo, braço esquerdo, que não precisavam), ela ficou **mais escura, alaranjada e com mais contraste** que o pescoço e a pele original (luz Δ −12,7; nitidez 3,2× a da foto). Parece bronzeado ou filtro.
+  2. **Pontos brancos** no braço e na mão direitos.
+  3. **Resto da tatuagem do ombro esquerdo** na faixa do cabelo, porque a área de identidade ficou fora da limpeza.
+  4. **Argola grande** de novo, mesmo com o prompt pedindo o brinco pequeno.
