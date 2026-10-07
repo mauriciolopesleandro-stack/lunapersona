@@ -43,6 +43,11 @@ def mask_png(mask: np.ndarray) -> bytes:
 
 
 def parse_boxes(text: str) -> list[tuple[float, float, float, float]]:
+    return [b for b, _ in parse_labeled_boxes(text)]
+
+
+def parse_labeled_boxes(text: str) -> list[tuple[tuple[float, float, float, float], str]]:
+    """Caixas do Florence COM o rotulo (oculos x brinco decidem PRESERVE x REMOVE na politica de atributos)."""
     try:
         data = json.loads(text)
     except ValueError:
@@ -53,9 +58,17 @@ def parse_boxes(text: str) -> list[tuple[float, float, float, float]]:
     if isinstance(data, list):
         data = data[0] if data else {}
     boxes = (data or {}).get("bboxes") or []
+    labels = (data or {}).get("labels") or []
     if boxes and isinstance(boxes[0], list) and boxes[0] and isinstance(boxes[0][0], list):
         boxes = boxes[0]
-    return [tuple(float(v) for v in b[:4]) for b in boxes if len(b) >= 4]  # type: ignore[misc]
+    if labels and isinstance(labels[0], list):
+        labels = labels[0]
+    out = []
+    for i, b in enumerate(boxes):
+        if len(b) >= 4:
+            label = str(labels[i]).strip().lower() if i < len(labels) else ""
+            out.append((tuple(float(v) for v in b[:4]), label.replace("</s>", "").replace("<s>", "").strip()))
+    return out  # type: ignore[return-value]
 
 
 def crop_for(mask: np.ndarray, margin: float = 0.18) -> dict[str, int] | None:
@@ -115,8 +128,10 @@ class ComfySegmenter:
         person = await mask_of("person")
         if person is None:
             raise ProviderError("a segmentacao nao devolveu a mascara da pessoa")
-        return RawSegments(person=person, hair=await mask_of("hair"), protect_boxes=parse_boxes(texts.get("f6", "")),
-                           tattoos=await mask_of("tattoo"), clothes=await union_of("clothes"))
+        labeled = parse_labeled_boxes(texts.get("f6", ""))
+        return RawSegments(person=person, hair=await mask_of("hair"), protect_boxes=[b for b, _ in labeled],
+                           tattoos=await mask_of("tattoo"), clothes=await union_of("clothes"),
+                           protect_labels=[label for _, label in labeled])
 
 
 class ComfyReplacementTransformer:

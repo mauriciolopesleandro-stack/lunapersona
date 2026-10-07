@@ -3,7 +3,8 @@
 
   GET  /api/v2/engines          catalogo para a tela (engines, modos, modelos, opcoes, retencao)
   GET  /api/v2/models/licenses  registro de modelos com licenca, uso comercial, origem e hash
-  POST /api/v2/replace          foto + persona -> job (202)
+  GET  /api/v2/personas/{id}/attributes  politica de atributos da persona (spec 45)
+  POST /api/v2/replace          foto + persona (+ preserve/remove/reconstruct_attributes) -> job (202)
   POST /api/v2/faceswap         foto + persona + modo -> job (202)
   GET  /api/v2/jobs/{job_id}    estado/resultado (imagem, validacao por dimensao, telemetria)
 """
@@ -30,6 +31,18 @@ def _touch(request: Request) -> None:
     tracker = getattr(request.app.state, "idle_shutdown", None)
     if tracker is not None:
         tracker.touch()
+
+
+def _list(text: str, what: str) -> list[str]:
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = [t for t in text.split(",")]
+    if not isinstance(data, list) or not all(isinstance(x, str) for x in data):
+        raise HTTPException(status_code=400, detail=f"{what}: precisa ser uma lista de nomes")
+    return [x.strip() for x in data if x.strip()]
 
 
 def _json(text: str, what: str) -> dict[str, Any]:
@@ -65,6 +78,15 @@ async def licenses(request: Request):
     return _svc(request).licenses()
 
 
+@router.get("/personas/{persona_id}/attributes")
+async def persona_attributes(persona_id: str, request: Request):
+    """Politica de atributos padrao da persona (Persona Sheet), com a origem de cada uma."""
+    try:
+        return _svc(request).persona_attributes(persona_id)
+    except EngineRequestError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/replace", status_code=202)
 async def replace(
     request: Request,
@@ -78,14 +100,20 @@ async def replace(
     advanced: str = Form(""),
     keep_intermediates: bool | None = Form(None),
     processing: str = Form("local"),
+    preserve_attributes: str = Form(""),
+    remove_attributes: str = Form(""),
+    reconstruct_attributes: str = Form(""),
 ):
     _touch(request)
     opts, adv = _json(options, "options"), _json(advanced, "advanced")
+    attrs = {"preserve_attributes": _list(preserve_attributes, "preserve_attributes"),
+             "remove_attributes": _list(remove_attributes, "remove_attributes"),
+             "reconstruct_attributes": _list(reconstruct_attributes, "reconstruct_attributes")}
     locator = await _image(request, file, image)
     try:
         return _svc(request).start_replacement(image=locator, persona_id=persona_id, mode=mode, model=model, seed=seed,
                                                options=opts, advanced=adv, keep_intermediates=keep_intermediates,
-                                               processing=processing)
+                                               processing=processing, **attrs)
     except EngineRequestError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

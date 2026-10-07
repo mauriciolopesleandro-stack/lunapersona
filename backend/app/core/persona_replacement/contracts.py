@@ -118,6 +118,7 @@ class RawSegments:
     protect_boxes: list[tuple[float, float, float, float]] = field(default_factory=list)
     tattoos: np.ndarray | None = None  # tatuagens detectadas na imagem (alem dos buracos na pele)
     clothes: np.ndarray | None = None  # roupa segundo o Florence (separa roupa de tinta na pele)
+    protect_labels: list[str] = field(default_factory=list)  # rotulo de cada caixa (oculos, brinco...) quando o detector da
 
 
 class Segmenter(Protocol):

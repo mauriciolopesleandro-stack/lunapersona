@@ -166,3 +166,23 @@ def test_retention_sweeps_only_known_prefixes_by_age(tmp_path):
     assert sorted(sw.sweep(now)) == ["repl_identity_b.png", "v2in_d.png"]
     assert {p.name for p in tmp_path.iterdir()} == {"repl_final_a.png", "repl_identity_c.png", "luna_master.png"}
     assert RetentionSweeper(None, []).sweep() == []
+
+
+def test_attribute_lists_travel_from_api_to_engine(engine_dir, tmp_path):
+    """Spec 45.9: preserve/remove/reconstruct nao ficam so na UI - chegam ao motor e a telemetria."""
+    app, _ = make(engine_dir, tmp_path)
+    base = {"persona_id": "luna", "image": "foto.png", "advanced": json.dumps({"max_retries": 0})}
+    with TestClient(app) as c:
+        pol = c.get("/api/v2/personas/luna/attributes", headers=H).json()
+        assert pol["policy"]["tattoos"] == "REMOVE" and pol["policy"]["accessories"] == "PRESERVE"
+        bad = c.post("/api/v2/replace", headers=H, data={**base, "preserve_attributes": '["tattoos"]', "remove_attributes": '["tattoos"]'})
+        assert bad.status_code == 400
+        assert c.post("/api/v2/replace", headers=H, data={**base, "reconstruct_attributes": '["clothing"]'}).status_code == 400
+        r = c.post("/api/v2/replace", headers=H, data={**base, "preserve_attributes": '["pose", "black_top"]',
+                                                       "remove_attributes": '["tattoos"]', "reconstruct_attributes": '["face", "skin"]'})
+        assert r.status_code == 202
+        job = wait(c, r.json()["job_id"])
+    assert job["status"] == "done", job
+    attrs = job["result"]["telemetry"]["attributes"]
+    assert attrs["preserve_items"] == ["black top"] and attrs["source"]["tattoos"] == "request"
+    assert "attribute_policy" in job["result"]["validation"]["checks"]

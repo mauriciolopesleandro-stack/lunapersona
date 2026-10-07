@@ -30,6 +30,10 @@ DEFAULT_THRESHOLDS: dict[str, Any] = {
     # (etapas limpas: emenda 5,1-5,9 / bordas 6,4-8,4; final com mancha e quadrados: 11,2 / 13,3) - preliminar, 1 foto.
     "seam_excess": {"pass": 7.0, "reject": 10.0},
     "straight_edges": {"pass": 9.0, "reject": 12.0},
+    # atributos PRESERVE: fracao alterada DENTRO do atributo (fora do que a politica manda reconstruir)
+    "clothing_change": {"pass": 0.01, "reject": 0.05},
+    "hair_change": {"pass": 0.02, "reject": 0.08},
+    "accessory_change": {"pass": 0.02, "reject": 0.08},
 }
 
 
@@ -280,7 +284,73 @@ def check_anatomy(person_found: bool):
     return CheckResult("anatomy", UNKNOWN, None, None, "sem detector de anatomia (maos/dedos): conferir no olho")
 
 
-def validate_v2(m: dict[str, Any], thresholds: dict[str, Any] | None = None) -> ValidationReportV2:
+# atributo -> (medida, limite, maior_e_melhor, o que significa). Sem medida = UNKNOWN (listado, nao aprova sozinho).
+_REMOVE_MEASURES = {
+    "tattoos": ("tattoo_residual", "tattoo_residual", "tinta da pessoa original que sobrou"),
+    "scars": ("tattoo_residual", "tattoo_residual", "marca escura na pele (mesmo detector das tatuagens; parcial)"),
+    "birthmarks": ("tattoo_residual", "tattoo_residual", "marca escura na pele (mesmo detector das tatuagens; parcial)"),
+    "original_person_marks": ("tattoo_residual", "tattoo_residual", "marcas da pessoa original na pele"),
+}
+_PRESERVE_MEASURES = {
+    "background": ("background", "background", "fracao alterada fora da pessoa"),
+    "clothing": ("clothing_change", "clothing_change", "fracao alterada na roupa"),
+    "pose": ("pose", "pose", "distancia da pose original"),
+    "composition": ("composition_shift", "composition_shift", "deslocamento do enquadramento"),
+    "hair": ("hair_change", "hair_change", "fracao alterada no cabelo (cabelo PRESERVE)"),
+    "accessories": ("accessory_change", "accessory_change", "fracao alterada nos acessorios mantidos"),
+}
+
+
+def check_attribute_policy(m: dict[str, Any], policy: dict[str, str], t: dict[str, Any]) -> CheckResult:
+    """Regra final (spec 45.12): PERSONA + PRESERVE + REMOVE + RECONSTRUCT ao mesmo tempo. Uma violacao
+    REJEITA mesmo com identidade excelente - identidade nao compensa atributo proibido."""
+    verdicts: dict[str, dict[str, Any]] = {}
+
+    def put(attr, pol, status, score=None, thr=None, reason=""):
+        verdicts[attr] = {"policy": pol, "status": status, "score": score, "threshold": thr, "reason": reason}
+
+    for attr, pol in policy.items():
+        if pol == "REMOVE":
+            if attr in _REMOVE_MEASURES and attr != "tattoos" and policy.get("tattoos") == "PRESERVE":
+                put(attr, pol, UNKNOWN, reason="mesmo detector das tatuagens, que foram mantidas: sem medida separada")
+            elif attr in _REMOVE_MEASURES:
+                key, tk, why = _REMOVE_MEASURES[attr]
+                c = _band(attr, m.get(key), t[tk], False, reason=why)
+                put(attr, pol, c.status, c.score, t[tk], why)
+            elif attr in ("piercings", "jewelry", "makeup"):
+                put(attr, pol, UNKNOWN, reason="sem detector automatico: o rosto/regiao e reconstruido; conferir no olho")
+        elif pol == "PRESERVE":
+            if attr in _PRESERVE_MEASURES:
+                key, tk, why = _PRESERVE_MEASURES[attr]
+                c = _band(attr, m.get(key), t[tk], False, reason=why)
+                put(attr, pol, c.status, c.score, t[tk], why)
+            else:
+                put(attr, pol, UNKNOWN, reason="sem medida automatica")
+        elif pol == "RECONSTRUCT":
+            if attr == "face":
+                c = check_identity(m.get("identity"), t["identity"])
+                put(attr, pol, c.status if m.get("identity") is not None else REJECT, c.score, t["identity"],
+                    "rosto da Persona (identidade)")
+                src = m.get("original_sim")
+                thr = t["original_face_similarity"]
+                st = UNKNOWN if src is None else REJECT if src > thr["reject"] else WARN if src > thr["warn"] else PASS
+                put("source_identity_residual", "REMOVE", st, src, thr, "semelhanca com o rosto ORIGINAL")
+            elif attr == "skin":
+                c = check_skin(m.get("texture_final"), m.get("texture_ref"), m.get("tone_delta"), t["skin_texture_ratio"],
+                               t["face_body_tone_delta"])
+                put(attr, pol, c.status, c.score, None, c.reason or "pele natural")
+            else:
+                put(attr, pol, UNKNOWN, reason="sem medida automatica")
+    sts = [v["status"] for v in verdicts.values()]
+    status = REJECT if REJECT in sts else WARN if WARN in sts else PASS
+    bad = [f"{a} ({v['policy']})" for a, v in verdicts.items() if v["status"] == REJECT]
+    reason = ("violacao da politica de atributos: " + ", ".join(bad)) if bad else "politica de atributos cumprida nas medidas disponiveis"
+    return CheckResult("attribute_policy", status, None, None, reason, {"verdicts": verdicts,
+                                                                        "violations": [a for a, v in verdicts.items() if v["status"] == REJECT]})
+
+
+def validate_v2(m: dict[str, Any], thresholds: dict[str, Any] | None = None,
+                policy: dict[str, str] | None = None) -> ValidationReportV2:
     """m: medidas ja calculadas pela engine (identity, original_sim, pose, background, tattoo_residual,
     hair_residual, texture_final, texture_ref, tone_delta, persona_instances, faces, shoulder_ratio,
     composition_shift, person_found)."""
@@ -304,6 +374,13 @@ def validate_v2(m: dict[str, Any], thresholds: dict[str, Any] | None = None) -> 
     }
     if m.get("identity") is None and m.get("person_found", True):
         checks["identity"] = CheckResult("identity", REJECT, None, t["identity"], "rosto nao encontrado na imagem final")
+    if policy is not None:
+        if policy.get("tattoos") == "PRESERVE":  # tatuagem pedida como PRESERVE: nao e residuo
+            checks["tattoo"] = CheckResult("tattoo", PASS, None, None, "tatuagens PRESERVE pela politica (nao validadas como residuo)")
+            checks["original_residual"] = check_original_residual(m.get("original_sim"), None, m.get("hair_residual"),
+                                                                  t["original_face_similarity"], t["tattoo_residual"],
+                                                                  t["hair_residual"])
+        checks["attribute_policy"] = check_attribute_policy(m, policy, t)
     return ValidationReportV2(checks)
 
 

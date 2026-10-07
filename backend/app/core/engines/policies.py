@@ -31,8 +31,12 @@ class StagePlan:
     face_denoise: float = 0.4
     face_reference_strength: float = 0.5
     body_denoise: float = 0.35
-    tattoo_denoise: float = 0.7
-    tattoo_depth_strength: float = 0.9
+    # spec 45.5: a pele das marcas e RECONSTRUIDA pelo modelo (denoise alto + LoRA), nao pintada;
+    # anatomia segura por profundidade da pele limpa + pose; depois refino local leve e integracao de textura
+    tattoo_denoise: float = 0.8
+    tattoo_depth_strength: float = 0.8
+    tattoo_pose_strength: float = 0.6
+    skin_refine_denoise: float = 0.3
     hires_side: int = 1536
     steps: int = 30
     cfg: float = 5.0

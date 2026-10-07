@@ -70,7 +70,9 @@ async def test_quality_pipeline_order_isolation_and_telemetry():
     face = next(c for c in ad.calls if c.stage == "face_refine")
     assert face.identity.reference is MASTER and 0 < face.identity.reference_strength <= 0.6
     tat = next(c for c in ad.calls if c.stage == "tattoo_cleanup")
-    assert tat.identity.use_lora is False and tat.controls.structure == tat.image and tat.image.startswith("tattoo_prefill")
+    # spec 45.5: a pele e RECONSTRUIDA como pele da Persona (LoRA ligada), a partir da entrada sem a marca
+    assert tat.identity.use_lora is True and tat.controls.structure == tat.image and tat.image.startswith("tattoo_prefill")
+    assert tat.denoise >= 0.8 and "skin_refine" in stages
     orig = store.images["foto.png"]
     assert (out.pixels[0:4, 0:4] == orig[0:4, 0:4]).all()  # sujeira do modelo fora das mascaras desfeita
     t = out.telemetry.to_dict()

@@ -24,6 +24,16 @@ from typing import Any
 import numpy as np
 
 from app.core.engines.adapter import ControlSpec, IdentitySpec, InpaintRequest, ModelAdapter
+from app.core.engines.attributes import (
+    EXCLUSION_NEGATIVE,
+    PRESERVE,
+    RECONSTRUCT,
+    REMOVE,
+    AttributePolicy,
+    AttributePolicyError,
+    resolve,
+)
+from app.core.engines.skin import push_pull_fill
 from app.core.engines.integration import integrate
 from app.core.engines.policies import StagePlan, plan_for
 from app.core.engines.retry import RetryPolicyV2
@@ -54,7 +64,7 @@ from app.core.persona_replacement.transfer import (
 from app.core.validation.geometry import point
 from app.providers.base import ProviderImage, ReferenceImage
 
-ENGINE_VERSION = "replacement-v2.0"
+ENGINE_VERSION = "replacement-v2.1-attributes"
 
 
 class ReplacementRequestError(ValueError):
@@ -73,6 +83,11 @@ class ReplacementRequest:
     advanced: dict[str, Any] = field(default_factory=dict)  # seed/steps/cfg/denoise/... (so por pedido explicito)
     negative: str = ""
     keep_intermediates: bool = False
+    # spec 45.9: instrucoes explicitas por atributo (prioridade sobre a Persona Sheet e o padrao)
+    preserve_attributes: list[str] = field(default_factory=list)
+    remove_attributes: list[str] = field(default_factory=list)
+    reconstruct_attributes: list[str] = field(default_factory=list)
+    persona_sheet: dict[str, Any] | None = None  # dados da Persona Sheet (identity_exclusions, replacement_policy)
 
     OPTIONS = ("preserve_pose", "preserve_clothes", "preserve_background", "preserve_lighting", "remove_original_tattoos",
                "identity_lock", "body_lock", "skin_realism", "photographic_integration")
@@ -89,9 +104,27 @@ class ReplacementRequest:
         if not self.image or not self.persona_id:
             raise ReplacementRequestError("imagem e persona sao obrigatorias")
 
-    def plan(self) -> StagePlan:
+    def attributes(self) -> AttributePolicy:
+        """Politica de atributos resolvida: padrao < Persona Sheet < pedido. As opcoes antigas viram atributos."""
+        preserve, remove = list(self.preserve_attributes), list(self.remove_attributes)
         o = {k: bool(v) for k, v in self.options.items()}
+        if o.get("remove_original_tattoos") is False and "tattoos" not in remove:
+            preserve.append("tattoos")
+        try:
+            return resolve(self.persona_sheet, preserve, remove, list(self.reconstruct_attributes))
+        except AttributePolicyError as exc:
+            raise ReplacementRequestError(str(exc)) from exc
+
+    def plan(self, attrs: AttributePolicy | None = None) -> StagePlan:
+        o = {k: bool(v) for k, v in self.options.items()}
+        attrs = attrs or self.attributes()
         over: dict[str, Any] = dict(self.advanced)
+        if self.mode in ("FAST", "QUALITY", "MAX_QUALITY"):  # a escada A..H do benchmark fica como esta
+            over.setdefault("tattoo_cleanup", attrs.removes_skin_markings())
+            if attrs.is_("body", RECONSTRUCT) and self.mode != "FAST":
+                over.setdefault("body_refinement", True)
+        if not attrs.removes_skin_markings():  # tudo PRESERVE: nada de limpeza, em qualquer modo
+            over["tattoo_cleanup"] = False
         if "preserve_pose" in o:
             over["pose"] = o["preserve_pose"]
         if "remove_original_tattoos" in o:
@@ -140,6 +173,19 @@ class _Scene:
     # oculos/acessorios do rosto: pixels ORIGINAIS colados por cima depois de cada passe (nao viram buraco
     # na mascara - no reteste da varanda o buraco partiu o rosto em dois e o modelo gerou um rosto escuro)
     accessory: np.ndarray | None = None
+    # spec 45.4: mascaras da pessoa ORIGINAL (a de marcas tem prioridade de remocao)
+    markings: np.ndarray | None = None
+    source_masks: dict[str, np.ndarray] = field(default_factory=dict)
+    box_policy: list[dict[str, Any]] = field(default_factory=list)  # cada caixa detectada -> classe e politica
+
+
+JEWELRY_WORDS = ("earring", "bracelet", "necklace", "ring", "jewel", "brinco", "pulseira", "colar")
+
+
+def box_class(label: str) -> str:
+    """Rotulo do detector -> atributo. Sem rotulo (detector antigo) = acessorio (conservador: mantido)."""
+    lab = (label or "").lower()
+    return "jewelry" if any(w in lab for w in JEWELRY_WORDS) else "accessories"
 
 
 class ReplacementEngine:
@@ -157,7 +203,8 @@ class ReplacementEngine:
         return json.loads(path.read_text(encoding="utf-8"))
 
     # --- cena e mascaras -----------------------------------------------------------------------
-    async def _scene(self, image: str, master: ReferenceImage, plan: StagePlan) -> _Scene:
+    async def _scene(self, image: str, master: ReferenceImage, plan: StagePlan, attrs: AttributePolicy | None = None) -> _Scene:
+        attrs = attrs or resolve()
         original = await self.store.load(image)
         h, w = original.shape[:2]
         sheet = await self.reader.read(ProviderImage("comfyui", image, "", w, h), master)
@@ -174,11 +221,27 @@ class ReplacementEngine:
             neck = ellipse(h, w, (x1 + x2) / 2, y2 + fh * 0.25, fw * 0.42, fh * 0.42)
             ident = np.clip(head + neck, 0, 1)
             face_full = ellipse(h, w, (x1 + x2) / 2, (y1 + y2) / 2 + fh * 0.06, fw * 0.55, fh * 0.62)
-            return _Scene(original, sheet, None, ident, face_full, None, None, None, base_pose, False)
+            return _Scene(original, sheet, None, ident, face_full, None, None, None, base_pose, False,
+                          source_masks={"source_identity_mask": ident, "source_face_mask": face_full})
         raw = await self.segmenter.segment(image, sheet)
-        raw = replace(raw, protect_boxes=plausible_accessories(raw.protect_boxes, bbox, float(sg["max_accessory_face_ratio"])))
+        # cada caixa (oculos, brinco...) segue a politica do SEU atributo: PRESERVE = protegida e colada de volta;
+        # REMOVE = nao e protegida (no rosto: regenerada; no corpo: entra na mascara de marcas)
+        labels = list(getattr(raw, "protect_labels", []) or [])
+        labels += [""] * (len(raw.protect_boxes) - len(labels))
+        plausible = set(plausible_accessories(raw.protect_boxes, bbox, float(sg["max_accessory_face_ratio"])))
+        keep_boxes, drop_boxes, box_policy = [], [], []
+        for b, lab in zip(raw.protect_boxes, labels):
+            if b not in plausible:
+                continue
+            cls = box_class(lab)
+            pol = attrs.get(cls)
+            box_policy.append({"box": [round(v, 1) for v in b], "label": lab, "attribute": cls, "policy": pol})
+            (keep_boxes if pol == PRESERVE else drop_boxes).append(b)
+        raw = replace(raw, protect_boxes=keep_boxes, protect_labels=[])
         masks = build_masks(raw, bbox, sheet.target_face.kps, original)
         ident = identity_mask(masks, bbox, float(sg["face_grow_frac"]))
+        if attrs.is_("hair", PRESERVE):  # cabelo da foto fica: so rosto/pescoco recebem a identidade
+            ident = np.clip(ident * (1 - dilate((masks.hair > 0.5).astype(np.float32), 2)) + masks.face_full * masks.person, 0, 1)
         accessory = None
         if raw.protect_boxes:
             box = np.zeros((h, w), np.float32)
@@ -211,7 +274,28 @@ class ReplacementEngine:
             ink = tattoo_zones(original, body, masks.skin, masks.tattoos, masks.face_full, f("reach_frac"), f("edge_frac"),
                                float(tt["ink_dy"]), float(tt["ink_dcr"]), float(tt["ink_dcr_light"]),
                                float(tt["ink_dy_florence"]), float(tt["ink_dcr_florence"]), f("close_frac"), f("margin_frac"), guard)
-        return _Scene(original, sheet, masks, ident, masks.face_full, body, ink, raw.tattoos, base_pose, clothes_ok, accessory)
+        # mascara de MARCAS da pessoa original (spec 45.4/45.6): tinta/marcas na pele + joias REMOVE fora do rosto;
+        # buracos fechados e margem em volta (evita contorno fantasma); nunca roupa, nem acessorio mantido
+        markings = None
+        if attrs.removes_skin_markings() or drop_boxes:
+            m = np.zeros((h, w), np.float32) if ink is None or not attrs.removes_skin_markings() else ink.astype(np.float32)
+            for bx1, by1, bx2, by2 in drop_boxes:
+                jb = np.zeros((h, w), np.float32)
+                jb[max(0, int(by1)):int(by2) + 1, max(0, int(bx1)):int(bx2) + 1] = 1
+                m = np.maximum(m, jb * (1 - (ident > 0.5)))  # no rosto/cabelo a passada de identidade ja regenera
+            if m.any():
+                close = max(2, int(px_min * float(tt.get("close_frac", 0.01))))
+                margin = max(2, int(px_min * float(tt.get("mask_margin_frac", 0.008))))
+                m = erode(dilate(m, close), close)  # fecha buracos (tinta vista pelos furos no reteste)
+                m = dilate(m, margin)
+                m = m * masks.person * (1 - masks.clothing) * (1 - masks.protect)
+                markings = np.clip(m, 0, 1) if m.any() else None
+        source = {"source_identity_mask": ident, "source_face_mask": masks.face_full, "source_hair_mask": masks.hair,
+                  "source_body_mask": np.clip(masks.person * (1 - masks.clothing) * (1 - ident), 0, 1)}
+        if markings is not None:
+            source["source_markings_mask"] = markings
+        return _Scene(original, sheet, masks, ident, masks.face_full, body, ink, raw.tattoos, base_pose, clothes_ok, accessory,
+                      markings, source, box_policy)
 
     # --- uma passada ---------------------------------------------------------------------------
     async def _pass(self, name: str, cur: dict, mask: np.ndarray, prompt: str, negative: str, denoise: float, seed: int,
@@ -234,14 +318,39 @@ class ReplacementEngine:
         tel.add_pass(name, res.seconds, res.parameters, True)
         return px, loc, res.seconds
 
+    def _conditioning(self, attrs: AttributePolicy, base_negative: str) -> tuple[Any, str]:
+        """Spec 45.3/45.9: a politica entra no PROMPT (camada positiva de exclusao + o que preservar) e no NEGATIVO
+        (marcas da pessoa original). Atributo PRESERVE tira do negativo o que o contradiz (ex.: maquiagem pedida)."""
+        drop = {t for a, ts in EXCLUSION_NEGATIVE.items() if attrs.is_(a, PRESERVE) for t in ts}
+        if attrs.is_("makeup", PRESERVE):
+            drop |= {"heavy makeup", "contour makeup", "false eyelashes", "glossy lipstick"}
+        terms = [t for t in base_negative.split(", ") if t] + list(self.cfg["negative"]) + attrs.negative_conditioning()
+        negative = ", ".join(t for t in dict.fromkeys(terms) if t not in drop)
+        positive = attrs.positive_conditioning()
+        face_terms = [t for t in positive if t.startswith(("same facial", "same makeup", "no makeup", "keep the"))]
+        skin_terms = [t for t in positive if t not in face_terms]
+        if attrs.is_("expression", RECONSTRUCT):
+            face_terms.append("confident look, subtle closed-lip half smile")
+
+        def prompt(base: str, kind: str) -> str:
+            text = base
+            if attrs.is_("makeup", PRESERVE):
+                text = text.replace(", no makeup", "").replace("no makeup, ", "")
+            extra = face_terms if kind == "face" else skin_terms if kind == "skin" else face_terms + skin_terms[:3]
+            return ", ".join(dict.fromkeys([text] + [t for t in extra if t not in text]))
+
+        return prompt, negative
+
     async def _identity_of(self, locator: str, w: int, h: int, master: ReferenceImage):
         return await self.analyzer.analyze(ProviderImage("comfyui", locator, "", w, h), master)
 
     # --- execucao de um plano ------------------------------------------------------------------
-    async def _attempt(self, req: ReplacementRequest, scene: _Scene, plan: StagePlan, tel: JobTelemetry) -> tuple[np.ndarray, str, dict, dict]:
+    async def _attempt(self, req: ReplacementRequest, scene: _Scene, plan: StagePlan, tel: JobTelemetry,
+                       attrs: AttributePolicy | None = None) -> tuple[np.ndarray, str, dict, dict]:
         orig, h, w = scene.original, scene.original.shape[0], scene.original.shape[1]
         P = self.cfg["prompts"]
-        negative = ", ".join(dict.fromkeys([t for t in req.negative.split(", ") if t] + list(self.cfg["negative"])))
+        attrs = attrs or resolve()
+        cond, negative = self._conditioning(attrs, req.negative)
         cur = {"pixels": orig.copy(), "image": req.image}
         modified = np.zeros((h, w), np.float32)
         inter: dict[str, str] = {}
@@ -254,7 +363,7 @@ class ReplacementEngine:
         if shrink:
             ident = erode(ident, 4 * shrink)
         # PASSE 1: reconstrucao da identidade
-        prompt = P["identity"].replace("{description}", scene.sheet.description())
+        prompt = cond(P["identity"].replace("{description}", scene.sheet.description()), "identity")
         paste = None if scene.accessory is None else (scene.accessory, orig)
         px, loc, _ = await self._pass("identity", cur, ident, prompt, negative, plan.identity_denoise, req.seed, plan, tel,
                                       controls=structure, accessory=paste)
@@ -312,7 +421,7 @@ class ReplacementEngine:
             idsp = IdentitySpec(use_lora=True, reference=req.master if plan.face_reference else None,
                                 reference_strength=plan.face_reference_strength if plan.face_reference else 0.0)
             gain = None if plan.name == "MAX_QUALITY" else float(acc.get("face_refine_min_gain", 0.02))
-            await try_stage("face_refine", scene.face_full, P["face"], plan.face_denoise, 101, min_gain=gain, identity=idsp,
+            await try_stage("face_refine", scene.face_full, cond(P["face"], "face"), plan.face_denoise, 101, min_gain=gain, identity=idsp,
                             controls=ControlSpec(structure=req.image))
         # hi-res do rosto (detalhe de pele/olhos, sem referencia)
         if plan.hires:
@@ -323,34 +432,57 @@ class ReplacementEngine:
             band = np.clip(dilate(ident, 14) - erode(ident, 4), 0, 1) * scene.masks.person * (1 - scene.masks.clothing)
             band *= 1 - dilate(scene.face_full, 2)
             if band.sum() > 50:
-                await try_stage("body_refine", band, P["body"], plan.body_denoise, 151, controls=structure)
-        # limpeza de tatuagem: entrada SEM a tinta; profundidade da imagem LIMPA (a da foto redesenha a tinta)
-        if plan.tattoo_cleanup and scene.ink_zone is not None and scene.ink_zone.any() and scene.masks is not None:
+                await try_stage("body_refine", band, cond(P["body"], "skin"), plan.body_denoise, 151, controls=structure)
+        # RECONSTRUCAO DA PELE nas marcas da pessoa original (spec 45.5/45.6): mascara expandida -> entrada sem a
+        # marca (push-pull, sem blocos) -> RealVisXL + LoRA da Persona com denoise alto (profundidade da pele LIMPA +
+        # pose seguram a anatomia) -> refino local leve -> integracao de textura na borda -> residuo medido.
+        # Nada de borrar, pintar cor ou clonar vizinho como resultado.
+        if plan.tattoo_cleanup and scene.markings is not None and scene.masks is not None:
+            tt = self.cfg["tattoo"]
+            px_min = min(h, w)
             boost = int(plan.extra.get("tattoo_margin_boost", 0))
-            zone = dilate(scene.ink_zone, 3 * boost) * (1 - scene.masks.clothing) if boost else scene.ink_zone
-            # cabelo por cima do ombro e a regiao da identidade nunca entram (no smoke test a pele pintou o cabelo)
+            zone = scene.markings
+            if boost:
+                zone = dilate(zone, max(2, int(px_min * float(tt.get("mask_margin_frac", 0.008)))) * boost)
+                zone = zone * scene.masks.person * (1 - scene.masks.clothing) * (1 - scene.masks.protect)
+            # cabelo e a regiao da identidade ficam fora (no smoke test a pele pintou os fios do ombro)
             keep_out = np.maximum(dilate((scene.masks.hair > 0.5).astype(np.float32), 4), dilate((ident > 0.5).astype(np.float32), 3))
             zone = np.clip(zone * (1 - keep_out), 0, 1)
-            tt = self.cfg["tattoo"]
-            soft = np.clip(feather(zone, max(2, int(min(h, w) * float(tt["feather_frac"])))) * (scene.body > 0.5), 0, 1)
-            clean = fill_tattoos(cur["pixels"], zone, (scene.masks.skin > 0.5) & (zone < 0.5),
-                                 max(6, int(min(h, w) * float(tt["prefill_radius_frac"]))))
-            clean_loc = await self.store.save(clean, "tattoo_prefill")
-            px2, loc2, _ = await self._pass("tattoo_cleanup", {"pixels": cur["pixels"], "image": clean_loc}, soft, P["tattoo"],
-                                            negative, plan.tattoo_denoise, req.seed + 171, plan, tel,
-                                            controls=ControlSpec(depth_strength=plan.tattoo_depth_strength, end_percent=0.9,
-                                                                 structure=clean_loc),
-                                            identity=IdentitySpec(use_lora=False))
-            known = (scene.masks.skin > 0.5) & (dilate(zone, max(6, int(min(h, w) * 0.02))) > 0.5) & ~(dilate(zone, 2) > 0.5)
-            inter["tattoo_raw"] = loc2
-            px2 = soft_tone_match(px2, orig, soft, known, max(6, int(min(h, w) * float(tt["tone_radius_frac"]))))
-            loc2 = await self.store.save(px2, "tattoo_tone")
-            inter["tattoo_cleanup"] = loc2
-            region = np.maximum(modified, soft)
-            vok, why = visual_ok(visual(cur["pixels"], region), visual(px2, region))
-            tel.passes[-1].update(accepted=vok, reason=None if vok else f"limpeza criou defeito visivel ({why}): tatuagem mantida")
-            if vok:
-                cur, modified = {"pixels": px2, "image": loc2}, region
+            if zone.sum() > 30:
+                soft = np.clip(feather(zone, max(2, int(px_min * float(tt["feather_frac"])))), 0, 1) * (zone > 0.02)
+                known = (scene.masks.skin > 0.5) & (scene.masks.person > 0.5) & ~(dilate(zone, 2) > 0.5)
+                clean = push_pull_fill(cur["pixels"], dilate(zone, 2), known)
+                clean_loc = await self.store.save(clean, "tattoo_prefill")
+                skin_desc = ((attrs.persona_features and "") or "") + cond(P["tattoo"], "skin")
+                ctrl = ControlSpec(pose_strength=plan.tattoo_pose_strength if plan.pose else 0.0,
+                                   depth_strength=plan.tattoo_depth_strength, end_percent=0.9, structure=clean_loc)
+                px2, loc2, _ = await self._pass("tattoo_cleanup", {"pixels": cur["pixels"], "image": clean_loc}, soft, skin_desc,
+                                                negative, plan.tattoo_denoise, req.seed + 171, plan, tel, controls=ctrl,
+                                                identity=IdentitySpec(use_lora=True))
+                inter["tattoo_raw"] = loc2
+                tidx = len(tel.passes) - 1
+                tel.passes[tidx]["params"]["attributes"] = [a for a in ("tattoos", "scars", "birthmarks", "original_person_marks",
+                                                                      "jewelry") if attrs.is_(a, REMOVE)]
+                # refino local leve: continuidade de textura entre a pele nova e a vizinha (LoRA ligada)
+                ring = np.clip(feather(dilate(zone, max(3, int(px_min * 0.01))), 3), 0, 1)
+                stage = {"pixels": px2, "image": loc2}
+                px3, loc3, _ = await self._pass("skin_refine", stage, ring, cond(P["tattoo"], "skin"), negative,
+                                                plan.skin_refine_denoise, req.seed + 181, plan, tel,
+                                                controls=ControlSpec(depth_strength=0.5, end_percent=0.8, structure=loc2),
+                                                identity=IdentitySpec(use_lora=True))
+                # integracao de textura SO na borda da zona (degrau pele x pele + grao que falta)
+                body_skin = np.clip(scene.masks.skin * scene.masks.person - dilate(zone, 2), 0, 1)
+                px3, info_t = integrate(orig, px3, dilate(ring, 1), body_skin=body_skin, seed=req.seed + 7)
+                loc3 = await self.store.save(px3, "tattoo_skin")
+                inter["tattoo_cleanup"] = loc3
+                region = np.maximum(modified, ring)
+                residual = self._markings_residual(scene, px3)
+                vok, why = visual_ok(visual(cur["pixels"], region), visual(px3, region))
+                why_txt = None if vok else f"reconstrucao criou defeito visivel ({why}): marcas mantidas"
+                tel.passes[tidx].update(accepted=vok, residual=residual, integration=info_t, reason=why_txt)
+                tel.passes[-1].update(accepted=vok, reason=why_txt)  # o refino local faz parte da mesma etapa
+                if vok:
+                    cur, modified = {"pixels": px3, "image": loc3}, region
         # integracao fotografica (CPU)
         integ: dict[str, Any] = {}
         if plan.photographic_integration:
@@ -375,16 +507,51 @@ class ReplacementEngine:
             final = (orig.astype(np.float32) * a + final.astype(np.float32) * (1 - a) + 0.5).astype(np.uint8)
         final_loc = await self.store.save(final, "final")
         if req.keep_intermediates:
-            for nm, mk in (("mask_identity", ident), ("mask_modified", modified), ("mask_face", scene.face_full),
-                           ("mask_ink", scene.ink_zone), ("mask_hair", None if scene.masks is None else scene.masks.hair)):
+            masks_out = [("mask_identity", ident), ("mask_modified", modified), ("mask_face", scene.face_full),
+                         ("mask_ink", scene.ink_zone), ("mask_hair", None if scene.masks is None else scene.masks.hair)]
+            masks_out += [(k, v) for k, v in scene.source_masks.items()]
+            for nm, mk in masks_out:
                 if mk is not None:
                     inter[nm] = await self.store.save(np.repeat((np.clip(mk, 0, 1) * 255).astype(np.uint8)[..., None], 3, 2), nm)
         return final, final_loc, inter, {"modified_area": round(float((modified > 0.5).mean()), 4), "integration": integ,
                                          "modified_mask": modified}
 
+    def _markings_residual(self, scene: _Scene, img: np.ndarray) -> float | None:
+        """Fracao da marca original (miolo da zona) ainda detectada como tinta/marca na imagem."""
+        if scene.ink_zone is None or scene.masks is None or scene.body is None:
+            return None
+        h, w = img.shape[:2]
+        core = erode(scene.ink_zone, max(2, int(min(h, w) * 0.006)))
+        if not (core > 0.5).any():
+            return 0.0
+        tt = self.cfg["tattoo"]
+        f = lambda k: max(1, int(min(h, w) * float(tt[k])))  # noqa: E731
+        found = tattoo_zones(img, scene.body, skin_pixels(img) * scene.masks.person, np.zeros((h, w), np.float32),
+                             scene.face_full, f("reach_frac"), f("edge_frac"), float(tt["ink_dy"]), float(tt["ink_dcr"]),
+                             float(tt["ink_dcr_light"]), 99.0, 99.0, 1, 0, 4)
+        return round(float(((found > 0.5) & (core > 0.5)).sum()) / max(1.0, float((core > 0.5).sum())), 4)
+
     # --- medidas para a validacao --------------------------------------------------------------
+    def _preserved_change(self, scene: _Scene, final: np.ndarray, attr: str, modified_mask: np.ndarray | None) -> float | None:
+        """Atributo PRESERVE: fracao alterada dentro dele (miolo, sem a borda de transicao)."""
+        if scene.masks is None:
+            return None
+        if attr == "clothing":
+            region = scene.masks.clothing
+        elif attr == "hair":
+            region = scene.masks.hair
+        else:
+            region = scene.accessory if scene.accessory is not None else None
+        if region is None or not (region > 0.5).any():
+            return None
+        core = erode((region > 0.5).astype(np.float32), 3)
+        if attr == "clothing" and modified_mask is not None:  # a roupa encostada no que a politica reconstroi nao conta
+            core = core * (1 - dilate((modified_mask > 0.5).astype(np.float32), 4))
+        return changed_fraction(scene.original, final, core, threshold=10)
+
     async def _measure(self, req: ReplacementRequest, scene: _Scene, final: np.ndarray, final_loc: str, modified_area: float,
-                       modified_mask: np.ndarray | None = None) -> dict[str, Any]:
+                       modified_mask: np.ndarray | None = None, attrs: AttributePolicy | None = None) -> dict[str, Any]:
+        attrs_hair_preserved = attrs is not None and attrs.is_("hair", PRESERVE)
         orig = scene.original
         h, w = orig.shape[:2]
         an = await self._identity_of(final_loc, w, h, req.master)
@@ -404,17 +571,7 @@ class ReplacementEngine:
         pose = pose_distance(scene.base_pose, body.keypoints) if scene.base_pose and body else None
         protect = scene.masks.person if scene.masks is not None else np.clip(scene.identity, 0, 1)
         background = changed_fraction(orig, final, 1 - dilate((protect > 0.02).astype(np.float32), 3))
-        tattoo_res = None
-        if scene.ink_zone is not None and scene.masks is not None and scene.body is not None:
-            core = erode(scene.ink_zone, max(2, int(min(h, w) * 0.006)))
-            denom = max(1.0, float((core > 0.5).sum()))
-            tt = self.cfg["tattoo"]
-            px_min = min(h, w)
-            f = lambda k: max(1, int(px_min * float(tt[k])))  # noqa: E731
-            ink_final = tattoo_zones(final, scene.body, skin_pixels(final) * scene.masks.person, np.zeros((h, w), np.float32),
-                                     scene.face_full, f("reach_frac"), f("edge_frac"), float(tt["ink_dy"]), float(tt["ink_dcr"]),
-                                     float(tt["ink_dcr_light"]), 99.0, 99.0, 1, 0, 4)
-            tattoo_res = round(float(((ink_final > 0.5) & (core > 0.5)).sum()) / denom, 4) if (core > 0.5).any() else 0.0
+        tattoo_res = self._markings_residual(scene, final)
         hair_res = None
         if scene.masks is not None and scene.masks.hair.any():
             hm = scene.masks.hair > 0.5
@@ -444,24 +601,29 @@ class ReplacementEngine:
                 "texture_ref": tex_ref, "tone_delta": tone_delta, "persona_instances": persona_n, "faces": len(an.faces),
                 "shoulder_ratio": shoulder, "composition_shift": 0.0, "person_found": face is not None or len(an.faces) > 0,
                 "modified_area": modified_area,
+                "clothing_change": self._preserved_change(scene, final, "clothing", modified_mask),
+                "hair_change": self._preserved_change(scene, final, "hair", modified_mask) if attrs_hair_preserved else None,
+                "accessory_change": self._preserved_change(scene, final, "accessories", modified_mask),
                 "seam_excess": None if modified_mask is None else seam_excess(orig, final, modified_mask),
                 "straight_edges": None if modified_mask is None else straight_edges(orig, final, modified_mask)}
 
     # --- job completo --------------------------------------------------------------------------
     async def run(self, req: ReplacementRequest) -> ReplacementOutcome:
         req.validate()
-        plan = req.plan()
+        attrs = req.attributes()
+        plan = req.plan(attrs)
         start = time.monotonic()
         meta = self.adapter.metadata()
         tel = JobTelemetry(uuid.uuid4().hex[:12], req.persona_id, "replacement", plan.name, model=meta.get("model", ""),
                            checkpoint_hash=meta.get("hash", ""), lora_hash=meta.get("lora_hash", self.lora_hash), seed=req.seed,
                            steps=plan.steps, cfg=plan.cfg, provider=self.provider, engine_version=ENGINE_VERSION,
                            license={k: meta.get(k) for k in ("license", "commercial_use", "license_status")},
-                           workflow_versions={"inpaint": meta.get("workflow", "")})
-        scene = await self._scene(req.image, req.master, plan)
+                           workflow_versions={"inpaint": meta.get("workflow", "")}, attributes=attrs.to_dict())
+        scene = await self._scene(req.image, req.master, plan, attrs)
+        tel.attributes["boxes"] = scene.box_policy
         # a MEDICAO usa sempre a segmentacao real (mesmo quando a geracao nao usa: degraus A..D),
         # senao tatuagem/fundo/cabelo ficariam "desconhecidos" justamente onde falham
-        mscene = scene if plan.segmentation else await self._scene(req.image, req.master, plan.with_(segmentation=True))
+        mscene = scene if plan.segmentation else await self._scene(req.image, req.master, plan.with_(segmentation=True), attrs)
         h, w = scene.original.shape[:2]
         tel.resolution = [w, h]
         retry = RetryPolicyV2()
@@ -472,9 +634,9 @@ class ReplacementEngine:
             tel.reference_strength = plan.face_reference_strength if plan.face_reference else 0.0
             tel.denoise = {"identity": plan.identity_denoise, "face": plan.face_denoise, "tattoo": plan.tattoo_denoise,
                            "body": plan.body_denoise}
-            final, loc, inter, info = await self._attempt(req, scene, plan, tel)
-            m = await self._measure(req, mscene, final, loc, info["modified_area"], info.get("modified_mask"))
-            report = validate_v2(m, self.cfg.get("thresholds") or None)
+            final, loc, inter, info = await self._attempt(req, scene, plan, tel, attrs)
+            m = await self._measure(req, mscene, final, loc, info["modified_area"], info.get("modified_mask"), attrs)
+            report = validate_v2(m, self.cfg.get("thresholds") or None, attrs.policy)
             rec = {"attempt": attempt, "plan": plan.name, "status": report.status, "failures": report.failures(),
                    "warnings": report.warnings(), "image": loc, "identity": m["identity"]}
             attempts.append(rec)
@@ -483,7 +645,7 @@ class ReplacementEngine:
                 best = (rank, final, loc, inter, report, m, info)
             if report.status == PASS:
                 break
-            failures = report.failures() or report.warnings()
+            failures = _specific(report, report.failures() or report.warnings())
             nxt = retry.next_plan(plan, failures, attempt + 1)
             if nxt is None:
                 break
@@ -502,6 +664,27 @@ class ReplacementEngine:
                  "clothes_segmented": scene.clothes_ok}
         return ReplacementOutcome(loc, final, report.status, report, m, tel, inter if req.keep_intermediates else {},
                                   attempts, areas)
+
+
+# spec 45.11: violacao da politica vira a falha ESPECIFICA do atributo (nunca retry generico)
+_ATTR_FAILURE = {"tattoos": "tattoo", "scars": "tattoo", "birthmarks": "tattoo", "original_person_marks": "tattoo",
+                 "source_identity_residual": "original_residual", "face": "identity", "skin": "skin",
+                 "clothing": "background", "background": "background", "hair": "background", "accessories": "background",
+                 "pose": "pose", "composition": "composition"}
+
+
+def _specific(report: ValidationReportV2, failures: list[str]) -> list[str]:
+    out = [f for f in failures if f != "attribute_policy"]
+    orr = report.checks.get("original_residual")
+    if "original_residual" in out and orr is not None:
+        face = (orr.metadata or {}).get("rosto_original")
+        # residuo so de tatuagem/cabelo (rosto original ja nao parece): a falha especifica e a da marca
+        if face is not None and face <= 0.30 and "tattoo" in out:
+            out.remove("original_residual")
+    if "attribute_policy" in failures:
+        viol = report.checks["attribute_policy"].metadata.get("violations", [])
+        out += [_ATTR_FAILURE[a] for a in viol if a in _ATTR_FAILURE and _ATTR_FAILURE[a] not in out]
+    return out
 
 
 def _png(pixels: np.ndarray) -> bytes:

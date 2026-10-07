@@ -34,6 +34,7 @@ class JobTelemetry:
     engine_version: str = ""
     workflow_versions: dict[str, str] = field(default_factory=dict)
     license: dict[str, Any] = field(default_factory=dict)
+    attributes: dict[str, Any] = field(default_factory=dict)  # politica de atributos resolvida (spec 45) e a origem
 
     def add_pass(self, name: str, seconds: float, params: dict[str, Any], accepted: bool, reason: str | None = None) -> None:
         self.passes.append({"pass": name, "seconds": seconds, "params": params, "accepted": accepted, "reason": reason})

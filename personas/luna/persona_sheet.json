@@ -391,11 +391,103 @@
       "date": "2026-10-05",
       "reason": "calibracao por benchmark",
       "changes": "ficha criada; esquema completado para o Persona Engine V1 (masters com sha256, idade alvo, perfis de geracao/validacao). Nenhuma caracteristica de identidade mudou.",
-      "references": "set 2026-10-05 (4 imagens)"
+      "references": "set 2026-10-05 (4 imagens)",
+      "amendments": [
+        {
+          "date": "2026-10-07",
+          "change": "identity_attributes, identity_exclusions e replacement_policy (spec 45, Attribute Authority)",
+          "identity_changed": false,
+          "generation_changed": false
+        }
+      ]
     }
   ],
   "v1_1_pending": {
     "status": "EXPERIMENTAL - recursos da V1.1 (pele natural) presentes e DESLIGADOS; geracao identica a 1.0",
     "promotion": "so vira persona_version 1.1 / luna-v1.1 se o benchmark A/B/C/D mostrar melhora real"
+  },
+  "identity_attributes": {
+    "_comment": "Spec 45: a Persona Sheet e a fonte de verdade da identidade. Resumo para o Replacement; os detalhes ficam em 'identity' e 'body'.",
+    "face": {
+      "value": "oval, levemente alongado; macas do rosto altas e marcadas; olhos castanho-escuros, amendoados, palpebra levemente encoberta, cilios longos; sobrancelhas grossas, escuras, quase retas com arco suave; labios labios cheios, arco do cupido marcado, tom nude-rosado",
+      "source": "identity.face",
+      "reference": "master_face"
+    },
+    "body": {
+      "value": "curvilinea (ampulheta): busto cheio, cintura fina, quadril arredondado, bracos tonificados",
+      "source": "body",
+      "reference": "master_body"
+    },
+    "skin": {
+      "tone": "bronzeado/oliva dourado",
+      "texture": "pele natural com poros, variacao de tom natural, sem marcas",
+      "freckles": "sardas leves no rosto e colo em pose_04; pouco visiveis em luna_15/luna_20",
+      "skin_reference": "master_body",
+      "note": "a referencia orienta textura/tom/idade; NAO e copiada literalmente; a luz vem da foto"
+    },
+    "hair": {
+      "value": "castanho muito escuro, comprido (abaixo do peito), ondulado solto, reflexos acobreados",
+      "reference": "master_hair"
+    },
+    "age": {
+      "target": 27,
+      "accepted_range": [
+        23,
+        31
+      ]
+    },
+    "distinctive_features": {
+      "choker": {
+        "value": "gargantilha preta fina",
+        "lock": "SOFT"
+      },
+      "pendant": {
+        "value": "corrente fina com pingente oval de pedra preta",
+        "lock": "SOFT"
+      },
+      "earrings": {
+        "value": "argolas pequenas",
+        "lock": "VARIABLE"
+      }
+    }
+  },
+  "identity_exclusions": {
+    "_comment": "Lista vazia = a Luna NAO tem esse traco. Qualquer um deles na foto e da pessoa ORIGINAL e sai.",
+    "tattoos": [],
+    "scars": [],
+    "piercings": [],
+    "birthmarks": [],
+    "unwanted_marks": []
+  },
+  "replacement_policy": {
+    "_comment": "Padrao do Replacement para a Luna. O pedido do usuario tem prioridade. Oculos escuros mantidos (regra do usuario).",
+    "preserve": [
+      "pose",
+      "composition",
+      "camera_angle",
+      "perspective",
+      "clothing",
+      "background",
+      "lighting",
+      "expression",
+      "objects",
+      "accessories"
+    ],
+    "reconstruct": [
+      "face",
+      "body",
+      "skin",
+      "hair",
+      "age"
+    ],
+    "remove": [
+      "tattoos",
+      "scars",
+      "piercings",
+      "birthmarks",
+      "makeup",
+      "jewelry",
+      "original_person_marks"
+    ]
   }
 }

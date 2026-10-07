@@ -16,6 +16,7 @@ from typing import Any, Awaitable, Callable, Protocol
 
 from PIL import Image
 
+from app.core.engines.attributes import catalog as attribute_catalog
 from app.core.engines.face_swap import MODES as FACE_SWAP_MODES
 from app.core.engines.face_swap import FULL_PERSON, FaceSwapRequest
 from app.core.engines.models import AUTO, ModelRegistry
@@ -105,7 +106,8 @@ class EnginesV2Service:
         return {
             "engines": list(ENGINES), "modes": list(MODES), "models": models,
             "replacement": {"options": list(ReplacementRequest.OPTIONS), "advanced": list(ReplacementRequest.ADVANCED),
-                            "defaults": {m: POLICIES[m].to_dict() for m in MODES}},
+                            "defaults": {m: POLICIES[m].to_dict() for m in MODES},
+                            "attributes": attribute_catalog()},
             "face_swap": {"modes": list(FACE_SWAP_MODES), "head_backends": ["sdxl", "qwen_bfs"]},
             "processing": self.cfg.get("processing", {}),
             "retention": {k: v for k, v in self.cfg.get("retention", {}).items() if k != "comfyui_input_dir"},
@@ -136,6 +138,15 @@ class EnginesV2Service:
         allowed = self.cfg.get("processing", {}).get("allowed", ["local"])
         if processing not in allowed:
             raise EngineRequestError(f"processamento '{processing}' nao suportado (so {allowed})")
+
+    def persona_attributes(self, persona_id: str) -> dict[str, Any]:
+        """Politica da Persona Sheet resolvida (para a tela mostrar o padrao da persona)."""
+        from app.core.engines.attributes import resolve
+
+        try:
+            return resolve(self.sheets.get(persona_id).data).to_dict()
+        except Exception as exc:  # noqa: BLE001
+            raise EngineRequestError(f"persona '{persona_id}': {exc}") from exc
 
     def _persona(self, persona_id: str) -> tuple[ReferenceImage, str]:
         try:
@@ -176,7 +187,9 @@ class EnginesV2Service:
     def start_replacement(self, *, image: str, persona_id: str, mode: str = "QUALITY", model: str = AUTO,
                           seed: int = 7801, options: dict[str, bool] | None = None,
                           advanced: dict[str, Any] | None = None, keep_intermediates: bool | None = None,
-                          processing: str = "local") -> dict[str, Any]:
+                          processing: str = "local", preserve_attributes: list[str] | None = None,
+                          remove_attributes: list[str] | None = None,
+                          reconstruct_attributes: list[str] | None = None) -> dict[str, Any]:
         self._processing(processing)
         if mode not in POLICIES and mode not in LADDER:
             raise EngineRequestError(f"modo invalido: {mode}")
@@ -187,10 +200,13 @@ class EnginesV2Service:
         keep = self.cfg.get("retention", {}).get("keep_intermediates_default", False) if keep_intermediates is None else keep_intermediates
         req = ReplacementRequest(image=image, persona_id=persona_id, master=master, mode=mode, model=chosen.id, seed=seed,
                                  options=dict(options or {}), advanced=dict(advanced or {}), negative=negative,
-                                 keep_intermediates=bool(keep))
+                                 keep_intermediates=bool(keep), preserve_attributes=list(preserve_attributes or []),
+                                 remove_attributes=list(remove_attributes or []),
+                                 reconstruct_attributes=list(reconstruct_attributes or []),
+                                 persona_sheet=self.sheets.get(persona_id).data)
         try:
             req.validate()
-            req.plan()
+            req.plan()  # resolve a politica de atributos: conflito/atributo invalido = 400 antes da GPU
         except ValueError as exc:
             raise EngineRequestError(str(exc)) from exc
 
