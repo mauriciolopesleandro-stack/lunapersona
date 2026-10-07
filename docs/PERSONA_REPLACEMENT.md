@@ -188,3 +188,17 @@ Métricas: identidade **0,751**, original 0,068, pose 0,029, fundo 0%, roupa 0%,
 - **Integração:** não toca no rosto nem no top, que fica exato.
 - **Negativo:** a lista do usuário (80 termos: mãos deformadas, tatuagem fantasma, brinco de argola, joias novas, top alterado, fundo alterado etc.).
 - **Rosto:** mesma semente e mesmas máscaras do teste 3. O negativo novo pode mudar um pouco o rosto, e o mínimo de identidade continua 0,70.
+
+## Transfer teste 4 (v1.3, quarto, 1 geração, ~US$ 0,09, 575 s de pod; downloads lentos, 170 s)
+
+Métricas: identidade **0,769**, original 0,058, pose 0,01, fundo 0%, roupa 0%, luz 0,67, textura 0,90, borda 0,80. Todas as etapas foram aceitas.
+
+**Leitura visual:**
+- **Melhor resultado até agora:**
+  - a mão direita voltou, segurando o top na mesma posição;
+  - braço direito com o formato da foto, sem a "massinha";
+  - tatuagens do antebraço e da mão direita removidas, com pele natural;
+  - top, mão esquerda e fundo idênticos.
+- **Ainda errado:**
+  1. **Florence "clothes" voltou vazio** (cobertura 0). A trava funcionou: o código usou a máscara antiga, e o top ficou intacto. Mas, sem a roupa do Florence, as tatuagens do **ombro esquerdo** e do **alto do braço direito** continuaram "roupa" e ficaram.
+  2. **Brinco:** a foto original tem um brinco pequeno, meio escondido pelo cabelo. O resultado tem uma **argola grande**, mesmo com o negativo.
