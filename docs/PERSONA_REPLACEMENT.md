@@ -226,3 +226,16 @@ Métricas: identidade **0,757**, original 0,076, pose 0,016, fundo 0%, roupa 0%.
   2. **Pontos brancos** no braço e na mão direitos.
   3. **Resto da tatuagem do ombro esquerdo** na faixa do cabelo, porque a área de identidade ficou fora da limpeza.
   4. **Argola grande** de novo, mesmo com o prompt pedindo o brinco pequeno.
+
+## Transfer v1.5: spec "TESTE 6 — LIMPEZA CIRÚRGICA DE TATUAGENS" (só código, sem GPU)
+- **Rosto reaproveitado:** o rosto da Luna do teste 5 é usado como está (`--partir-de` com o checkpoint `face_refinement`). Rosto e cabelo NÃO são gerados de novo, e não há InstantID nem passada de identidade.
+  - Uma checagem reprova (`face_touched_after_identity`) se qualquer pixel do rosto mudar depois.
+- **Máscara SÓ na tinta, com margem pequena:**
+  - **Critério:** a tinta é mais **escura** e mais **fria/cinza** (menos vermelho) que a pele vizinha. Sombra, mecha de cabelo, dobra de dedo e linha da barriga são quentes e ficam de fora.
+  - **Limiares:** dentro do que o Florence marcou como tatuagem, o limiar é mais baixo, para pegar traços claros.
+  - **Recortes:** o contorno do corpo não conta. Traços próximos se juntam e pontinhos isolados saem.
+  - **Sob as mechas:** só a continuação de uma tatuagem achada na pele.
+  - **Na foto real (calibração local):** cerca de 12% da pele visível, contra 100% no teste 5.
+- **Reconstrução:** com a profundidade da foto original, denoise 0,7, sem LoRA. Depois, a cor e a luz da pele original **logo em volta** (só a baixa frequência; a textura fica).
+- **Brinco:** a área em volta e abaixo do brinco original, só no cabelo e nunca no rosto, volta a ser cabelo, sem LoRA. O brinco original fica com os pixels da foto.
+- **Sem passada de integração global.** Negativo do usuário (52 termos).

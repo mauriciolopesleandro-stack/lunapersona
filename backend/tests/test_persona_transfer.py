@@ -2,6 +2,7 @@
 com a geometria original, tatuagem removida so na pele, integracao das bordas sem tocar no
 rosto; fundo travado, workflow com pose, rollback, validacao e trava de custo."""
 import copy
+import dataclasses
 import json
 
 import numpy as np
@@ -21,8 +22,15 @@ from app.core.persona_replacement.transfer import (
     identity_mask,
     load_transfer_config,
     plausible_accessories,
+    EARRING,
+    RESUMED,
+    TONE,
+    earring_box,
+    earring_zone,
+    match_local_tone,
     skin_region,
     skin_tattoo_mask,
+    surgical_ink_mask,
 )
 from tests.conftest import REPO
 from tests.test_persona_replacement import FACE_BOX, KPS, SHIRT, Analyzer, Reader, Store, Transformer, photo
@@ -30,6 +38,9 @@ from tests.test_v2_multipass import MASTER
 
 CFG_PATH = REPO / "config" / "persona_transfer.json"
 CFG = load_transfer_config(CFG_PATH)
+# modo "pele visivel" (v1.3/v1.4: toda a pele redesenhada + integracao) - continua suportado
+V14 = dataclasses.replace(CFG, tattoo_removal={**CFG.tattoo_removal, "mode": "visible_skin", "earring_cleanup": False},
+                          integration={**CFG.integration, "enabled": True})
 RAW = json.loads(CFG_PATH.read_text(encoding="utf-8"))
 WF = json.loads((REPO / "workflows" / "realvis-persona-transfer.json").read_text(encoding="utf-8"))
 
@@ -52,13 +63,16 @@ def test_config_follows_the_spec():
     assert fr["identity_adapter"] == "instantid" and fr["adapter_weight"] <= 0.6  # identidade das referencias, sem forcar
     assert CFG.checks["max_background_changed"] <= 0.002  # fundo TRAVADO
     assert CFG.tattoo_removal["denoise"] <= 0.7 and CFG.tattoo_removal["lora"] is False  # geometria da foto
-    assert {"heavy makeup", "text", "large hoop earrings", "tattoo ghosting", "changed top"} <= set(CFG.negative_extra)
-    assert CFG.tattoo_removal["require_clothes"] is True and "small earring" in t["prompt"]
+    assert {"orange skin", "darker skin", "white spots", "large hoop earrings", "tattoo ghosting", "altered black top",
+            "regenerated hair"} <= set(CFG.negative_extra)
+    tr = CFG.tattoo_removal
+    assert tr["require_clothes"] is True and tr["mode"] == "surgical" and tr["tone_match"] and tr["earring_cleanup"]
+    assert CFG.integration["enabled"] is False  # geracao localizada: sem passada global no fim
     cn = CFG.tattoo_removal["controlnet"]
     assert cn["type"] == "depth" and cn["strength"] >= 0.8  # bracos e maos seguem a estrutura da foto
     assert CFG.integration["denoise"] <= 0.25 and CFG.integration["lora"] is False
     assert CFG.post_lighting_match["enabled"] is False  # sem filtro/grao depois
-    assert CFG.budget_limit_usd == 0.05 and "tattoo" in CFG.negative_extra
+    assert CFG.budget_limit_usd == 0.05
     assert CFG.generation_config == "config/persona_engine_v2.json"
 
 
@@ -159,7 +173,7 @@ def shirt():
     return clothes
 
 
-def orchestrator(faces, original_similarity=0.1, tattoo=False, protect=(), wide=False, cfg=CFG):
+def orchestrator(faces, original_similarity=0.1, tattoo=False, protect=(), wide=False, cfg=V14):
     img = wide_tattoo_photo()[0] if wide else photo(tattoo=tattoo)[0]
     store = Store(img)
     tr = Transformer(store)
@@ -264,8 +278,7 @@ async def test_failed_clothes_segmentation_stops_before_any_generation():
 
 
 async def test_without_the_requirement_a_weak_segmentation_falls_back_and_never_touches_the_top():
-    import dataclasses
-    cfg = dataclasses.replace(CFG, tattoo_removal={**CFG.tattoo_removal, "require_clothes": False})
+    cfg = dataclasses.replace(V14, tattoo_removal={**V14.tattoo_removal, "require_clothes": False})
     orch, tr, _ = orchestrator({"foto": 0.1, TRANSFER: 0.8, TATTOO: 0.8, INTEGRATION: 0.8}, wide=True, cfg=cfg)
     weak(orch)
     res = await orch.run("foto.png", MASTER, "neg", 7)
@@ -342,3 +355,64 @@ def test_first_test_is_blocked_above_five_cents():
     fits = ExperimentPlan("transfer 1o teste", "1 imagem", "pose", images=1, seconds_per_image=120,
                           overhead_seconds=180, price_per_hour=0.57)
     assert BudgetGuard(CFG.budget_limit_usd).check(fits)["estimated_cost_usd"] <= 0.05
+
+
+# --- v1.5: limpeza cirurgica (TESTE 6) ----------------------------------------------------
+
+
+def test_surgical_mask_is_only_the_ink_plus_a_small_margin():
+    img, person, hair, clothes = wide_tattoo_photo()
+    m = build_masks(RawSegments(person, hair, []), FACE_BOX, KPS, img)
+    m = dataclasses.replace(m, clothing=clothes * m.person)
+    ident = identity_mask(m, FACE_BOX, 0.12)
+    _, ink = skin_region(m, clothes, ident, img, 3, 10, 12)
+    cut = surgical_ink_mask(m, ink, ident, 2, 4, 2)
+    assert cut[128, 46] == 1  # a tinta
+    assert cut[160, 46] == 0 and cut[100, 45] == 0  # pele limpa longe da tinta fica a da foto
+    assert cut[170, 80] == 0 and cut[60, 80] == 0  # nem top nem rosto
+    assert cut.sum() < 0.5 * ((m.skin > 0.5) & (m.person > 0.5)).sum()
+
+
+def test_earring_box_and_zone():
+    face = (60.0, 30.0, 100.0, 80.0)
+    ear, glasses = (52.0, 58.0, 57.0, 64.0), (66.0, 44.0, 94.0, 56.0)
+    assert earring_box([glasses, ear], face) == ear
+    ident = np.zeros((240, 160), np.float32)
+    ident[20:110, 40:120] = 1
+    full = np.zeros((240, 160), np.float32)
+    full[40:85, 62:98] = 1
+    zone = earring_zone((240, 160), ear, full, ident, 2)
+    assert zone[70, 54] == 1 and zone[60, 54] == 0  # abaixo do brinco sim, o proprio brinco nao
+    assert zone[60, 80] == 0  # nunca o rosto
+
+
+def test_local_tone_takes_the_surrounding_original_skin():
+    ref = np.zeros((60, 60, 3), np.uint8)
+    ref[:] = (200, 150, 120)
+    new = ref.copy()
+    mask = np.zeros((60, 60), np.float32)
+    mask[25:35, 25:35] = 1
+    new[mask > 0] = (150, 90, 50)  # pele refeita escura/alaranjada
+    new[30, 30] = (160, 100, 60)  # textura (alta frequencia) deve ficar
+    out = match_local_tone(new, ref, mask, np.ones((60, 60), np.float32), 6)
+    assert abs(int(out[27, 27, 0]) - 200) <= 3 and int(out[30, 30, 0]) > int(out[27, 27, 0])
+    assert (out[mask < 0.5] == new[mask < 0.5]).all()
+
+
+async def test_resumed_identity_keeps_the_face_and_only_cleans_ink_and_earring():
+    faces = {"foto": 0.1, RESUMED: 0.76, EARRING: 0.76, TATTOO: 0.76, TONE: 0.76}
+    orch, tr, store = orchestrator(faces, wide=True, cfg=CFG, protect=[(52.0, 58.0, 57.0, 64.0)])
+    luna = store.images["foto.png"].copy()
+    luna[40:85, 62:98] = (180, 130, 110)  # "rosto da Luna" do teste anterior
+    store.images[RESUMED + "_in.png"] = luna
+    res = await orch.run("foto.png", MASTER, "neg", 7, start=RESUMED + "_in.png")
+    names = [c.name for c in tr.calls]
+    assert TRANSFER not in names and FACE_REFINE not in names  # rosto NAO e gerado de novo
+    assert names == [EARRING, TATTOO]
+    assert tr.calls[0].use_lora is False and tr.calls[0].mask[60, 80] == 0
+    assert tr.calls[1].mask[128, 46] == 1 and tr.calls[1].mask[160, 46] == 0  # so a tinta
+    assert res.checkpoints[:2] == ["original", RESUMED] and res.checkpoints[-1] == TONE
+    assert res.mask_areas["face_changed_after_identity"] == 0.0
+    assert (res.final.pixels[40:85, 62:98] == luna[40:85, 62:98]).all()
+    assert (res.final.pixels[160, 46] == luna[160, 46]).all()  # pele limpa intacta
+    assert "face_touched_after_identity" not in res.report.failures

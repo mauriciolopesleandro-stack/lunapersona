@@ -21,12 +21,13 @@ import numpy as np
 from app.core.persona_replacement.contracts import TransformRequest
 from app.core.persona_replacement.replacement_orchestrator import ReplacementOrchestrator, ReplacementResult
 from app.core.persona_replacement.rollback import Checkpoint, CheckpointStore
-from app.core.persona_replacement.segmentation import MaskSet, build_masks, dilate
+from app.core.persona_replacement.segmentation import MaskSet, build_masks, dilate, erode
 from app.core.persona_replacement.telemetry import StageRecord, cost
 from app.core.persona_replacement.validation import background_change, changed_fraction, validate
 from app.providers.base import ProviderImage, ReferenceImage
 
 TRANSFER, FACE_REFINE, TATTOO, INTEGRATION = "persona_transfer", "face_refinement", "tattoo_removal", "integration"
+EARRING, TONE, RESUMED = "earring_cleanup", "tone_match", "luna_identity"
 
 
 @dataclass
@@ -112,6 +113,88 @@ def skin_region(masks: MaskSet, clothes: np.ndarray | None, identity: np.ndarray
     return body.astype(np.float32), ink.astype(np.float32)
 
 
+def ink_by_color(rgb: np.ndarray, body: np.ndarray, skin: np.ndarray, florence: np.ndarray, reach: int, edge: int,
+                 dy: float, dcr: float, dy_florence: float, dcr_florence: float, close: int) -> np.ndarray:
+    """Tinta = mais ESCURA e mais FRIA/cinza (menos vermelho) que a pele vizinha. Sombra, mecha de
+    cabelo e dobra de dedo sao quentes (mesmo vermelho da pele) e ficam de fora. Dentro do que o
+    Florence marcou como tatuagem o limiar e mais baixo (traco fino e claro). O contorno do corpo
+    (borda contra o fundo) nao conta. Tracos proximos viram um desenho so (fechamento pequeno)."""
+    from app.core.persona_replacement.lighting import to_ycc
+
+    inside = erode((body > 0.5).astype(np.float32), edge) > 0.5
+    known = (skin > 0.5) & inside
+    if not known.any():
+        return np.zeros(body.shape, np.float32)
+    ycc = to_ycc(rgb)
+    ly, lcr = local_mean(ycc[..., 0], known, reach), local_mean(ycc[..., 2], known, reach)
+    dark, cold = ycc[..., 0] - ly, ycc[..., 2] - lcr
+    flo = florence > 0.5
+    ink = inside & np.where(flo, (dark < -dy_florence) & (cold < -dcr_florence), (dark < -dy) & (cold < -dcr))
+    ink = erode(dilate(ink.astype(np.float32), close), close) > 0.5  # tracos proximos viram um desenho so
+    ink = dilate(erode(ink.astype(np.float32), 1), 1) > 0.5  # pontinhos isolados (ruido) saem
+    return (ink & inside).astype(np.float32)
+
+
+def surgical_ink_mask(masks: MaskSet, ink: np.ndarray, identity: np.ndarray, margin: int, face_guard: int,
+                      clothing_guard: int, under_hair: np.ndarray | None = None) -> np.ndarray:
+    """SO a tinta + uma margem pequena (nunca a regiao do corpo inteira). Inclui a tinta que o
+    Florence achou sob as mechas (area do cabelo), mas nunca o rosto, o top ou os acessorios."""
+    person_in = erode((masks.person > 0.5).astype(np.float32), 2) > 0.5  # o contorno do corpo nao e tinta
+    hair_ink = (under_hair > 0.5) if under_hair is not None else ((masks.tattoos > 0.5) & (identity > 0.5))
+    core = ((ink > 0.5) & person_in) | (hair_ink & (identity > 0.5))
+    grown = dilate(core.astype(np.float32), margin) > 0.5
+    keep_out = ((dilate(masks.face_full, face_guard) > 0.5) | (dilate(masks.clothing, clothing_guard) > 0.5)
+                | (masks.protect > 0.5) | (masks.person < 0.5))
+    return (grown & ~keep_out).astype(np.float32)
+
+
+def earring_box(boxes, face_bbox):
+    """O brinco original: caixa pequena (bem menor que o rosto) ao lado do rosto, da altura dos olhos
+    ate um pouco abaixo do queixo."""
+    x1, y1, x2, y2 = face_bbox
+    fw, fh = x2 - x1, y2 - y1
+    best = None
+    for b in boxes:
+        bw, bh = b[2] - b[0], b[3] - b[1]
+        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        small = bw * bh <= 0.15 * fw * fh
+        beside = abs(cx - (x1 + x2) / 2) >= 0.25 * fw and x1 - 0.6 * fw <= cx <= x2 + 0.6 * fw
+        height = y1 + 0.3 * fh <= cy <= y2 + 0.5 * fh
+        if small and beside and height and (best is None or bw * bh > (best[2] - best[0]) * (best[3] - best[1])):
+            best = b
+    return best
+
+
+def earring_zone(shape, box, face_full: np.ndarray, identity: np.ndarray, face_guard: int) -> np.ndarray:
+    """Onde a argola nova aparece: em volta e ABAIXO do brinco original, so na area do cabelo da
+    Luna, nunca no rosto nem no proprio brinco (que fica com os pixels da foto)."""
+    h, w = shape
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    zone = np.zeros((h, w), bool)
+    zx1, zx2 = int(max(0, box[0] - 1.2 * bw)), int(min(w, box[2] + 1.2 * bw))
+    zy1, zy2 = int(max(0, box[1] - 0.5 * bh)), int(min(h, box[3] + 3.0 * bh))
+    zone[zy1:zy2, zx1:zx2] = True
+    own = np.zeros((h, w), bool)
+    own[int(box[1]):int(box[3]) + 1, int(box[0]):int(box[2]) + 1] = True
+    return (zone & ~own & (identity > 0.5) & ~(dilate(face_full, face_guard) > 0.5)).astype(np.float32)
+
+
+def match_local_tone(new: np.ndarray, reference: np.ndarray, mask: np.ndarray, skin: np.ndarray, radius: int) -> np.ndarray:
+    """A pele refeita assume a cor/luz da pele ORIGINAL logo em volta (so a baixa frequencia: a
+    textura gerada fica). Nada fora da mascara muda."""
+    m = mask > 0.5
+    if not m.any():
+        return new.copy()
+    around = (dilate(m.astype(np.float32), radius) > 0.5) & ~m & (skin > 0.5)
+    if not around.any():
+        return new.copy()
+    target = local_mean(reference.astype(np.float32), around, radius * 2)
+    current = local_mean(new.astype(np.float32), m, radius)
+    out = new.astype(np.float32)
+    out[m] = out[m] + (target - current)[m]
+    return out.round().clip(0, 255).astype(np.uint8)
+
+
 def plausible_accessories(boxes, face_bbox, max_face_ratio: float) -> list:
     """Oculos, brinco, pulseira e relogio sao pequenos: uma caixa maior que o rosto e falso
     positivo do grounding (ex.: o top inteiro com as maos) e nao pode travar a regiao."""
@@ -186,7 +269,10 @@ class TransferOrchestrator(ReplacementOrchestrator):
         rec.seconds, rec.gpu, rec.cost_usd = res.seconds, res.gpu.get("name"), cost(res.seconds, self.price)
         return modified
 
-    async def run(self, image: str, master: ReferenceImage, negative: str, seed: int) -> ReplacementResult:
+    async def run(self, image: str, master: ReferenceImage, negative: str, seed: int,
+                  start: str | None = None) -> ReplacementResult:
+        """`start`: imagem ja com a identidade da Luna (resultado aprovado antes). Com ela, o rosto
+        e o cabelo NAO sao gerados de novo - so as etapas locais (brinco, tatuagem) rodam."""
         cfg = self.config
         original = await self.store.load(image)
         h, w = original.shape[:2]
@@ -223,8 +309,37 @@ class TransferOrchestrator(ReplacementOrchestrator):
             body = np.zeros((h, w), np.float32)  # sem tinta, a pele fica a da foto (nem a integracao mexe)
         ring_r = max(3, int(it.get("edge_ring", 6)))
         region = np.clip(identity + body, 0, 1)
+        surgical = tr.get("mode") == "surgical"
+        guard = max(4, int((sheet.target_face.bbox[3] - sheet.target_face.bbox[1]) * float(tr.get("face_guard_frac", 0.1))))
+        if surgical:
+            free_body = body
+            ink = ink_by_color(original, free_body, masks.skin, masks.tattoos,
+                               max(6, int(min(h, w) * float(tr.get("reach_frac", 0.03)))),
+                               max(2, int(min(h, w) * float(tr.get("edge_frac", 0.005)))),
+                               float(tr.get("ink_dy", 8)), float(tr.get("ink_dcr", 2)),
+                               float(tr.get("ink_dy_florence", 5)), float(tr.get("ink_dcr_florence", 1)),
+                               max(1, int(min(h, w) * float(tr.get("ink_close_frac", 0.006)))))
+            # tinta sob as mechas: o mesmo teste de cor (cabelo e quente, tinta e fria) fora do rosto
+            hair_zone = identity * (1 - dilate(masks.face_full, guard)) * masks.person
+            hair_ink = ink_by_color(original, hair_zone, masks.skin, masks.tattoos,
+                                    max(6, int(min(h, w) * float(tr.get("reach_frac", 0.03)))), 1,
+                                    float(tr.get("ink_dy", 8)), float(tr.get("ink_dcr", 2)),
+                                    float(tr.get("ink_dy_florence", 5)), float(tr.get("ink_dcr_florence", 1)),
+                                    max(1, int(min(h, w) * float(tr.get("ink_close_frac", 0.006)))))
+            # so a CONTINUACAO de uma tatuagem achada na pele (o cabelo em si tambem e "frio" na foto)
+            reach_hair = max(4, int(min(h, w) * float(tr.get("hair_ink_reach_frac", 0.02))))
+            hair_ink = hair_ink * (dilate(ink, reach_hair) > 0.5)
+            ink = np.maximum(ink, hair_ink)
+        if surgical and ink.any():
+            body = surgical_ink_mask(masks, ink, identity, max(2, int(min(h, w) * float(tr.get("ink_margin_frac", 0.005)))),
+                                     guard, max(2, int(min(h, w) * float(tr.get("clothing_guard_frac", 0.004)))),
+                                     under_hair=hair_ink)
+            region = np.clip(identity + body, 0, 1)
+        ebox = earring_box(raw.protect_boxes, sheet.target_face.bbox) if tr.get("earring_cleanup") else None
+        ezone = earring_zone((h, w), ebox, masks.face_full, identity, guard) if ebox is not None else None
         saved = {}
-        for name, m in (("identity", identity), ("visible_skin", body), ("ink", ink), ("clothing", masks.clothing)):
+        for name, m in (("identity", identity), ("visible_skin", body), ("ink", ink), ("clothing", masks.clothing),
+                        ("earring_zone", ezone if ezone is not None else np.zeros((h, w), np.float32))):
             saved[f"mask_{name}"] = await self.store.save((np.clip(m, 0, 1) * 255).astype(np.uint8), f"mask_{name}")
         seam = np.zeros((h, w), np.float32)  # a integracao nao toca na roupa: a roupa inteira e medida
         base_pose = sheet.target_body.keypoints if sheet.target_body is not None else None
@@ -236,13 +351,27 @@ class TransferOrchestrator(ReplacementOrchestrator):
         modified = np.zeros((h, w), np.float32)
         neg = ", ".join(dict.fromkeys([x for x in negative.split(", ") if x] + list(cfg.negative_extra)))
 
-        # 1. IDENTIDADE: rosto + cabelo (+ pescoco) gerados com a LoRA e a pose da foto
-        modified = await self._stage(store, TRANSFER, "identity", identity, self._prompt(t["prompt"], sheet.description()),
-                                     neg, float(t["denoise"]), 1.0, seed % 2**32, True, original, masks, master,
-                                     base_pose, records, modified, mask_name="face+hair")
-        # sem a identidade nao ha o que refinar: refinar so o rosto da original seria face swap
-        transferred = store.current.name == TRANSFER
-        if not transferred:
+        if start is not None:
+            # identidade APROVADA reaproveitada: rosto e cabelo nao sao gerados de novo
+            px = await self.store.load(start)
+            mstart = await self._measure(start, w, h, master, base_pose)
+            store.add(Checkpoint(RESUMED, start, px, mstart, self._pixel_checks(original, px, masks)), accept=True)
+            for name, kind in ((TRANSFER, "identity"), (FACE_REFINE, "face")):
+                records.append(StageRecord(name, kind, accepted=False, rollback_reason="reaproveitado (rosto protegido)"))
+            modified = np.maximum(modified, identity)
+            transferred = True
+        else:
+            # 1. IDENTIDADE: rosto + cabelo (+ pescoco) gerados com a LoRA e a pose da foto
+            modified = await self._stage(store, TRANSFER, "identity", identity,
+                                         self._prompt(t["prompt"], sheet.description()), neg, float(t["denoise"]), 1.0,
+                                         seed % 2**32, True, original, masks, master, base_pose, records, modified,
+                                         mask_name="face+hair")
+            # sem a identidade nao ha o que refinar: refinar so o rosto da original seria face swap
+            transferred = store.current.name == TRANSFER
+        face_before = store.current.pixels.copy()
+        if start is not None:
+            pass
+        elif not transferred:
             for name, kind in ((FACE_REFINE, "face"), (TATTOO, "body"), (INTEGRATION, "integration")):
                 records.append(StageRecord(name, kind, accepted=False, rollback_reason="transferencia recusada"))
         elif fr.get("enabled") and (store.current.measure.face or 0) < float(fr["only_if_identity_below"]):
@@ -255,6 +384,15 @@ class TransferOrchestrator(ReplacementOrchestrator):
             records.append(StageRecord(FACE_REFINE, "face", accepted=False,
                                        rollback_reason="nao necessario (identidade ja acima do limite)"))
 
+        # 1b. BRINCO: a argola nova (vinda da LoRA) volta a ser cabelo; o brinco original fica intacto
+        if transferred and ezone is not None and ezone.any():
+            er = cfg.tattoo_removal["earring"]
+            modified = await self._stage(store, EARRING, "body", ezone, er["prompt"], neg, float(er["denoise"]), 1.0,
+                                         (seed + 131) % 2**32, False, original, masks, master, base_pose, records,
+                                         modified, mask_name="around/below the original earring (hair only)")
+        elif tr.get("earring_cleanup"):
+            records.append(StageRecord(EARRING, "body", accepted=False, rollback_reason="brinco original nao localizado"))
+
         # 2. BRACOS / MAOS / ROUPA: geometria original (nenhuma passada os regenera)
         # 3. TATUAGEM: toda a pele visivel de bracos/maos/ombros/colo e redesenhada com a ESTRUTURA da
         #    foto original (profundidade: a tinta nao aparece nela); a entrada vai com a tinta coberta
@@ -265,8 +403,17 @@ class TransferOrchestrator(ReplacementOrchestrator):
             modified = await self._stage(store, TATTOO, "body", body, tr["prompt"], neg, float(tr["denoise"]),
                                          float(tr["strength"]), (seed + 151) % 2**32, bool(tr.get("lora", False)),
                                          original, masks, master, base_pose, records, modified,
-                                         mask_name="visible skin (arms, hands, shoulders, chest)", source=source,
-                                         control=image)
+                                         mask_name="tattoo ink + small margin" if surgical else
+                                         "visible skin (arms, hands, shoulders, chest)", source=source, control=image)
+            if surgical and store.current.name == TATTOO and tr.get("tone_match", True):
+                # a cor/luz da pele refeita = a da pele original logo em volta (so baixa frequencia)
+                before = next(c for c in reversed(store.items) if c.name != TATTOO and c is not store.current)
+                px = match_local_tone(store.current.pixels, before.pixels, body, masks.skin,
+                                      max(6, int(min(h, w) * float(tr.get("tone_radius_frac", 0.015)))))
+                rec = StageRecord(TONE, "body", mask="tattoo ink + small margin")
+                records.append(rec)
+                modified = await self._try(store, TONE, "body", px, original, masks, master, base_pose, rec, body,
+                                           modified)
         elif transferred:
             records.append(StageRecord(TATTOO, "body", accepted=False, rollback_reason="sem tatuagem na pele"))
 
@@ -280,6 +427,8 @@ class TransferOrchestrator(ReplacementOrchestrator):
                                          modified, mask_name="edges-face")
 
         final = store.current
+        face_zone = dilate(masks.face_full, 1) > 0.5
+        face_changed = float((np.abs(final.pixels.astype(int) - face_before.astype(int)).max(axis=2) > 0)[face_zone].mean())
         edge_width = max(3, int(min(h, w) * 0.006))
         scored = replace(masks, clothing=masks.clothing * (1 - seam))  # a roupa e medida fora da costura
         report = validate(original, final.pixels, scored, region, final.measure, cfg.checks, edge_width)
@@ -306,8 +455,14 @@ class TransferOrchestrator(ReplacementOrchestrator):
         result.mask_areas["visible_skin"] = round(float((body > 0.5).mean()), 5)
         result.mask_areas["ink"] = round(float((ink > 0.5).mean()), 5)
         result.mask_areas["seam"] = round(float((seam > 0.5).mean()), 5)
+        result.mask_areas["face_changed_after_identity"] = round(face_changed, 5)
+        result.mask_areas["earring_box"] = list(ebox) if ebox is not None else None
+        if face_changed > 0:
+            report.failures.append("face_touched_after_identity")
+            report.status = "FAIL"
         return result
 
 
-__all__ = ["luma", "local_mean", "skin_region", "FACE_REFINE", "INTEGRATION", "TATTOO", "TRANSFER", "TransferConfig", "TransferOrchestrator", "edge_ring",
+__all__ = ["EARRING", "RESUMED", "TONE", "ink_by_color", "earring_box", "earring_zone", "match_local_tone", "surgical_ink_mask",
+           "luma", "local_mean", "skin_region", "FACE_REFINE", "INTEGRATION", "TATTOO", "TRANSFER", "TransferConfig", "TransferOrchestrator", "edge_ring",
            "fill_tattoos", "identity_mask", "load_transfer_config", "plausible_accessories", "skin_tattoo_mask"]

@@ -55,6 +55,8 @@ async def main() -> int:
     ap.add_argument("--autorizado", type=float, default=None)
     ap.add_argument("--semente", type=int, default=7801)
     ap.add_argument("--saida", default="transfer_teste1.json")
+    ap.add_argument("--partir-de", default=None,
+                    help="imagem com a identidade da Luna ja aprovada (rosto e cabelo NAO sao gerados de novo)")
     args = ap.parse_args()
 
     cfg = load_transfer_config(ROOT / "config" / "persona_transfer.json")
@@ -73,7 +75,8 @@ async def main() -> int:
     session = ComfySession(client, WorkflowManager(ROOT / "workflows"))
     store = ComfyImageStore(client)
     # InstantID so no refino de rosto (peso moderado, config/persona_transfer.json), se a identidade ficar baixa
-    region = ComfyRegionPassAdapter(session, gen.model(), gen.lora, steps=gen.pass_steps, identity_adapters=gen.identity_adapters)
+    adapters = {} if args.partir_de else gen.identity_adapters  # com o rosto aprovado nao ha refino (nem InstantID)
+    region = ComfyRegionPassAdapter(session, gen.model(), gen.lora, steps=gen.pass_steps, identity_adapters=adapters)
     transformer = ComfyTransferTransformer(session, ComfyReplacementTransformer(region, client), gen.model(), gen.lora,
                                            cfg.transfer, skin=cfg.tattoo_removal)
     problems = await region.validate_configuration() + await transformer.validate_configuration()
@@ -96,7 +99,10 @@ async def main() -> int:
     buf = io.BytesIO()
     img.save(buf, "PNG")
     locator = await client.upload_image(f"xfer_input_{Path(args.foto).stem[:30]}.png", buf.getvalue())
-    res = await orch.run(locator, master, negative, args.semente)
+    start = None
+    if args.partir_de:
+        start = await client.upload_image(f"xfer_start_{Path(args.partir_de).stem[:30]}.png", Path(args.partir_de).read_bytes())
+    res = await orch.run(locator, master, negative, args.semente, start=start)
     out = {"budget": budget, "config_version": cfg.version, "foto": args.foto, "input": locator, **res.to_dict()}
     (ROOT / args.saida).write_text(json.dumps(out, indent=1, default=str))
     r = res.report
