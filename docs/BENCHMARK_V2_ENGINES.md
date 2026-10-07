@@ -109,6 +109,43 @@ Rosto original agora **medido**: 0,238.
 - A trava visual funciona: nenhuma emenda nem quadrado chegou ao final do quarto.
 - A tatuagem em mão e braço continua sem solução com inpaint SDXL. É limitação conhecida (testes 1 a 7) e está documentada.
 
-## Próximo: reteste das correções, depois a escada A→H (cada rodada só com autorização de custo)
+## Teste da tatuagem, foto do usuário (2026-10-07, autorizado)
+
+**Configuração:**
+
+| | |
+|---|---|
+| Pod | `qkcnzi7plh3ukd`, RTX PRO 4000 Blackwell |
+| Tempo e custo | 13 min, **~US$ 0,12** |
+| Modo | QUALITY + política de atributos (spec 45), 1 nova tentativa |
+| Pedido | remove `tattoos`; preserve pose/roupa/cenário/luz/enquadramento; reconstruct rosto/corpo/pele |
+
+**Resultado (1ª tentativa, a que ficou): WARN**
+
+| Medida | Valor | Observação |
+|---|---|---|
+| Identidade | 0,725 | passa |
+| Rosto original | 0,021 | nada da pessoa original |
+| Tatuagem | 0,114 | antes 0,45 |
+| Pose | 0,027 | |
+| Roupa alterada | 0 | |
+| Emenda | 3,9 | |
+| Bordas retas | 9,2 | WARN |
+
+**No olho:**
+- Funcionou:
+  - Tatuagens do ombro e do braço **saíram** (pele reconstruída com a LoRA, sem mancha no colo nem cabelo recortado).
+  - Rosto natural da Luna.
+- Defeito 1: a **mão direita virou "luva"**. Os dedos que seguram o top sumiram. Causa: a entrada lisa (push-pull) apagou o sombreado dos dedos, e a profundidade calculada nela virou um bloco.
+- Defeito 2: **remendos retangulares** claros e fracos no braço esquerdo, no ombro e na barriga. Causa: manchinhas (pintas e poros) entraram na máscara de marcas, e a dilatação quadrada as transformou em quadrados que o refino e a integração clarearam.
+- Defeito 3: a nova tentativa atacou o **fundo** (0,0031, quase no limite) em vez da tatuagem, e piorou o rosto (0,35). Ficou a 1ª.
+
+**Correções (sem GPU):**
+- Entrada que **preserva a anatomia**: um fechamento em tons de cinza tira o traço fino e mantém as juntas e os dedos; a tinta cheia vai para o push-pull. Conferido no recorte real da mão: o punho fechado continua.
+- Máscara de marcas sem manchinhas isoladas e com dilatação **redonda**.
+- Denoise da pele 0,75.
+- A nova tentativa ataca o aviso mais grave (gravidade dentro da faixa), não o primeiro da lista.
+
+## Próximo: reteste da mão com as correções (cada rodada só com autorização de custo)
 
 `scripts/v2_engine/plano_escada.json`: 8 degraus × 2 fotos (quarto, varanda), semente 7801, só RealVisXL. Depois, 3 sementes na melhor configuração e uma geração V1 de regressão.

@@ -33,10 +33,10 @@ from app.core.engines.attributes import (
     AttributePolicyError,
     resolve,
 )
-from app.core.engines.skin import push_pull_fill
+from app.core.engines.skin import drop_small_blobs, structure_preserving_fill
 from app.core.engines.integration import integrate
 from app.core.engines.policies import StagePlan, plan_for
-from app.core.engines.retry import RetryPolicyV2
+from app.core.engines.retry import PRIORITY, RetryPolicyV2
 from app.core.engines.telemetry import JobTelemetry
 from app.core.engines.validation import (
     DEFAULT_THRESHOLDS,
@@ -59,6 +59,8 @@ from app.core.persona_replacement.transfer import (
     plausible_accessories,
     skin_region,
     soft_tone_match,
+    dilate_round,
+    erode_round,
     tattoo_zones,
 )
 from app.core.validation.geometry import point
@@ -286,8 +288,11 @@ class ReplacementEngine:
             if m.any():
                 close = max(2, int(px_min * float(tt.get("close_frac", 0.01))))
                 margin = max(2, int(px_min * float(tt.get("mask_margin_frac", 0.008))))
-                m = erode(dilate(m, close), close)  # fecha buracos (tinta vista pelos furos no reteste)
-                m = dilate(m, margin)
+                # pintinha/poro isolado nao e marca (viravam remendos quadrados no teste de 2026-10-07)
+                m = drop_small_blobs(m, max(2, int(px_min * float(tt.get("min_blob_frac", 0.003)))))
+                # dilatacao REDONDA (a quadrada fazia cantos retos que apareciam na pele)
+                m = erode_round(dilate_round(m, close), close)  # fecha buracos (tinta vista pelos furos no reteste)
+                m = dilate_round(m, margin)
                 m = m * masks.person * (1 - masks.clothing) * (1 - masks.protect)
                 markings = np.clip(m, 0, 1) if m.any() else None
         source = {"source_identity_mask": ident, "source_face_mask": masks.face_full, "source_hair_mask": masks.hair,
@@ -443,15 +448,17 @@ class ReplacementEngine:
             boost = int(plan.extra.get("tattoo_margin_boost", 0))
             zone = scene.markings
             if boost:
-                zone = dilate(zone, max(2, int(px_min * float(tt.get("mask_margin_frac", 0.008)))) * boost)
+                zone = dilate_round(zone, max(2, int(px_min * float(tt.get("mask_margin_frac", 0.008)))) * boost)
                 zone = zone * scene.masks.person * (1 - scene.masks.clothing) * (1 - scene.masks.protect)
             # cabelo e a regiao da identidade ficam fora (no smoke test a pele pintou os fios do ombro)
             keep_out = np.maximum(dilate((scene.masks.hair > 0.5).astype(np.float32), 4), dilate((ident > 0.5).astype(np.float32), 3))
             zone = np.clip(zone * (1 - keep_out), 0, 1)
             if zone.sum() > 30:
                 soft = np.clip(feather(zone, max(2, int(px_min * float(tt["feather_frac"])))), 0, 1) * (zone > 0.02)
-                known = (scene.masks.skin > 0.5) & (scene.masks.person > 0.5) & ~(dilate(zone, 2) > 0.5)
-                clean = push_pull_fill(cur["pixels"], dilate(zone, 2), known)
+                known = ((scene.masks.skin > 0.5) & (scene.masks.person > 0.5) & ~(dilate_round(zone, 2) > 0.5)).astype(np.float32)
+                # entrada que tira a marca SEM apagar dedos/juntas (traco fino: fechamento; tinta cheia: push-pull)
+                clean, solid = structure_preserving_fill(cur["pixels"], dilate_round(zone, 2), known,
+                                                         line_radius=max(2, int(px_min * float(tt.get("line_radius_frac", 0.004)))))
                 clean_loc = await self.store.save(clean, "tattoo_prefill")
                 skin_desc = ((attrs.persona_features and "") or "") + cond(P["tattoo"], "skin")
                 ctrl = ControlSpec(pose_strength=plan.tattoo_pose_strength if plan.pose else 0.0,
@@ -461,18 +468,19 @@ class ReplacementEngine:
                                                 identity=IdentitySpec(use_lora=True))
                 inter["tattoo_raw"] = loc2
                 tidx = len(tel.passes) - 1
+                tel.passes[tidx]["params"]["solid_ink_fraction"] = round(float(solid.sum()) / max(1.0, float((zone > 0.5).sum())), 3)
                 tel.passes[tidx]["params"]["attributes"] = [a for a in ("tattoos", "scars", "birthmarks", "original_person_marks",
                                                                       "jewelry") if attrs.is_(a, REMOVE)]
                 # refino local leve: continuidade de textura entre a pele nova e a vizinha (LoRA ligada)
-                ring = np.clip(feather(dilate(zone, max(3, int(px_min * 0.01))), 3), 0, 1)
+                ring = np.clip(feather(dilate_round(zone, max(3, int(px_min * 0.01))), 3), 0, 1)
                 stage = {"pixels": px2, "image": loc2}
                 px3, loc3, _ = await self._pass("skin_refine", stage, ring, cond(P["tattoo"], "skin"), negative,
                                                 plan.skin_refine_denoise, req.seed + 181, plan, tel,
                                                 controls=ControlSpec(depth_strength=0.5, end_percent=0.8, structure=loc2),
                                                 identity=IdentitySpec(use_lora=True))
                 # integracao de textura SO na borda da zona (degrau pele x pele + grao que falta)
-                body_skin = np.clip(scene.masks.skin * scene.masks.person - dilate(zone, 2), 0, 1)
-                px3, info_t = integrate(orig, px3, dilate(ring, 1), body_skin=body_skin, seed=req.seed + 7)
+                body_skin = np.clip(scene.masks.skin * scene.masks.person - dilate_round(zone, 2), 0, 1)
+                px3, info_t = integrate(orig, px3, dilate_round(ring, 1), body_skin=body_skin, seed=req.seed + 7)
                 loc3 = await self.store.save(px3, "tattoo_skin")
                 inter["tattoo_cleanup"] = loc3
                 region = np.maximum(modified, ring)
@@ -645,7 +653,8 @@ class ReplacementEngine:
                 best = (rank, final, loc, inter, report, m, info)
             if report.status == PASS:
                 break
-            failures = _specific(report, report.failures() or report.warnings())
+            fails = sorted(report.failures(), key=lambda f: PRIORITY.index(f) if f in PRIORITY else len(PRIORITY))
+            failures = _specific(report, fails or _by_severity(report, report.warnings()))
             nxt = retry.next_plan(plan, failures, attempt + 1)
             if nxt is None:
                 break
@@ -671,6 +680,21 @@ _ATTR_FAILURE = {"tattoos": "tattoo", "scars": "tattoo", "birthmarks": "tattoo",
                  "source_identity_residual": "original_residual", "face": "identity", "skin": "skin",
                  "clothing": "background", "background": "background", "hair": "background", "accessories": "background",
                  "pose": "pose", "composition": "composition"}
+
+
+def _by_severity(report: ValidationReportV2, warnings: list[str]) -> list[str]:
+    """Teste de 2026-10-07: com fundo 0,0031 (limite 0,002) e tatuagem 0,114 (limite 0,03) o retry foi para
+    o FUNDO (primeiro da lista) e piorou o rosto. Agora so avisos = o mais fundo na faixa de aviso primeiro."""
+    def sev(name: str) -> float:
+        c = report.checks.get(name)
+        thr = c.threshold if c is not None else None
+        if c is None or not isinstance(thr, dict) or not isinstance(c.score, (int, float)):
+            return 0.5  # sem escala (ex.: politica, emendas): meio da fila
+        lo, hi = thr.get("pass"), thr.get("reject")
+        if not isinstance(lo, (int, float)) or not isinstance(hi, (int, float)) or hi == lo:
+            return 0.5
+        return abs(c.score - lo) / abs(hi - lo)
+    return sorted(warnings, key=sev, reverse=True)
 
 
 def _specific(report: ValidationReportV2, failures: list[str]) -> list[str]:

@@ -1,0 +1,6 @@
+{"segundos_por_imagem": 480, "overhead_segundos": 300,
+ "_nota": "Foto do usuario (quarto), QUALITY, remover tatuagens (padrao da Luna), 1 nova tentativa especifica por atributo.",
+ "execucoes": [
+  {"id": "tatuagem_quarto_quality", "foto": "fotos_v2/quarto_usuario.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1,
+   "remove": ["tattoos"], "preserve": ["pose", "clothing", "background", "lighting", "composition"], "reconstruct": ["face", "body", "skin"]}
+ ]}

@@ -129,3 +129,43 @@ async def test_sunglasses_are_generated_over_and_pasted_back():
     ident = ad.calls[0]
     assert ident.stage == "identity" and ident.mask[51, 80] > 0.5  # oculos DENTRO da mascara de geracao
     assert (out.pixels[50:53, 70:90] == (15, 15, 20)).all()  # e de volta por cima no final
+
+
+def test_thin_ink_lines_vanish_but_hand_shading_stays():
+    """Teste de 2026-10-07: a entrada lisa virou a mao fechada numa luva. O fechamento tira o TRACO fino e
+    mantem o sombreado das juntas; a tinta cheia vai para o push-pull."""
+    from app.core.engines.skin import structure_preserving_fill
+
+    img = scene(80, 80).astype(np.int16)
+    img[:, 40:] -= 25  # sombra larga (lado da mao): tem que ficar
+    for y in range(10, 70, 12):
+        img[y:y + 2, 10:70] = (60, 55, 60)  # tracos finos de tatuagem
+    img[50:66, 12:28] = (40, 40, 45)  # tinta cheia
+    img = np.clip(img, 0, 255).astype(np.uint8)
+    zone = np.zeros((80, 80), np.float32)
+    zone[6:70, 8:72] = 1
+    known = np.ones((80, 80), np.float32) - zone
+    out, solid = structure_preserving_fill(img, zone, known, line_radius=3)
+    lum = out.astype(np.float32) @ np.array([0.299, 0.587, 0.114])
+    assert lum[34:36, 15:35].mean() > 120  # traco fino sumiu
+    assert lum[20:30, 10:35].mean() - lum[20:30, 45:70].mean() > 12  # sombra larga continua
+    assert solid[56:60, 16:24].all() and lum[56:60, 16:24].mean() > 120  # tinta cheia preenchida
+
+
+def test_isolated_dots_are_not_markings():
+    from app.core.engines.skin import drop_small_blobs
+
+    m = np.zeros((60, 60), np.float32)
+    m[10:30, 10:30] = 1  # tatuagem
+    m[45:47, 45:47] = 1  # pintinha
+    out = drop_small_blobs(m, 3)
+    assert out[10:30, 10:30].all() and out[45:47, 45:47].sum() == 0
+
+
+def test_retry_targets_the_worst_warning_not_the_first_in_the_list():
+    from app.core.engines.replacement import _by_severity
+
+    rep = validate_v2({"identity": 0.73, "person_found": True, "background": 0.0031, "tattoo_residual": 0.114,
+                       "persona_instances": 1, "original_sim": 0.02})
+    order = _by_severity(rep, rep.warnings())
+    assert order.index("tattoo") < order.index("background")

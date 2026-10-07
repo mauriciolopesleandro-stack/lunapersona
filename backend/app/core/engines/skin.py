@@ -58,4 +58,67 @@ def push_pull_fill(rgb: np.ndarray, hole: np.ndarray, known: np.ndarray) -> np.n
     return np.clip(out + 0.5, 0, 255).astype(np.uint8)
 
 
-__all__ = ["push_pull_fill"]
+def _gray_dilate(img: np.ndarray, r: int) -> np.ndarray:
+    out = img
+    for _ in range(max(0, r)):  # cruz repetida = disco aproximado (sem cantos retos)
+        p = np.pad(out, ((1, 1), (1, 1), (0, 0)), mode="edge")
+        out = np.maximum.reduce([p[1:-1, 1:-1], p[:-2, 1:-1], p[2:, 1:-1], p[1:-1, :-2], p[1:-1, 2:]])
+    return out
+
+
+def gray_closing(rgb: np.ndarray, r: int) -> np.ndarray:
+    """Fechamento em tons de cinza: some o TRACO escuro fino (< ~2r px) e fica o sombreado maior."""
+    x = rgb.astype(np.float32)
+    return 255.0 - _gray_dilate(255.0 - _gray_dilate(x, r), r)
+
+
+def _blur(img: np.ndarray, r: int) -> np.ndarray:
+    out = img.astype(np.float32)
+    k = 2 * r + 1
+    for _ in range(2):
+        p = np.pad(out, ((r, r), (r, r), (0, 0)), mode="edge")
+        c = np.pad(p.cumsum(0).cumsum(1), ((1, 0), (1, 0), (0, 0)))
+        out = (c[k:, k:] - c[:-k, k:] - c[k:, :-k] + c[:-k, :-k]) / (k * k)
+    return out
+
+
+def structure_preserving_fill(rgb: np.ndarray, zone: np.ndarray, known: np.ndarray, line_radius: int = 4,
+                              solid_delta: float = 10.0) -> tuple[np.ndarray, np.ndarray]:
+    """Entrada do inpaint que tira a marca SEM apagar a anatomia (teste 2026-10-07: o push-pull puro virou a
+    mao fechada num "bloco" liso, a profundidade calculada nele virou luva e o modelo perdeu os dedos).
+
+    Traco fino (rosa desenhada na mao): fechamento em cinza - some a linha, ficam juntas/dedos/sombras.
+    Tinta CHEIA (o fechamento continua mais escuro que a pele em volta): push-pull.
+    Devolve (imagem, mascara da tinta cheia)."""
+    from app.core.persona_replacement.segmentation import dilate, skin_pixels
+
+    z = zone > 0.5
+    if not z.any():
+        return rgb.copy(), np.zeros(z.shape, np.float32)
+    lum = np.array([0.299, 0.587, 0.114], np.float32)
+    closed = gray_closing(rgb, line_radius)
+    smooth_skin = push_pull_fill(rgb, z.astype(np.float32), known).astype(np.float32)
+    solid = z & (((smooth_skin @ lum) - (closed @ lum) > solid_delta) | (skin_pixels(np.clip(closed, 0, 255).astype(np.uint8)) < 0.5))
+    solid = (dilate(solid.astype(np.float32), 2) > 0.5) & z
+    mix = np.where(solid[..., None], smooth_skin, closed)
+    out = np.where(z[..., None], _blur(mix, 1), rgb.astype(np.float32))
+    return np.clip(out + 0.5, 0, 255).astype(np.uint8), solid.astype(np.float32)
+
+
+def drop_small_blobs(mask: np.ndarray, min_radius: int, max_iter: int = 400) -> np.ndarray:
+    """Tira manchinhas isoladas (pinta/poro marcado como tinta) por reconstrucao morfologica: so sobrevive o
+    componente que tem um miolo de raio >= min_radius. Os componentes que ficam voltam INTEIROS."""
+    from app.core.persona_replacement.transfer import dilate_round, erode_round
+
+    m = mask > 0.5
+    seed = erode_round(m.astype(np.float32), min_radius) > 0.5
+    cur = seed
+    for _ in range(max_iter):
+        nxt = (dilate_round(cur.astype(np.float32), 1) > 0.5) & m
+        if (nxt == cur).all():
+            break
+        cur = nxt
+    return cur.astype(np.float32)
+
+
+__all__ = ["drop_small_blobs", "gray_closing", "push_pull_fill", "structure_preserving_fill"]

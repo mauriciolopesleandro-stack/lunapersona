@@ -133,7 +133,9 @@ async def main() -> int:
         t0 = time.time()
         req = ReplacementRequest(image=enviados[ex["foto"]], persona_id="luna", master=master, mode=ex["modo"],
                                  seed=int(ex["semente"]), advanced={"max_retries": int(ex.get("max_retries", 0))},
-                                 negative=negative, keep_intermediates=True)
+                                 negative=negative, keep_intermediates=True, persona_sheet=sheet.data,
+                                 preserve_attributes=list(ex.get("preserve", [])), remove_attributes=list(ex.get("remove", [])),
+                                 reconstruct_attributes=list(ex.get("reconstruct", [])))
         try:
             out = await engine.run(req)
             r = {"id": ex["id"], **ex, **out.to_dict(), "vram_pico_mb": vram_pico(t0), "segundos_parede": round(time.time() - t0, 1)}

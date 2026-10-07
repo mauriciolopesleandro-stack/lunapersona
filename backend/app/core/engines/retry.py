@@ -31,7 +31,8 @@ class RetryPolicyV2:
     def next_plan(self, plan: StagePlan, failures: list[str], attempt: int) -> tuple[StagePlan, RetryStep] | None:
         if attempt > plan.max_retries:
             return None
-        alvo = next((f for f in PRIORITY if f in failures), None)
+        # a ordem vem de quem chama: falhas (REJECT) pela PRIORITY, so avisos pela gravidade
+        alvo = next((f for f in failures if f in PRIORITY), None)
         if alvo is None:
             return None
         if alvo == "identity":
