@@ -1,7 +1,7 @@
 """Protecao do backend do pod: quem souber a URL do proxy da RunPod chamava
 a API (gerar, apagar referencia, gastar GPU). Agora toda alteracao (POST,
-PUT, PATCH, DELETE) e todo o Persona Engine (/api/engine, inclusive leitura)
-exigem o cabecalho X-Luna-Token com o token que a Vercel entrega so a quem
+PUT, PATCH, DELETE), todo o Persona Engine (/api/engine) e as engines V2
+(/api/v2), inclusive leitura, exigem o cabecalho X-Luna-Token com o token que a Vercel entrega so a quem
 fez login.
 
 Leituras do resto (GET) continuam abertas: fotos, audios e videos sao
@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 
 TOKEN_HEADER = "X-Luna-Token"
 ENGINE_PREFIX = "/api/engine"
+V2_PREFIX = "/api/v2/"
 _OPEN_PATHS = {"/api/health"}
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -27,7 +28,7 @@ _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 def requires_token(method: str, path: str) -> bool:
     if method == "OPTIONS" or not path.startswith("/api/") or path in _OPEN_PATHS:
         return False
-    return method not in _SAFE_METHODS or path.startswith(ENGINE_PREFIX)
+    return method not in _SAFE_METHODS or path.startswith((ENGINE_PREFIX, V2_PREFIX))
 
 
 def token_ok(expected: str, given: str | None) -> bool:

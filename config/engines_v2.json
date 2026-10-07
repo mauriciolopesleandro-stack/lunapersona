@@ -1,0 +1,29 @@
+{
+  "version": "2.0",
+  "enabled": true,
+  "controlnet": "controlnet-union-sdxl-1.0-promax.safetensors",
+  "depth_model": "depth_anything_v2_vits.pth",
+  "price_per_hour_fallback": 0.57,
+  "processing": {
+    "default": "local",
+    "allowed": ["local"],
+    "note": "Todas as engines V2 rodam no ComfyUI do proprio pod. Nenhuma imagem vai para API externa."
+  },
+  "uploads": {
+    "max_mb": 20,
+    "max_side": 1600,
+    "prefix": "v2in_"
+  },
+  "retention": {
+    "comfyui_input_dir": "/workspace/runpod-slim/ComfyUI/input",
+    "rules": [
+      {"prefix": "repl_final_", "max_age_hours": 720},
+      {"prefix": "repl_faceswap_final_", "max_age_hours": 720},
+      {"prefix": "repl_", "max_age_hours": 24},
+      {"prefix": "v2in_", "max_age_hours": 24}
+    ],
+    "keep_intermediates_default": false,
+    "max_jobs_in_memory": 30
+  },
+  "telemetry_log": "logs/engines_v2_telemetry.jsonl"
+}

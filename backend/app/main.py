@@ -38,7 +38,7 @@ from app.services.prompt_translator import to_english
 from app.validation_backends.comfyui import ComfyImageAnalyzer, FlorenceTextReader
 from app.validation_backends.skin import PillowSkinTextureAnalyzer
 from app.routes import (
-    chat, content, generate, health, models, persona_engine, personas, story, video, voice, workflows,
+    chat, content, engines_v2, generate, health, models, persona_engine, personas, story, video, voice, workflows,
 )
 from app.security import token_middleware
 from app.services.chat_service import ChatService
@@ -174,6 +174,41 @@ app.state.generation_orchestrator = GenerationOrchestrator(
 )
 
 
+# --- Engines V2 (Replacement, Face Swap): aditivo. Config quebrada = V2 desligada, V1 segue igual.
+def _engines_v2():
+    from pathlib import Path
+
+    from app.core.engines.models import ModelRegistry
+    from app.core.engines.service import EnginesV2Service, RetentionRule, RetentionSweeper, load_engines_config
+    from app.jobs import JobRegistry
+    from app.providers.comfyui.engines_v2 import ComfyEngineFactory
+
+    cfg_dir = settings.workflows_dir.parent / "config"
+    cfg = load_engines_config(cfg_dir / "engines_v2.json")
+    if not cfg.get("enabled", True):
+        return None
+    registry = ModelRegistry.load(cfg_dir / "model_registry_v2.json")
+    factory = ComfyEngineFactory(app.state.comfyui_client, app.state.workflow_manager, registry, cfg_dir, cfg)
+    ret = cfg.get("retention", {})
+    input_dir = Path(ret["comfyui_input_dir"]) if ret.get("comfyui_input_dir") else None
+    sweeper = RetentionSweeper(input_dir, [RetentionRule(r["prefix"], float(r["max_age_hours"])) for r in ret.get("rules", [])])
+    return EnginesV2Service(
+        config=cfg, registry=registry, sheets=app.state.persona_sheets,
+        negative_builder=NegativePromptBuilder(engine_config["global_negative"]), factory=factory,
+        upload=factory.upload, url_for=factory.url_for, jobs=JobRegistry(int(ret.get("max_jobs_in_memory", 30))),
+        sweeper=sweeper, telemetry_log=settings.workflows_dir.parent / cfg.get("telemetry_log", "logs/engines_v2_telemetry.jsonl"),
+    )
+
+
+try:
+    app.state.engines_v2 = _engines_v2()
+except Exception:  # noqa: BLE001 - a V2 nunca derruba o backend da V1
+    import logging
+
+    logging.getLogger(__name__).exception("Engines V2 desligadas: configuracao invalida")
+    app.state.engines_v2 = None
+
+
 def _engine_notify(job: dict, started: float) -> None:
     best = next((r for r in job["results"] if r["id"] == job.get("best_result_id")), None)
     photo = notify.photo_link(best["image_url"]) if best and best.get("image_url") else None
@@ -218,6 +253,7 @@ app.include_router(chat.router, prefix="/api")
 app.include_router(content.router, prefix="/api")
 app.include_router(story.router, prefix="/api")
 app.include_router(persona_engine.router, prefix="/api")
+app.include_router(engines_v2.router, prefix="/api")
 
 
 @app.on_event("startup")

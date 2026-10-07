@@ -14,6 +14,9 @@ from app.security import TOKEN_HEADER, requires_token, token_middleware
         ("DELETE", "/api/personas/luna/references/x", True),
         ("GET", "/api/engine/personas", True),
         ("OPTIONS", "/api/engine/personas", False),
+        ("GET", "/api/v2/jobs/abc", True),
+        ("GET", "/api/v2/engines", True),
+        ("POST", "/api/v2/replace", True),
         ("GET", "/", False),
     ],
 )

@@ -433,9 +433,9 @@ def test_generation_engine_never_imports_the_replacement():
     for path in (BACKEND / "app" / "core" / "generation").rglob("*.py"):
         text = path.read_text(encoding="utf-8")
         assert not pattern.search(text) and not v2.search(text), path.name
-    # adapters da familia replacement (V1 replacement.py e o SDXL V2) podem usar as mascaras; os de geracao nao
+    # adapters da familia replacement (V1 replacement.py, SDXL V2 e a fabrica V2) podem usar as mascaras; os de geracao nao
     for path in (BACKEND / "app" / "providers" / "comfyui").glob("*.py"):
-        if path.name not in ("replacement.py", "sdxl_engine.py"):
+        if path.name not in ("replacement.py", "sdxl_engine.py", "engines_v2.py"):
             text = path.read_text(encoding="utf-8")
             assert not pattern.search(text) and not v2.search(text), path.name
 
