@@ -266,3 +266,18 @@ Métricas: identidade 0,756, rosto **0% alterado** (reaproveitado), fundo 0%, ro
 - **Reconstrução:** profundidade da foto original, denoise 0,7, sem LoRA. Depois, o tom e a luz da **pele original ali mesmo** (pixels de pele entre os traços e em volta, raio pequeno, seguindo a sombra do braço), aplicados **gradualmente** pela borda suave. Só baixa frequência; a textura fica.
 - **Brinco:** a zona ao lado e abaixo do brinco original protege só o miolo do rosto (olhos, nariz e boca) e a pele do rosto. A argola fica sobre cabelo/pescoço. O brinco original continua com os pixels da foto.
 - **Sem integração global.** Negativo do usuário (68 termos).
+
+## Transfer teste 7 (v1.6, quarto, ~US$ 0,076, 477 s; failover criou mais um pod novo)
+
+Métricas: identidade 0,756, rosto **0% alterado**, fundo 0%, roupa 0%, luz 0,75, textura 0,89, borda 0,89. Máscara orgânica com 3,2% da imagem, sem blocos.
+
+**Leitura visual: as tatuagens ficaram "apagadas", mas não sumiram.**
+- **Braço e mão direitos:** a tinta clareou, mas sobra uma **sombra acinzentada** com o formato da tatuagem, e a mão perdeu um pouco de nitidez.
+- **Ombro esquerdo:** a flor continua quase inteira.
+- **Argola:** continua. A área de limpeza (roxo) parou na pele do lado do rosto, e a argola fica justamente sobre a borda do maxilar/pescoço.
+- **Certo:** máscara orgânica sem quadrados, pele limpa intacta, rosto, top e fundo idênticos.
+
+**Diagnóstico (comparando as etapas):**
+1. A **profundidade foi calculada na foto ORIGINAL**. O Depth Anything "enxerga" o contraste forte da tinta como relevo, e o ControlNet (força 0,9 até o fim) **redesenha o desenho da tatuagem**. Isso fica claro na flor do ombro.
+2. O ajuste de tom usava como referência pixels de "pele" perto da tinta, que incluem traço claro de tatuagem: ele **reescurece** o formato.
+3. A área da argola foi recortada pela proteção da pele do rosto.
