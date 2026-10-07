@@ -4,7 +4,7 @@
     "hidden": true,
     "compatible_models": [],
     "title": "Persona Replacement - segmentacao (so mede, nao gera)",
-    "description": "Mascaras do replacement: pessoa (SAM2 com os pontos da ficha da foto), cabelo (Florence-2 'hair', o mesmo da V1) e caixas de oculos escuros (Florence-2 grounding). Nada e gerado. PROTECT: objetos protegidos (oculos, pulseiras, brincos, relogio). Tatuagens: Florence-2 'tattoo' (segmentacao). Roupa: Florence-2 'clothes' (segmentacao) - separa a roupa da tinta na pele.",
+    "description": "Mascaras do replacement: pessoa (SAM2 com os pontos da ficha da foto), cabelo (Florence-2 'hair', o mesmo da V1) e caixas de oculos escuros (Florence-2 grounding). Nada e gerado. PROTECT: objetos protegidos (oculos, pulseiras, brincos, relogio). Tatuagens: Florence-2 'tattoo' (segmentacao). Roupa: Florence-2 com varias palavras (clothing, black top, shirt, pants), unidas no backend - separa a roupa da tinta na pele.",
     "required_params": [
       "IMAGE",
       "POINTS_POS",
@@ -189,7 +189,7 @@
         "filename_prefix": "${FILENAME_PREFIX}_tattoo"
       }
     },
-    "c1": {
+    "c1a": {
       "class_type": "Florence2Run",
       "inputs": {
         "image": [
@@ -200,7 +200,7 @@
           "f1",
           0
         ],
-        "text_input": "clothes",
+        "text_input": "clothing",
         "task": "referring_expression_segmentation",
         "fill_mask": true,
         "keep_model_loaded": true,
@@ -211,23 +211,146 @@
         "seed": 1
       }
     },
-    "c2": {
+    "c1b": {
       "class_type": "MaskToImage",
       "inputs": {
         "mask": [
-          "c1",
+          "c1a",
           1
         ]
       }
     },
-    "c3": {
+    "c1c": {
       "class_type": "SaveImage",
       "inputs": {
         "images": [
-          "c2",
+          "c1b",
           0
         ],
-        "filename_prefix": "${FILENAME_PREFIX}_clothes"
+        "filename_prefix": "${FILENAME_PREFIX}_clothes1"
+      }
+    },
+    "c2a": {
+      "class_type": "Florence2Run",
+      "inputs": {
+        "image": [
+          "1",
+          0
+        ],
+        "florence2_model": [
+          "f1",
+          0
+        ],
+        "text_input": "black top",
+        "task": "referring_expression_segmentation",
+        "fill_mask": true,
+        "keep_model_loaded": true,
+        "max_new_tokens": 512,
+        "num_beams": 3,
+        "do_sample": false,
+        "output_mask_select": "",
+        "seed": 1
+      }
+    },
+    "c2b": {
+      "class_type": "MaskToImage",
+      "inputs": {
+        "mask": [
+          "c2a",
+          1
+        ]
+      }
+    },
+    "c2c": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "c2b",
+          0
+        ],
+        "filename_prefix": "${FILENAME_PREFIX}_clothes2"
+      }
+    },
+    "c3a": {
+      "class_type": "Florence2Run",
+      "inputs": {
+        "image": [
+          "1",
+          0
+        ],
+        "florence2_model": [
+          "f1",
+          0
+        ],
+        "text_input": "shirt",
+        "task": "referring_expression_segmentation",
+        "fill_mask": true,
+        "keep_model_loaded": true,
+        "max_new_tokens": 512,
+        "num_beams": 3,
+        "do_sample": false,
+        "output_mask_select": "",
+        "seed": 1
+      }
+    },
+    "c3b": {
+      "class_type": "MaskToImage",
+      "inputs": {
+        "mask": [
+          "c3a",
+          1
+        ]
+      }
+    },
+    "c3c": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "c3b",
+          0
+        ],
+        "filename_prefix": "${FILENAME_PREFIX}_clothes3"
+      }
+    },
+    "c4a": {
+      "class_type": "Florence2Run",
+      "inputs": {
+        "image": [
+          "1",
+          0
+        ],
+        "florence2_model": [
+          "f1",
+          0
+        ],
+        "text_input": "pants",
+        "task": "referring_expression_segmentation",
+        "fill_mask": true,
+        "keep_model_loaded": true,
+        "max_new_tokens": 512,
+        "num_beams": 3,
+        "do_sample": false,
+        "output_mask_select": "",
+        "seed": 1
+      }
+    },
+    "c4b": {
+      "class_type": "MaskToImage",
+      "inputs": {
+        "mask": [
+          "c4a",
+          1
+        ]
+      }
+    },
+    "c4c": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": [
+          "c4b",
+          0
+        ],
+        "filename_prefix": "${FILENAME_PREFIX}_clothes4"
       }
     }
   }

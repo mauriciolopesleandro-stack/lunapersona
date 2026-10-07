@@ -101,14 +101,14 @@ def skin_region(masks: MaskSet, clothes: np.ndarray | None, identity: np.ndarray
         return ink, ink
     person, skin = masks.person > 0.5, masks.skin > 0.5
     covered = dilate(((clothes > 0.5) & person).astype(np.float32), margin) > 0.5
+    free = person & ~covered & (identity < 0.5) & (masks.protect < 0.5)
     y = luma(rgb)
-    around = local_mean(y, skin, reach)
+    around = local_mean(y, skin & free, reach)  # so a pele do proprio corpo (cabelo claro nao conta)
     darker = y < around - ink_delta
     near_skin = dilate(skin.astype(np.float32), reach) > 0.5
-    free = person & ~covered & (identity < 0.5) & (masks.protect < 0.5)
     body = free & (skin | (darker & near_skin))
     body = (dilate(body.astype(np.float32), 1) > 0.5) & free  # fecha furos de 1 px
-    ink = body & (~skin | darker)
+    ink = body & (~skin | darker | (masks.tattoos > 0.5))  # + o que o Florence ja marcou como tatuagem
     return body.astype(np.float32), ink.astype(np.float32)
 
 
@@ -135,11 +135,11 @@ def fill_tattoos(rgb: np.ndarray, tattoos: np.ndarray, skin: np.ndarray, radius:
     ink = dilate((tattoos > 0.5).astype(np.float32), 2) > 0.5
     if not ink.any():
         return rgb.copy()
-    known = ((skin > 0.5) & ~ink).astype(np.float32)
-    num = _box_sum(rgb.astype(np.float32) * known[..., None], radius)
-    den = _box_sum(known, radius)[..., None]
-    mean = (rgb[known > 0].mean(axis=0) if known.any() else rgb[ink].mean(axis=0)).astype(np.float32)
-    fill = np.where(den > 0.5, num / np.maximum(den, 1e-6), mean)
+    known = (skin > 0.5) & ~ink
+    near = local_mean(rgb.astype(np.float32), known, radius)  # perto: a luz/sombra local
+    far = local_mean(rgb.astype(np.float32), known, radius * 4)  # miolo de tatuagem grande
+    den = _box_sum(known.astype(np.float32), radius)[..., None]
+    fill = np.where(den > 0.5, near, far)
     out = rgb.astype(np.float32)
     out[ink] = fill[ink]
     return out.round().clip(0, 255).astype(np.uint8)
@@ -205,12 +205,27 @@ class TransferOrchestrator(ReplacementOrchestrator):
                     if raw.clothes is not None else None)
         if coverage is not None and coverage < float(tr.get("min_clothes_coverage", 0.6)):
             raw = replace(raw, clothes=None)
+        if tr.get("require_clothes") and raw.clothes is None:
+            # sem a roupa segmentada a pele com tatuagem nao pode ser separada do top: PARA antes de gerar
+            debug = {"clothes_coverage": None if coverage is None else round(coverage, 3)}
+            for name, m in (("heuristic_clothing", masks.clothing), ("tattoos", masks.tattoos)):
+                debug[f"mask_{name}"] = await self.store.save((np.clip(m, 0, 1) * 255).astype(np.uint8), f"mask_{name}")
+            m0 = await self._measure(image, w, h, master, None)
+            report = validate(original, original, masks, masks.person, m0, cfg.checks, max(3, int(min(h, w) * 0.006)))
+            report.failures, report.status = ["clothes_segmentation_failed"], "FAIL"
+            return ReplacementResult(Checkpoint("original", image, original, m0), report, [], ["original"],
+                                     {**masks.areas(), **debug}, sheet.to_dict())
         body, ink = skin_region(masks, raw.clothes, identity, original, margin,
                                 max(6, int(min(h, w) * float(tr.get("reach_frac", 0.03)))), float(tr.get("ink_delta", 12)))
         if raw.clothes is not None:  # a roupa PROTEGIDA e a do Florence (a tinta nao conta como roupa)
             masks = replace(masks, clothing=np.clip((raw.clothes > 0.5) * masks.person - identity, 0, 1).astype(np.float32))
+        if not (tr.get("enabled") and ink.any()):
+            body = np.zeros((h, w), np.float32)  # sem tinta, a pele fica a da foto (nem a integracao mexe)
         ring_r = max(3, int(it.get("edge_ring", 6)))
         region = np.clip(identity + body, 0, 1)
+        saved = {}
+        for name, m in (("identity", identity), ("visible_skin", body), ("ink", ink), ("clothing", masks.clothing)):
+            saved[f"mask_{name}"] = await self.store.save((np.clip(m, 0, 1) * 255).astype(np.uint8), f"mask_{name}")
         seam = np.zeros((h, w), np.float32)  # a integracao nao toca na roupa: a roupa inteira e medida
         base_pose = sheet.target_body.keypoints if sheet.target_body is not None else None
         m0 = await self._measure(image, w, h, master, base_pose)
@@ -285,6 +300,7 @@ class TransferOrchestrator(ReplacementOrchestrator):
         report.integration_score = round(min(parts), 3) if parts else None
         result = ReplacementResult(final, report, records, store.names(), masks.areas(), sheet.to_dict())
         result.mask_areas["identity"] = round(float((identity > 0.5).mean()), 5)
+        result.mask_areas.update(saved)
         result.mask_areas["clothes_coverage"] = None if coverage is None else round(coverage, 3)
         result.mask_areas["clothes_source"] = "florence" if raw.clothes is not None else "heuristic"
         result.mask_areas["visible_skin"] = round(float((body > 0.5).mean()), 5)

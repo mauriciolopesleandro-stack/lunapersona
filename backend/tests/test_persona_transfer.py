@@ -52,7 +52,8 @@ def test_config_follows_the_spec():
     assert fr["identity_adapter"] == "instantid" and fr["adapter_weight"] <= 0.6  # identidade das referencias, sem forcar
     assert CFG.checks["max_background_changed"] <= 0.002  # fundo TRAVADO
     assert CFG.tattoo_removal["denoise"] <= 0.7 and CFG.tattoo_removal["lora"] is False  # geometria da foto
-    assert {"heavy makeup", "text", "second face", "hoop earrings", "tattoo ghosting"} <= set(CFG.negative_extra)
+    assert {"heavy makeup", "text", "large hoop earrings", "tattoo ghosting", "changed top"} <= set(CFG.negative_extra)
+    assert CFG.tattoo_removal["require_clothes"] is True and "small earring" in t["prompt"]
     cn = CFG.tattoo_removal["controlnet"]
     assert cn["type"] == "depth" and cn["strength"] >= 0.8  # bracos e maos seguem a estrutura da foto
     assert CFG.integration["denoise"] <= 0.25 and CFG.integration["lora"] is False
@@ -152,7 +153,13 @@ def test_edge_ring_is_a_band_on_both_sides():
 # --- orquestrador -------------------------------------------------------------------------
 
 
-def orchestrator(faces, original_similarity=0.1, tattoo=False, protect=(), wide=False):
+def shirt():
+    clothes = np.zeros((240, 160), np.float32)
+    clothes[110:230, 52:120] = 1
+    return clothes
+
+
+def orchestrator(faces, original_similarity=0.1, tattoo=False, protect=(), wide=False, cfg=CFG):
     img = wide_tattoo_photo()[0] if wide else photo(tattoo=tattoo)[0]
     store = Store(img)
     tr = Transformer(store)
@@ -163,10 +170,10 @@ def orchestrator(faces, original_similarity=0.1, tattoo=False, protect=(), wide=
                 _, person, hair, clothes = wide_tattoo_photo()
                 return RawSegments(person, hair, list(protect), clothes=clothes)
             _, person, hair = photo()
-            return RawSegments(person, hair, list(protect))
+            return RawSegments(person, hair, list(protect), clothes=shirt())
 
     orch = TransferOrchestrator(reader=Reader(), segmenter=Seg(), transformer=tr,
-                                analyzer=Analyzer(faces, original_similarity), store=store, config=CFG,
+                                analyzer=Analyzer(faces, original_similarity), store=store, config=cfg,
                                 duplicate_similarity=0.9, price_per_hour=0.57)
     return orch, tr, store
 
@@ -232,11 +239,10 @@ async def test_visible_skin_is_redrawn_with_the_original_structure_and_the_top_s
     assert (res.final.pixels[clothes] == original[clothes]).all()  # o top (e a outra peca) exatos
     assert res.report.clothing_changed == 0.0 and res.final.name == INTEGRATION
     assert res.mask_areas["clothes_source"] == "florence"
+    assert {"mask_identity", "mask_visible_skin", "mask_ink", "mask_clothing"} <= set(res.mask_areas)
 
 
-async def test_weak_clothes_segmentation_falls_back_and_never_turns_the_top_into_skin():
-    faces = {"foto": 0.1, TRANSFER: 0.8, TATTOO: 0.8, INTEGRATION: 0.8}
-    orch, tr, store = orchestrator(faces, wide=True)
+def weak(orch):
     seg = orch.segmenter
 
     class Weak:
@@ -246,6 +252,22 @@ async def test_weak_clothes_segmentation_falls_back_and_never_turns_the_top_into
             return raw
 
     orch.segmenter = Weak()
+
+
+async def test_failed_clothes_segmentation_stops_before_any_generation():
+    orch, tr, store = orchestrator({"foto": 0.1, TRANSFER: 0.8}, wide=True)
+    weak(orch)
+    res = await orch.run("foto.png", MASTER, "neg", 7)
+    assert tr.calls == [] and res.final.name == "original"  # nada gerado: so a conta de ligar o pod
+    assert res.report.failures == ["clothes_segmentation_failed"] and res.report.status == "FAIL"
+    assert res.mask_areas["mask_heuristic_clothing"] in store.images  # mascaras salvas para conferir
+
+
+async def test_without_the_requirement_a_weak_segmentation_falls_back_and_never_touches_the_top():
+    import dataclasses
+    cfg = dataclasses.replace(CFG, tattoo_removal={**CFG.tattoo_removal, "require_clothes": False})
+    orch, tr, _ = orchestrator({"foto": 0.1, TRANSFER: 0.8, TATTOO: 0.8, INTEGRATION: 0.8}, wide=True, cfg=cfg)
+    weak(orch)
     res = await orch.run("foto.png", MASTER, "neg", 7)
     assert res.mask_areas["clothes_source"] == "heuristic"
     assert all(c.mask[170, 80] == 0 for c in tr.calls)  # o top nunca entra em mascara nenhuma

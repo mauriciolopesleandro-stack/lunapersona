@@ -106,11 +106,17 @@ class ComfySegmenter:
                 return None
             return (await self.store.load(output_name(item)))[..., 0].astype(np.float32) / 255.0
 
+        async def union_of(tag: str) -> np.ndarray | None:
+            found = [await self.store.load(output_name(i)) for i in images if f"_{tag}" in i.filename]
+            if not found:
+                return None
+            return np.max(np.stack([f[..., 0] for f in found]), axis=0).astype(np.float32) / 255.0
+
         person = await mask_of("person")
         if person is None:
             raise ProviderError("a segmentacao nao devolveu a mascara da pessoa")
         return RawSegments(person=person, hair=await mask_of("hair"), protect_boxes=parse_boxes(texts.get("f6", "")),
-                           tattoos=await mask_of("tattoo"), clothes=await mask_of("clothes"))
+                           tattoos=await mask_of("tattoo"), clothes=await union_of("clothes"))
 
 
 class ComfyReplacementTransformer:

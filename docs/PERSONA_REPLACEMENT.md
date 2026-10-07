@@ -202,3 +202,12 @@ Métricas: identidade **0,769**, original 0,058, pose 0,01, fundo 0%, roupa 0%, 
 - **Ainda errado:**
   1. **Florence "clothes" voltou vazio** (cobertura 0). A trava funcionou: o código usou a máscara antiga, e o top ficou intacto. Mas, sem a roupa do Florence, as tatuagens do **ombro esquerdo** e do **alto do braço direito** continuaram "roupa" e ficaram.
   2. **Brinco:** a foto original tem um brinco pequeno, meio escondido pelo cabelo. O resultado tem uma **argola grande**, mesmo com o negativo.
+
+## Transfer v1.4: spec "TEST 5 — LUNA IDENTITY / EXACT STRUCTURE / TATTOO REMOVAL" (só código, sem GPU)
+- **Roupa por várias palavras no Florence** ("clothing", "black top", "shirt", "pants"), unidas. É o mesmo nó já validado no pod.
+- **Se a roupa ainda não for segmentada (`require_clothes`), o processo PARA antes de qualquer geração** (`clothes_segmentation_failed`) e salva as máscaras para conferência. Só se paga a ligação do pod.
+- **Tinta:** pele mais escura que a pele vizinha do próprio corpo, mais o que não é pele, mais o que o Florence marcou como tatuagem.
+  - O preenchimento usa duas escalas: perto, a luz e a sombra local; no miolo de tatuagem grande, a média um pouco mais larga, nunca uma cor única.
+- **Brinco:** o brinco original continua protegido, e o prompt pede "small earring exactly as in the photo". O negativo inclui argola grande e brinco novo.
+- **Máscaras salvas em toda execução** (identidade, pele, tinta, roupa), para conferir depois.
+- **Negativo:** a lista do usuário (TEST 5, 75 termos). O rosto continua protegido depois da passada de identidade.
