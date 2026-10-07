@@ -4,8 +4,24 @@
     {
       "name": "luna-frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--host"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontend",
+        "run",
+        "dev",
+        "--",
+        "--host"
+      ],
       "port": 5173
+    },
+    {
+      "name": "v2-e2e-mock",
+      "runtimeExecutable": "backend/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-c",
+        "import os,sys,runpy; os.chdir('backend'); sys.path.insert(0,'.'); runpy.run_module('tests.e2e.server_v2', run_name='__main__')"
+      ],
+      "port": 8077
     }
   ]
 }

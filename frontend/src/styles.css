@@ -1883,3 +1883,67 @@ button.result-download {
   color: var(--text-muted);
   cursor: default;
 }
+
+/* --- Persona V2 (EnginesV2Page) --- */
+.v2-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 8px 0;
+  border-radius: 8px;
+}
+
+.v2-options {
+  border: 1px solid var(--border, #2a2a35);
+  border-radius: 8px;
+  margin: 12px 0;
+  padding: 8px 12px;
+}
+
+.v2-advanced {
+  margin: 12px 0;
+}
+
+.v2-advanced summary {
+  cursor: pointer;
+}
+
+.v2-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.v2-compare img {
+  width: 100%;
+  border-radius: 8px;
+}
+
+.v2-checks {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin: 8px 0;
+  display: block;
+  overflow-x: auto;
+}
+
+.v2-checks th,
+.v2-checks td {
+  padding: 4px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border, #2a2a35);
+}
+
+.v2-pass td:nth-child(2) {
+  color: #4caf7d;
+}
+
+.v2-warn td:nth-child(2) {
+  color: #e0a63a;
+}
+
+.v2-reject td:nth-child(2) {
+  color: #e05555;
+}

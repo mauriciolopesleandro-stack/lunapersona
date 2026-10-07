@@ -1,4 +1,4 @@
-export type Tab = "gerar" | "historia" | "pack" |"trocar" | "conteudo" | "voz" | "personas" | "historico" | "galeria" | "configuracoes" | "perfil";
+export type Tab = "gerar" | "v2" | "historia" | "pack" |"trocar" | "conteudo" | "voz" | "personas" | "historico" | "galeria" | "configuracoes" | "perfil";
 
 interface Props {
   tab: Tab;
@@ -9,6 +9,7 @@ interface Props {
 
 const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: "gerar", label: "Gerar", icon: "✎" },
+  { id: "v2", label: "Persona V2", icon: "◈" },
   { id: "historia", label: "História", icon: "❡" },
   { id: "pack", label: "Pack com Luna", icon: "▤" },
   { id: "trocar", label: "Trocar vídeo", icon: "⇄" },

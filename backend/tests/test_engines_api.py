@@ -15,6 +15,7 @@ from PIL import Image
 
 from app.core.engines.face_swap import FaceSwapEngine
 from app.core.engines.models import ModelRegistry
+from app.core.engines.replacement import ReplacementEngine
 from app.core.engines.service import EnginesV2Service, RetentionRule, RetentionSweeper
 from app.core.generation.negative import NegativePromptBuilder
 from app.core.persona.sheet import PersonaSheetRepository
@@ -22,7 +23,7 @@ from app.jobs import JobRegistry
 from app.routes import engines_v2
 from app.security import TOKEN_HEADER, token_middleware
 from tests.conftest import REPO
-from tests.test_engines_replacement import CFG, FakeAdapter, Seg, engine
+from tests.test_engines_replacement import CFG, FakeAdapter, Seg
 from tests.test_persona_replacement import Analyzer, Reader, Store
 from tests.test_persona_transfer import wide_tattoo_photo
 
@@ -33,22 +34,29 @@ H = {TOKEN_HEADER: TOKEN}
 
 
 class FakeFactory:
+    """GPU mockada: um store so (o upload entra nele), engines reais por cima dos fakes."""
+
     def __init__(self):
         self.models = []
         self.uploads = {}
+        self.store = Store(wide_tattoo_photo()[0])
+
+    def _parts(self):
+        return {"reader": Reader(), "segmenter": Seg(), "analyzer": Analyzer(FACES), "store": self.store,
+                "adapter": FakeAdapter(self.store), "config": CFG}
 
     async def replacement(self, model):
         self.models.append(model.id)
-        return engine(FACES)[0]
+        return ReplacementEngine(**self._parts(), price_per_hour=0.57, provider="fake")
 
     async def face_swap(self, model):
         self.models.append(model.id)
-        store = Store(wide_tattoo_photo()[0])
-        return FaceSwapEngine(reader=Reader(), segmenter=Seg(), analyzer=Analyzer(FACES), store=store,
-                              adapter=FakeAdapter(store), config=CFG)
+        parts = self._parts()
+        return FaceSwapEngine(**parts, replacement=ReplacementEngine(**parts))
 
     async def upload(self, name, content):
         self.uploads[name] = content
+        self.store.images[name] = np.asarray(Image.open(io.BytesIO(content)).convert("RGB"), dtype=np.uint8)
         return name
 
 
@@ -128,13 +136,20 @@ def test_upload_is_resized_and_faceswap_runs(engine_dir, tmp_path):
     big = Image.fromarray(np.full((2400, 1800, 3), 120, np.uint8))
     buf = io.BytesIO()
     big.save(buf, "JPEG")
+    photo = io.BytesIO()
+    Image.fromarray(wide_tattoo_photo()[0]).save(photo, "PNG")
     with TestClient(app) as c:
         bad = c.post("/api/v2/faceswap", headers=H, data={"persona_id": "luna"}, files={"file": ("x.png", b"nao e imagem", "image/png")})
         assert bad.status_code == 400
-        r = c.post("/api/v2/faceswap", headers=H, data={"persona_id": "luna", "mode": "FACE_ONLY"},
+        r = c.post("/api/v2/replace", headers=H, data={"persona_id": "luna", "mode": "FAST"},
                    files={"file": ("minha foto!.jpg", buf.getvalue(), "image/jpeg")})
         assert r.status_code == 202
-        wait(c, r.json()["job_id"])
+        wait(c, r.json()["job_id"])  # foto lisa sem pessoa nos fakes: so importa o tamanho do upload
+        r = c.post("/api/v2/faceswap", headers=H, data={"persona_id": "luna", "mode": "FACE_ONLY"},
+                   files={"file": ("foto.png", photo.getvalue(), "image/png")})
+        job = wait(c, r.json()["job_id"])
+    assert job["status"] == "done", job
+    assert job["result"]["engine"] == "face_swap" and job["result"]["mode"] == "FACE_ONLY"
     name, content = next(iter(factory.uploads.items()))
     assert name.startswith("v2in_minhafoto_") and max(Image.open(io.BytesIO(content)).size) == 1600
 

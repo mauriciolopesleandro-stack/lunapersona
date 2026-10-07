@@ -1024,3 +1024,120 @@ export function planStoryFromPhotos(personaId: string, images: string[], shape =
     "/story/jobs"
   );
 }
+
+// --- Engines V2 (Replacement e Face Swap): /api/v2 no backend do pod. A Geracao segue na V1. ---
+
+export type EngineV2Mode = "FAST" | "QUALITY" | "MAX_QUALITY";
+export type FaceSwapMode = "FACE_ONLY" | "FACE_NECK" | "FACE_INTEGRATED" | "FULL_PERSON";
+
+export interface EngineV2Model {
+  id: string;
+  title: string;
+  status: string;
+  license?: string;
+  license_status?: string;
+  commercial_use?: string;
+  download_auth?: string | null;
+  default: boolean;
+}
+
+export interface EnginesCatalog {
+  engines: string[];
+  modes: EngineV2Mode[];
+  models: EngineV2Model[];
+  replacement: { options: string[]; advanced: string[]; defaults: Record<string, Record<string, unknown>> };
+  face_swap: { modes: FaceSwapMode[]; head_backends: string[] };
+}
+
+export interface CheckV2 {
+  name: string;
+  status: "PASS" | "WARN" | "REJECT" | "UNKNOWN";
+  score: unknown;
+  threshold: unknown;
+  reason: string;
+}
+
+export interface EngineV2Result {
+  engine: string;
+  model: string;
+  mode: string;
+  status: "PASS" | "WARN" | "REJECT";
+  image_url: string;
+  validation: { status: string; checks: Record<string, CheckV2> };
+  measures: Record<string, unknown>;
+  telemetry: Record<string, unknown>;
+  intermediates: Record<string, string>;
+}
+
+export async function getEnginesCatalog(): Promise<EnginesCatalog> {
+  return handleResponse(await fetch(`${await apiBase()}/v2/engines`));
+}
+
+const V2_MAX_MS = 30 * 60_000;
+
+async function runV2(path: string, form: FormData, what: string): Promise<EngineV2Result> {
+  const base = await apiBase();
+  const { job_id } = await handleResponse<{ job_id: string }>(await fetch(`${base}${path}`, { method: "POST", body: form }));
+  const deadline = Date.now() + V2_MAX_MS;
+  let failures = 0;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, GENERATE_POLL_MS));
+    let res: Response | null = null;
+    try {
+      res = await fetch(`${base}/v2/jobs/${job_id}`);
+    } catch {
+      // rede/proxy: tenta de novo
+    }
+    if (!res || res.status >= 500) {
+      if (++failures >= GENERATE_MAX_POLL_FAILURES) throw new Error(`Perdi a conexao com o backend durante ${what}.`);
+      continue;
+    }
+    failures = 0;
+    const job = await handleResponse<
+      { status: "running" } | { status: "done"; result: EngineV2Result } | { status: "error"; detail: string }
+    >(res);
+    if (job.status === "done") return job.result;
+    if (job.status === "error") throw new Error(job.detail);
+  }
+  throw new Error(`Passou de 30 minutos esperando ${what}.`);
+}
+
+export function runReplacement(body: {
+  file: File;
+  personaId: string;
+  mode: EngineV2Mode;
+  model: string;
+  seed?: number;
+  options: Record<string, boolean>;
+  advanced: Record<string, number>;
+}): Promise<EngineV2Result> {
+  const form = new FormData();
+  form.append("file", body.file);
+  form.append("persona_id", body.personaId);
+  form.append("mode", body.mode);
+  form.append("model", body.model);
+  if (body.seed !== undefined) form.append("seed", String(body.seed));
+  form.append("options", JSON.stringify(body.options));
+  form.append("advanced", JSON.stringify(body.advanced));
+  form.append("processing", "local");
+  return runV2("/v2/replace", form, "a substituição");
+}
+
+export function runFaceSwap(body: {
+  file: File;
+  personaId: string;
+  mode: FaceSwapMode;
+  model: string;
+  seed?: number;
+  replacementMode: EngineV2Mode;
+}): Promise<EngineV2Result> {
+  const form = new FormData();
+  form.append("file", body.file);
+  form.append("persona_id", body.personaId);
+  form.append("mode", body.mode);
+  form.append("model", body.model);
+  if (body.seed !== undefined) form.append("seed", String(body.seed));
+  form.append("replacement_mode", body.replacementMode);
+  form.append("processing", "local");
+  return runV2("/v2/faceswap", form, "a troca de rosto");
+}

@@ -29,6 +29,7 @@ import { ContentPage } from "./components/ContentPage";
 import { SwapPage } from "./components/SwapPage";
 import { PackSwapPage } from "./components/PackSwapPage";
 import { StoryPage } from "./components/StoryPage";
+import { EnginesV2Page } from "./components/EnginesV2Page";
 import { loadLastResult, saveLastResult } from "./lib/lastResult";
 import { TopBar } from "./components/TopBar";
 import { addHistoryEntry } from "./lib/history";
@@ -398,6 +399,7 @@ export default function App() {
               ensureAwake={() => ensurePodAwake(setPodMessage)}
             />
           )}
+          {tab === "v2" && <EnginesV2Page personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
           {tab === "historia" && <StoryPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
           {tab === "pack" && <PackSwapPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
           {tab === "trocar" && <SwapPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
