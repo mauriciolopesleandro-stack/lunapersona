@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   getEnginesCatalog,
+  getPersonaAttributes,
+  type AttributePolicyValue,
+  type PersonaAttributes,
   runFaceSwap,
   runReplacement,
   type EngineV2Mode,
@@ -52,6 +55,41 @@ const OPTION_LABEL: Record<string, string> = {
 
 // Fundo e roupa ficam sempre (o Replacement nao regenera); o resto pode ser desligado.
 const FIXED_OPTIONS = new Set(["preserve_background", "preserve_clothes"]);
+// Tatuagens agora sao um ATRIBUTO (secao abaixo), nao uma opcao solta.
+const HIDDEN_OPTIONS = new Set(["remove_original_tattoos"]);
+
+const ATTR_LABEL: Record<string, string> = {
+  pose: "Pose",
+  composition: "Enquadramento",
+  camera_angle: "Ângulo da câmera",
+  perspective: "Perspectiva",
+  clothing: "Roupa",
+  background: "Cenário",
+  lighting: "Luz",
+  objects: "Objetos",
+  expression: "Expressão",
+  accessories: "Acessórios (óculos, boné)",
+  face: "Rosto",
+  body: "Corpo",
+  skin: "Pele",
+  hair: "Cabelo",
+  age: "Idade",
+  tattoos: "Tatuagens",
+  scars: "Cicatrizes",
+  piercings: "Piercings",
+  birthmarks: "Pintas/marcas de nascença",
+  makeup: "Maquiagem",
+  jewelry: "Joias (brincos, colares)",
+  original_person_marks: "Outras marcas da pessoa original",
+};
+
+const POLICY_LABEL: Record<string, string> = {
+  PRESERVE: "Manter da foto",
+  RECONSTRUCT: "Da persona",
+  REMOVE: "Tirar",
+  OPTIONAL: "Tanto faz",
+  IGNORE: "Ignorar",
+};
 
 const ADVANCED_LABEL: Record<string, [string, number, number, number]> = {
   steps: ["Passos", 10, 60, 1],
@@ -78,6 +116,8 @@ const CHECK_LABEL: Record<string, string> = {
   duplicate_persona: "Persona duplicada",
   background: "Cenário",
   composition: "Enquadramento",
+  seams: "Emendas e blocos",
+  attribute_policy: "Política de atributos",
 };
 
 function errorText(e: unknown) {
@@ -111,6 +151,11 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EngineV2Result | null>(null);
+  // politica de atributos (spec 45): padrao da persona + o que o usuario mudar (vai explicito para o backend)
+  const [personaAttrs, setPersonaAttrs] = useState<PersonaAttributes | null>(null);
+  const [attrChoice, setAttrChoice] = useState<Record<string, AttributePolicyValue>>({});
+  const [keepItems, setKeepItems] = useState("");
+  const [removeItems, setRemoveItems] = useState("");
 
   async function loadCatalog() {
     setCatalogError(null);
@@ -134,6 +179,30 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
   }, [personas, personaId]);
 
   useEffect(() => {
+    if (engine !== "replacement" || !catalog || !personaId) return;
+    setPersonaAttrs(null);
+    setAttrChoice({});
+    getPersonaAttributes(personaId)
+      .then(setPersonaAttrs)
+      .catch(() => setPersonaAttrs(null));
+  }, [engine, catalog, personaId]);
+
+  // So vai como pedido explicito o que o usuario MUDOU em relacao ao padrao da persona (+ itens livres).
+  function attributeLists() {
+    const lists = { preserve: [] as string[], remove: [] as string[], reconstruct: [] as string[] };
+    for (const [attr, pol] of Object.entries(attrChoice)) {
+      if (personaAttrs && personaAttrs.policy[attr] === pol) continue;
+      if (pol === "PRESERVE") lists.preserve.push(attr);
+      else if (pol === "REMOVE") lists.remove.push(attr);
+      else if (pol === "RECONSTRUCT") lists.reconstruct.push(attr);
+    }
+    const split = (t: string) => t.split(",").map((x) => x.trim()).filter(Boolean);
+    lists.preserve.push(...split(keepItems));
+    lists.remove.push(...split(removeItems));
+    return lists;
+  }
+
+  useEffect(() => {
     if (!file) return setPreview(null);
     const url = URL.createObjectURL(file);
     setPreview(url);
@@ -154,7 +223,7 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
       const s = seed.trim() === "" ? undefined : Number(seed);
       const out =
         engine === "replacement"
-          ? await runReplacement({ file, personaId, mode, model, seed: s, options, advanced })
+          ? await runReplacement({ file, personaId, mode, model, seed: s, options, advanced, ...attributeLists() })
           : await runFaceSwap({ file, personaId, mode: faceMode, model, seed: s, replacementMode: mode });
       setResult(out);
     } catch (e) {
@@ -269,7 +338,7 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
           {engine === "replacement" && catalog && (
             <fieldset className="v2-options">
               <legend>Opções</legend>
-              {catalog.replacement.options.map((o) => (
+              {catalog.replacement.options.filter((o) => !HIDDEN_OPTIONS.has(o)).map((o) => (
                 <label key={o} className="checkbox-row">
                   <input
                     type="checkbox"
@@ -281,6 +350,69 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
                   {FIXED_OPTIONS.has(o) ? " (sempre)" : ""}
                 </label>
               ))}
+            </fieldset>
+          )}
+
+          {engine === "replacement" && catalog && (
+            <fieldset className="v2-options">
+              <legend>O que fica da foto e o que vem da persona</legend>
+              <p className="muted small">
+                A foto só manda no que estiver em “Manter da foto”. Rosto, pele e corpo vêm da Persona Sheet. Marcas da
+                pessoa original (tatuagem, cicatriz) saem e viram pele da persona.
+              </p>
+              {!personaAttrs && <p className="muted small">Carregando a política da persona...</p>}
+              {personaAttrs && (
+                <>
+                  <p className="muted small">
+                    Sempre da foto:{" "}
+                    {catalog.replacement.attributes
+                      .filter((a) => a.allowed.length === 1 && a.allowed[0] === "PRESERVE")
+                      .map((a) => ATTR_LABEL[a.attribute] ?? a.attribute)
+                      .join(", ")}
+                    . Sempre da persona:{" "}
+                    {catalog.replacement.attributes
+                      .filter((a) => a.allowed.length === 1 && a.allowed[0] === "RECONSTRUCT")
+                      .map((a) => ATTR_LABEL[a.attribute] ?? a.attribute)
+                      .join(", ")}
+                    .
+                  </p>
+                  <div className="identity-grid">
+                    {catalog.replacement.attributes
+                      .filter((a) => a.allowed.length > 1)
+                      .map((a) => {
+                        const value = attrChoice[a.attribute] ?? personaAttrs.policy[a.attribute] ?? a.default;
+                        const changed = attrChoice[a.attribute] !== undefined && attrChoice[a.attribute] !== personaAttrs.policy[a.attribute];
+                        return (
+                          <div key={a.attribute}>
+                            <label htmlFor={`v2-attr-${a.attribute}`}>
+                              {ATTR_LABEL[a.attribute] ?? a.attribute}
+                              {changed ? " (pedido seu)" : ""}
+                            </label>
+                            <select
+                              id={`v2-attr-${a.attribute}`}
+                              value={value}
+                              onChange={(e) => setAttrChoice({ ...attrChoice, [a.attribute]: e.target.value as AttributePolicyValue })}
+                            >
+                              {a.allowed.map((p) => (
+                                <option key={p} value={p}>
+                                  {POLICY_LABEL[p] ?? p}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    <div>
+                      <label htmlFor="v2-keep-items">Manter também (itens, separados por vírgula)</label>
+                      <input id="v2-keep-items" value={keepItems} placeholder="top preto, bolsa" onChange={(e) => setKeepItems(e.target.value)} />
+                    </div>
+                    <div>
+                      <label htmlFor="v2-remove-items">Tirar também</label>
+                      <input id="v2-remove-items" value={removeItems} placeholder="adesivo no braço" onChange={(e) => setRemoveItems(e.target.value)} />
+                    </div>
+                  </div>
+                </>
+              )}
             </fieldset>
           )}
 

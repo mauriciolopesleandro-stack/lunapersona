@@ -1045,7 +1045,12 @@ export interface EnginesCatalog {
   engines: string[];
   modes: EngineV2Mode[];
   models: EngineV2Model[];
-  replacement: { options: string[]; advanced: string[]; defaults: Record<string, Record<string, unknown>> };
+  replacement: {
+    options: string[];
+    advanced: string[];
+    defaults: Record<string, Record<string, unknown>>;
+    attributes: { attribute: string; default: string; allowed: string[] }[];
+  };
   face_swap: { modes: FaceSwapMode[]; head_backends: string[] };
 }
 
@@ -1067,6 +1072,19 @@ export interface EngineV2Result {
   measures: Record<string, unknown>;
   telemetry: Record<string, unknown>;
   intermediates: Record<string, string>;
+}
+
+export type AttributePolicyValue = "PRESERVE" | "RECONSTRUCT" | "REMOVE" | "OPTIONAL" | "IGNORE";
+
+export interface PersonaAttributes {
+  policy: Record<string, AttributePolicyValue>;
+  source: Record<string, string>;
+  preserve_items: string[];
+  remove_items: string[];
+}
+
+export async function getPersonaAttributes(personaId: string): Promise<PersonaAttributes> {
+  return handleResponse(await fetch(`${await apiBase()}/v2/personas/${personaId}/attributes`));
 }
 
 export async function getEnginesCatalog(): Promise<EnginesCatalog> {
@@ -1110,6 +1128,9 @@ export function runReplacement(body: {
   seed?: number;
   options: Record<string, boolean>;
   advanced: Record<string, number>;
+  preserve?: string[];
+  remove?: string[];
+  reconstruct?: string[];
 }): Promise<EngineV2Result> {
   const form = new FormData();
   form.append("file", body.file);
@@ -1119,6 +1140,9 @@ export function runReplacement(body: {
   if (body.seed !== undefined) form.append("seed", String(body.seed));
   form.append("options", JSON.stringify(body.options));
   form.append("advanced", JSON.stringify(body.advanced));
+  form.append("preserve_attributes", JSON.stringify(body.preserve ?? []));
+  form.append("remove_attributes", JSON.stringify(body.remove ?? []));
+  form.append("reconstruct_attributes", JSON.stringify(body.reconstruct ?? []));
   form.append("processing", "local");
   return runV2("/v2/replace", form, "a substituição");
 }
