@@ -126,3 +126,13 @@ O que deu errado:
 1. **Folga de cabelo grande demais (23% da imagem):** a elipse cobriu a parede inteira acima da cabeça, e o modelo inventou um quadro com o rosto de uma mulher e um pôster com texto. O cenário foi regenerado (proibido pela spec), e o rosto do quadro disparou o rollback.
 2. **Proteção falsa (18% da imagem):** o grounding de acessórios pegou uma caixa enorme (top e mãos). As mãos ficaram as originais, com as tatuagens.
 3. **Identidade 0,42:** só a LoRA, com denoise 0,9, não basta. O refino de rosto não rodou porque a etapa foi recusada antes.
+
+## Transfer v1.1: spec "IDENTITY TRANSFER TASK" (só código, sem GPU)
+- **Fundo TRAVADO:**
+  - a região gerada nunca sai do contorno da pessoa (`hair_room` 0);
+  - nenhum pixel fora da máscara vem do modelo (sem a margem de 2 px);
+  - o rollback reprova qualquer mudança acima de 0,2% fora da pessoa.
+- **Acessórios:** caixas do grounding maiores que o rosto são descartadas como falso positivo. No teste 1, uma delas cobria o top e as mãos.
+- **Tatuagens:** saem da ENTRADA da passada 1. A tinta é trocada pela média da pele limpa em volta, e a geração cria a textura da pele. Não é filtro no resultado.
+- **Identidade:** vem das referências da Luna. A LoRA atua na passada 1; o refino de rosto, que só roda se a identidade ficar abaixo de 0,70, usa a LoRA com InstantID **moderado (0,5)** e denoise 0,4.
+- **Negativo:** acrescenta makeup, lipstick, studio portrait, text, letters, poster, picture frame, extra person e extra face.

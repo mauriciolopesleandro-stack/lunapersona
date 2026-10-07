@@ -18,6 +18,8 @@ from app.core.persona_replacement.transfer import (
     TransferOrchestrator,
     edge_ring,
     load_transfer_config,
+    fill_tattoos,
+    plausible_accessories,
     transfer_masks,
 )
 from app.core.persona_replacement.validation import background_change
@@ -45,7 +47,10 @@ def write_cfg(tmp_path, mutate):
 def test_config_follows_the_spec():
     t = CFG.transfer
     assert 0.85 <= t["denoise"] <= 1.0 and t["controlnet"]["type"] == "openpose" and "lunavox" in t["prompt"]
-    assert CFG.face_refinement["identity_adapter"] is None  # sem InstantID forte
+    fr = CFG.face_refinement
+    assert fr["identity_adapter"] == "instantid" and fr["adapter_weight"] <= 0.6  # identidade das referencias, sem forcar
+    assert t["hair_room"] == 0 and CFG.checks["max_background_changed"] <= 0.002  # fundo TRAVADO
+    assert {"makeup", "text", "extra face"} <= set(CFG.negative_extra)
     assert CFG.integration["denoise"] <= 0.25 and CFG.integration["lora"] is False
     assert CFG.post_lighting_match["enabled"] is False  # sem filtro/grao depois
     assert CFG.budget_limit_usd == 0.05 and "tattoo" in CFG.negative_extra
@@ -90,6 +95,26 @@ def test_transfer_region_keeps_clothing_and_accessories_out():
     assert room[12, 80] == 1 and room[200, 20] == 0 and (room * m.person).max() == 0
 
 
+def test_locked_background_keeps_the_region_inside_the_person():
+    m, _ = masks()
+    region, room = transfer_masks(m, FACE_BOX, CFG.transfer["hair_room"])
+    assert room.max() == 0 and (region * (1 - m.person)).max() == 0
+
+
+def test_accessory_boxes_bigger_than_the_face_are_false_positives():
+    glasses, top = (66, 44, 94, 56), (40, 100, 120, 200)
+    assert plausible_accessories([glasses, top], FACE_BOX, 1.0) == [glasses]
+
+
+def test_tattoo_ink_is_removed_from_the_input_only():
+    img, person, hair = photo(tattoo=True)
+    m = build_masks(RawSegments(person, hair, []), FACE_BOX, KPS, img)
+    clean = fill_tattoos(img, m.tattoos, m.skin, 8)
+    assert abs(int(clean[160, 46, 0]) - 205) <= 3  # tinta virou a pele de volta
+    assert (clean[200, 90] == SHIRT).all() and (clean[5, 5] == img[5, 5]).all()
+    assert (fill_tattoos(photo()[0], np.zeros((240, 160)), m.skin, 8) == photo()[0]).all()
+
+
 def test_edge_ring_is_a_band_on_both_sides():
     r = np.zeros((40, 40), np.float32)
     r[10:30, 10:30] = 1
@@ -123,8 +148,8 @@ async def test_transfer_generates_the_whole_person_and_skips_refinement_when_ide
     assert res.checkpoints == ["original", TRANSFER, INTEGRATION]
     original, final = store.images["foto.png"], res.final.pixels
     _, person, _ = photo()
-    region, _ = transfer_masks(build_masks(RawSegments(person, photo()[2], []), FACE_BOX, KPS, original), FACE_BOX, 0.35)
-    assert background_change(original, final, np.clip(person + region, 0, 1)) == 0.0  # sujeira do modelo desfeita
+    outside = person < 0.5
+    assert (final[outside] == original[outside]).all()  # fundo TRAVADO: pixel a pixel
     assert (final[200, 90] == SHIRT).all()  # roupa: pixel da foto
     assert res.report.identity == 0.775 and res.report.status == "PASS" and res.report.integration_score is not None
     assert {"transfer_region", "hair_room", "seam"} <= set(res.mask_areas)
@@ -134,8 +159,29 @@ async def test_face_refinement_runs_only_when_identity_is_low():
     orch, tr, _ = orchestrator({"foto": 0.10, TRANSFER: 0.55, FACE_REFINE: 0.74, INTEGRATION: 0.74})
     res = await orch.run("foto.png", MASTER, "neg", 7)
     assert [c.name for c in tr.calls] == [TRANSFER, FACE_REFINE, INTEGRATION]
-    assert tr.calls[1].image.startswith(TRANSFER) and tr.calls[1].identity_adapter is None
+    assert tr.calls[1].image.startswith(TRANSFER) and tr.calls[1].identity_adapter == "instantid"
+    assert tr.calls[1].adapter_weight <= 0.6 and tr.calls[1].reference is MASTER
     assert res.checkpoints == ["original", TRANSFER, FACE_REFINE, INTEGRATION] and res.report.identity == 0.74
+
+
+async def test_transfer_starts_from_the_photo_without_tattoo_ink():
+    img = photo(tattoo=True)[0]
+    store = Store(img)
+    tr = Transformer(store)
+
+    class Seg:
+        async def segment(self, image, sheet):
+            _, person, hair = photo()
+            return RawSegments(person, hair, [(40, 100, 120, 200)])  # caixa falsa (top inteiro)
+
+    orch = TransferOrchestrator(reader=Reader(), segmenter=Seg(), transformer=tr,
+                                analyzer=Analyzer({"foto": 0.1, TRANSFER: 0.8, INTEGRATION: 0.8}), store=store,
+                                config=CFG, duplicate_similarity=0.9, price_per_hour=0.57)
+    res = await orch.run("foto.png", MASTER, "neg", 7)
+    src = store.images[tr.calls[0].image]
+    assert tr.calls[0].image.startswith("tattoo_prefill") and abs(int(src[160, 46, 0]) - 205) <= 3
+    assert tr.calls[0].mask[150, 46] == 1  # braco entra (a caixa falsa nao travou)
+    assert res.final.name == INTEGRATION and (res.final.pixels[0:5, 0:5] == img[0:5, 0:5]).all()
 
 
 async def test_integration_that_drops_identity_is_rolled_back():

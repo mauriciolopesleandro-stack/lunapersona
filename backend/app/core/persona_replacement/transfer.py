@@ -58,16 +58,52 @@ def load_transfer_config(path: Path) -> TransferConfig:
 
 
 def transfer_masks(masks: MaskSet, face_bbox, hair_room: float) -> tuple[np.ndarray, np.ndarray]:
-    """(regiao gerada, folga de cabelo). A regiao e a pessoa MENOS roupa e acessorios; a
-    folga deixa o cabelo da persona existir em volta da cabeca (fios sobre o fundo)."""
+    """(regiao gerada, folga de cabelo). A regiao e a pessoa MENOS roupa e acessorios. Com
+    hair_room 0 (padrao: fundo TRAVADO) a regiao nunca sai do contorno da pessoa; acima de 0,
+    uma folga em volta da cabeca deixa o cabelo da persona passar do contorno original."""
     h, w = masks.person.shape
+    region = np.clip(masks.person - masks.clothing - masks.protect, 0, 1)
+    if hair_room <= 0:
+        return region, np.zeros((h, w), np.float32)
     x1, y1, x2, y2 = face_bbox
     fw, fh = x2 - x1, y2 - y1
     head = ellipse(h, w, (x1 + x2) / 2, (y1 + y2) / 2 + fh * 0.6, fw * (1.0 + 1.6 * hair_room) * 0.9,
                    fh * (1.6 + 2.0 * hair_room) * 0.9)
     room = np.clip(head * (1 - masks.clothing) * (1 - masks.protect) - masks.person, 0, 1)
-    region = np.clip(masks.person - masks.clothing - masks.protect, 0, 1)
     return np.clip(region + room, 0, 1), room
+
+
+def plausible_accessories(boxes, face_bbox, max_face_ratio: float) -> list:
+    """Oculos, brinco, pulseira e relogio sao pequenos: uma caixa maior que o rosto e falso
+    positivo do grounding (ex.: o top inteiro com as maos) e nao pode travar a regiao."""
+    x1, y1, x2, y2 = face_bbox
+    face_area = max(1.0, (x2 - x1) * (y2 - y1))
+    return [b for b in boxes if (b[2] - b[0]) * (b[3] - b[1]) <= face_area * max_face_ratio]
+
+
+def _box_sum(a: np.ndarray, r: int) -> np.ndarray:
+    """Soma numa janela (2r+1)^2 por imagem integral (borda: so o que existe)."""
+    h, w = a.shape[:2]
+    c = np.pad(a, ((1, 0), (1, 0)) + ((0, 0),) * (a.ndim - 2)).cumsum(0).cumsum(1)
+    y0, y1 = np.clip(np.arange(h) - r, 0, h), np.clip(np.arange(h) + r + 1, 0, h)
+    x0, x1 = np.clip(np.arange(w) - r, 0, w), np.clip(np.arange(w) + r + 1, 0, w)
+    return c[y1][:, x1] - c[y0][:, x1] - c[y1][:, x0] + c[y0][:, x0]
+
+
+def fill_tattoos(rgb: np.ndarray, tattoos: np.ndarray, skin: np.ndarray, radius: int) -> np.ndarray:
+    """Entrada da passada 1 sem a tinta: cada pixel de tatuagem recebe a media da pele limpa em
+    volta. Nao e filtro no resultado - a geracao parte de pele lisa e cria a textura dela."""
+    ink = dilate((tattoos > 0.5).astype(np.float32), 2) > 0.5
+    if not ink.any():
+        return rgb.copy()
+    known = ((skin > 0.5) & ~ink).astype(np.float32)
+    num = _box_sum(rgb.astype(np.float32) * known[..., None], radius)
+    den = _box_sum(known, radius)[..., None]
+    mean = (rgb[known > 0].mean(axis=0) if known.any() else rgb[ink].mean(axis=0)).astype(np.float32)
+    fill = np.where(den > 0.5, num / np.maximum(den, 1e-6), mean)
+    out = rgb.astype(np.float32)
+    out[ink] = fill[ink]
+    return out.round().clip(0, 255).astype(np.uint8)
 
 
 def edge_ring(region: np.ndarray, r: int) -> np.ndarray:
@@ -100,7 +136,7 @@ class TransferOrchestrator(ReplacementOrchestrator):
                      denoise: float, strength: float, seed: int, use_lora: bool, original, masks, master, base_pose,
                      records: list[StageRecord], modified: np.ndarray, **extra) -> np.ndarray:
         current = store.current
-        req = TransformRequest(image=current.image, mask=mask, prompt=prompt, negative=negative, strength=strength,
+        req = TransformRequest(image=extra.get("source") or current.image, mask=mask, prompt=prompt, negative=negative, strength=strength,
                                denoise=denoise, seed=seed, name=name, use_lora=use_lora,
                                identity_adapter=extra.get("identity_adapter"), adapter_weight=extra.get("adapter_weight"),
                                reference=master if extra.get("identity_adapter") else None)
@@ -109,8 +145,8 @@ class TransferOrchestrator(ReplacementOrchestrator):
         records.append(rec)
         res = await self.transformer.transform(req)
         px = await self.store.load(res.image)
-        keep = dilate((mask > 0.02).astype(np.float32), 2) > 0.5
-        px = np.where(keep[..., None], px, current.pixels)  # fora da mascara: o checkpoint, garantido
+        keep = mask > 0.02  # fundo TRAVADO: nem 1 px fora da mascara vem do modelo
+        px = np.where(keep[..., None], px, current.pixels)
         modified = await self._try(store, name, kind, px, original, masks, master, base_pose, rec, mask, modified)
         rec.seconds, rec.gpu, rec.cost_usd = res.seconds, res.gpu.get("name"), cost(res.seconds, self.price)
         return modified
@@ -121,6 +157,8 @@ class TransferOrchestrator(ReplacementOrchestrator):
         h, w = original.shape[:2]
         sheet = await self.reader.read(ProviderImage("comfyui", image, "", w, h), master)
         raw = await self.segmenter.segment(image, sheet)
+        raw = replace(raw, protect_boxes=plausible_accessories(raw.protect_boxes, sheet.target_face.bbox,
+                                                               float(cfg.transfer.get("max_accessory_face_ratio", 1.0))))
         masks = build_masks(raw, sheet.target_face.bbox, sheet.target_face.kps, original)
         region, room = transfer_masks(masks, sheet.target_face.bbox, float(cfg.transfer["hair_room"]))
         # costura regiao/roupa (decote, mangas): a integracao funde alguns px; a roupa e medida fora dela
@@ -135,11 +173,17 @@ class TransferOrchestrator(ReplacementOrchestrator):
         modified = np.zeros((h, w), np.float32)
         neg = ", ".join(dict.fromkeys([t for t in negative.split(", ") if t] + list(cfg.negative_extra)))
 
-        # PASS 1: a persona inteira na pose original (identidade + corpo visivel + cabelo + pele)
+        # PASS 1: a persona inteira na pose original (identidade + corpo visivel + cabelo + pele);
+        # a entrada vai sem a tinta das tatuagens (a geracao nao tem de onde copiar o desenho)
         t = cfg.transfer
+        source = None
+        if t.get("prefill_tattoos", True) and (masks.tattoos > 0.5).any():
+            clean = fill_tattoos(original, masks.tattoos * region, masks.skin,
+                                 max(6, int(min(h, w) * float(t.get("prefill_radius_frac", 0.02)))))
+            source = await self.store.save(clean, "tattoo_prefill")
         modified = await self._stage(store, TRANSFER, "identity", region, self._prompt(t["prompt"], sheet.description()),
                                      neg, float(t["denoise"]), 1.0, seed % 2**32, True, original, masks, master,
-                                     base_pose, records, modified, mask_name="person-clothing-accessories+hair_room")
+                                     base_pose, records, modified, mask_name="person-clothing-accessories", source=source)
 
         # sem a persona inteira nao ha o que refinar: refinar so o rosto da original seria face swap
         transferred = store.current.name == TRANSFER
@@ -200,4 +244,4 @@ class TransferOrchestrator(ReplacementOrchestrator):
 
 
 __all__ = ["FACE_REFINE", "INTEGRATION", "TRANSFER", "TransferConfig", "TransferOrchestrator", "edge_ring",
-           "load_transfer_config", "transfer_masks"]
+           "fill_tattoos", "load_transfer_config", "plausible_accessories", "transfer_masks"]

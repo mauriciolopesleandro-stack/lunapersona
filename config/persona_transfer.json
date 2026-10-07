@@ -1,6 +1,6 @@
 {
-  "_comment": "Persona Transfer (Persona Replacement, modo transferencia - spec 'PERSONA REPLACEMENT - INTEGRACAO FOTOGRAFICA', 2026-10-06): a Luna INTEIRA gerada na pose da pessoa da foto, sem face swap. Roupa, acessorios e cenario sao os pixels da foto. Modelo/LoRA lidos da receita travada (so leitura).",
-  "version": "transfer-v1.0",
+  "_comment": "Persona Transfer (Persona Replacement, modo transferencia - spec 'PERSONA REPLACEMENT - INTEGRACAO FOTOGRAFICA', 2026-10-06): a Luna INTEIRA gerada na pose da pessoa da foto, sem face swap. Roupa, acessorios e cenario sao os pixels da foto. Modelo/LoRA lidos da receita travada (so leitura). v1.1 (spec 'IDENTITY TRANSFER TASK'): fundo TRAVADO (regiao so dentro do contorno da pessoa, hair_room 0), acessorios maiores que o rosto descartados, tatuagens tiradas da ENTRADA da passada 1, identidade das referencias da Luna (LoRA + InstantID moderado no refino de rosto).",
+  "version": "transfer-v1.1",
   "generation_config": "config/persona_engine_v2.json",
   "transfer": {
     "denoise": 0.9,
@@ -16,17 +16,21 @@
       "size_bytes": 2513342408,
       "sha256": "9fae2e50cb431bfcbe05822b59ec2228df545ef27f711dea8949e9f4ed9f7cdc"
     },
-    "hair_room": 0.35,
-    "prompt": "lunavox, a woman, {description}, natural skin with pores, natural minimal makeup, same lighting as the photo, realistic unretouched photo"
+    "hair_room": 0.0,
+    "prompt": "lunavox, a woman, {description}, natural dark brown hair, natural skin with pores, no makeup, same lighting as the photo, candid unretouched smartphone photo",
+    "max_accessory_face_ratio": 1.0,
+    "prefill_tattoos": true,
+    "prefill_radius_frac": 0.02
   },
   "face_refinement": {
     "enabled": true,
-    "only_if_identity_below": 0.65,
-    "denoise": 0.35,
-    "strength": 0.6,
+    "only_if_identity_below": 0.7,
+    "denoise": 0.4,
+    "strength": 0.7,
     "lora": true,
-    "identity_adapter": null,
-    "prompt": "lunavox, a woman, natural face, natural minimal makeup, natural skin texture, realistic photo"
+    "identity_adapter": "instantid",
+    "prompt": "lunavox, a woman, natural face, no makeup, natural skin texture with pores, natural dark brown hair, candid unretouched photo",
+    "adapter_weight": 0.5
   },
   "integration": {
     "enabled": true,
@@ -41,7 +45,7 @@
     "note": "spec: sem filtro/grao depois; a geracao resolve a luz"
   },
   "checks": {
-    "max_background_changed": 0.01,
+    "max_background_changed": 0.002,
     "max_clothing_changed": 0.02,
     "max_pose_distance": 0.12,
     "max_identity_drop": 0.02,
@@ -67,7 +71,20 @@
     "deformed hands",
     "extra fingers",
     "halo",
-    "pasted face"
+    "pasted face",
+    "makeup",
+    "lipstick",
+    "eyeliner",
+    "eyeshadow",
+    "beauty retouch",
+    "studio portrait",
+    "text",
+    "letters",
+    "poster",
+    "picture frame",
+    "extra person",
+    "extra face",
+    "second face"
   ],
   "budget": {
     "limit_usd": 0.05

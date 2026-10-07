@@ -8,6 +8,7 @@ Nao roda sem autorizacao quando a estimativa passa de US$ 0,05 (config/persona_t
 Uso no pod (V2_ROOT = pasta com backend/, config/, workflows/, personas_run/):
   python transfer_teste1.py --foto fotos_ref/1_quarto_top_preto.png [--autorizado 0.09]
 Saida: transfer_teste1.json + checkpoints (original, persona_transfer, [face_refinement], integration).
+Teste 2 (v1.1): --saida transfer_teste2.json
 """
 import argparse
 import asyncio
@@ -71,8 +72,8 @@ async def main() -> int:
     client = ComfyUIClient(base_url="http://127.0.0.1:8188", connect_timeout=10.0, generation_timeout=900.0)
     session = ComfySession(client, WorkflowManager(ROOT / "workflows"))
     store = ComfyImageStore(client)
-    # sem InstantID no modo transferencia (spec): nada de adaptador de identidade nem download dele
-    region = ComfyRegionPassAdapter(session, gen.model(), gen.lora, steps=gen.pass_steps, identity_adapters={})
+    # InstantID so no refino de rosto (peso moderado, config/persona_transfer.json), se a identidade ficar baixa
+    region = ComfyRegionPassAdapter(session, gen.model(), gen.lora, steps=gen.pass_steps, identity_adapters=gen.identity_adapters)
     transformer = ComfyTransferTransformer(session, ComfyReplacementTransformer(region, client), gen.model(), gen.lora,
                                            cfg.transfer)
     problems = await region.validate_configuration() + await transformer.validate_configuration()
