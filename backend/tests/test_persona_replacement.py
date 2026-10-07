@@ -429,11 +429,15 @@ def test_first_test_estimate_is_blocked_above_five_cents_without_authorization()
 
 def test_generation_engine_never_imports_the_replacement():
     pattern = re.compile(r"^\s*(from|import)\s+app\.core\.persona_replacement", re.M)
+    v2 = re.compile(r"^\s*(from|import)\s+app\.(core\.engines|providers\.comfyui\.sdxl_engine)", re.M)
     for path in (BACKEND / "app" / "core" / "generation").rglob("*.py"):
-        assert not pattern.search(path.read_text(encoding="utf-8")), path.name
+        text = path.read_text(encoding="utf-8")
+        assert not pattern.search(text) and not v2.search(text), path.name
+    # adapters da familia replacement (V1 replacement.py e o SDXL V2) podem usar as mascaras; os de geracao nao
     for path in (BACKEND / "app" / "providers" / "comfyui").glob("*.py"):
-        if path.name != "replacement.py":
-            assert not pattern.search(path.read_text(encoding="utf-8")), path.name
+        if path.name not in ("replacement.py", "sdxl_engine.py"):
+            text = path.read_text(encoding="utf-8")
+            assert not pattern.search(text) and not v2.search(text), path.name
 
 
 
