@@ -1,14 +1,13 @@
-"""Persona Transfer: a persona INTEIRA gerada na pose da pessoa da foto (sem face swap).
+"""Persona Transfer: a identidade da persona na foto, sem colagem e sem mexer no resto.
 
-  FOTO -> leitura (pessoa, pose, descricao) -> segmentacao (pessoa, cabelo, roupa,
-  acessorios) -> PASS 1 transferencia: a regiao da pessoa SEM a roupa e SEM os
-  acessorios (+ folga de cabelo em volta da cabeca) e gerada de novo com a LoRA da
-  persona e a pose original como condicao -> PASS 2 refino de rosto (so se a
-  identidade ficou baixa) -> PASS 3 integracao (denoise baixo, sem LoRA, nas
-  transicoes) -> composicao final contra a ORIGINAL -> validacao.
+  FOTO ORIGINAL -> mascara do ROSTO + mascara do CABELO -> IDENTIDADE (passada 1: rosto,
+  pescoco e cabelo gerados com a LoRA e a pose da foto; refino de rosto com InstantID
+  moderado so se a identidade ficar baixa) -> BRACOS / MAOS / ROUPA: geometria original
+  (nao sao regenerados) -> REMOCAO DE TATUAGEM so na pele (entrada sem a tinta, denoise
+  medio) -> INTEGRACAO DE BORDAS sem tocar no rosto -> RESULTADO (fora das mascaras, os
+  pixels da foto; fundo travado).
 
-A pessoa original da so pose, enquadramento, roupa, luz e cenario; identidade,
-rosto, cabelo, pele e corpo visivel vem da persona. Nada de grao/filtro depois.
+Nada de grao/filtro depois.
 """
 from __future__ import annotations
 
@@ -22,12 +21,12 @@ import numpy as np
 from app.core.persona_replacement.contracts import TransformRequest
 from app.core.persona_replacement.replacement_orchestrator import ReplacementOrchestrator, ReplacementResult
 from app.core.persona_replacement.rollback import Checkpoint, CheckpointStore
-from app.core.persona_replacement.segmentation import MaskSet, build_masks, dilate, ellipse
+from app.core.persona_replacement.segmentation import MaskSet, build_masks, dilate
 from app.core.persona_replacement.telemetry import StageRecord, cost
 from app.core.persona_replacement.validation import background_change, changed_fraction, validate
 from app.providers.base import ProviderImage, ReferenceImage
 
-TRANSFER, FACE_REFINE, INTEGRATION = "persona_transfer", "face_refinement", "integration"
+TRANSFER, FACE_REFINE, TATTOO, INTEGRATION = "persona_transfer", "face_refinement", "tattoo_removal", "integration"
 
 
 @dataclass
@@ -35,6 +34,7 @@ class TransferConfig:
     transfer: dict[str, Any]
     face_refinement: dict[str, Any]
     integration: dict[str, Any]
+    tattoo_removal: dict[str, Any]
     checks: dict[str, Any]
     negative_extra: tuple[str, ...]
     budget_limit_usd: float
@@ -52,25 +52,27 @@ def load_transfer_config(path: Path) -> TransferConfig:
         raise ValueError("integracao e passada leve: denoise <= 0,25.")
     if d["face_refinement"].get("identity_adapter") and float(d["face_refinement"].get("adapter_weight", 0)) > 0.6:
         raise ValueError("refino de rosto nao usa InstantID forte (spec: identidade vem da persona).")
-    return TransferConfig(t, d["face_refinement"], d["integration"], d["checks"], tuple(d.get("negative_extra", [])),
-                          float(d["budget"]["limit_usd"]), d["generation_config"], d.get("version", ""),
-                          d.get("post_lighting_match", {}))
+    if float(d["tattoo_removal"]["denoise"]) > 0.7:
+        raise ValueError("remocao de tatuagem preserva a geometria: denoise <= 0,7.")
+    return TransferConfig(t, d["face_refinement"], d["integration"], d["tattoo_removal"], d["checks"],
+                          tuple(d.get("negative_extra", [])), float(d["budget"]["limit_usd"]), d["generation_config"],
+                          d.get("version", ""), d.get("post_lighting_match", {}))
 
 
-def transfer_masks(masks: MaskSet, face_bbox, hair_room: float) -> tuple[np.ndarray, np.ndarray]:
-    """(regiao gerada, folga de cabelo). A regiao e a pessoa MENOS roupa e acessorios. Com
-    hair_room 0 (padrao: fundo TRAVADO) a regiao nunca sai do contorno da pessoa; acima de 0,
-    uma folga em volta da cabeca deixa o cabelo da persona passar do contorno original."""
-    h, w = masks.person.shape
-    region = np.clip(masks.person - masks.clothing - masks.protect, 0, 1)
-    if hair_room <= 0:
-        return region, np.zeros((h, w), np.float32)
-    x1, y1, x2, y2 = face_bbox
-    fw, fh = x2 - x1, y2 - y1
-    head = ellipse(h, w, (x1 + x2) / 2, (y1 + y2) / 2 + fh * 0.6, fw * (1.0 + 1.6 * hair_room) * 0.9,
-                   fh * (1.6 + 2.0 * hair_room) * 0.9)
-    room = np.clip(head * (1 - masks.clothing) * (1 - masks.protect) - masks.person, 0, 1)
-    return np.clip(region + room, 0, 1), room
+def identity_mask(masks: MaskSet, face_bbox, grow_frac: float) -> np.ndarray:
+    """ROSTO + CABELO (+ pescoco): so isso recebe a identidade. Bracos, maos e roupa ficam com a
+    geometria da foto. Nunca sai do contorno da pessoa (fundo travado)."""
+    grow = max(2, int((face_bbox[3] - face_bbox[1]) * grow_frac))
+    head = np.maximum(np.maximum(dilate(masks.face_full, grow), masks.face_transition), masks.hair)
+    return np.clip(head * masks.person - masks.clothing - masks.protect, 0, 1)
+
+
+def skin_tattoo_mask(masks: MaskSet, identity: np.ndarray, clothing_margin: int) -> np.ndarray:
+    """Tatuagem SO na pele: longe da borda da roupa (a sombra da borda nao e tinta) e fora do
+    que a passada de identidade ja gerou."""
+    near_clothing = dilate((masks.clothing > 0.5).astype(np.float32), clothing_margin)
+    ink = (masks.tattoos > 0.5).astype(np.float32) * (1 - near_clothing) * (1 - identity) * (1 - masks.protect)
+    return np.clip(dilate(ink, 2) * np.clip(masks.skin + masks.tattoos, 0, 1) * (1 - near_clothing), 0, 1)
 
 
 def plausible_accessories(boxes, face_bbox, max_face_ratio: float) -> list:
@@ -91,8 +93,8 @@ def _box_sum(a: np.ndarray, r: int) -> np.ndarray:
 
 
 def fill_tattoos(rgb: np.ndarray, tattoos: np.ndarray, skin: np.ndarray, radius: int) -> np.ndarray:
-    """Entrada da passada 1 sem a tinta: cada pixel de tatuagem recebe a media da pele limpa em
-    volta. Nao e filtro no resultado - a geracao parte de pele lisa e cria a textura dela."""
+    """Entrada da passada de tatuagem sem a tinta: cada pixel de tatuagem recebe a media da pele
+    limpa em volta. Nao e filtro no resultado - a geracao parte de pele lisa e cria a textura."""
     ink = dilate((tattoos > 0.5).astype(np.float32), 2) > 0.5
     if not ink.any():
         return rgb.copy()
@@ -118,16 +120,12 @@ class TransferOrchestrator(ReplacementOrchestrator):
 
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
-        self._region = None
-        self._room = None
         self._seam = None
 
     def _pixel_checks(self, original: np.ndarray, px: np.ndarray, masks: MaskSet) -> dict[str, Any]:
-        protected_scene = masks.person if self._region is None else np.clip(masks.person + self._region, 0, 1)
         clothing = masks.clothing if self._seam is None else masks.clothing * (1 - self._seam)
-        return {"background_changed": background_change(original, px, protected_scene),
-                "clothing_changed": changed_fraction(original, px, clothing, threshold=10),
-                "hair_room_changed": changed_fraction(original, px, self._room) if self._room is not None else None}
+        return {"background_changed": background_change(original, px, masks.person),
+                "clothing_changed": changed_fraction(original, px, clothing, threshold=10)}
 
     def _prompt(self, template: str, description: str) -> str:
         return template.replace("{description}", description).replace(", ,", ",")
@@ -136,8 +134,8 @@ class TransferOrchestrator(ReplacementOrchestrator):
                      denoise: float, strength: float, seed: int, use_lora: bool, original, masks, master, base_pose,
                      records: list[StageRecord], modified: np.ndarray, **extra) -> np.ndarray:
         current = store.current
-        req = TransformRequest(image=extra.get("source") or current.image, mask=mask, prompt=prompt, negative=negative, strength=strength,
-                               denoise=denoise, seed=seed, name=name, use_lora=use_lora,
+        req = TransformRequest(image=extra.get("source") or current.image, mask=mask, prompt=prompt, negative=negative,
+                               strength=strength, denoise=denoise, seed=seed, name=name, use_lora=use_lora,
                                identity_adapter=extra.get("identity_adapter"), adapter_weight=extra.get("adapter_weight"),
                                reference=master if extra.get("identity_adapter") else None)
         rec = StageRecord(name, kind, mask=extra.get("mask_name"), strength=strength, denoise=denoise, seed=seed,
@@ -160,10 +158,15 @@ class TransferOrchestrator(ReplacementOrchestrator):
         raw = replace(raw, protect_boxes=plausible_accessories(raw.protect_boxes, sheet.target_face.bbox,
                                                                float(cfg.transfer.get("max_accessory_face_ratio", 1.0))))
         masks = build_masks(raw, sheet.target_face.bbox, sheet.target_face.kps, original)
-        region, room = transfer_masks(masks, sheet.target_face.bbox, float(cfg.transfer["hair_room"]))
-        # costura regiao/roupa (decote, mangas): a integracao funde alguns px; a roupa e medida fora dela
-        seam = edge_ring(region, max(3, int(cfg.integration.get("edge_ring", 6))))
-        self._region, self._room, self._seam = region, room, seam
+        t, fr, tr, it = cfg.transfer, cfg.face_refinement, cfg.tattoo_removal, cfg.integration
+        identity = identity_mask(masks, sheet.target_face.bbox, float(t.get("face_grow_frac", 0.12)))
+        margin = max(3, int(min(h, w) * float(tr.get("clothing_margin_frac", 0.006))))
+        tattoos = skin_tattoo_mask(masks, identity, margin)
+        ring_r = max(3, int(it.get("edge_ring", 6)))
+        region = np.clip(identity + tattoos, 0, 1)
+        # costura com a roupa (pescoco/ombros, bordas da pele tratada): a integracao funde alguns px
+        seam = edge_ring(region, ring_r) * (masks.clothing > 0.5)
+        self._seam = seam
         base_pose = sheet.target_body.keypoints if sheet.target_body is not None else None
         m0 = await self._measure(image, w, h, master, base_pose)
         m0.pose = 0.0 if base_pose else None
@@ -171,32 +174,18 @@ class TransferOrchestrator(ReplacementOrchestrator):
         store.add(Checkpoint("original", image, original, m0), accept=True)
         records: list[StageRecord] = []
         modified = np.zeros((h, w), np.float32)
-        neg = ", ".join(dict.fromkeys([t for t in negative.split(", ") if t] + list(cfg.negative_extra)))
+        neg = ", ".join(dict.fromkeys([x for x in negative.split(", ") if x] + list(cfg.negative_extra)))
 
-        # PASS 1: a persona inteira na pose original (identidade + corpo visivel + cabelo + pele);
-        # a entrada vai sem a tinta das tatuagens (a geracao nao tem de onde copiar o desenho)
-        t = cfg.transfer
-        source = None
-        if t.get("prefill_tattoos", True) and (masks.tattoos > 0.5).any():
-            clean = fill_tattoos(original, masks.tattoos * region, masks.skin,
-                                 max(6, int(min(h, w) * float(t.get("prefill_radius_frac", 0.02)))))
-            source = await self.store.save(clean, "tattoo_prefill")
-        modified = await self._stage(store, TRANSFER, "identity", region, self._prompt(t["prompt"], sheet.description()),
+        # 1. IDENTIDADE: rosto + cabelo (+ pescoco) gerados com a LoRA e a pose da foto
+        modified = await self._stage(store, TRANSFER, "identity", identity, self._prompt(t["prompt"], sheet.description()),
                                      neg, float(t["denoise"]), 1.0, seed % 2**32, True, original, masks, master,
-                                     base_pose, records, modified, mask_name="person-clothing-accessories", source=source)
-
-        # sem a persona inteira nao ha o que refinar: refinar so o rosto da original seria face swap
+                                     base_pose, records, modified, mask_name="face+hair")
+        # sem a identidade nao ha o que refinar: refinar so o rosto da original seria face swap
         transferred = store.current.name == TRANSFER
         if not transferred:
-            for name, kind in ((FACE_REFINE, "face"), (INTEGRATION, "integration")):
+            for name, kind in ((FACE_REFINE, "face"), (TATTOO, "body"), (INTEGRATION, "integration")):
                 records.append(StageRecord(name, kind, accepted=False, rollback_reason="transferencia recusada"))
-
-        # PASS 2: refino do rosto SO se a identidade ficou baixa
-        fr = cfg.face_refinement
-        current = store.current
-        if not transferred:
-            pass  # registrado acima
-        elif fr.get("enabled") and (current.measure.face or 0) < float(fr["only_if_identity_below"]):
+        elif fr.get("enabled") and (store.current.measure.face or 0) < float(fr["only_if_identity_below"]):
             modified = await self._stage(store, FACE_REFINE, "face", masks.face_full, fr["prompt"], neg,
                                          float(fr["denoise"]), float(fr["strength"]), (seed + 101) % 2**32,
                                          bool(fr.get("lora", True)), original, masks, master, base_pose, records,
@@ -206,20 +195,31 @@ class TransferOrchestrator(ReplacementOrchestrator):
             records.append(StageRecord(FACE_REFINE, "face", accepted=False,
                                        rollback_reason="nao necessario (identidade ja acima do limite)"))
 
-        # PASS 3: integracao leve nas transicoes (pele/roupa, cabelo/fundo, pescoco) - sem LoRA
-        it = cfg.integration
+        # 2. BRACOS / MAOS / ROUPA: geometria original (nenhuma passada os regenera)
+        # 3. TATUAGEM so na pele: a entrada vai sem a tinta e o denoise medio mantem o formato
+        if transferred and tr.get("enabled") and tattoos.any():
+            clean = fill_tattoos(store.current.pixels, tattoos, masks.skin,
+                                 max(6, int(min(h, w) * float(tr.get("prefill_radius_frac", 0.02)))))
+            source = await self.store.save(clean, "tattoo_prefill")
+            modified = await self._stage(store, TATTOO, "body", tattoos, tr["prompt"], neg, float(tr["denoise"]),
+                                         float(tr["strength"]), (seed + 151) % 2**32, bool(tr.get("lora", False)),
+                                         original, masks, master, base_pose, records, modified,
+                                         mask_name="tattoos(skin only)", source=source)
+        elif transferred:
+            records.append(StageRecord(TATTOO, "body", accepted=False, rollback_reason="sem tatuagem na pele"))
+
+        # 4. INTEGRACAO DE BORDAS sem tocar no rosto - sem LoRA
         if transferred and it.get("enabled"):
-            # a regiao + a costura com a roupa; nunca o fundo (o contorno ja nasceu na passada 1)
-            mask = np.clip(region + seam * masks.clothing - masks.protect, 0, 1)
+            band = edge_ring(region, ring_r) * masks.person
+            mask = np.clip(band * (1 - dilate(masks.face_full, 2)) - masks.protect, 0, 1)
             modified = await self._stage(store, INTEGRATION, "integration", mask, it["prompt"], neg,
                                          float(it["denoise"]), float(it["strength"]), (seed + 202) % 2**32,
                                          bool(it.get("lora", False)), original, masks, master, base_pose, records,
-                                         modified, mask_name="region+edge_ring")
+                                         modified, mask_name="edges-face")
 
         final = store.current
         edge_width = max(3, int(min(h, w) * 0.006))
-        # a "pessoa" do resultado inclui a folga de cabelo (gerada); a roupa e medida fora da costura
-        scored = replace(masks, person=np.clip(masks.person + region, 0, 1), clothing=masks.clothing * (1 - seam))
+        scored = replace(masks, clothing=masks.clothing * (1 - seam))  # a roupa e medida fora da costura
         report = validate(original, final.pixels, scored, region, final.measure, cfg.checks, edge_width)
         if not transferred:
             report.failures.append("transfer_rejected")
@@ -237,11 +237,11 @@ class TransferOrchestrator(ReplacementOrchestrator):
                  if x is not None]
         report.integration_score = round(min(parts), 3) if parts else None
         result = ReplacementResult(final, report, records, store.names(), masks.areas(), sheet.to_dict())
-        result.mask_areas["transfer_region"] = round(float((region > 0.5).mean()), 5)
-        result.mask_areas["hair_room"] = round(float((room > 0.5).mean()), 5)
+        result.mask_areas["identity"] = round(float((identity > 0.5).mean()), 5)
+        result.mask_areas["skin_tattoos"] = round(float((tattoos > 0.5).mean()), 5)
         result.mask_areas["seam"] = round(float((seam > 0.5).mean()), 5)
         return result
 
 
-__all__ = ["FACE_REFINE", "INTEGRATION", "TRANSFER", "TransferConfig", "TransferOrchestrator", "edge_ring",
-           "fill_tattoos", "load_transfer_config", "plausible_accessories", "transfer_masks"]
+__all__ = ["FACE_REFINE", "INTEGRATION", "TATTOO", "TRANSFER", "TransferConfig", "TransferOrchestrator", "edge_ring",
+           "fill_tattoos", "identity_mask", "load_transfer_config", "plausible_accessories", "skin_tattoo_mask"]

@@ -156,3 +156,11 @@ Etapas:
   1. **Braço e mão direitos:** a mão que segurava o top sumiu e o braço novo ficou mais fino. O espaço que sobrou do braço antigo virou um "recorte" com cor de parede, e há resto de tatuagem no ombro.
   2. **Bordas do top:** uma faixa manchada (tipo estampa) em cima e embaixo. Provável causa: a detecção de tatuagem por "buraco na pele" marcou a sombra da borda do top como tatuagem, e o preenchimento virou estampa.
   3. **Cabelo:** cortado reto onde passa do contorno original (lado esquerdo).
+
+## Transfer v1.2: fluxo do usuário (só código, sem GPU)
+FOTO → máscara do ROSTO + máscara do CABELO → IDENTIDADE LUNA → BRAÇOS / MÃOS / ROUPA com a geometria original → REMOÇÃO DE TATUAGEM só na pele → INTEGRAÇÃO DE BORDAS sem tocar no rosto → RESULTADO.
+
+- **Identidade:** só rosto, cabelo e pescoço são gerados, com LoRA, pose e denoise 0,9. Refino com InstantID 0,5 se a identidade ficar abaixo de 0,70.
+- **Braços, mãos e roupa:** nenhuma passada os regenera, então a geometria é a da foto. Isso corrige o braço deformado do teste 2.
+- **Tatuagem:** só na pele, longe da borda da roupa, para corrigir a faixa manchada do top. Entrada sem a tinta, denoise 0,55, sem LoRA.
+- **Integração:** faixa em volta das áreas tratadas, sem o rosto, para corrigir a queda de identidade do teste 2. Denoise 0,18, sem LoRA.
