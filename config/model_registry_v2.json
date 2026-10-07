@@ -1,0 +1,80 @@
+{
+  "_comment": "Registro de modelos da V2 (Persona Engine hyperreal replacement). Fonte da verdade de arquivo, versao, origem, LICENCA e hash. 'status': AVAILABLE (no volume ou baixado por sessao de fonte oficial), MISSING (precisa de acao do usuario), LICENSE_REVIEW_REQUIRED (nao assumir uso comercial). Nunca ha troca silenciosa de modelo: o escolhido indisponivel = erro.",
+  "version": "registry-v2.0",
+  "checkpoints": {
+    "realvisxl": {
+      "title": "RealVisXL V5.0 (fp16)", "family": "sdxl", "file": "RealVisXL_V5.0_fp16.safetensors", "version": "V5.0",
+      "size_bytes": 6938065488, "sha256": "6a35a7855770ae9820a3c931d4964c3817b6d9e3c6f9c4dabb5b3a94e5643b80",
+      "source": "https://huggingface.co/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors",
+      "license": "CreativeML Open RAIL++-M", "commercial_use": "allowed_with_use_restrictions",
+      "restrictions": "restricoes de uso do OpenRAIL++-M (sem uso ilegal/danoso; repassar as restricoes)",
+      "provisioning": "download_per_session", "status": "AVAILABLE",
+      "sampling": {"steps": 30, "cfg": 5.0, "sampler": "dpmpp_2m_sde", "scheduler": "karras"},
+      "vram_gb": 9.5, "default": true
+    },
+    "lustify": {
+      "title": "LUSTIFY! ZENITH (V9) SDXL", "family": "sdxl", "file": "lustifyNSFWCheckpoint_zenithV9.safetensors", "version": "ZENITH V9",
+      "size_bytes": 6938143490, "sha256": "1a3abf0bf48113eb5e17d2f8ae012c5b60cb97d81d79c4d9e47cd5af56c162f1",
+      "source": "https://civitai.com/api/download/models/3045803",
+      "license": "Civitai (termos do autor; OpenRAIL++-M herdado do SDXL)", "commercial_use": "unknown",
+      "restrictions": "conferir as permissoes do modelo no Civitai antes de uso comercial",
+      "provisioning": "download_per_session_with_user_token", "download_auth": "CIVITAI_TOKEN (digitado pelo usuario; sem token = 401)",
+      "status": "MISSING", "license_status": "LICENSE_REVIEW_REQUIRED",
+      "sampling": {"steps": 30, "cfg": 5.0, "sampler": "dpmpp_2m_sde", "scheduler": "karras"},
+      "vram_gb": 9.5, "default": false
+    }
+  },
+  "loras": {
+    "lunavox_sdxl_v1": {
+      "file": "lunavox_sdxl_v1.safetensors", "base_model": "RealVisXL V5.0 (SDXL)", "trigger": "lunavox", "rank": 32,
+      "sha256": "0a58a72e0d7850e360e410e9fdc2106003d681d109c19bd8c55d73b772f4dea3", "strength": 1.0,
+      "source": "treino proprio 2026-09-24 (75 imagens da Luna, so UNet)", "license": "propria (dono do projeto)",
+      "commercial_use": "owner", "status": "AVAILABLE", "compatible_with": ["realvisxl", "lustify"],
+      "note": "Forca fixa 1.0. NUNCA subir para corrigir identidade (falha de identidade -> referencia/etapa/retry especifico)."
+    },
+    "luna_qwen_2511_v1": {
+      "file": "luna_qwen_2511_v1.safetensors", "base_model": "Qwen-Image-Edit 2511", "license": "propria", "commercial_use": "owner",
+      "status": "AVAILABLE", "compatible_with": ["qwen_image_edit_2511"]
+    },
+    "bfs_head_v5": {
+      "file": "bfs_head_v5_2511_merged_version_rank_16_fp16.safetensors", "base_model": "Qwen-Image-Edit 2511",
+      "source": "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap", "license": "MIT", "commercial_use": "allowed", "status": "AVAILABLE"
+    }
+  },
+  "head_swap": {
+    "qwen_image_edit_2511": {
+      "file": "qwen_image_edit_2511_fp8mixed.safetensors", "source": "https://huggingface.co/Comfy-Org/Qwen-Image-Edit_ComfyUI",
+      "license": "Apache-2.0", "commercial_use": "allowed", "status": "AVAILABLE", "provisioning": "volume",
+      "benchmark": "vencedor do benchmark de 2026-10-07 (semelhanca 0,727, 22 s/imagem)"
+    }
+  },
+  "controls": {
+    "controlnet_union_promax": {
+      "file": "controlnet-union-sdxl-1.0-promax.safetensors", "size_bytes": 2513342408,
+      "sha256": "9fae2e50cb431bfcbe05822b59ec2228df545ef27f711dea8949e9f4ed9f7cdc",
+      "source": "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors",
+      "license": "Apache-2.0", "commercial_use": "allowed", "status": "AVAILABLE", "provisioning": "download_per_session",
+      "types": ["openpose", "depth"]
+    },
+    "dwpose": {"file": "dw-ll_ucoco_384_bs5.torchscript.pt + yolox_l.onnx", "license": "Apache-2.0", "commercial_use": "allowed",
+               "status": "AVAILABLE", "provisioning": "volume (cache do comfyui_controlnet_aux)"},
+    "depth_anything_v2_small": {"file": "depth_anything_v2_vits.pth", "license": "Apache-2.0 (so a Small; Base/Large sao CC-BY-NC)",
+                                "commercial_use": "allowed", "status": "AVAILABLE", "provisioning": "volume (cache do comfyui_controlnet_aux)"},
+    "instantid": {
+      "files": ["instantid_ip-adapter.bin", "instantid_controlnet.safetensors"],
+      "source": "https://huggingface.co/InstantX/InstantID", "license": "Apache-2.0 (pesos)", "commercial_use": "allowed",
+      "depends_on": "antelopev2", "status": "AVAILABLE", "provisioning": "download_per_session"
+    },
+    "antelopev2": {
+      "file": "antelopev2 (scrfd_10g_bnkps + glintr100)", "license": "InsightFace: modelos so para pesquisa nao comercial",
+      "commercial_use": "not_allowed_without_license", "status": "AVAILABLE", "license_status": "LICENSE_REVIEW_REQUIRED",
+      "used_by": ["InstantID", "validacao de identidade (LunaFaces)"]
+    },
+    "sam2": {"file": "sam2_hiera_base_plus.safetensors", "license": "Apache-2.0", "commercial_use": "allowed", "status": "AVAILABLE"},
+    "florence2_large": {"file": "microsoft/Florence-2-large", "license": "MIT", "commercial_use": "allowed", "status": "AVAILABLE"}
+  },
+  "generation_v1": {
+    "z_image": {"file": "z_image_turbo (V1 de producao)", "license": "Apache-2.0", "commercial_use": "allowed", "status": "AVAILABLE",
+                "note": "pipeline V1 de producao (main) - nao e alterado pela V2"}
+  }
+}
