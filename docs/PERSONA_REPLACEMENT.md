@@ -178,3 +178,13 @@ Métricas: identidade **0,751**, original 0,068, pose 0,029, fundo 0%, roupa 0%,
   1. **Braço direito:** a detecção de tatuagem (Florence) marcou o braço e a mão inteiros. O preenchimento liso com denoise 0,55 virou uma "massinha" lisa e laranja, com contorno duro e a mão sumida.
   2. **Ombro esquerdo:** a tatuagem continua, porque a detecção não pegou.
   3. **Objeto novo:** apareceu um brinco de argola grande. E ficou uma mecha clara no cabelo do lado esquerdo.
+
+## Transfer v1.3: spec "TESTE 4 — LUNA IDENTITY + STRUCTURE PRESERVATION" (só código, sem GPU)
+- **Roupa protegida pelo Florence ("clothes"):** a tinta deixa de contar como roupa. Antes, a tatuagem do ombro caía na "roupa" e ficava intocada.
+  - **Trava:** se o Florence cobrir menos de 60% da roupa vista na foto, o código volta à máscara antiga, para o top nunca virar pele.
+- **Pele visível de braços, mãos, ombros e colo:** redesenhada com a **profundidade da foto original**: DepthAnything V2 no ControlNet Union, tipo depth, força 0,9 até o fim, e a tinta não aparece na profundidade.
+  - Parte da foto com a tinta coberta pela cor da pele vizinha (raio pequeno, mantém luz e sombra). Denoise 0,7, sem LoRA.
+  - **Teste local na foto real:** a tinta detectada cobre as tatuagens do ombro, do braço e da mão.
+- **Integração:** não toca no rosto nem no top, que fica exato.
+- **Negativo:** a lista do usuário (80 termos: mãos deformadas, tatuagem fantasma, brinco de argola, joias novas, top alterado, fundo alterado etc.).
+- **Rosto:** mesma semente e mesmas máscaras do teste 3. O negativo novo pode mudar um pouco o rosto, e o mínimo de identidade continua 0,70.

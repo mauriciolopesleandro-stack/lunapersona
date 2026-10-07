@@ -21,6 +21,7 @@ from app.core.persona_replacement.transfer import (
     identity_mask,
     load_transfer_config,
     plausible_accessories,
+    skin_region,
     skin_tattoo_mask,
 )
 from tests.conftest import REPO
@@ -51,7 +52,9 @@ def test_config_follows_the_spec():
     assert fr["identity_adapter"] == "instantid" and fr["adapter_weight"] <= 0.6  # identidade das referencias, sem forcar
     assert CFG.checks["max_background_changed"] <= 0.002  # fundo TRAVADO
     assert CFG.tattoo_removal["denoise"] <= 0.7 and CFG.tattoo_removal["lora"] is False  # geometria da foto
-    assert {"makeup", "text", "extra face"} <= set(CFG.negative_extra)
+    assert {"heavy makeup", "text", "second face", "hoop earrings", "tattoo ghosting"} <= set(CFG.negative_extra)
+    cn = CFG.tattoo_removal["controlnet"]
+    assert cn["type"] == "depth" and cn["strength"] >= 0.8  # bracos e maos seguem a estrutura da foto
     assert CFG.integration["denoise"] <= 0.25 and CFG.integration["lora"] is False
     assert CFG.post_lighting_match["enabled"] is False  # sem filtro/grao depois
     assert CFG.budget_limit_usd == 0.05 and "tattoo" in CFG.negative_extra
@@ -104,6 +107,27 @@ def test_tattoo_mask_is_skin_only_and_away_from_the_clothing_edge():
     assert ink[60, 80] == 0  # rosto e da passada de identidade
 
 
+def wide_tattoo_photo():
+    """Tatuagem que cobre a largura toda do braco (encosta no contorno): nao e "buraco" na pele."""
+    img, person, hair = photo()
+    img[124:134, 40:52] = (70, 70, 80)
+    img[200:230, 40:52] = (170, 190, 215)  # punho de outra peca clara (nao e pele nem tinta)
+    clothes = np.zeros(person.shape, np.float32)
+    clothes[110:230, 52:120] = 1
+    clothes[200:230, 40:52] = 1
+    return img, person, hair, clothes
+
+
+def test_visible_skin_includes_ink_that_does_not_look_like_skin():
+    img, person, hair, clothes = wide_tattoo_photo()
+    m = build_masks(RawSegments(person, hair, []), FACE_BOX, KPS, img)
+    assert m.clothing[128, 46] == 1  # sem o Florence a tinta larga caia na roupa (protegida)
+    body, ink = skin_region(m, clothes, identity_mask(m, FACE_BOX, 0.12), img, 3, 10, 12)
+    assert body[128, 46] == 1 and ink[128, 46] == 1 and body[150, 45] == 1 and ink[150, 45] == 0
+    assert body[170, 80] == 0 and body[215, 46] == 0  # roupa (inclusive a peca clara) fica fora
+    assert body[60, 80] == 0  # rosto e da passada de identidade
+
+
 def test_accessory_boxes_bigger_than_the_face_are_false_positives():
     glasses, top = (66, 44, 94, 56), (40, 100, 120, 200)
     assert plausible_accessories([glasses, top], FACE_BOX, 1.0) == [glasses]
@@ -128,13 +152,16 @@ def test_edge_ring_is_a_band_on_both_sides():
 # --- orquestrador -------------------------------------------------------------------------
 
 
-def orchestrator(faces, original_similarity=0.1, tattoo=False, protect=()):
-    img = photo(tattoo=tattoo)[0]
+def orchestrator(faces, original_similarity=0.1, tattoo=False, protect=(), wide=False):
+    img = wide_tattoo_photo()[0] if wide else photo(tattoo=tattoo)[0]
     store = Store(img)
     tr = Transformer(store)
 
     class Seg:
         async def segment(self, image, sheet):
+            if wide:
+                _, person, hair, clothes = wide_tattoo_photo()
+                return RawSegments(person, hair, list(protect), clothes=clothes)
             _, person, hair = photo()
             return RawSegments(person, hair, list(protect))
 
@@ -165,7 +192,7 @@ async def test_identity_on_face_and_hair_keeps_arms_clothing_and_background():
     assert (final[outside] == original[outside]).all()  # fundo TRAVADO: pixel a pixel
     assert (final[200, 90] == SHIRT).all() and (final[150, 46] == original[150, 46]).all()  # roupa e braco
     assert res.report.identity == 0.775 and res.report.status == "PASS" and res.report.integration_score is not None
-    assert {"identity", "skin_tattoos", "seam"} <= set(res.mask_areas)
+    assert {"identity", "visible_skin", "ink", "seam"} <= set(res.mask_areas)
 
 
 async def test_face_refinement_runs_only_when_identity_is_low():
@@ -189,6 +216,39 @@ async def test_tattoos_are_removed_only_on_the_skin_from_a_clean_input():
     assert tat.use_lora is False and tat.denoise == CFG.tattoo_removal["denoise"]
     img = store.images["foto.png"]
     assert res.final.name == INTEGRATION and (res.final.pixels[0:5, 0:5] == img[0:5, 0:5]).all()
+
+
+async def test_visible_skin_is_redrawn_with_the_original_structure_and_the_top_stays_exact():
+    faces = {"foto": 0.1, TRANSFER: 0.8, TATTOO: 0.8, INTEGRATION: 0.8}
+    orch, tr, store = orchestrator(faces, wide=True)
+    res = await orch.run("foto.png", MASTER, "neg", 7)
+    assert [c.name for c in tr.calls] == [TRANSFER, TATTOO, INTEGRATION]
+    skin = tr.calls[1]
+    assert skin.control == "foto.png"  # estrutura (profundidade) da foto ORIGINAL
+    assert skin.mask[128, 46] == 1 and skin.mask[150, 45] == 1 and skin.mask[170, 80] == 0
+    assert tr.calls[2].mask[112, 80] == 0 and tr.calls[2].mask[60, 80] == 0  # integracao: nem top nem rosto
+    original = store.images["foto.png"]
+    clothes = wide_tattoo_photo()[3] > 0.5
+    assert (res.final.pixels[clothes] == original[clothes]).all()  # o top (e a outra peca) exatos
+    assert res.report.clothing_changed == 0.0 and res.final.name == INTEGRATION
+    assert res.mask_areas["clothes_source"] == "florence"
+
+
+async def test_weak_clothes_segmentation_falls_back_and_never_turns_the_top_into_skin():
+    faces = {"foto": 0.1, TRANSFER: 0.8, TATTOO: 0.8, INTEGRATION: 0.8}
+    orch, tr, store = orchestrator(faces, wide=True)
+    seg = orch.segmenter
+
+    class Weak:
+        async def segment(self, image, sheet):
+            raw = await seg.segment(image, sheet)
+            raw.clothes[:] = 0  # o Florence nao achou a roupa
+            return raw
+
+    orch.segmenter = Weak()
+    res = await orch.run("foto.png", MASTER, "neg", 7)
+    assert res.mask_areas["clothes_source"] == "heuristic"
+    assert all(c.mask[170, 80] == 0 for c in tr.calls)  # o top nunca entra em mascara nenhuma
 
 
 async def test_integration_that_drops_identity_is_rolled_back():
@@ -239,6 +299,14 @@ async def test_transfer_transformer_dispatches_by_stage():
     assert out.metadata["workflow"] == "realvis-persona-transfer"
     await tr.transform(TransformRequest("foto.png", m.face_inner, "p", "n", 0.4, 0.18, 9, INTEGRATION))
     assert "c1" in comfy.graphs[1]  # integracao: region pass do replacement, recortado pela mascara
+    skin_tr = ComfyTransferTransformer(session, ComfyReplacementTransformer(region, comfy), v2.model(), v2.lora,
+                                       CFG.transfer, skin=CFG.tattoo_removal)
+    out = await skin_tr.transform(TransformRequest("limpa.png", m.body_skin, "skin", "n", 1.0, 0.7, 3, TATTOO,
+                                                   use_lora=False, control="foto.png"))
+    g = comfy.graphs[2]
+    assert out.metadata["workflow"] == "realvis-skin-depth" and g["22"]["inputs"]["type"] == "depth"
+    assert g["40"]["inputs"]["image"] == "foto.png" and g["10"]["inputs"]["image"] == "limpa.png"
+    assert g["20"]["class_type"] == "DepthAnythingV2Preprocessor" and g["2"]["inputs"]["strength_model"] == 0.0
 
 
 # --- custo ------------------------------------------------------------------------------------

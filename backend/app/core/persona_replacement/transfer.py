@@ -75,6 +75,43 @@ def skin_tattoo_mask(masks: MaskSet, identity: np.ndarray, clothing_margin: int)
     return np.clip(dilate(ink, 2) * np.clip(masks.skin + masks.tattoos, 0, 1) * (1 - near_clothing), 0, 1)
 
 
+def luma(rgb: np.ndarray) -> np.ndarray:
+    x = rgb.astype(np.float32)
+    return 0.299 * x[..., 0] + 0.587 * x[..., 1] + 0.114 * x[..., 2]
+
+
+def local_mean(values: np.ndarray, known: np.ndarray, radius: int) -> np.ndarray:
+    """Media local so dos pixels conhecidos (convolucao normalizada); onde nao ha nenhum, a media geral."""
+    k = known.astype(np.float32)
+    num, den = _box_sum(values * (k[..., None] if values.ndim == 3 else k), radius), _box_sum(k, radius)
+    if values.ndim == 3:
+        den = den[..., None]
+    fallback = values[known].mean(axis=0) if known.any() else values.mean(axis=(0, 1))
+    return np.where(den > 0.5, num / np.maximum(den, 1e-6), fallback).astype(np.float32)
+
+
+def skin_region(masks: MaskSet, clothes: np.ndarray | None, identity: np.ndarray, rgb: np.ndarray, margin: int,
+                reach: int, ink_delta: float) -> tuple[np.ndarray, np.ndarray]:
+    """(pele visivel de bracos/maos/ombros/colo, tinta). A ROUPA vem do Florence ("clothes"): o
+    que nao e roupa, nao e rosto/cabelo e nao e acessorio, mas e pele OU mais escuro que a pele
+    vizinha, e pele com tinta. Assim a tatuagem nao some da mascara so porque nao "parece" pele
+    (antes ela caia na roupa e ficava protegida). Sem o Florence, so a tinta detectada."""
+    if clothes is None:
+        ink = skin_tattoo_mask(masks, identity, margin)
+        return ink, ink
+    person, skin = masks.person > 0.5, masks.skin > 0.5
+    covered = dilate(((clothes > 0.5) & person).astype(np.float32), margin) > 0.5
+    y = luma(rgb)
+    around = local_mean(y, skin, reach)
+    darker = y < around - ink_delta
+    near_skin = dilate(skin.astype(np.float32), reach) > 0.5
+    free = person & ~covered & (identity < 0.5) & (masks.protect < 0.5)
+    body = free & (skin | (darker & near_skin))
+    body = (dilate(body.astype(np.float32), 1) > 0.5) & free  # fecha furos de 1 px
+    ink = body & (~skin | darker)
+    return body.astype(np.float32), ink.astype(np.float32)
+
+
 def plausible_accessories(boxes, face_bbox, max_face_ratio: float) -> list:
     """Oculos, brinco, pulseira e relogio sao pequenos: uma caixa maior que o rosto e falso
     positivo do grounding (ex.: o top inteiro com as maos) e nao pode travar a regiao."""
@@ -137,7 +174,7 @@ class TransferOrchestrator(ReplacementOrchestrator):
         req = TransformRequest(image=extra.get("source") or current.image, mask=mask, prompt=prompt, negative=negative,
                                strength=strength, denoise=denoise, seed=seed, name=name, use_lora=use_lora,
                                identity_adapter=extra.get("identity_adapter"), adapter_weight=extra.get("adapter_weight"),
-                               reference=master if extra.get("identity_adapter") else None)
+                               reference=master if extra.get("identity_adapter") else None, control=extra.get("control"))
         rec = StageRecord(name, kind, mask=extra.get("mask_name"), strength=strength, denoise=denoise, seed=seed,
                           identity_adapter=req.identity_adapter, lora=use_lora)
         records.append(rec)
@@ -161,12 +198,20 @@ class TransferOrchestrator(ReplacementOrchestrator):
         t, fr, tr, it = cfg.transfer, cfg.face_refinement, cfg.tattoo_removal, cfg.integration
         identity = identity_mask(masks, sheet.target_face.bbox, float(t.get("face_grow_frac", 0.12)))
         margin = max(3, int(min(h, w) * float(tr.get("clothing_margin_frac", 0.006))))
-        tattoos = skin_tattoo_mask(masks, identity, margin)
+        # trava: se o Florence nao cobrir a maior parte da roupa vista na foto, nao confia nele
+        # (sem ela o top escuro poderia virar "pele com tinta")
+        heuristic = masks.clothing > 0.5
+        coverage = (float(((raw.clothes > 0.5) & heuristic).sum()) / max(1.0, float(heuristic.sum()))
+                    if raw.clothes is not None else None)
+        if coverage is not None and coverage < float(tr.get("min_clothes_coverage", 0.6)):
+            raw = replace(raw, clothes=None)
+        body, ink = skin_region(masks, raw.clothes, identity, original, margin,
+                                max(6, int(min(h, w) * float(tr.get("reach_frac", 0.03)))), float(tr.get("ink_delta", 12)))
+        if raw.clothes is not None:  # a roupa PROTEGIDA e a do Florence (a tinta nao conta como roupa)
+            masks = replace(masks, clothing=np.clip((raw.clothes > 0.5) * masks.person - identity, 0, 1).astype(np.float32))
         ring_r = max(3, int(it.get("edge_ring", 6)))
-        region = np.clip(identity + tattoos, 0, 1)
-        # costura com a roupa (pescoco/ombros, bordas da pele tratada): a integracao funde alguns px
-        seam = edge_ring(region, ring_r) * (masks.clothing > 0.5)
-        self._seam = seam
+        region = np.clip(identity + body, 0, 1)
+        seam = np.zeros((h, w), np.float32)  # a integracao nao toca na roupa: a roupa inteira e medida
         base_pose = sheet.target_body.keypoints if sheet.target_body is not None else None
         m0 = await self._measure(image, w, h, master, base_pose)
         m0.pose = 0.0 if base_pose else None
@@ -196,21 +241,23 @@ class TransferOrchestrator(ReplacementOrchestrator):
                                        rollback_reason="nao necessario (identidade ja acima do limite)"))
 
         # 2. BRACOS / MAOS / ROUPA: geometria original (nenhuma passada os regenera)
-        # 3. TATUAGEM so na pele: a entrada vai sem a tinta e o denoise medio mantem o formato
-        if transferred and tr.get("enabled") and tattoos.any():
-            clean = fill_tattoos(store.current.pixels, tattoos, masks.skin,
-                                 max(6, int(min(h, w) * float(tr.get("prefill_radius_frac", 0.02)))))
+        # 3. TATUAGEM: toda a pele visivel de bracos/maos/ombros/colo e redesenhada com a ESTRUTURA da
+        #    foto original (profundidade: a tinta nao aparece nela); a entrada vai com a tinta coberta
+        if transferred and tr.get("enabled") and ink.any():
+            clean = fill_tattoos(store.current.pixels, ink, (masks.skin > 0.5) & (ink < 0.5),
+                                 max(6, int(min(h, w) * float(tr.get("prefill_radius_frac", 0.012)))))
             source = await self.store.save(clean, "tattoo_prefill")
-            modified = await self._stage(store, TATTOO, "body", tattoos, tr["prompt"], neg, float(tr["denoise"]),
+            modified = await self._stage(store, TATTOO, "body", body, tr["prompt"], neg, float(tr["denoise"]),
                                          float(tr["strength"]), (seed + 151) % 2**32, bool(tr.get("lora", False)),
                                          original, masks, master, base_pose, records, modified,
-                                         mask_name="tattoos(skin only)", source=source)
+                                         mask_name="visible skin (arms, hands, shoulders, chest)", source=source,
+                                         control=image)
         elif transferred:
             records.append(StageRecord(TATTOO, "body", accepted=False, rollback_reason="sem tatuagem na pele"))
 
         # 4. INTEGRACAO DE BORDAS sem tocar no rosto - sem LoRA
         if transferred and it.get("enabled"):
-            band = edge_ring(region, ring_r) * masks.person
+            band = edge_ring(region, ring_r) * masks.person * (1 - dilate(masks.clothing, 1))  # o top fica exato
             mask = np.clip(band * (1 - dilate(masks.face_full, 2)) - masks.protect, 0, 1)
             modified = await self._stage(store, INTEGRATION, "integration", mask, it["prompt"], neg,
                                          float(it["denoise"]), float(it["strength"]), (seed + 202) % 2**32,
@@ -238,10 +285,13 @@ class TransferOrchestrator(ReplacementOrchestrator):
         report.integration_score = round(min(parts), 3) if parts else None
         result = ReplacementResult(final, report, records, store.names(), masks.areas(), sheet.to_dict())
         result.mask_areas["identity"] = round(float((identity > 0.5).mean()), 5)
-        result.mask_areas["skin_tattoos"] = round(float((tattoos > 0.5).mean()), 5)
+        result.mask_areas["clothes_coverage"] = None if coverage is None else round(coverage, 3)
+        result.mask_areas["clothes_source"] = "florence" if raw.clothes is not None else "heuristic"
+        result.mask_areas["visible_skin"] = round(float((body > 0.5).mean()), 5)
+        result.mask_areas["ink"] = round(float((ink > 0.5).mean()), 5)
         result.mask_areas["seam"] = round(float((seam > 0.5).mean()), 5)
         return result
 
 
-__all__ = ["FACE_REFINE", "INTEGRATION", "TATTOO", "TRANSFER", "TransferConfig", "TransferOrchestrator", "edge_ring",
+__all__ = ["luma", "local_mean", "skin_region", "FACE_REFINE", "INTEGRATION", "TATTOO", "TRANSFER", "TransferConfig", "TransferOrchestrator", "edge_ring",
            "fill_tattoos", "identity_mask", "load_transfer_config", "plausible_accessories", "skin_tattoo_mask"]

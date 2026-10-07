@@ -75,7 +75,7 @@ async def main() -> int:
     # InstantID so no refino de rosto (peso moderado, config/persona_transfer.json), se a identidade ficar baixa
     region = ComfyRegionPassAdapter(session, gen.model(), gen.lora, steps=gen.pass_steps, identity_adapters=gen.identity_adapters)
     transformer = ComfyTransferTransformer(session, ComfyReplacementTransformer(region, client), gen.model(), gen.lora,
-                                           cfg.transfer)
+                                           cfg.transfer, skin=cfg.tattoo_removal)
     problems = await region.validate_configuration() + await transformer.validate_configuration()
     if problems:
         print("CONFIG", problems, flush=True)

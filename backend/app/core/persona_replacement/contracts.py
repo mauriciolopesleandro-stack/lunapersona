@@ -117,6 +117,7 @@ class RawSegments:
     hair: np.ndarray | None = None
     protect_boxes: list[tuple[float, float, float, float]] = field(default_factory=list)
     tattoos: np.ndarray | None = None  # tatuagens detectadas na imagem (alem dos buracos na pele)
+    clothes: np.ndarray | None = None  # roupa segundo o Florence (separa roupa de tinta na pele)
 
 
 class Segmenter(Protocol):
@@ -138,6 +139,7 @@ class TransformRequest:
     identity_adapter: str | None = None
     adapter_weight: float | None = None
     reference: Any = None  # master_face (ReferenceImage) quando ha adaptador
+    control: str | None = None  # imagem de onde sai a estrutura (ex.: a foto ORIGINAL para a profundidade)
 
 
 @dataclass
