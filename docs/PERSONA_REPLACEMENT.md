@@ -281,3 +281,22 @@ Métricas: identidade 0,756, rosto **0% alterado**, fundo 0%, roupa 0%, luz 0,75
 1. A **profundidade foi calculada na foto ORIGINAL**. O Depth Anything "enxerga" o contraste forte da tinta como relevo, e o ControlNet (força 0,9 até o fim) **redesenha o desenho da tatuagem**. Isso fica claro na flor do ombro.
 2. O ajuste de tom usava como referência pixels de "pele" perto da tinta, que incluem traço claro de tatuagem: ele **reescurece** o formato.
 3. A área da argola foi recortada pela proteção da pele do rosto.
+
+## Retoque de tatuagens: pipeline do usuário (Teste 7, `scripts/retoque/`), rodada real 1 (2026-10-07)
+
+### Rodada
+- **Pod:** **5,3 min (≈ US$ 0,05)**, ligado uma vez. Download do RealVisXL e do ControlNet: 177 s. As 3 regiões rodaram em 1,2 min pelo túnel SSH.
+- **Comandos:**
+  - `retoque_tatuagens.py preparar --original foto1.png --base foto1_base.png --pessoa pessoa.png --incluir argola.png --config ajustes_foto1.json --trabalho foto1b`
+  - `comfy_pod.py --trabalho foto1b/ --workflow inpaint_regiao_api.json --url http://127.0.0.1:8188 --denoise 0.65 --seed 1234 --espera-min 2 --timeout-min 6`
+  - `compor` offline.
+- **Checagem: REPROVADO.**
+  - mudança fora da área 0; tinta residual 0,0063; emenda ΔE 2,63; pontinhos 2,11;
+  - **tom ΔE 6,33** e **blocos 0,013** reprovaram.
+
+### Leitura visual
+- **Ombro esquerdo:** a flor sumiu, com pele natural e sem emenda. **Ótimo.**
+- **Argola:** removida. O ganchinho original ficou. **Ótimo.**
+- **Braço direito:** a tatuagem do alto do braço sumiu, bem.
+- **Antebraço e mão: falha.** O modelo desenhou uma textura de **pelo/pelúcia** alaranjada sobre a mão e o antebraço. Isso explica o tom e os "blocos" reprovados.
+  - **Causa provável:** recorte grande (442×629), mão inteira pré-preenchida lisa, profundidade do recorte sem detalhe dos dedos e denoise 0,65.
