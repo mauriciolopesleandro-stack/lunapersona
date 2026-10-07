@@ -188,3 +188,41 @@ Defeito que sobrou na 0,6: manchas claras redondas, fracas, no braço esquerdo e
 **Limitação que fica:** um pedaço da flor no ombro esquerdo. Fica em pele na sombra, junto à cadeira escura; ali a tinta não é mais escura que a pele em volta, e a regra de cor não separa os dois com segurança.
 
 `scripts/v2_engine/plano_escada.json`: 8 degraus × 2 fotos (quarto, varanda), semente 7801, só RealVisXL. Depois, 3 sementes na melhor configuração e uma geração V1 de regressão.
+
+
+## Varanda com óculos, versão final (2026-10-07, autorizado)
+
+| | |
+|---|---|
+| Tempo e custo | 8 min, **~US$ 0,08** |
+| Resultado | **REJECT** |
+
+| Medida | Valor |
+|---|---|
+| Identidade | 0,30 |
+| Rosto original | 0,28 |
+| Tatuagem | 0,32 |
+| Pose | 0,009 |
+| Fundo | 0,0 |
+
+**Melhorou:**
+- O rosto saiu **inteiro e coerente**: o buraco dos óculos foi resolvido.
+- Cabelo castanho da Luna, óculos mantidos (PRESERVE), cenário intacto.
+
+**Falhas e causas:**
+
+| Falha | Causa |
+|---|---|
+| Identidade 0,30 | O refino com referência chegou a 0,675, mas a trava visual o descartou: trocar cabelo loiro por escuro contra o céu contava como "emenda" |
+| Argolas da pessoa original ficaram | Penduradas fora da máscara do rosto (política REMOVE não aplicada) |
+| Pulseira virou bloco branco | O preenchimento só tirava tinta escura |
+| Grão pesado no rosto | Integração adicionou 5,6, medido na pele ao sol do ombro |
+| Tatuagens finas dos braços não detectadas | Traços finos em pele bronzeada (limitação) |
+
+**Correções:**
+- A borda contra o fundo não conta como emenda. Na própria rodada, o refino passaria: emenda 3,7, blocos 8,8 < 11,9, identidade 0,675.
+- Brinco/colar REMOVE perto da cabeça entra na geração do rosto.
+- Joia removida no corpo é preenchida inteira.
+- Teto de grão 2,5.
+
+**Pendente:** detector de tatuagem fina em pele bronzeada.
