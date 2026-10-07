@@ -136,3 +136,23 @@ O que deu errado:
 - **Tatuagens:** saem da ENTRADA da passada 1. A tinta é trocada pela média da pele limpa em volta, e a geração cria a textura da pele. Não é filtro no resultado.
 - **Identidade:** vem das referências da Luna. A LoRA atua na passada 1; o refino de rosto, que só roda se a identidade ficar abaixo de 0,70, usa a LoRA com InstantID **moderado (0,5)** e denoise 0,4.
 - **Negativo:** acrescenta makeup, lipstick, studio portrait, text, letters, poster, picture frame, extra person e extra face.
+
+## Transfer teste 2 (v1.1, quarto, 1 geração, ~US$ 0,06, 385 s de pod)
+
+Métricas: identidade Luna **0,772**, semelhança com a original 0,11 (sem mistura), fundo 0%, roupa 0%, pose 0,086. Status PASS pelas métricas.
+
+Etapas:
+- Transferência: 0,416 em 23 s.
+- Refino de rosto (LoRA + InstantID 0,5): 0,772 em 31 s.
+- Integração: recusada, porque a identidade caiu 0,041.
+
+**Leitura visual: ainda não passa no teste do observador.**
+- **Certo:**
+  - fundo idêntico, pixel a pixel;
+  - rosto natural da Luna, sem maquiagem pesada;
+  - cabelo castanho escuro;
+  - tatuagens do peito e do braço esquerdo saíram.
+- **Errado:**
+  1. **Braço e mão direitos:** a mão que segurava o top sumiu e o braço novo ficou mais fino. O espaço que sobrou do braço antigo virou um "recorte" com cor de parede, e há resto de tatuagem no ombro.
+  2. **Bordas do top:** uma faixa manchada (tipo estampa) em cima e embaixo. Provável causa: a detecção de tatuagem por "buraco na pele" marcou a sombra da borda do top como tatuagem, e o preenchimento virou estampa.
+  3. **Cabelo:** cortado reto onde passa do contorno original (lado esquerdo).
