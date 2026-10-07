@@ -1,0 +1,5 @@
+{"segundos_por_imagem": 330, "overhead_segundos": 240,
+ "_nota": "Foto da varanda (oculos escuros): versao final do pipeline, politica padrao da Luna (oculos mantidos, joias e tatuagens removidas).",
+ "execucoes": [
+  {"id": "final_varanda", "foto": "fotos_v2/varanda.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0}
+ ]}

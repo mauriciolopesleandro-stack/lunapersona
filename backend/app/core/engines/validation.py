@@ -132,7 +132,8 @@ def _shrink(m: np.ndarray, r: int) -> np.ndarray:
     return _box((m > 0.5).astype(np.float32), r) > 1 - 1e-6
 
 
-def seam_excess(original: np.ndarray, final: np.ndarray, region: np.ndarray, radius: int = 3) -> float | None:
+def seam_excess(original: np.ndarray, final: np.ndarray, region: np.ndarray, radius: int = 3,
+                ignore: np.ndarray | None = None) -> float | None:
     """Emenda na borda da regiao: media local de cada lado da borda (dentro x fora), o degrau de cor
     resultante, MENOS o degrau que a foto original ja tinha na mesma borda (cabelo x parede existe nas
     duas). Media do excesso no anel da borda; ~5 numa colagem limpa, >10 com mancha de borda dura."""
@@ -141,6 +142,8 @@ def seam_excess(original: np.ndarray, final: np.ndarray, region: np.ndarray, rad
         return None
     ins, out = reg.astype(np.float32), (~reg).astype(np.float32)
     ring = _grow(reg, 2) & ~_shrink(reg, 2)
+    if ignore is not None:  # ex.: borda cabelo x fundo (varanda: cabelo loiro -> escuro contra o ceu e legitimo)
+        ring &= ~(ignore > 0.5)
     if not ring.any():
         return None
     di, do = np.maximum(_box(ins, radius), 1e-3), np.maximum(_box(out, radius), 1e-3)

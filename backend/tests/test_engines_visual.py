@@ -206,3 +206,41 @@ def test_markings_grow_into_ink_touching_the_top_but_not_into_the_black_top():
     assert out[22:38, 21:30].all()  # completou ate o top
     assert out[:, :20].sum() == 0  # o top nao entra
     assert out[45:55, 40:55].sum() == 0  # pele limpa nao entra
+
+
+def test_hair_against_background_is_not_a_seam():
+    """Varanda: cabelo loiro -> escuro contra o ceu e mudanca legitima, nao emenda."""
+    orig = np.full((80, 80, 3), (170, 190, 220), np.uint8)  # ceu
+    orig[20:60, 20:60] = (220, 200, 150)  # cabelo loiro
+    final = orig.copy()
+    final[20:60, 20:60] = (60, 45, 35)  # cabelo da Luna
+    reg = square(80, 80, 20, 60, 20, 60)
+    person = reg.copy()
+    bg = (person < 0.5).astype(np.float32)
+    from app.core.persona_replacement.segmentation import dilate
+    assert seam_excess(orig, final, reg) > 10
+    assert seam_excess(orig, final, reg, ignore=dilate(bg, 3)) is None or seam_excess(orig, final, reg, ignore=dilate(bg, 3)) < 1
+
+
+def test_light_jewelry_is_filled_not_kept():
+    """Varanda: a pulseira clara virou um bloco branco - joia removida vai inteira para o preenchimento."""
+    from app.core.engines.skin import structure_preserving_fill
+
+    img = np.full((60, 60, 3), (190, 140, 115), np.uint8)
+    img[25:35, 10:50] = (235, 235, 240)  # pulseira prateada
+    zone = np.zeros((60, 60), np.float32)
+    zone[23:37, 8:52] = 1
+    out, solid = structure_preserving_fill(img, zone, 1 - zone, line_radius=3, force_solid=zone)
+    assert np.abs(out[28:32, 15:45].astype(int) - np.array([190, 140, 115])).mean() < 12
+
+
+def test_grain_is_never_heavy():
+    from app.core.engines.integration import integrate
+
+    rng = np.random.default_rng(0)
+    orig = np.clip(150 + rng.normal(0, 12, (80, 80, 3)), 0, 255).astype(np.uint8)  # pele muito granulada ao sol
+    cur = orig.copy()
+    cur[20:60, 20:60] = 150  # regiao gerada lisa
+    reg = square(80, 80, 20, 60, 20, 60)
+    _, rel = integrate(orig, cur, reg, body_skin=1 - reg, seed=1)
+    assert rel.get("grao_adicionado", 0) <= 2.5

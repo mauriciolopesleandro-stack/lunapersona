@@ -180,6 +180,7 @@ class _Scene:
     markings: np.ndarray | None = None
     source_masks: dict[str, np.ndarray] = field(default_factory=dict)
     box_policy: list[dict[str, Any]] = field(default_factory=list)  # cada caixa detectada -> classe e politica
+    jewelry_body: np.ndarray | None = None  # joias REMOVE fora da cabeca (preenchimento cheio na reconstrucao)
 
 
 JEWELRY_WORDS = ("earring", "bracelet", "necklace", "ring", "jewel", "brinco", "pulseira", "colar")
@@ -243,6 +244,18 @@ class ReplacementEngine:
         raw = replace(raw, protect_boxes=keep_boxes, protect_labels=[])
         masks = build_masks(raw, bbox, sheet.target_face.kps, original)
         ident = identity_mask(masks, bbox, float(sg["face_grow_frac"]))
+        fx1, fy1, fx2, fy2 = bbox
+        near_head = np.zeros((h, w), np.float32)
+        gy, gx = (fy2 - fy1) * 0.8, (fx2 - fx1) * 0.6
+        near_head[max(0, int(fy1 - gy)):int(fy2 + gy) + 1, max(0, int(fx1 - gx)):int(fx2 + gx) + 1] = 1
+        head_jewelry = np.zeros((h, w), np.float32)
+        for bx1, by1, bx2, by2 in drop_boxes:
+            jb = np.zeros((h, w), np.float32)
+            jb[max(0, int(by1)):int(by2) + 1, max(0, int(bx1)):int(bx2) + 1] = 1
+            if (jb * near_head).sum() > 0.5 * jb.sum():  # brinco/colar junto da cabeca: o passe de identidade refaz
+                head_jewelry = np.maximum(head_jewelry, dilate(jb, 2))
+        if head_jewelry.any():
+            ident = np.clip(ident + head_jewelry * (1 - masks.clothing) * (1 - masks.protect), 0, 1)
         if attrs.is_("hair", PRESERVE):  # cabelo da foto fica: so rosto/pescoco recebem a identidade
             ident = np.clip(ident * (1 - dilate((masks.hair > 0.5).astype(np.float32), 2)) + masks.face_full * masks.person, 0, 1)
         accessory = None
@@ -280,6 +293,11 @@ class ReplacementEngine:
         # mascara de MARCAS da pessoa original (spec 45.4/45.6): tinta/marcas na pele + joias REMOVE fora do rosto;
         # buracos fechados e margem em volta (evita contorno fantasma); nunca roupa, nem acessorio mantido
         markings = None
+        jewelry_body = np.zeros((h, w), np.float32)
+        for bx1, by1, bx2, by2 in drop_boxes:
+            jb = np.zeros((h, w), np.float32)
+            jb[max(0, int(by1)):int(by2) + 1, max(0, int(bx1)):int(bx2) + 1] = 1
+            jewelry_body = np.maximum(jewelry_body, jb * (1 - (ident > 0.5)))
         if attrs.removes_skin_markings() or drop_boxes:
             m = np.zeros((h, w), np.float32) if ink is None or not attrs.removes_skin_markings() else ink.astype(np.float32)
             for bx1, by1, bx2, by2 in drop_boxes:
@@ -307,7 +325,7 @@ class ReplacementEngine:
         if markings is not None:
             source["source_markings_mask"] = markings
         return _Scene(original, sheet, masks, ident, masks.face_full, body, ink, raw.tattoos, base_pose, clothes_ok, accessory,
-                      markings, source, box_policy)
+                      markings, source, box_policy, jewelry_body if jewelry_body.any() else None)
 
     # --- uma passada ---------------------------------------------------------------------------
     async def _pass(self, name: str, cur: dict, mask: np.ndarray, prompt: str, negative: str, denoise: float, seed: int,
@@ -388,8 +406,11 @@ class ReplacementEngine:
         acc = self.cfg["acceptance"]
         seam_tol, edge_tol = float(acc.get("stage_seam_tolerance", 0.8)), float(acc.get("stage_edges_tolerance", 1.5))
 
+        # borda contra o fundo nao e emenda (o cabelo reconstruido muda de cor contra o ceu/parede de proposito)
+        bg_edge = None if scene.masks is None else (dilate((scene.masks.person < 0.5).astype(np.float32), 3) > 0.5)
+
         def visual(px, region):
-            return seam_excess(orig, px, region), straight_edges(orig, px, region)
+            return seam_excess(orig, px, region, ignore=bg_edge), straight_edges(orig, px, region)
 
         thr = {**DEFAULT_THRESHOLDS, **(self.cfg.get("thresholds") or {})}
         seam_ok, edge_ok = float(thr["seam_excess"]["pass"]), float(thr["straight_edges"]["pass"])
@@ -469,7 +490,8 @@ class ReplacementEngine:
                 known = ((scene.masks.skin > 0.5) & (scene.masks.person > 0.5) & ~(dilate_round(zone, 2) > 0.5)).astype(np.float32)
                 # entrada que tira a marca SEM apagar dedos/juntas (traco fino: fechamento; tinta cheia: push-pull)
                 clean, solid = structure_preserving_fill(cur["pixels"], dilate_round(zone, 2), known,
-                                                         line_radius=max(2, int(px_min * float(tt.get("line_radius_frac", 0.004)))))
+                                                         line_radius=max(2, int(px_min * float(tt.get("line_radius_frac", 0.004)))),
+                                                         force_solid=scene.jewelry_body)
                 clean_loc = await self.store.save(clean, "tattoo_prefill")
                 skin_desc = ((attrs.persona_features and "") or "") + cond(P["tattoo"], "skin")
                 ctrl = ControlSpec(pose_strength=plan.tattoo_pose_strength if plan.pose else 0.0,

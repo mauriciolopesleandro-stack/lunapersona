@@ -83,7 +83,7 @@ def _blur(img: np.ndarray, r: int) -> np.ndarray:
 
 
 def structure_preserving_fill(rgb: np.ndarray, zone: np.ndarray, known: np.ndarray, line_radius: int = 4,
-                              solid_delta: float = 10.0) -> tuple[np.ndarray, np.ndarray]:
+                              solid_delta: float = 10.0, force_solid: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Entrada do inpaint que tira a marca SEM apagar a anatomia (teste 2026-10-07: o push-pull puro virou a
     mao fechada num "bloco" liso, a profundidade calculada nele virou luva e o modelo perdeu os dedos).
 
@@ -99,6 +99,8 @@ def structure_preserving_fill(rgb: np.ndarray, zone: np.ndarray, known: np.ndarr
     closed = gray_closing(rgb, line_radius)
     smooth_skin = push_pull_fill(rgb, z.astype(np.float32), known).astype(np.float32)
     solid = z & (((smooth_skin @ lum) - (closed @ lum) > solid_delta) | (skin_pixels(np.clip(closed, 0, 255).astype(np.uint8)) < 0.5))
+    if force_solid is not None:  # joia clara (pulseira): o fechamento nao tira objeto CLARO, vai inteira para o push-pull
+        solid |= (dilate((force_solid > 0.5).astype(np.float32), 2) > 0.5)
     solid = (dilate(solid.astype(np.float32), 2) > 0.5) & z
     mix = np.where(solid[..., None], smooth_skin, closed)
     out = np.where(z[..., None], _blur(mix, 1), rgb.astype(np.float32))

@@ -35,7 +35,7 @@ def distance_ramp(mask: np.ndarray, width: int, step: int = 6) -> np.ndarray:
 
 def integrate(original: np.ndarray, current: np.ndarray, region: np.ndarray, face: np.ndarray | None = None,
               body_skin: np.ndarray | None = None, band: int = 12, radius: int = 24, tone_harmony: float = 0.5,
-              seed: int = 0, max_step: float = 12.0, max_harmony: float = 8.0) -> tuple[np.ndarray, dict]:
+              seed: int = 0, max_step: float = 12.0, max_harmony: float = 8.0, max_grain: float = 2.5) -> tuple[np.ndarray, dict]:
     """Devolve (imagem, relatorio). Fora de `region` a imagem fica IDENTICA a `current`."""
     reg = region > 0.5
     rel: dict = {"aplicado": False}
@@ -80,7 +80,7 @@ def integrate(original: np.ndarray, current: np.ndarray, region: np.ndarray, fac
         ref_noise = noise_level(original, ref_region)
         cur_noise = noise_level(np.clip(out, 0, 255).astype(np.uint8), regf)
         if ref_noise is not None and cur_noise is not None and cur_noise < ref_noise:
-            add = float(np.sqrt(max(ref_noise ** 2 - cur_noise ** 2, 0.0)))
+            add = min(max_grain, float(np.sqrt(max(ref_noise ** 2 - cur_noise ** 2, 0.0))))  # nunca grao pesado
             out = out + np.random.default_rng(seed).normal(0, add, reg.shape).astype(np.float32)[..., None] * regf[..., None]
             rel["grao_adicionado"] = round(add, 2)
     final = np.where(reg[..., None], out, current.astype(np.float32))
