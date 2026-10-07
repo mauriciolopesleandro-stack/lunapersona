@@ -300,3 +300,19 @@ Métricas: identidade 0,756, rosto **0% alterado**, fundo 0%, roupa 0%, luz 0,75
 - **Braço direito:** a tatuagem do alto do braço sumiu, bem.
 - **Antebraço e mão: falha.** O modelo desenhou uma textura de **pelo/pelúcia** alaranjada sobre a mão e o antebraço. Isso explica o tom e os "blocos" reprovados.
   - **Causa provável:** recorte grande (442×629), mão inteira pré-preenchida lisa, profundidade do recorte sem detalhe dos dedos e denoise 0,65.
+
+### Passe 2 do braço (2026-10-07): 3 variantes de denoise numa sessão (~5 min de pod, ≈ US$ 0,05)
+Setup:
+- **Base:** o final do passe 1 com o antebraço e a mão revertidos para a foto.
+- **Regiões:** a mão em recorte próprio (`distancia_grupo` 4).
+- **Grão:** só depois do modelo.
+- **Workflow:** o mesmo, com semente 1234.
+
+| denoise | tinta residual | tom ΔE | blocos | pontinhos | resultado |
+|---|---|---|---|---|---|
+| 0,45 | 0,021 | 4,29 | 0,0042 | 2,9 | REPROVADO (por pouco) |
+| 0,55 | 0,011 | 5,68 | 0,0147 | 3,6 | REPROVADO |
+| 0,65 | 0,006 | 8,30 | 0,0155 | 5,2 | REPROVADO |
+
+- **Leitura visual:** a tatuagem some, mas a mão e o antebraço ficam com aspecto de "massa", com os nós dos dedos borrados e o antebraço manchado de marrom. Quanto maior o denoise, pior. A de 0,45 é a menos ruim.
+- **Teste local sem GPU (máscara só nos traços + preenchimento clássico):** preserva melhor a estrutura da mão, mas deixa pontinhos e tracinhos. REPROVADO (residual 0,057).
