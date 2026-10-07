@@ -146,6 +146,25 @@ Rosto original agora **medido**: 0,238.
 - Denoise da pele 0,75.
 - A nova tentativa ataca o aviso mais grave (gravidade dentro da faixa), não o primeiro da lista.
 
-## Próximo: reteste da mão com as correções (cada rodada só com autorização de custo)
+## Teste da mão, 2 versões na mesma ligação (2026-10-07)
+
+| | |
+|---|---|
+| Pod | `qkcnzi7plh3ukd` (religado) |
+| Tempo e custo | 16,5 min, **~US$ 0,16** (inclui ~3 min perdidos por dois erros meus na partida: ComfyUI ainda montando os nós e o script com final de linha CRLF) |
+
+| Versão | Identidade | Tatuagem | Resultado |
+|---|---|---|---|
+| denoise **0,6** | 0,73 | 0,11 | **mão certa:** punho, juntas e dedos segurando o top; a rosa saiu |
+| denoise 0,75 | 0,73 | 0,16 | REJECT (mais tinta, emendas) |
+
+Defeito que sobrou na 0,6: manchas claras redondas, fracas, no braço esquerdo e na barriga.
+- **Causa:** o refino leve em anel + integração, aplicados depois do modelo. A saída do modelo estava limpa.
+- **Correção (commit 72ba342):** o anel foi trocado por um casamento de cor de baixa frequência (push-pull). Ele só age onde há pele limpa perto e tem limite de 8. Denoise da pele fixado em 0,6.
+- **Prévia (saída real da GPU + correção em CPU):** sem manchas, mãos intactas.
+
+**Ainda sobra:** dois pedacinhos de tatuagem nas bordas protegidas: junto ao cabelo, no ombro esquerdo, e junto ao top, no antebraço direito.
+
+## Próximo: rodar a versão final inteira na GPU (confirma a prévia) e tratar as bordas protegidas
 
 `scripts/v2_engine/plano_escada.json`: 8 degraus × 2 fotos (quarto, varanda), semente 7801, só RealVisXL. Depois, 3 sementes na melhor configuração e uma geração V1 de regressão.
