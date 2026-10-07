@@ -1,0 +1,10 @@
+{"segundos_por_imagem": 300, "overhead_segundos": 300,
+ "_nota": "Foto do usuario: 2 versoes da reconstrucao de pele (mao) na mesma ligacao; segmentacao reaproveitada.",
+ "execucoes": [
+  {"id": "mao_denoise060", "foto": "fotos_v2/quarto_usuario.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0,
+   "advanced": {"tattoo_denoise": 0.6},
+   "remove": ["tattoos"], "preserve": ["pose", "clothing", "background", "lighting", "composition"], "reconstruct": ["face", "body", "skin"]},
+  {"id": "mao_denoise075", "foto": "fotos_v2/quarto_usuario.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0,
+   "advanced": {"tattoo_denoise": 0.75},
+   "remove": ["tattoos"], "preserve": ["pose", "clothing", "background", "lighting", "composition"], "reconstruct": ["face", "body", "skin"]}
+ ]}

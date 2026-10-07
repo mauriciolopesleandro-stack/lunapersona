@@ -169,3 +169,24 @@ def test_retry_targets_the_worst_warning_not_the_first_in_the_list():
                        "persona_instances": 1, "original_sim": 0.02})
     order = _by_severity(rep, rep.warnings())
     assert order.index("tattoo") < order.index("background")
+
+
+def test_tone_match_fixes_small_patches_but_leaves_a_whole_arm_alone():
+    """Mancha pequena no meio da pele: a cor vai para a da pele em volta. Zona enorme (sem pele limpa perto):
+    fica como o modelo fez (no teste real o braco inteiro ficou avermelhado quando era corrigido)."""
+    from app.core.engines.skin import tone_match
+
+    base = np.full((80, 80, 3), (200, 160, 140), np.uint8)
+    gen = base.copy()
+    gen[30:40, 30:40] = (194, 154, 134)  # remendo um pouco mais escuro que a pele em volta
+    small = np.zeros((80, 80), np.float32)
+    small[28:42, 28:42] = 1
+    known = 1 - small
+    out = tone_match(gen, base, small, known, radius=3)
+    assert np.abs(out[33:37, 33:37].astype(int) - base[33:37, 33:37].astype(int)).mean() < 3
+    far = gen.copy()
+    far[30:40, 30:40] = (170, 130, 110)  # diferenca grande: so ate o limite (nunca "repinta")
+    moved = tone_match(far, base, small, known, radius=3).astype(int)[35, 35] - far[35, 35].astype(int)
+    assert (moved <= 8).all() and (moved >= 6).all()
+    big = np.ones((80, 80), np.float32)  # tudo e zona: nao ha com o que comparar
+    assert (tone_match(gen, base, big, np.zeros((80, 80), np.float32), radius=3) == gen).all()

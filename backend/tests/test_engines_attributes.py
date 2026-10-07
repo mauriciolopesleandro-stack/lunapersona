@@ -89,7 +89,7 @@ async def test_example_45_13_shoulder_tattoo_is_reconstructed_as_luna_skin():
                             preserve_attributes=["pose", "clothing", "background", "lighting", "composition", "black_top"],
                             remove_attributes=["tattoos"], reconstruct_attributes=["face", "body", "skin"]))
     stages = [c.stage for c in ad.calls]
-    assert "tattoo_cleanup" in stages and "skin_refine" in stages and "body_refine" in stages  # body RECONSTRUCT
+    assert "tattoo_cleanup" in stages and "body_refine" in stages  # body RECONSTRUCT
     ident = ad.calls[0]
     assert "no tattoos" in ident.negative or "tattoo" in ident.negative
     assert "keep the black top" in ident.prompt

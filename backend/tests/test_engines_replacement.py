@@ -72,7 +72,8 @@ async def test_quality_pipeline_order_isolation_and_telemetry():
     tat = next(c for c in ad.calls if c.stage == "tattoo_cleanup")
     # spec 45.5: a pele e RECONSTRUIDA como pele da Persona (LoRA ligada), a partir da entrada sem a marca
     assert tat.identity.use_lora is True and tat.controls.structure == tat.image and tat.image.startswith("tattoo_prefill")
-    assert tat.denoise >= 0.7 and "skin_refine" in stages
+    # teste real de 2026-10-07: 0,6 manteve dedos/juntas; o refino em anel (manchas redondas) ficou desligado
+    assert tat.denoise == 0.6 and "skin_refine" not in stages
     orig = store.images["foto.png"]
     assert (out.pixels[0:4, 0:4] == orig[0:4, 0:4]).all()  # sujeira do modelo fora das mascaras desfeita
     t = out.telemetry.to_dict()

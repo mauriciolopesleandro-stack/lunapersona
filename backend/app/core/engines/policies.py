@@ -33,10 +33,12 @@ class StagePlan:
     body_denoise: float = 0.35
     # spec 45.5: a pele das marcas e RECONSTRUIDA pelo modelo (denoise alto + LoRA), nao pintada;
     # anatomia segura por profundidade da pele limpa + pose; depois refino local leve e integracao de textura
-    tattoo_denoise: float = 0.75  # a entrada agora carrega dedos/juntas: menos denoise segura a anatomia
+    # teste de 2026-10-07 na foto do usuario: 0,6 manteve o punho e os dedos e tirou a rosa da mao; 0,75 deixou
+    # mais tinta (0,16) e emendas. A entrada (fechamento + push-pull) ja chega sem a marca.
+    tattoo_denoise: float = 0.6
     tattoo_depth_strength: float = 0.8
     tattoo_pose_strength: float = 0.6
-    skin_refine_denoise: float = 0.3
+    skin_refine_denoise: float = 0.0  # refino leve em anel: desligado (manchas claras redondas no teste real)
     hires_side: int = 1536
     steps: int = 30
     cfg: float = 5.0

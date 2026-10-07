@@ -41,6 +41,8 @@ echo "sha $(cd $TMP && sha256sum * | cut -c1-16 | tr '\n' ' ')" >> $LOG
 while read -r dest; do ln -sfn "$TMP/$(basename "$dest")" "$COMFY/models/$dest"; done < linkados.txt
 until curl -s -o /dev/null 127.0.0.1:8188/queue; do sleep 2; done
 curl -s -X POST 127.0.0.1:8188/api/refresh > /dev/null 2>&1
+# ComfyUI recem-ligado responde /queue antes de montar a lista de nos: espera /object_info (ate 5 min)
+for i in $(seq 1 60); do curl -s -m 30 -o /dev/null -w "%{http_code}" 127.0.0.1:8188/object_info | grep -q 200 && break; sleep 5; done
 echo "comfy $(date +%s) $(curl -s 127.0.0.1:8188/system_stats | head -c 400)" >> $LOG
 set -a; [ -f /workspace/lunapersona/.env ] && . /workspace/lunapersona/.env; set +a
 V2_ROOT=/workspace/v2test V2_PRECO_HORA=$PRECO $PY sessao_v2.py --plano "$PLANO" --saida "$SAIDA" --autorizado "$AUT" >> $LOG 2>&1

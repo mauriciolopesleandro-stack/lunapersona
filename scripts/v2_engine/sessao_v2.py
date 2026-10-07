@@ -90,7 +90,7 @@ async def main() -> int:
                                                    overhead_seconds=int(plano.get("overhead_segundos", 360)),
                                                    price_per_hour=PRICE), a.autorizado)
 
-    client = ComfyUIClient(base_url="http://127.0.0.1:8188", connect_timeout=10.0, generation_timeout=900.0)
+    client = ComfyUIClient(base_url="http://127.0.0.1:8188", connect_timeout=90.0, generation_timeout=900.0)
     session = ComfySession(client, WorkflowManager(ROOT / "workflows"))
     store = ComfyImageStore(client)
     v2 = load_v2_config(ROOT / "config" / "persona_engine_v2.json")
@@ -132,7 +132,7 @@ async def main() -> int:
             enviados[ex["foto"]] = await client.upload_image(f"v2in_{Path(ex['foto']).stem[:30]}.png", buf.getvalue())
         t0 = time.time()
         req = ReplacementRequest(image=enviados[ex["foto"]], persona_id="luna", master=master, mode=ex["modo"],
-                                 seed=int(ex["semente"]), advanced={"max_retries": int(ex.get("max_retries", 0))},
+                                 seed=int(ex["semente"]), advanced={"max_retries": int(ex.get("max_retries", 0)), **ex.get("advanced", {})},
                                  negative=negative, keep_intermediates=True, persona_sheet=sheet.data,
                                  preserve_attributes=list(ex.get("preserve", [])), remove_attributes=list(ex.get("remove", [])),
                                  reconstruct_attributes=list(ex.get("reconstruct", [])))

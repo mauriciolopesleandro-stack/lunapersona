@@ -121,4 +121,29 @@ def drop_small_blobs(mask: np.ndarray, min_radius: int, max_iter: int = 400) -> 
     return cur.astype(np.float32)
 
 
-__all__ = ["drop_small_blobs", "gray_closing", "push_pull_fill", "structure_preserving_fill"]
+
+
+def tone_match(generated: np.ndarray, base: np.ndarray, zone: np.ndarray, known: np.ndarray, radius: int = 6,
+               max_shift: float = 8.0) -> np.ndarray:
+    """Casa a COR de baixa frequencia da pele gerada com a pele limpa em volta (spec 45.5: pele que sempre
+    esteve ali). Referencia por push-pull (sem janela, sem bloco); so onde ha pele limpa PERTO para comparar
+    (zona enorme - o braco inteiro - fica como o modelo fez) e limitado a `max_shift`.
+
+    Substitui o refino leve + integracao em anel do teste de 2026-10-07, que deixava manchas claras redondas
+    em volta de cada zona pequena."""
+    from app.core.persona_replacement.blending import feather
+
+    z = zone > 0.5
+    if not z.any():
+        return generated.copy()
+    ref = push_pull_fill(base, z.astype(np.float32), known.astype(np.float32)).astype(np.float32)
+    low_ref = _blur(ref, radius)
+    low_gen = _blur(np.where(z[..., None], generated, ref).astype(np.float32), radius)
+    w = np.clip(feather(z.astype(np.float32), max(2, radius // 2)), 0, 1)[..., None] * z[..., None]
+    support = _blur(np.repeat(known.astype(np.float32)[..., None], 3, 2), radius * 3)[..., :1]
+    w = w * np.clip(support * 3.0, 0, 1)
+    out = generated.astype(np.float32) + np.clip(low_ref - low_gen, -max_shift, max_shift) * w
+    return np.clip(out + 0.5, 0, 255).astype(np.uint8)
+
+
+__all__ = ["drop_small_blobs", "gray_closing", "push_pull_fill", "structure_preserving_fill", "tone_match"]

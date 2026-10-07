@@ -33,7 +33,7 @@ from app.core.engines.attributes import (
     AttributePolicyError,
     resolve,
 )
-from app.core.engines.skin import drop_small_blobs, structure_preserving_fill
+from app.core.engines.skin import drop_small_blobs, structure_preserving_fill, tone_match
 from app.core.engines.integration import integrate
 from app.core.engines.policies import StagePlan, plan_for
 from app.core.engines.retry import PRIORITY, RetryPolicyV2
@@ -471,16 +471,20 @@ class ReplacementEngine:
                 tel.passes[tidx]["params"]["solid_ink_fraction"] = round(float(solid.sum()) / max(1.0, float((zone > 0.5).sum())), 3)
                 tel.passes[tidx]["params"]["attributes"] = [a for a in ("tattoos", "scars", "birthmarks", "original_person_marks",
                                                                       "jewelry") if attrs.is_(a, REMOVE)]
-                # refino local leve: continuidade de textura entre a pele nova e a vizinha (LoRA ligada)
-                ring = np.clip(feather(dilate_round(zone, max(3, int(px_min * 0.01))), 3), 0, 1)
-                stage = {"pixels": px2, "image": loc2}
-                px3, loc3, _ = await self._pass("skin_refine", stage, ring, cond(P["tattoo"], "skin"), negative,
-                                                plan.skin_refine_denoise, req.seed + 181, plan, tel,
-                                                controls=ControlSpec(depth_strength=0.5, end_percent=0.8, structure=loc2),
-                                                identity=IdentitySpec(use_lora=True))
-                # integracao de textura SO na borda da zona (degrau pele x pele + grao que falta)
-                body_skin = np.clip(scene.masks.skin * scene.masks.person - dilate_round(zone, 2), 0, 1)
-                px3, info_t = integrate(orig, px3, dilate_round(ring, 1), body_skin=body_skin, seed=req.seed + 7)
+                # cor de baixa frequencia casada com a pele limpa em volta (sem refino em anel: no teste de 2026-10-07
+                # o refino 0,3 + integracao deixavam manchas claras redondas); zona enorme fica como o modelo fez
+                ring = np.clip(feather(dilate_round(zone, 1), 2), 0, 1)
+                stage_known = (known > 0.5) & ~(dilate_round(zone, 2) > 0.5)
+                px3 = tone_match(px2, cur["pixels"], dilate_round(zone, 1), stage_known,
+                                 radius=max(3, int(px_min * float(tt.get("tone_radius_frac", 0.008)))))
+                px3 = np.where((dilate_round(zone, 1) > 0.5)[..., None], px3, cur["pixels"])
+                info_t = {"tone_match": True}
+                if plan.skin_refine_denoise > 0:  # refino leve opcional (desligado por padrao)
+                    stage = {"pixels": px3, "image": await self.store.save(px3, "tattoo_tone")}
+                    px3, _, _ = await self._pass("skin_refine", stage, ring, cond(P["tattoo"], "skin"), negative,
+                                                 plan.skin_refine_denoise, req.seed + 181, plan, tel,
+                                                 controls=ControlSpec(depth_strength=0.5, end_percent=0.8, structure=stage["image"]),
+                                                 identity=IdentitySpec(use_lora=True))
                 loc3 = await self.store.save(px3, "tattoo_skin")
                 inter["tattoo_cleanup"] = loc3
                 region = np.maximum(modified, ring)
@@ -488,7 +492,8 @@ class ReplacementEngine:
                 vok, why = visual_ok(visual(cur["pixels"], region), visual(px3, region))
                 why_txt = None if vok else f"reconstrucao criou defeito visivel ({why}): marcas mantidas"
                 tel.passes[tidx].update(accepted=vok, residual=residual, integration=info_t, reason=why_txt)
-                tel.passes[-1].update(accepted=vok, reason=why_txt)  # o refino local faz parte da mesma etapa
+                if tel.passes[-1]["pass"] == "skin_refine":
+                    tel.passes[-1].update(accepted=vok, reason=why_txt)  # o refino local faz parte da mesma etapa
                 if vok:
                     cur, modified = {"pixels": px3, "image": loc3}, region
         # integracao fotografica (CPU)

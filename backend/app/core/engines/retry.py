@@ -46,7 +46,7 @@ class RetryPolicyV2:
                            face_refine_if_identity_below=1.01)
             strategy = "rosto original sobrando: reconstrucao do rosto (identidade mais forte + refino obrigatorio)"
         elif alvo == "tattoo":
-            p = plan.with_(tattoo_cleanup=True, tattoo_denoise=min(0.9, plan.tattoo_denoise + 0.05),
+            p = plan.with_(tattoo_cleanup=True, tattoo_denoise=min(0.7, plan.tattoo_denoise + 0.05),
                            extra={**plan.extra, "tattoo_margin_boost": plan.extra.get("tattoo_margin_boost", 0) + 1})
             strategy = "marcas da pessoa original: mascara ampliada + reconstrucao de pele (RealVisXL + LoRA) + integracao de textura"
         elif alvo == "pose":
