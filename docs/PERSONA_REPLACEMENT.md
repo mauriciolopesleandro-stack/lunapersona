@@ -239,3 +239,17 @@ Métricas: identidade **0,757**, original 0,076, pose 0,016, fundo 0%, roupa 0%.
 - **Reconstrução:** com a profundidade da foto original, denoise 0,7, sem LoRA. Depois, a cor e a luz da pele original **logo em volta** (só a baixa frequência; a textura fica).
 - **Brinco:** a área em volta e abaixo do brinco original, só no cabelo e nunca no rosto, volta a ser cabelo, sem LoRA. O brinco original fica com os pixels da foto.
 - **Sem passada de integração global.** Negativo do usuário (52 termos).
+
+## Transfer teste 6 (v1.5, quarto, ~US$ 0,08, 505 s; failover criou outro pod novo)
+
+Métricas: identidade 0,756, rosto **0% alterado** (reaproveitado), fundo 0%, roupa 0%, luz 0,77, borda 0,85.
+
+**Leitura visual: pior que o teste 5 na remoção.**
+- **Erro 1, máscara pequena demais:** o critério "escura e fria" pegou só 1,5% da imagem. Os traços claros do antebraço e da mão direitos e parte do ombro esquerdo ficaram.
+- **Erro 2, blocos quadrados:** o fechamento com quadrado criou blocos, e o ajuste de tom com máscara dura deixou **bordas retas visíveis**, parecendo censura.
+- **Erro 3, argola continuou:** a zona do brinco foi cortada pela proteção do rosto, que é larga, e a argola fica justamente ali.
+- **Certo:** rosto idêntico ao aprovado, pele fora da máscara com o tom original e top/fundo intactos.
+
+### Teste 6b (combinação local, sem GPU)
+- **Montagem:** pele sem tatuagem do teste 5, só na zona das tatuagens (30% da pele, forma orgânica, borda suave), sobre o rosto aprovado, com o tom da pele original em volta.
+- **Resultado:** as tatuagens quase somem e o tom fica mais próximo do original. Mas o braço direito ficou com uma área **clara demais** com borda visível, os **pontinhos brancos** do teste 5 continuam e o contorno do braço ficou duro.
