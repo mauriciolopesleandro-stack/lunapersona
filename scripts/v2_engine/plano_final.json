@@ -1,0 +1,6 @@
+{"segundos_por_imagem": 330, "overhead_segundos": 240,
+ "_nota": "Versao final inteira na foto do usuario: pele 0,6 + casamento de cor + mascara completada. Sem nova tentativa.",
+ "execucoes": [
+  {"id": "final_quarto", "foto": "fotos_v2/quarto_usuario.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0,
+   "remove": ["tattoos"], "preserve": ["pose", "clothing", "background", "lighting", "composition"], "reconstruct": ["face", "body", "skin"]}
+ ]}

@@ -449,6 +449,10 @@ class ReplacementEngine:
         # marca (push-pull, sem blocos) -> RealVisXL + LoRA da Persona com denoise alto (profundidade da pele LIMPA +
         # pose seguram a anatomia) -> refino local leve -> integracao de textura na borda -> residuo medido.
         # Nada de borrar, pintar cor ou clonar vizinho como resultado.
+        # a integracao final so cuida da regiao da IDENTIDADE (rosto/cabelo/pescoco/corpo): as zonas de marcas ja tem
+        # o proprio casamento de cor - no teste final de 2026-10-07 o degrau (+13) aplicado na borda delas clareou o
+        # vinco da axila com borda dura
+        ident_region = modified.copy()
         if plan.tattoo_cleanup and scene.markings is not None and scene.masks is not None:
             tt = self.cfg["tattoo"]
             px_min = min(h, w)
@@ -510,7 +514,7 @@ class ReplacementEngine:
             if scene.masks is not None:
                 body_skin = np.clip(scene.masks.skin * scene.masks.person - modified, 0, 1)
             t0 = time.monotonic()
-            px2, integ = integrate(orig, cur["pixels"], modified, face=scene.face_full, body_skin=body_skin, seed=req.seed)
+            px2, integ = integrate(orig, cur["pixels"], ident_region, face=scene.face_full, body_skin=body_skin, seed=req.seed)
             vok, why = visual_ok(visual(cur["pixels"], modified), visual(px2, modified))
             loc2 = await self.store.save(px2, "integrated")
             inter["integrated"] = loc2
