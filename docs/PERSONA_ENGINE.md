@@ -20,6 +20,49 @@ Validation Engine (InsightFace + DWPose como MEDIDORES)
       └── FAIL → RetryPolicy (por tipo de falha; nunca mexe na LoRA) → ... → FAILED
 ```
 
+## V2: três engines independentes (branch `feature/persona-v2-hyperreal-replacement`)
+
+| Engine | O que faz | Onde |
+|---|---|---|
+| **Geração** | a V1 acima, **sem mudança** (Persona Sheet → PromptBuilder → negativos → Z-Image + LoRA → validação) | `core/engines/generation.py` só delega ao orquestrador V1 |
+| **Substituição** | a pessoa da foto vira a Luna; fica a fotografia (pose, roupa, cenário, luz). Saem o rosto, o cabelo e as tatuagens da pessoa original | `core/engines/replacement.py`; detalhes em `docs/REPLACEMENT_ENGINE.md` |
+| **Troca de rosto** | FACE_ONLY, FACE_NECK, FACE_INTEGRATED; FULL_PERSON usa a Substituição, só quando escolhido (nunca sobe sozinho) | `core/engines/face_swap.py` |
+
+Núcleo sem provider:
+- `core/engines/adapter.py`: ModelAdapter com load, unload, generate, inpaint, refine, supports_*, estimate_cost, estimate_vram e metadata.
+- `policies.py`: FAST, QUALITY, MAX_QUALITY e os degraus A..H.
+- `validation.py`: validação por dimensão.
+- `retry.py`: nova tentativa por tipo de falha.
+- `telemetry.py`, `integration.py`, `models.py`: registro de modelos e licenças.
+
+Adapters no ComfyUI:
+- `providers/comfyui/sdxl_engine.py`: `RealVisXLAdapter` é o principal. `LustifyAdapter` é uma alternativa e nunca substitui automaticamente.
+- `engines_v2.py`: fábrica.
+- Workflow versionado: `workflows/sdxl-inpaint-control.json` (pose + profundidade + LoRA, imagem de estrutura separada).
+
+Rotas V2. Todas exigem o `X-Luna-Token`, inclusive as de leitura:
+- `GET /api/v2/engines`: catálogo para a tela (engines, modos, modelos com status/licença, opções, padrões).
+- `GET /api/v2/models/licenses`: o registro (`docs/MODEL_REGISTRY.md`).
+- `POST /api/v2/replace`: multipart com `file` ou `image`, mais `persona_id`, `mode`, `model`, `seed`, `options` (JSON) e `advanced` (JSON). Responde 202 com `job_id`.
+- `POST /api/v2/faceswap`: multipart com `file` ou `image`, mais `persona_id`, `mode`, `model`, `head_backend` (`sdxl` | `qwen_bfs`) e `reference_strength` (≤ 0,6). Responde 202.
+- `GET /api/v2/jobs/{job_id}`: devolve imagem, validação por dimensão, medidas, telemetria e intermediárias.
+
+Recusado ANTES de gastar GPU (400):
+- modelo indisponível (sem fallback);
+- `lora_strength` no pedido;
+- desligar `preserve_background` ou `preserve_clothes`;
+- `processing` diferente de `local`;
+- modo inválido;
+- persona sem Persona Sheet ou master.
+
+Tela: aba **Persona V2**.
+- Seletores ENGINE (Geração, Substituição, Troca de rosto), MODO (Rápido, Qualidade, Qualidade máxima) e MODELO (Auto, RealVisXL, Lustify, com status e licença).
+- Opções da Substituição. As configurações avançadas ficam escondidas e não incluem a força da LoRA, de propósito.
+- No resultado: tabela de validação, custo e tentativas.
+
+Configuração: `config/engines_v2.json` (retenção, só local, ControlNet, preço de reserva) e `config/replacement_engine_v2.json`.
+Se a configuração V2 quebrar, só a V2 desliga; a V1 sobe igual.
+
 ## Onde está cada coisa
 
 | Peça | Arquivo |

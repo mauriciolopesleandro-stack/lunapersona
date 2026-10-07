@@ -1,0 +1,2 @@
+{"segundos_por_imagem": 180, "overhead_segundos": 360,
+ "execucoes": [{"id": "smoke_quarto_quality", "foto": "fotos_v2/quarto.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0}]}
