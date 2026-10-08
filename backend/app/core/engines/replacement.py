@@ -1205,7 +1205,7 @@ class ReplacementEngine:
             rf, ro = skin_regions(final, smasks, scene.base_pose, bbox), skin_regions(orig, smasks, scene.base_pose, bbox)
             mlab = self.__dict__.setdefault("_master_lab", {}).get(getattr(req.master, "sha256", ""))
             if mlab is None:
-                mlab = master_skin_lab(getattr(req.master, "data", None))
+                mlab = master_skin_lab(getattr(req.master, "content", None))
                 self._master_lab[getattr(req.master, "sha256", "")] = mlab
             v21 = {"skin_continuity": cont, "skin_identity": skin_identity(final, rf, mlab),
                    "photometric": photometric(final, orig, modified_mask if modified_mask is not None else scene.identity,
@@ -1269,7 +1269,7 @@ class ReplacementEngine:
         return {
             "replacement_id": tel.job_id, "persona_id": req.persona_id, "replacement_version": req.replacement_version,
             "source_image": req.image,
-            "master_face": {"file": getattr(req.master, "file", ""), "sha256": getattr(req.master, "sha256", "")},
+            "master_face": {"file": getattr(req.master, "filename", ""), "sha256": getattr(req.master, "sha256", "")},
             "master_body": {"file": body.get("file"), "sha256": body.get("sha256")} if body else None,
             "base_model": meta.get("model", ""), "lora": (self.cfg.get("lora") or {}).get("name", "lunavox_sdxl_v1"),
             "lora_strength": meta.get("lora_strength", "registro (fixa)"),

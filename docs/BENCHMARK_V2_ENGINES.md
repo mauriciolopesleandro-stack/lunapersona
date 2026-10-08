@@ -361,3 +361,21 @@ Relatório em `generated/v2/engines/ab3/relatorio_ab3.html`. Todas as 6 execuç�
 - Quarto e braço: aceito, mas trouxe maquiagem pesada e uma argola nova (joia inventada).
 
 A V2 sem Qwen teve rosto mais natural e menos resíduo do rosto original no quarto, e levou de 2,3× a 2,7× menos tempo.
+
+## V2 × V2.1: espelho e porta (2026-10-08)
+
+Rodada no pod `9vy7m3y0f21axl` (RTX PRO 4000 Blackwell): 39 min, cerca de US$ 0,39 (teto autorizado US$ 0,48). Nenhuma execução foi reprovada pelo Gate; todas terminaram em WARN.
+
+| Execução | Identidade | Rosto original | Tempo | No olho |
+|---|---|---|---|---|
+| espelho V2 | 0,78 | 0,24 | 482 s | rosto natural, pele uniforme, sem halo nem faixa; short levemente remodelado |
+| espelho V2.1 | 0,69 | 0,21 | 555 s | pele contínua (pernas e braços no tom do rosto), mas o Qwen trouxe argola e maquiagem pesada, e apareceu um debrum branco na barra do short |
+| porta V2 | 0,78 | 0,18 | 403 s | rosto e cabelo da Luna; mesma roupa; **alça inventada** no top tomara-que-caia |
+| porta V2.1 | 0,77 | 0,32 | 592 s | argolas (Qwen), gargantilha (provavelmente da LoRA: é um traço SOFT da Luna), maquiagem pesada; a mesma alça inventada |
+
+Conclusões:
+
+- **Qwen no rosto:** mesmo só no rosto e com contexto de preservação, ele copia a maquiagem e as argolas da master. As orelhas ficam dentro do `face_full`. Recomendação: desligar o Qwen por padrão.
+- **Corpo:** com a roupa PRESERVE (pixel a pixel), busto, cintura e quadril continuam com o formato da roupa da pessoa original. Só braços, ombros, pernas e pele mudam. Para o corpo da Luna aparecer, a roupa precisa ser redesenhada (clothing RECONSTRUCT).
+- **Alça inventada:** acontece nas duas versões. O negativo `body_skin_negative` não basta; falta um detector de peça nova na pele.
+- **Bug corrigido depois da rodada:** a identidade de pele saiu "master sem pele" porque o campo da master é `content` e eu tinha usado `data`.
