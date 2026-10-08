@@ -180,12 +180,16 @@ def check_hair(policy: str | None, hair_residual, hair_change, t) -> CheckResult
     return c
 
 
-def check_clothing(policy: str | None, clothing_change, color_delta, t) -> CheckResult:
+def check_clothing(policy: str | None, clothing_change, color_delta, t, segmented: bool | None = True) -> CheckResult:
     if policy == "RECONSTRUCT":
         return _band("clothing", color_delta, t["clothing_color_delta"], False,
                      reason="roupa redesenhada: diferenca de cor media (Lab)")
-    return _band("clothing", clothing_change, t["clothing_change"], False,
-                 reason="roupa PRESERVE: fracao alterada (deformacao/perda)")
+    c = _band("clothing", clothing_change, t["clothing_change"], False,
+              reason="roupa PRESERVE: fracao alterada (deformacao/perda)")
+    if segmented is False and c.status in (PASS, UNKNOWN):
+        c = CheckResult("clothing", WARN, c.score, c.threshold,
+                        "roupa nao segmentada pelo detector: medida aproximada (nao-pele dentro da pessoa) - conferir no olho")
+    return c
 
 
 # --- o gate ------------------------------------------------------------------------------------------
@@ -238,7 +242,8 @@ class QualityGate:
                                                           self._hard("source_identity_residual"))
         ch["person_count"] = check_person_count(m.get("faces_original"), m.get("faces"))
         ch["hair"] = check_hair(policy.get("hair"), m.get("hair_residual"), m.get("hair_change"), t)
-        ch["clothing"] = check_clothing(policy.get("clothing"), m.get("clothing_change"), m.get("clothing_color_delta"), t)
+        ch["clothing"] = check_clothing(policy.get("clothing"), m.get("clothing_change"), m.get("clothing_color_delta"), t,
+                                        m.get("clothes_segmented"))
         return rep
 
     def summary(self, rep: ValidationReportV2) -> dict[str, dict[str, Any]]:

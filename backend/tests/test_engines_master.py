@@ -299,3 +299,40 @@ def test_texture_ratio_flags_a_smeared_patch():
     smeared = img.copy()
     smeared[20:40, 20:40] = (230, 160, 90)  # mancha laranja lisa
     assert zone_texture_ratio(smeared, zone, known) < 0.2
+
+
+def test_runaway_hair_mask_is_rebuilt_from_the_real_hair_color():
+    """Espelho com braco na cabeca: 'cabelo' = 78% da foto (top branco e braco). Refeito pela cor do cabelo."""
+    from app.core.engines.hair import clean_hair_mask
+
+    img = np.full((200, 120, 3), (235, 230, 225), np.uint8)  # top branco / parede
+    img[20:200, 20:100] = (238, 236, 232)  # top
+    img[10:120, 25:95] = (25, 20, 18)  # cabelo escuro
+    img[40:90, 40:80] = (205, 160, 135)  # rosto
+    face = np.zeros((200, 120), np.float32)
+    face[40:90, 40:80] = 1
+    runaway = np.zeros((200, 120), np.float32)
+    runaway[5:200, 15:105] = 1  # o segmentador marcou a pessoa toda
+    out, info = clean_hair_mask(img, runaway, (40, 40, 80, 90), face)
+    assert info["cleaned"] and out[100, 30] > 0.5 and out[150, 60] < 0.5  # cabelo fica, top sai
+    ok, info2 = clean_hair_mask(img, (img.sum(axis=2) < 200).astype(np.float32), (40, 40, 80, 90), face)
+    assert info2["cleaned"] is False  # mascara plausivel nao e tocada
+
+
+async def test_preserved_clothing_without_segmentation_locks_the_body():
+    from tests.test_engines_replacement import Seg
+    from app.core.persona_replacement.contracts import RawSegments
+    from tests.test_persona_transfer import wide_tattoo_photo
+
+    class NoClothes(Seg):
+        async def segment(self, image, sheet):
+            _, person, hair, _ = wide_tattoo_photo()
+            return RawSegments(person, hair, [], clothes=None)
+
+    eng, ad, _ = engine(FACES)
+    eng.segmenter = NoClothes()
+    out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA))
+    assert "body_identity" not in [c.stage for c in ad.calls]
+    bp = next(p for p in out.telemetry.passes if p["pass"] == "body_identity")
+    assert bp["accepted"] is False and "nao segmentada" in bp["reason"]
+    assert out.report.checks["clothing"].status in ("WARN", "REJECT")

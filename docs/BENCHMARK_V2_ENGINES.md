@@ -325,3 +325,39 @@ Defeito que sobrou na 0,6: manchas claras redondas, fracas, no braço esquerdo e
 | Negativos de peça de roupa inventada na etapa do corpo | folga maior da borda da roupa |
 
 A mancha branca do corset deve cair com a folga, mas não foi verificada.
+
+## A/B current × V2 em 3 fotos do usuário (2026-10-08)
+
+Rodada no pod `z7m8uaspzaegc8` (RTX PRO 4000 Blackwell, US$ 0,57/h): 44 min, cerca de US$ 0,41, plano `plano_ab3.json` (sem retry).
+Relatório em `generated/v2/engines/ab3/relatorio_ab3.html`. Todas as 6 execuções terminaram REJECT, e no olho também reprovam.
+
+| Foto | Current (Qwen BFS) | V2 (sem Qwen) | Problema que os dois tiveram |
+|---|---|---|---|
+| Espelho com celular | 587 s; o Qwen saiu recusado (0,51 < 0,65), então o resultado ficou idêntico ao da V2 | 241 s | corpo, cabelo e rosto da Luna OK; halo claro na parede em volta do cabelo; faixa de pele clara na barra do short |
+| Quarto com tatuagem | 565 s; Qwen aceito, com maquiagem pesada e argola nova | 247 s; rosto mais natural, rosto original 0,009 | mão com tatuagem virou mancha laranja; recortes retos no colo; resto de tatuagem no braço |
+| Braço na cabeça | 500 s | 185 s | top branco virou preto; braço inventado; colar trocado; fundo inventado atrás do braço |
+
+### Causas e correções (offline, 452 testes, não testadas na GPU)
+
+1. **Máscara da mão media a altura do rosto.** Num close-up ela cobria antebraço e colo inteiros: o corpo da Luna pulava o braço e a tatuagem ficava.
+   - Correção: a máscara agora segue os pontos da mão do DWPose ou o antebraço.
+2. **Mão com o gesto travado, mas sem dedos medíveis.** Era o punho fechado segurando o top; a etapa foi aceita sem medida e produziu uma mão "fantasma". A limpeza de tatuagem em cima dela fez a mancha laranja.
+   - Correção: a etapa só roda com gesto medível (≥ 10 pontos).
+   - Correção: um detector de borrão (microtextura da zona ÷ pele em volta, mínimo 0,45) recusa a etapa da mão e a da tatuagem.
+3. **Segmentador marcou "cabelo" em 78% da foto do braço.** A identidade cobriu 83% da imagem e o passe de rosto redesenhou tudo.
+   - Correção: `hair.py` refaz a máscara pela cor do cabelo amostrada acima da testa. Na foto real ela cai de 4,4× para 1,6× a área do rosto.
+4. **Roupa não segmentada com política PRESERVE.** Agora o corpo não é refeito, e a validação marca a roupa como "não conferida".
+   - Correção: a medida da roupa passou a contar a roupa repintada por dentro da região. Antes ela saía vazia e o top preto passava sem aviso.
+5. **Halo e faixa clara.** O fundo volta onde o modelo só repintou a parede. A faixa de pele entre o corpo novo e a roupa recebe o tom do corpo novo.
+
+**Contradições entre medida e olho** (registradas como pede a spec):
+
+- No quarto, o check de emenda deu 4,6–5,7 (PASS), mas os recortes retos no colo são visíveis.
+- No braço, o fundo deu 0,0 alterado, mas há fundo inventado dentro da região da pessoa.
+
+**Qwen:**
+
+- Espelho: recusado pelo piso.
+- Quarto e braço: aceito, mas trouxe maquiagem pesada e uma argola nova (joia inventada).
+
+A V2 sem Qwen teve rosto mais natural e menos resíduo do rosto original no quarto, e levou de 2,3× a 2,7× menos tempo.

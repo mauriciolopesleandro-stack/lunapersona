@@ -38,6 +38,7 @@ from app.core.engines.accessories import AccessoryLayer, build_layer, composite_
 from app.core.engines.attributes import ITEMS, from_structured
 from app.core.engines.markings import clean_skin_reference, complete_markings, keep_inked_regions
 from app.core.engines.skin import drop_small_blobs, structure_preserving_fill, tone_match
+from app.core.engines.hair import clean_hair_mask
 from app.core.engines.integration import integrate
 from app.core.engines.policies import POLICIES, StagePlan, plan_for
 from app.core.engines.quality_gate import QualityGate, measure_accessories, source_pixel_residual
@@ -257,6 +258,7 @@ class _Scene:
     layers: list[AccessoryLayer] = field(default_factory=list)  # spec 46.2: um objeto = uma camada (mascara/ordem/politica)
     # maos do DWPose na foto ORIGINAL (21 pontos cada): definem o tamanho da mascara da mao e se o gesto e medivel
     hands: list = field(default_factory=list)
+    notes: dict[str, Any] = field(default_factory=dict)  # sanidade das mascaras (cabelo refeito, roupa nao segmentada)
 
 
 JEWELRY_WORDS = ("earring", "bracelet", "necklace", "ring", "jewel", "brinco", "pulseira", "colar")
@@ -374,6 +376,10 @@ class ReplacementEngine:
                 drop_boxes.append(b)
         raw = replace(raw, protect_boxes=keep_boxes, protect_labels=[])
         masks = build_masks(raw, bbox, sheet.target_face.kps, original)
+        hair_clean, hair_info = clean_hair_mask(original, masks.hair, bbox, masks.face_full,
+                                                float(sg.get("max_hair_face_ratio", 3.0)))
+        if hair_info.get("cleaned"):
+            masks = replace(masks, hair=hair_clean)
         ident = identity_mask(masks, bbox, float(sg["face_grow_frac"]))
         fx1, fy1, fx2, fy2 = bbox
         near_head = np.zeros((h, w), np.float32)
@@ -463,8 +469,12 @@ class ReplacementEngine:
                   "source_body_mask": np.clip(masks.person * (1 - masks.clothing) * (1 - ident), 0, 1)}
         if markings is not None:
             source["source_markings_mask"] = markings
+        notes = {"hair": hair_info}
+        if not clothes_ok:
+            notes["clothing"] = ("roupa nao segmentada pelo detector: com a roupa PRESERVE o corpo/roupa da foto ficam "
+                                 "(sem como separar pele de roupa)")
         return _Scene(original, sheet, masks, ident, masks.face_full, body, ink, raw.tattoos, base_pose, clothes_ok, accessory,
-                      markings, source, box_policy, jewelry_body if jewelry_body.any() else None, layers)
+                      markings, source, box_policy, jewelry_body if jewelry_body.any() else None, layers, notes=notes)
 
     # --- uma passada ---------------------------------------------------------------------------
     async def _pass(self, name: str, cur: dict, mask: np.ndarray, prompt: str, negative: str, denoise: float, seed: int,
@@ -541,7 +551,11 @@ class ReplacementEngine:
         # CORPO DA PERSONA (antes do rosto): corpo e roupa redesenhados na pose da foto, com a LoRA e o corpo da
         # Persona Sheet. Sem profundidade (ela prende o formato do corpo ORIGINAL). Maos e calcado ficam da foto.
         body_region = None
-        if plan.body_identity and scene.masks is not None:
+        if plan.body_identity and scene.masks is not None and not scene.clothes_ok and not attrs.is_("clothing", RECONSTRUCT):
+            # espelho 2026-10-08: sem a roupa segmentada o top branco foi redesenhado preto. Roupa PRESERVE sem mascara
+            # de roupa = corpo nao e refeito (fica registrado; a validacao avisa que a roupa nao foi conferida)
+            tel.add_pass("body_identity", 0.0, {}, False, scene.notes.get("clothing"))
+        elif plan.body_identity and scene.masks is not None:
             body_region = self._body_region(scene, ident, plan, keep_clothing=not attrs.is_("clothing", RECONSTRUCT),
                                             keep_hands=True)
             if body_region is not None and body_region.sum() > 200:
@@ -987,6 +1001,10 @@ class ReplacementEngine:
             return None
         if attr == "clothing":
             region = scene.masks.clothing
+            if not scene.clothes_ok:  # sem roupa segmentada: o que nao e pele, cabelo nem rosto dentro da pessoa
+                region = (scene.masks.person > 0.5) & ~(skin_pixels(scene.original) > 0.5) & ~(scene.masks.hair > 0.5) \
+                    & ~(scene.face_full > 0.5) & ~(scene.masks.protect > 0.5)
+                region = region.astype(np.float32)
         elif attr == "hair":
             region = scene.masks.hair
         else:
@@ -994,8 +1012,12 @@ class ReplacementEngine:
         if region is None or not (region > 0.5).any():
             return None
         core = erode((region > 0.5).astype(np.float32), 3)
-        if attr == "clothing" and modified_mask is not None:  # a roupa encostada no que a politica reconstroi nao conta
-            core = core * (1 - dilate((modified_mask > 0.5).astype(np.float32), 4))
+        if attr == "clothing" and modified_mask is not None:
+            # so a BORDA do que foi refeito nao conta (transicao); roupa repintada por dentro da regiao conta sim
+            # (espelho 2026-10-08: o top inteiro estava dentro da regiao e a medida ficava vazia)
+            mm = (modified_mask > 0.5).astype(np.float32)
+            border = np.clip(dilate(mm, 4) - erode(mm, 4), 0, 1)
+            core = core * (1 - border) * (1 - (scene.face_full > 0.5)) * (1 - dilate((scene.masks.hair > 0.5).astype(np.float32), 3))
         return changed_fraction(scene.original, final, core, threshold=10)
 
     async def _measure(self, req: ReplacementRequest, scene: _Scene, final: np.ndarray, final_loc: str, modified_area: float,
@@ -1067,7 +1089,7 @@ class ReplacementEngine:
                         reg[int(max(a[1] for a in ankles)):, :] = False
                 body_px = source_pixel_residual(orig, final, reg.astype(np.float32))
         faces_orig = await self._faces_in(req.image, w, h, req.master)
-        extra = {"accessory_objects": measure_accessories(orig, final, scene.layers),
+        extra = {"clothes_segmented": scene.clothes_ok, "accessory_objects": measure_accessories(orig, final, scene.layers),
                  "source_face_pixels": source_pixel_residual(orig, final, face_reg.astype(np.float32)),
                  "source_body_pixels": body_px, "faces_original": faces_orig}
         return {**extra, "identity": face.similarity if face else None, "original_sim": fo.similarity if fo else None, "pose": pose,
@@ -1161,6 +1183,7 @@ class ReplacementEngine:
         scene = await self._scene(req.image, req.master, plan, attrs)
         tel.attributes["boxes"] = scene.box_policy
         tel.attributes["source_details"] = source_details(attrs, scene)
+        tel.attributes["mask_notes"] = scene.notes
         # a MEDICAO usa sempre a segmentacao real (mesmo quando a geracao nao usa: degraus A..D),
         # senao tatuagem/fundo/cabelo ficariam "desconhecidos" justamente onde falham
         mscene = scene if plan.segmentation else await self._scene(req.image, req.master, plan.with_(segmentation=True), attrs)
