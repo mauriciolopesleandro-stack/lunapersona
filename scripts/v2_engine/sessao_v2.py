@@ -55,8 +55,10 @@ PERFIS = {
     "v2": {"debug": True},
     # V2.1: Persona Canon + continuidade de pele + Qwen so no rosto (persona_replacement_v2_1.json)
     "v2.1": {"replacement_version": "v2.1", "debug": True},
+    # V3: reconstrucao da PESSOA INTEIRA (persona_replacement_v3.json); Qwen so adaptativo
+    "v3": {"replacement_version": "v3", "debug": True},
 }
-CONFIGS = {"v2": "persona_replacement_v2.json", "v2.1": "persona_replacement_v2_1.json"}
+CONFIGS = {"v2": "persona_replacement_v2.json", "v2.1": "persona_replacement_v2_1.json", "v3": "persona_replacement_v3.json"}
 CN = "controlnet-union-sdxl-1.0-promax.safetensors"
 
 
@@ -118,7 +120,7 @@ async def main() -> int:
     def pedido(ex):
         return {**PERFIS.get(ex.get("perfil", ""), {}), **ex.get("request", {})}
 
-    usa_qwen = any(pedido(ex).get("qwen_face_lock") or (pedido(ex).get("replacement_version") == "v2.1"
+    usa_qwen = any(pedido(ex).get("qwen_face_lock") or (pedido(ex).get("replacement_version") in ("v2.1", "v3")
                                                         and pedido(ex).get("qwen_face_lock") is not False) for ex in execs)
     problemas = await adapter.load() + (await face_lock.validate_configuration() if usa_qwen else [])
     if problemas:
@@ -130,7 +132,10 @@ async def main() -> int:
             "ka3": {"class_type": "PreviewAny", "inputs": {"source": ["ka2", 0]}}}
     reader, seg = CachedReader(ComfyReferenceReader(client)), CachedSegmenter(ComfySegmenter(session, store))
     analyzer = ComfyImageAnalyzer(client, keep_alive=keep)
-    engines = {v: ReplacementEngine(reader=reader, segmenter=seg, analyzer=analyzer, store=store, adapter=adapter,
+    from app.core.engines.replacement_v3 import PersonaReplacementV3  # noqa: E402
+
+    engines = {v: (PersonaReplacementV3 if v == "v3" else ReplacementEngine)(
+                   reader=reader, segmenter=seg, analyzer=analyzer, store=store, adapter=adapter,
                                     config=ReplacementEngine.load_config(ROOT / "config" / f),
                                     price_per_hour=PRICE, provider="comfyui@runpod", face_lock=face_lock if usa_qwen else None)
                for v, f in CONFIGS.items()}

@@ -84,7 +84,7 @@ from app.providers.base import ProviderImage, ReferenceImage
 
 ENGINE_VERSION = "replacement-v2.2-gate"
 QUALITY_PROFILES = {"fast": "FAST", "balanced": "QUALITY", "hyperrealistic": "MAX_QUALITY"}
-VERSIONS = ("v2", "v2.1")
+VERSIONS = ("v2", "v2.1", "v3")
 QWEN_PRESERVE_CONTEXT = ["Keep exactly the same clothing, accessories, background, pose and lighting.",
                          "Do not add earrings, jewelry or makeup.", "Natural skin texture, light natural makeup."]
 
@@ -124,6 +124,7 @@ class ReplacementRequest:
     depth_strength: float | None = None
     debug: bool = False  # REPLACEMENT_DEBUG: mascaras, mapa de pose, cada passe e o relatorio
     qwen_face_lock: bool | None = None  # Qwen BFS: so experimental, so por pedido explicito (ou config qwen.enabled)
+    reconstruction_mode: str | None = None  # V3: full_reconstruction | hybrid
 
     OPTIONS =("preserve_pose", "preserve_clothes", "preserve_background", "preserve_lighting", "remove_original_tattoos",
                "identity_lock", "body_lock", "skin_realism", "photographic_integration")
@@ -1235,6 +1236,9 @@ class ReplacementEngine:
                                       np.zeros_like(scene.identity) if body_region is None else body_region))}
 
     # --- job completo --------------------------------------------------------------------------
+    def _gate(self) -> QualityGate:
+        return QualityGate(self.cfg)
+
     def _configured(self, plan: StagePlan, req: ReplacementRequest) -> StagePlan:
         """Config dedicada (persona_replacement_v2.json) -> plano. Vale para FAST/QUALITY/MAX_QUALITY; a escada A..H do
         benchmark fica como esta. O que o pedido fixou explicitamente (forcas, advanced) nao e sobrescrito."""
@@ -1296,7 +1300,8 @@ class ReplacementEngine:
 
     async def run(self, req: ReplacementRequest) -> ReplacementOutcome:
         req.validate()
-        if os.environ.get((self.cfg.get("debug") or {}).get("env", "REPLACEMENT_DEBUG"), "").lower() in ("1", "true", "yes"):
+        envs = {(self.cfg.get("debug") or {}).get("env", "REPLACEMENT_DEBUG"), "REPLACEMENT_DEBUG"}
+        if any(os.environ.get(e, "").lower() in ("1", "true", "yes") for e in envs):
             req.debug = True
         if req.debug:
             req.keep_intermediates = True
@@ -1316,7 +1321,8 @@ class ReplacementEngine:
         meta = self.adapter.metadata()
         tel = JobTelemetry(uuid.uuid4().hex[:12], req.persona_id, "replacement", plan.name, model=meta.get("model", ""),
                            checkpoint_hash=meta.get("hash", ""), lora_hash=meta.get("lora_hash", self.lora_hash), seed=req.seed,
-                           steps=plan.steps, cfg=plan.cfg, provider=self.provider, engine_version=ENGINE_VERSION,
+                           steps=plan.steps, cfg=plan.cfg, provider=self.provider,
+                           engine_version=getattr(self, "engine_version", ENGINE_VERSION),
                            license={k: meta.get(k) for k in ("license", "commercial_use", "license_status")},
                            workflow_versions={"inpaint": meta.get("workflow", "")}, attributes=attrs.to_dict())
         scene = await self._scene(req.image, req.master, plan, attrs)
@@ -1343,7 +1349,7 @@ class ReplacementEngine:
             tel.attributes["mask_hierarchy_issues"] = hierarchy
         tel.resolution = [w, h]
         retry = RetryPolicyV2()
-        gate = QualityGate(self.cfg)
+        gate = self._gate()
         attempts, best = [], None
         attempt = 0
         retry_reasons: list[str] = []
@@ -1403,7 +1409,8 @@ class ReplacementEngine:
 
 
 # falhas dos validadores novos -> tipo de retry da spec (cada falha com a SUA estrategia)
-_GATE_FAILURE = {"skin_continuity": "skin", "photometric": "skin", "skin_identity": "skin", "body_identity": "body",
+_GATE_FAILURE = {"boundary": "halo", "clothing_v3": "clothing", "face_geometry": "pose", "gaze": "pose",
+                 "reflection": "reflection", "skin_continuity": "skin", "photometric": "skin", "skin_identity": "skin", "body_identity": "body",
                  "source_pixel_residual": "original_residual", "accessory_objects": "accessories",
                  "person_count": "duplicate_persona", "hair": "original_residual", "clothing": "background"}
 

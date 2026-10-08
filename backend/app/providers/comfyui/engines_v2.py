@@ -23,7 +23,7 @@ from app.validation_backends.skin import _split_locator
 from app.workflow_manager.manager import WorkflowManager
 
 ADAPTERS = {"realvisxl": RealVisXLAdapter, "lustify": LustifyAdapter}
-CONFIGS = {"v2": "persona_replacement_v2.json", "v2.1": "persona_replacement_v2_1.json"}
+CONFIGS = {"v2": "persona_replacement_v2.json", "v2.1": "persona_replacement_v2_1.json", "v3": "persona_replacement_v3.json"}
 
 
 class EngineSetupError(RuntimeError):
@@ -79,8 +79,12 @@ class ComfyEngineFactory:
         # So e montado quando pedido (qwen=True) ou ligado na config (qwen.enabled) - e entao fica registrado.
         parts = self._parts(await self._adapter(model), version)
         cfg = parts["config"]
-        default = bool((cfg.get("qwen") or {}).get("enabled")) or bool((cfg.get("qwen_identity_refinement") or {}).get("enabled"))
+        default = bool((cfg.get("qwen") or {}).get("enabled")) or bool((cfg.get("qwen_identity_refinement") or {}).get("enabled")) \
+            or bool((cfg.get("identity_refinement") or {}).get("qwen_allowed"))
         want = bool(qwen) if qwen is not None else default
+        if version == "v3":
+            from app.core.engines.replacement_v3 import PersonaReplacementV3
+            return PersonaReplacementV3(**parts, face_lock=await self._face_lock() if want else None)
         return ReplacementEngine(**parts, face_lock=await self._face_lock() if want else None)
 
     async def _face_lock(self):

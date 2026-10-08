@@ -28,7 +28,8 @@ log = logging.getLogger(__name__)
 
 ENGINES = ("generation", "replacement", "face_swap")
 REQUEST_FIELDS = ("replacement_version", "pose_required", "clothing_required", "accessories_required", "remove_tattoos",
-                  "quality_profile", "identity_strength", "pose_strength", "depth_strength", "debug", "qwen_face_lock")
+                  "quality_profile", "identity_strength", "pose_strength", "depth_strength", "debug", "qwen_face_lock",
+                  "reconstruction_mode")
 MODES = ("FAST", "QUALITY", "MAX_QUALITY")
 
 

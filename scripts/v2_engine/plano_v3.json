@@ -1,0 +1,6 @@
+{"segundos_por_imagem": 480, "overhead_segundos": 300,
+ "_nota": "V3 (Full Person Reconstruction) nas 2 fotos do teste V2 x V2.1 de 2026-10-08 (espelho e porta). A V2 ja rodou nelas (generated/v2/engines/v21): so a V3 roda aqui, para o A/B V2 x V3. Sem retry.",
+ "execucoes": [
+  {"id": "espelho_celular__v3", "foto": "fotos_v2/espelho_celular.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v3"},
+  {"id": "porta_cacheada__v3", "foto": "fotos_v2/porta_cacheada.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v3"}
+ ]}

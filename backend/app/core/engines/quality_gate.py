@@ -44,6 +44,13 @@ VALIDATORS: dict[str, tuple[str, ...]] = {
     "HairValidator": ("hair",),
     "SceneConsistencyValidator": ("background", "composition"),
     "PersonCountValidator": ("duplicate_persona", "person_count"),
+    # V3
+    "FaceGeometryValidator": ("face_geometry",),
+    "GazeValidator": ("gaze",),
+    "ClothingValidator": ("clothing_v3",),
+    "ReplacementBoundaryValidator": ("boundary",),
+    "ReflectionValidator": ("reflection",),
+    "TextureValidator": ("skin", "photometric"),
     # V2.1
     "BodyIdentityValidator": ("body_identity",),
     "BodyConsistencyValidator": ("body", "body_identity"),
@@ -244,6 +251,67 @@ def check_v21(m: dict[str, Any], thr: dict[str, Any], hard: bool, body_pixels) -
     return out
 
 
+def check_v3(m: dict[str, Any], thr: dict[str, Any]) -> dict[str, CheckResult]:
+    """V3 (preliminar, sem benchmark): borda/halo, roupa por identidade visual, geometria do rosto, olhar, reflexo."""
+    out: dict[str, CheckResult] = {}
+    b = m.get("boundary") or {}
+    tb = thr.get("halo_dE", {"pass": 3.0, "reject": 6.0})
+    if b.get("status") != "MEASURED":
+        out["boundary"] = CheckResult("boundary", UNKNOWN, None, tb, "faixa de fundo em volta da pessoa pequena demais", b)
+    else:
+        d = b["halo_dE"]
+        st = PASS if d <= tb["pass"] else REJECT if d > tb["reject"] else WARN
+        sr = b.get("sharpness_ratio")
+        ts = thr.get("halo_sharpness", {"low": 0.6, "high": 1.6})
+        why = [f"fundo repintado em volta da pessoa (dE {d:.1f})"] if st != PASS else []
+        if sr is not None and not ts["low"] <= sr <= ts["high"]:
+            st, why = (WARN if st == PASS else st), why + [f"nitidez da borda {sr:.2f}x a foto"]
+        out["boundary"] = CheckResult("boundary", st, d, {"halo_dE": tb, "sharpness": ts}, "; ".join(why) or "sem halo", b)
+    c = m.get("clothing_v3") or {}
+    tc = thr.get("clothing_dE", {"pass": 10.0, "reject": 20.0})
+    if c.get("status") != "MEASURED":
+        out["clothing_v3"] = CheckResult("clothing_v3", UNKNOWN, None, tc, c.get("reason", "sem medida"), c)
+    else:
+        de, new = c.get("color_dE_max", 0.0), c.get("new_clothing_on_skin", 0.0)
+        st = PASS if de <= tc["pass"] else REJECT if de > tc["reject"] else WARN
+        why = [] if st == PASS else [f"cor da roupa diferente (dE {de:.1f})"]
+        tn = thr.get("new_clothing_on_skin", {"pass": 0.01, "reject": 0.03})
+        if c.get("straps_invented") or new > tn["reject"]:
+            st, why = REJECT, why + ["peca/alca inventada sobre a pele" + (f" ({new:.1%} da roupa)" if new else "")]
+        elif new > tn["pass"] and st == PASS:
+            st, why = WARN, why + [f"roupa nova sobre a pele ({new:.1%})"]
+        iou = c.get("shape_iou_loose")
+        if iou is not None and iou < float(thr.get("clothing_iou_min", 0.5)):
+            st, why = (WARN if st == PASS else st), why + [f"forma da roupa diferente (IoU {iou:.2f})"]
+        out["clothing_v3"] = CheckResult("clothing_v3", st, de, {"dE": tc, "new_on_skin": tn}, "; ".join(why) or
+                                         "mesma roupa (cor, alcas, forma) vestindo o corpo da Persona", c)
+    g = m.get("face_geometry") or {}
+    tg = thr.get("face_geometry", {"center_shift": 0.1, "roll_deg": 8.0, "yaw": 0.25})
+    if "center_shift" not in g:
+        out["face_geometry"] = CheckResult("face_geometry", UNKNOWN, None, tg, "rosto nao medido", g)
+        out["gaze"] = CheckResult("gaze", UNKNOWN, None, tg, "olhar nao medido (sem rosto)", g)
+    else:
+        bad = [k for k, lim in (("center_shift", tg["center_shift"]), ("roll_diff_deg", tg["roll_deg"]))
+               if g.get(k) is not None and g[k] > lim]
+        worse = [k for k, lim in (("center_shift", tg["center_shift"] * 2), ("roll_diff_deg", tg["roll_deg"] * 2))
+                 if g.get(k) is not None and g[k] > lim]
+        st = REJECT if worse else WARN if bad else PASS
+        out["face_geometry"] = CheckResult("face_geometry", st, g.get("center_shift"), tg,
+                                           ("posicao/inclinacao do rosto mudou: " + ", ".join(bad)) if bad else
+                                           "rosto no mesmo lugar e inclinacao da foto", g)
+        yd = g.get("yaw_diff")
+        st = UNKNOWN if yd is None else PASS if yd <= tg["yaw"] else REJECT if yd > tg["yaw"] * 2 else WARN
+        out["gaze"] = CheckResult("gaze", st, yd, {"yaw": tg["yaw"], "method": "orientacao da cabeca (sem iris)"},
+                                  "direcao do rosto/olhar como na foto" if st == PASS else "rosto/olhar virado diferente da foto", g)
+    r = m.get("reflection_original_sim")
+    tr = thr.get("reflection_original", {"reject": 0.4})
+    out["reflection"] = CheckResult("reflection", UNKNOWN if r is None else (REJECT if r > tr["reject"] else PASS), r, tr,
+                                    "sem segundo rosto" if r is None else
+                                    ("reflexo/segundo rosto ainda e a pessoa original" if r > tr["reject"] else
+                                     "reflexo sem a pessoa original"))
+    return out
+
+
 # --- o gate ------------------------------------------------------------------------------------------
 
 @dataclass
@@ -295,6 +363,8 @@ class QualityGate:
                                                           self._hard("source_identity_residual"))
         ch["person_count"] = check_person_count(m.get("faces_original"), m.get("faces"))
         ch["hair"] = check_hair(policy.get("hair"), m.get("hair_residual"), m.get("hair_change"), t)
+        if "clothing_v3" in m:  # V3
+            ch.update(check_v3(m, self.cfg.get("v3_thresholds") or {}))
         if "skin_continuity" in m:  # V2.1
             sc = self.cfg.get("skin_continuity") or {}
             ch.update(check_v21(m, sc.get("thresholds") or {}, self._hard("skin_continuity"), m.get("source_body_pixels")))

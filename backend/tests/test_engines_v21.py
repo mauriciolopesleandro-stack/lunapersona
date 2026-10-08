@@ -181,7 +181,7 @@ async def test_version_and_config_must_match():
     with pytest.raises(ReplacementRequestError, match="config"):
         await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, replacement_version="v2.1"))
     with pytest.raises(ReplacementRequestError):
-        req(persona_sheet=LUNA, replacement_version="v3").validate()
+        req(persona_sheet=LUNA, replacement_version="v9").validate()
 
 
 def test_v2_config_is_untouched_by_v21():

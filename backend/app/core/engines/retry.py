@@ -8,8 +8,8 @@ from typing import Any
 from app.core.engines.policies import StagePlan
 
 # ordem de prioridade: corrige o mais grave primeiro (um ajuste por tentativa)
-PRIORITY = ["background", "duplicate_persona", "original_residual", "identity", "tattoo", "hands", "accessories", "pose", "body",
-            "skin", "composition"]
+PRIORITY = ["background", "duplicate_persona", "reflection", "original_residual", "identity", "tattoo", "clothing", "hands",
+            "accessories", "pose", "body", "halo", "skin", "composition"]
 
 
 @dataclass
@@ -68,6 +68,19 @@ class RetryPolicyV2:
             p = plan.with_(segmentation=True, identity_denoise=max(0.7, plan.identity_denoise - 0.1),
                            extra={**plan.extra, "mask_shrink": plan.extra.get("mask_shrink", 0) + 1})
             strategy = "mascara mais justa + menos denoise na area"
+        elif alvo == "halo":
+            # V3 HALO_FAIL: menos mistura (fundo devolvido com tolerancia maior) + regiao da pessoa maior
+            p = plan.with_(extra={**plan.extra, "region_grow": plan.extra.get("region_grow", 0) + 1,
+                                  "background_tolerance": 40})
+            strategy = "halo: regiao da pessoa ampliada + fundo original devolvido com tolerancia maior (menos mistura)"
+        elif alvo == "clothing":
+            # V3 CLOTHING_FAIL: ClothingCondition mais forte (estrutura da roupa pela profundidade), corpo continua da Persona
+            p = plan.with_(depth=True, depth_strength=min(0.6, plan.depth_strength + 0.1),
+                           extra={**plan.extra, "full_denoise": max(0.7, float(plan.extra.get("full_denoise", 0.85)) - 0.05)})
+            strategy = "roupa: profundidade da foto um pouco mais forte + denoise -0,05 (mesma roupa, corpo da Persona)"
+        elif alvo == "reflection":
+            p = plan.with_(extra={**plan.extra, "reflection_retry": plan.extra.get("reflection_retry", 0) + 1})
+            strategy = "reflexo: refaz a regiao do reflexo de novo (outra semente)"
         elif alvo == "body":
             # V2.1 BODY_FAIL: reforca a identidade corporal (corpo da Persona refeito com um pouco mais de liberdade)
             p = plan.with_(body_identity=True, body_identity_denoise=min(0.85, plan.body_identity_denoise + 0.05))

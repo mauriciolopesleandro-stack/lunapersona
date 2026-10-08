@@ -433,3 +433,86 @@ Testado nas imagens reais do A/B de 08/10 (sem GPU, só CPU), com dE da pior tra
 - **Altura e peso:** a ficha não tem esses valores.
 - **Nós customizados do ComfyUI:** valem as mesmas observações da V2.
 - **Benchmark V1 × V2 × V2.1:** a V1 não está ligada à sessão de GPU. O plano `plano_v21.json` compara V2 × V2.1 nas 2 fotos.
+
+## V3: Full Person Reconstruction (2026-10-08)
+
+Princípio: **reconstruir a Luna na estrutura da foto**, em vez de editar a pessoa original até ela parecer a Luna.
+
+- **Código:**
+  - `backend/app/core/engines/replacement_v3.py` (`PersonaReplacementV3`, `ReplacementV3Request`);
+  - `conditions_v3.py` (condições e medidas);
+  - `quality_gate.check_v3`;
+  - `config/persona_replacement_v3.json`.
+- **Versões:** a V3 roda com `replacement_version: "v3"`. A V2 e a V2.1 continuam disponíveis, e a V1 (`core/persona_replacement`) também. A geração normal não foi tocada.
+
+### Fluxo
+
+```
+foto -> análise da cena (Florence) -> segmentação pessoa x cena -> DWPose (corpo, mãos e 68 pontos do rosto)
+     -> FaceGeometry/Gaze -> profundidade da foto LIMPA (marcas tiradas antes; só estrutura espacial, 0,35)
+     -> ClothingCondition (cor medida por peça, alças, corte, comprimento) + acessórios (camadas)
+     -> Persona Canon (corpo, pele, cabelo)
+     -> UMA reconstrução da pessoa inteira (rosto, pescoço, corpo, braços, pernas, mãos, pele, cabelo e ROUPA no
+        mesmo passe: RealVisXL + LoRA, pose 0,85, denoise 0,85)
+     -> fundo devolvido onde o modelo só repintou a parede (anti-halo)
+     -> refino de identidade ADAPTATIVO: InstantID leve (0,35) só se a identidade < 0,72;
+        Qwen só no MIOLO do rosto (sem orelhas), só se continuar < 0,65, e só fica se subir
+     -> [híbrido] mão refeita só se a reconstrução perdeu dedos; reflexo da mesma pessoa refeito
+     -> continuidade de pele (V2.1) e integração fotométrica
+     -> composição na cena (fora da pessoa = a foto; acessórios mantidos por cima) -> FullReconstructionQualityGate
+```
+
+### Condições: o que a foto dá e como entra
+
+| Condição | De onde vem | Como entra |
+|---|---|---|
+| Pose | DWPose (corpo + mãos + rosto) | ControlNet de pose |
+| Geometria do rosto | rolagem (linha dos olhos), guinada (nariz entre os olhos), centro e tamanho | os 68 pontos do rosto vão no mapa de pose; a validação compara com o resultado |
+| Olhar | orientação da cabeça + linha dos olhos | igual à geometria. **Não há rastreador de íris**: o olhar é aproximado pela orientação da cabeça |
+| Profundidade | foto sem as marcas, forca 0,35 | ControlNet de profundidade |
+| Roupa | por peça (cima/baixo/inteira): cor medida em Lab com nome, alças (tecido sobre os ombros?), corte (cropped), comprimento (pelo esqueleto) | texto do prompt + negativo (tomara-que-caia → "straps" no negativo). A roupa é **re-renderizada** vestindo o corpo da Persona, não colada por pixel. O modo `hybrid` com roupa PRESERVE mantém os pixels |
+| Acessórios e objetos da frente | camadas | compostos por cima no fim (ordem de oclusão) |
+
+### Validadores V3
+
+Somam-se aos 12 da V2 e aos da V2.1. Todos os limites estão em `v3_thresholds` e são **preliminares**.
+
+| Validador | O que mede | Status |
+|---|---|---|
+| ReplacementBoundaryValidator | halo: na faixa de FUNDO em volta da pessoa refeita, diferença de cor (dE) e de nitidez contra a foto | PASS ≤ 3, REJECT > 6 |
+| ClothingValidator | identidade visual da roupa: cor por peça (dE), forma (IoU com folga), **peça nova sobre a pele** e alça inventada (corrige o caso da porta: alça no tomara-que-caia) | peça nova ou alça inventada → REJECT; cor > 20 → REJECT |
+| FaceGeometryValidator | deslocamento do centro do rosto e diferença de inclinação | WARN acima de 0,10 / 8°, REJECT acima do dobro |
+| GazeValidator | diferença de guinada da cabeça | aproximação do olhar |
+| ReflectionValidator | segundo rosto ainda parecido com a pessoa original (> 0,40) | REJECT |
+| TextureValidator | pele e fotometria | — |
+
+- A silhueta (larguras de ombro, cintura e quadril, original × final) é registrada **sem limite**. O DWPose não mede volume, e a pose muda a largura 2D.
+
+### Retry da V3
+
+| Falha | Estratégia |
+|---|---|
+| HALO | região da pessoa ampliada + fundo devolvido com tolerância maior |
+| CLOTHING | profundidade +0,1 e denoise −0,05 |
+| POSE / GAZE / FACE_GEOMETRY | ControlNet de pose mais forte |
+| REFLECTION | refaz o reflexo com outra semente |
+| IDENTITY | refino adaptativo |
+| BODY / SKIN / TATTOO | estratégias da V2.1 |
+
+### Debug
+
+`REPLACEMENT_V3_DEBUG=true` (ou `REPLACEMENT_DEBUG`, ou `debug` no pedido) salva:
+
+- `original`, `person_mask`, `background_mask`, `v3_region`, `clothing_mask`, `tattoo_mask`, `accessory_mask`, `pose_map`;
+- os passes `v3_clean_input`, `initial_reconstruction`, `identity_refinement`, `face_lock`, `skin_integration`, `photometric_integration`, `scene_composite` e `final`;
+- e, em `debug`: `body_profile`, `skin_profile`, `scene_analysis`, `validation_report` e `run_log`.
+
+Ficam fora: `depth_map` e `face_landmarks` são gerados dentro do ComfyUI e não são exportados, e o `gaze_map` não existe (não há rastreador de íris).
+
+### Limitações conhecidas (antes do benchmark)
+
+- Denoise 0,85 na pessoa inteira pode mudar detalhes da roupa (costuras, botões). O ClothingValidator mede cor, forma e alças, não costura.
+- Os 68 pontos do rosto no mapa de pose carregam a posição e a expressão, mas também o contorno do maxilar da pessoa original. O refino com InstantID corrige o formato; se não bastar, a próxima etapa é tirar o contorno do maxilar do mapa.
+- Corpo da Luna: vem do texto do Persona Canon e da LoRA. Não há medida de volume (cintura/quadril) nem altura e peso na ficha.
+- O reflexo só é refeito quando o detector acha um segundo rosto da mesma pessoa.
+- Nós customizados do ComfyUI: as etapas são módulos do backend, como na V2.
