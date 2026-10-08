@@ -1,0 +1,10 @@
+{"segundos_por_imagem": 480, "overhead_segundos": 420,
+ "_nota": "A/B em 3 fotos escolhidas pelo usuario (2026-10-08): CURRENT (Qwen BFS, profundidade 0,5) x V2 (sem Qwen, config dedicada), debug, sem retry (comparacao direta e custo menor). Politica padrao da Luna.",
+ "execucoes": [
+  {"id": "espelho_celular__current", "foto": "fotos_v2/ab_espelho_celular.jpg", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "current"},
+  {"id": "espelho_celular__v2", "foto": "fotos_v2/ab_espelho_celular.jpg", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v2"},
+  {"id": "quarto_tatuagem__current", "foto": "fotos_v2/ab_quarto_tatuagem.jpg", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "current"},
+  {"id": "quarto_tatuagem__v2", "foto": "fotos_v2/ab_quarto_tatuagem.jpg", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v2"},
+  {"id": "espelho_braco__current", "foto": "fotos_v2/ab_espelho_braco.jpg", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "current"},
+  {"id": "espelho_braco__v2", "foto": "fotos_v2/ab_espelho_braco.jpg", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v2"}
+ ]}
