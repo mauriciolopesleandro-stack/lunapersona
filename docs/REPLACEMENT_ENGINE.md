@@ -156,3 +156,61 @@ O mesmo atributo em duas listas, ou uma política que o motor não executa, dá 
   - Com tatuagens PRESERVE, a limpeza não roda (apagaria a tatuagem pedida), e cicatriz/pinta ficam UNKNOWN.
   - Piercing, joia e maquiagem também não têm detector: o rosto é reconstruído e o veredito é UNKNOWN (conferir no olho).
 - Tatuagem em **mão** continua sendo o caso mais difícil. A reconstrução nova (LoRA + pose + profundidade da pele limpa, sem blocos) ainda **não foi testada na GPU**.
+
+## Separação semântica (spec 46, 2026-10-08)
+
+A pessoa da foto não é um bloco único de pixels. Cada categoria tem política própria:
+IDENTITY, BODY, SKIN, POSE, HANDS, HAIR, CLOTHING, ACCESSORIES e MARKINGS.
+
+**Preservar não é travar pixels (46.1).**
+
+| Categoria | O que o "preservar" faz |
+|---|---|
+| Mão | Mantém posição, gesto e relação com os objetos; a anatomia e a pele são refeitas (HAND_POSE_LOCK) |
+| Óculos | Mantém o objeto; o rosto atrás da lente é o da Persona |
+
+**Acessório por objeto (46.2).** Óculos, brincos, colar, pulseira, relógio, anel e boné viram camadas.
+- Cada camada tem `accessories.py`: máscara, caixa, ordem de oclusão e política própria. A política vale por item; sem item, vale a da classe.
+- A pessoa é refeita por baixo, e as camadas mantidas voltam por cima, na ordem: óculos/boné na frente do rosto; brinco e colar; pulseira e relógio.
+
+**Óculos (46.3):**
+- **Lente escura** (óculos de sol): lente + armação voltam inteiras.
+- **Lente clara:** só a armação volta.
+  - Armação = traço escuro **ligado à borda** dos óculos. Mancha escura solta dentro da lente (o olho original) não é armação.
+  - O tom da lente é reaplicado sobre o rosto novo.
+
+**Mão com pose travada (46.4).** É uma etapa própria, depois do corpo e antes do rosto:
+- openpose forte (com as mãos) + estrutura da mão original;
+- entrada sem tatuagem quando há tinta na mão;
+- LoRA da Persona, denoise 0,45;
+- aceita só se o DWPose ainda achar os dedos: pontos da mão final / da original ≥ 0,85.
+- Mão PRESERVE (pedido explícito) = pixels da foto.
+
+**Corpo da Persona com a mesma roupa (46.12).** Com roupa PRESERVE, a etapa do corpo refaz só a **pele visível** (braços, pernas, barriga, pescoço) com a anatomia da Persona. A roupa fica pixel a pixel. "Roupa redesenhada parecida" continua disponível por pedido.
+
+**Política estruturada (46.10).** `ReplacementRequest.structured_policy` / campo `policy` na API, por exemplo:
+
+```
+{"preserve": {"accessories": ["glasses", "earrings", "bracelet"], "clothing": ["top"], "pose": {"enabled": true}},
+ "remove": {"markings": ["tattoos", "scars"]},
+ "reconstruct": {"identity": ["face", "body", "skin"]}}
+```
+
+**Classificação de cada detalhe (46.9).** `telemetry.attributes.source_details`: cada detalhe com a sua política (as mãos com o modo POSE_LOCK / PIXEL_LOCK) e cada objeto detectado com a sua política e camada.
+
+**Validação (46.11):**
+- Novas: `hands` (anatomia por pontos de dedo, proxy) e `accessories` (alteração dentro dos objetos mantidos).
+- Com retry próprio: mão (outra semente, menos denoise, mais estrutura) e acessório.
+
+**Padrão da Luna:**
+
+| Política | Atributos |
+|---|---|
+| Mantidos da foto | roupa, acessórios e joias, pose, cenário, luz |
+| Da Luna | rosto, cabelo, corpo, pele, mãos (gesto da foto) |
+| Removidos | tatuagens e marcas da pessoa original |
+
+**Limites:**
+- A anatomia da mão é medida por proxy (pontos do DWPose), não por um detector de dedos dedicado.
+- Óculos de lente clara dependem do traço da armação ser mais escuro que o entorno.
+- **Nada da spec 46 foi testado na GPU ainda.**
