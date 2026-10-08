@@ -226,3 +226,34 @@ Defeito que sobrou na 0,6: manchas claras redondas, fracas, no braço esquerdo e
 - Teto de grão 2,5.
 
 **Pendente:** detector de tatuagem fina em pele bronzeada.
+
+
+## Duas fotos sem tatuagem (porta / espelho com celular), 2026-10-07
+
+| | |
+|---|---|
+| Tempo e custo | 14 min, **~US$ 0,14** |
+
+| Foto | Identidade | Rosto original | Pose | Fundo | Validação na época |
+|---|---|---|---|---|---|
+| porta | **0,80** | 0,27 | 0,002 | 0 | REJECT (alarme falso) |
+| espelho | **0,81** | 0,20 | 0,007 | 0 | REJECT (alarme falso) |
+
+**No olho:** **boas.**
+- É a Luna, com cabelo longo escuro.
+- Roupa, pose e cenário iguais. O celular e a mão foram mantidos no espelho.
+
+**Alarmes falsos** (a imagem não foi estragada: a reconstrução de marcas foi descartada pela trava):
+- **Porta:** a borda do braço contra a madeira marrom virou "tatuagem".
+  - Correção: a região de marca precisa de miolo de tinta cinza (madeira: saturação ~0,50). Offline: 52 mil px → 0.
+  - Na foto do quarto, 93% da tatuagem real continua detectada.
+- **Espelho:** chinelos cinza e sombra da virilha viraram "tinta"; os chinelos também viraram "pulseira"; a caixa da mão + celular foi rotulada "brinco" e "relógio".
+  - Correções:
+    - marcas abaixo dos tornozelos são ignoradas;
+    - joia só conta perto de pulso/cabeça;
+    - caixa com rótulo de manter e de tirar: manter vence.
+- **"Blocos"** eram traços do rosto/cabelo novos.
+  - Correção: o bloco só é medido na pele reconstruída fora da identidade, com denominador mínimo.
+  - Offline: porta 12 → 5,6; espelho 15,9 → 1,0 (passam).
+
+**Limitação que fica:** a sombra cinza da virilha (entre as coxas, sobre o short) ainda pode virar "tinta". Nenhuma regra testada separou com segurança.
