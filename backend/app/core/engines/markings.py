@@ -54,4 +54,25 @@ def clean_skin_reference(rgb: np.ndarray, markings: np.ndarray, person: np.ndarr
     return push_pull_fill(rgb, (~known).astype(np.float32), known.astype(np.float32))
 
 
-__all__ = ["clean_skin_reference", "complete_markings", "ink_like"]
+def keep_inked_regions(markings: np.ndarray, rgb: np.ndarray, skin_ref: np.ndarray, core_sat: float = 0.25,
+                       core_delta: float = 15.0, max_iter: int = 600) -> np.ndarray:
+    """So fica a regiao de marca que tem MIOLO de tinta (cinza pouco saturado e mais escuro que a pele limpa).
+    Teste de 2026-10-07 (porta de madeira): a borda do braco contra a madeira (marrom, saturada ~0,50) virou
+    "tatuagem" numa foto sem tatuagem e reprovou uma troca com identidade 0,80. Tinta real: muitos pixels < 0,1."""
+    x = rgb.astype(np.float32)
+    lum = x @ np.array([0.299, 0.587, 0.114], np.float32)
+    ref = skin_ref.astype(np.float32) @ np.array([0.299, 0.587, 0.114], np.float32)
+    sat = (x.max(axis=2) - x.min(axis=2)) / np.maximum(x.max(axis=2), 1.0)
+    m = markings > 0.5
+    core = m & (sat < core_sat) & (ref - lum > core_delta)
+    core = (dilate_round(1.0 - dilate_round(1.0 - core.astype(np.float32), 1), 1) > 0.5)  # abertura: tira ponto solto
+    cur = core
+    for _ in range(max_iter):  # reconstrucao: a regiao inteira volta se tem miolo
+        nxt = (dilate_round(cur.astype(np.float32), 1) > 0.5) & m
+        if (nxt == cur).all():
+            break
+        cur = nxt
+    return cur.astype(np.float32)
+
+
+__all__ = ["clean_skin_reference", "complete_markings", "ink_like", "keep_inked_regions"]

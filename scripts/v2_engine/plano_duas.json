@@ -1,0 +1,7 @@
+{"segundos_por_imagem": 300, "overhead_segundos": 240,
+ "_nota": "Duas fotos do usuario sem tatuagem: troca da pessoa pela Luna mantendo a foto (politica padrao da Luna).",
+ "execucoes": [
+  {"id": "porta_cacheada", "foto": "fotos_v2/porta_cacheada.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0},
+  {"id": "espelho_celular", "foto": "fotos_v2/espelho_celular.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0,
+   "preserve": ["objects", "pose", "clothing", "background", "lighting", "composition"]}
+ ]}

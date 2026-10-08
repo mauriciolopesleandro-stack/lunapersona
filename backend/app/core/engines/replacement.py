@@ -33,7 +33,7 @@ from app.core.engines.attributes import (
     AttributePolicyError,
     resolve,
 )
-from app.core.engines.markings import clean_skin_reference, complete_markings
+from app.core.engines.markings import clean_skin_reference, complete_markings, keep_inked_regions
 from app.core.engines.skin import drop_small_blobs, structure_preserving_fill, tone_match
 from app.core.engines.integration import integrate
 from app.core.engines.policies import StagePlan, plan_for
@@ -186,6 +186,42 @@ class _Scene:
 JEWELRY_WORDS = ("earring", "bracelet", "necklace", "ring", "jewel", "brinco", "pulseira", "colar")
 
 
+def _drop_below_ankles(mask: np.ndarray, pose) -> np.ndarray:
+    """Abaixo dos dois tornozelos (DWPose) e calcado: nao entra como marca. Sem tornozelo detectado: nada muda."""
+    from app.core.validation.geometry import point
+
+    if not pose:
+        return mask
+    ankles = [p for p in (point(pose, "rank"), point(pose, "lank")) if p]
+    if not ankles:
+        return mask
+    y_cut = int(max(a[1] for a in ankles))
+    out = mask.copy()
+    out[y_cut:, :] = 0
+    return out
+
+
+def _jewelry_plausible(label: str, box, face_bbox, pose) -> bool:
+    """Joia so onde joia fica: pulseira/anel perto de um pulso (DWPose), brinco/colar perto da cabeca/pescoco.
+    Sem esqueleto: aceita (nao inventa regra sem medida)."""
+    from app.core.validation.geometry import point
+
+    bx1, by1, bx2, by2 = box
+    cx, cy = (bx1 + bx2) / 2, (by1 + by2) / 2
+    fx1, fy1, fx2, fy2 = face_bbox
+    fh = max(1.0, fy2 - fy1)
+    lab = (label or "").lower()
+    if any(w in lab for w in ("earring", "necklace", "brinco", "colar")):
+        return fy1 - fh * 0.5 <= cy <= fy2 + fh * 1.8 and fx1 - fh * 1.5 <= cx <= fx2 + fh * 1.5
+    if not pose:
+        return True
+    wrists = [p for p in (point(pose, "rwri"), point(pose, "lwri")) if p]
+    if not wrists:
+        return True
+    reach = max(bx2 - bx1, by2 - by1, fh * 0.6)
+    return any(abs(cx - wx) <= reach and abs(cy - wy) <= reach for wx, wy in wrists)
+
+
 def box_class(label: str) -> str:
     """Rotulo do detector -> atributo. Sem rotulo (detector antigo) = acessorio (conservador: mantido)."""
     lab = (label or "").lower()
@@ -234,13 +270,23 @@ class ReplacementEngine:
         labels += [""] * (len(raw.protect_boxes) - len(labels))
         plausible = set(plausible_accessories(raw.protect_boxes, bbox, float(sg["max_accessory_face_ratio"])))
         keep_boxes, drop_boxes, box_policy = [], [], []
+        preserved = {b for b, lab in zip(raw.protect_boxes, labels) if attrs.get(box_class(lab)) == PRESERVE}
         for b, lab in zip(raw.protect_boxes, labels):
             if b not in plausible:
                 continue
             cls = box_class(lab)
             pol = attrs.get(cls)
-            box_policy.append({"box": [round(v, 1) for v in b], "label": lab, "attribute": cls, "policy": pol})
-            (keep_boxes if pol == PRESERVE else drop_boxes).append(b)
+            note = ""
+            if pol != PRESERVE and b in preserved:  # mesma caixa com rotulo de manter (espelho: mao+celular = brinco E relogio)
+                pol, note = PRESERVE, "mesma caixa tambem rotulada para manter: manter vence"
+            elif pol != PRESERVE and cls == "jewelry" and not _jewelry_plausible(lab, b, bbox, base_pose):
+                # espelho: os chinelos viraram "pulseira". Pulseira so perto do PULSO, brinco/colar perto da cabeca/pescoco
+                pol, note = "IGNORE", "rotulo de joia longe do pulso/cabeca no esqueleto: ignorado"
+            box_policy.append({"box": [round(v, 1) for v in b], "label": lab, "attribute": cls, "policy": pol, "note": note})
+            if pol == PRESERVE:
+                keep_boxes.append(b)
+            elif pol == REMOVE:
+                drop_boxes.append(b)
         raw = replace(raw, protect_boxes=keep_boxes, protect_labels=[])
         masks = build_masks(raw, bbox, sheet.target_face.kps, original)
         ident = identity_mask(masks, bbox, float(sg["face_grow_frac"]))
@@ -290,6 +336,9 @@ class ReplacementEngine:
             ink = tattoo_zones(original, body, masks.skin, masks.tattoos, masks.face_full, f("reach_frac"), f("edge_frac"),
                                float(tt["ink_dy"]), float(tt["ink_dcr"]), float(tt["ink_dcr_light"]),
                                float(tt["ink_dy_florence"]), float(tt["ink_dcr_florence"]), f("close_frac"), f("margin_frac"), guard)
+            if ink is not None and ink.any():  # so regiao com MIOLO de tinta (borda do braco contra madeira nao e tatuagem)
+                ink = keep_inked_regions(ink, original, clean_skin_reference(original, ink, masks.person))
+                ink = _drop_below_ankles(ink, base_pose)  # calcado (espelho: chinelos cinza) nao e tatuagem
         # mascara de MARCAS da pessoa original (spec 45.4/45.6): tinta/marcas na pele + joias REMOVE fora do rosto;
         # buracos fechados e margem em volta (evita contorno fantasma); nunca roupa, nem acessorio mantido
         markings = None
@@ -409,8 +458,12 @@ class ReplacementEngine:
         # borda contra o fundo nao e emenda (o cabelo reconstruido muda de cor contra o ceu/parede de proposito)
         bg_edge = None if scene.masks is None else (dilate((scene.masks.person < 0.5).astype(np.float32), 3) > 0.5)
 
+        # bloco = remendo em PELE reconstruida fora da identidade; rosto/cabelo/pescoco novos tem tracos e cachos novos
+        new_features = dilate(np.maximum(scene.identity, scene.face_full if scene.masks is None else
+                                         np.maximum(scene.face_full, scene.masks.hair)).astype(np.float32), 4) > 0.5
+
         def visual(px, region):
-            return seam_excess(orig, px, region, ignore=bg_edge), straight_edges(orig, px, region)
+            return seam_excess(orig, px, region, ignore=bg_edge), straight_edges(orig, px, region, ignore=new_features)
 
         thr = {**DEFAULT_THRESHOLDS, **(self.cfg.get("thresholds") or {})}
         seam_ok, edge_ok = float(thr["seam_excess"]["pass"]), float(thr["straight_edges"]["pass"])
@@ -651,7 +704,10 @@ class ReplacementEngine:
                 "hair_change": self._preserved_change(scene, final, "hair", modified_mask) if attrs_hair_preserved else None,
                 "accessory_change": self._preserved_change(scene, final, "accessories", modified_mask),
                 "seam_excess": None if modified_mask is None else seam_excess(orig, final, modified_mask),
-                "straight_edges": None if modified_mask is None else straight_edges(orig, final, modified_mask)}
+                "straight_edges": None if modified_mask is None else straight_edges(
+                    orig, final, modified_mask,
+                    ignore=dilate(np.maximum(scene.identity, scene.face_full if scene.masks is None else
+                                             np.maximum(scene.face_full, scene.masks.hair)), 4))}
 
     # --- job completo --------------------------------------------------------------------------
     async def run(self, req: ReplacementRequest) -> ReplacementOutcome:

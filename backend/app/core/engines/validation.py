@@ -168,10 +168,13 @@ def _runs(b: np.ndarray, run: int) -> np.ndarray:
     return d.cumsum(0)[:h] > 0
 
 
-def straight_edges(original: np.ndarray, final: np.ndarray, region: np.ndarray, run: int = 8, thr: float = 10.0) -> float | None:
+def straight_edges(original: np.ndarray, final: np.ndarray, region: np.ndarray, run: int = 8, thr: float = 10.0,
+                   ignore: np.ndarray | None = None, min_area_frac: float = 0.01) -> float | None:
     """Bordas retas (horizontais/verticais) longas DENTRO da regiao que a foto original nao tinha, por mil
     pixels da regiao: pega os quadrados/blocos de remendo que o olho ve na hora."""
     inner = _shrink(region, 3)
+    if ignore is not None:  # rosto/cabelo NOVOS tem tracos novos (olhos, boca, fios) - nao sao blocos de remendo
+        inner &= ~(ignore > 0.5)
     if inner.sum() < 50:
         return None
 
@@ -184,7 +187,9 @@ def straight_edges(original: np.ndarray, final: np.ndarray, region: np.ndarray, 
         return vx | hy
 
     extra = straight(final) & ~_grow(straight(original), 2) & inner
-    return round(float(extra.sum()) / float(inner.sum()) * 1000.0, 3)
+    # denominador minimo: regiao minuscula (faixa de 5 mil px) com 80 px de cacho virava "14 por mil" (foto da porta)
+    denom = max(float(inner.sum()), min_area_frac * inner.size)
+    return round(float(extra.sum()) / denom * 1000.0, 3)
 
 
 # --- checks --------------------------------------------------------------------------------------

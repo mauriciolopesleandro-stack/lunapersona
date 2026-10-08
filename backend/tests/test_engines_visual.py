@@ -97,7 +97,8 @@ async def test_stage_that_creates_blocks_is_rolled_back():
     out = await eng.run(req(advanced={"max_retries": 0}, keep_intermediates=True))
     tat = next(p for p in out.telemetry.passes if p["pass"] == "tattoo_cleanup")
     assert tat["accepted"] is False and "defeito visivel" in tat["reason"]
-    assert out.measures["straight_edges"] is not None and "mask_modified" in out.intermediates
+    # rosto/cabelo novos nao contam como bloco: na foto sintetica sobra pouca pele modificada (pode nao haver medida)
+    assert "straight_edges" in out.measures and "mask_modified" in out.intermediates
 
 
 async def test_face_refine_without_real_gain_is_not_kept():
@@ -244,3 +245,49 @@ def test_grain_is_never_heavy():
     reg = square(80, 80, 20, 60, 20, 60)
     _, rel = integrate(orig, cur, reg, body_skin=1 - reg, seed=1)
     assert rel.get("grao_adicionado", 0) <= 2.5
+
+
+def test_arm_edge_against_wood_is_not_a_tattoo():
+    """Foto da porta (2026-10-07): sem tatuagem, mas a borda do braco contra a madeira virou 'tinta'."""
+    from app.core.engines.markings import keep_inked_regions
+
+    img = np.full((60, 60, 3), (205, 160, 135), np.uint8)  # pele
+    img[:, :12] = (150, 85, 50)  # madeira marrom saturada colada no braco
+    img[30:40, 35:45] = (95, 90, 88)  # tatuagem cinza de verdade
+    ref = np.full((60, 60, 3), (205, 160, 135), np.uint8)
+    marks = np.zeros((60, 60), np.float32)
+    marks[:, 8:16] = 1  # falso positivo na borda
+    marks[28:42, 33:47] = 1  # tatuagem (com margem)
+    kept = keep_inked_regions(marks, img, ref)
+    assert kept[:, 8:16].sum() == 0 and kept[30:40, 35:45].all()
+
+
+def test_new_face_features_are_not_blocks():
+    """Espelho (2026-10-07): olhos/boca/fios novos contaram como 'blocos' (15,7) numa troca boa."""
+    orig, reg = scene(), square()
+    final = orig.copy()
+    final[40:42, 35:55] = (40, 30, 30)  # "sobrancelha" nova, reta
+    final[60:62, 38:52] = (150, 60, 70)  # "boca" nova
+    face = square(120, 120, 34, 66, 32, 58)
+    assert straight_edges(orig, final, reg) > 0
+    assert straight_edges(orig, final, reg, ignore=face) == 0
+
+
+async def test_slippers_labeled_bracelet_and_double_labeled_box_are_not_removed():
+    from app.core.persona_replacement.contracts import RawSegments
+    from tests.test_persona_transfer import wide_tattoo_photo
+
+    class Seg2:
+        async def segment(self, image, sheet):
+            _, person, hair, clothes = wide_tattoo_photo()
+            return RawSegments(person, hair, [(60.0, 220.0, 70.0, 238.0), (100.0, 100.0, 110.0, 120.0), (100.0, 100.0, 110.0, 120.0)],
+                               clothes=clothes, protect_labels=["bracelet", "earrings", "watch"])
+
+    faces = {"foto": 0.1, "identity": 0.8, "face_refine": 0.8, "tattoo": 0.8, "integrated": 0.8, "final": 0.8}
+    eng, ad, store = engine(faces)
+    store.images["foto.png"][220:238, 60:70] = (120, 30, 40)  # "chinelo" (no pe, longe dos pulsos do esqueleto)
+    eng.segmenter = Seg2()
+    out = await eng.run(req(advanced={"max_retries": 0}))
+    pols = [(b["label"], b["policy"]) for b in out.telemetry.attributes["boxes"]]
+    assert ("bracelet", "IGNORE") in pols  # fora da pele
+    assert ("earrings", "PRESERVE") in pols and ("watch", "PRESERVE") in pols  # mesma caixa: manter vence
