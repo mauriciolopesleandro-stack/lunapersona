@@ -37,7 +37,7 @@ class EngineRequestError(ValueError):
 
 
 class EngineFactory(Protocol):
-    async def replacement(self, model: Any, qwen: bool | None = None): ...
+    async def replacement(self, model: Any, qwen: bool | None = None, version: str = "v2"): ...
 
     async def face_swap(self, model: Any): ...
 
@@ -160,6 +160,14 @@ class EnginesV2Service:
         negative = ", ".join(self.negative_builder.build(sheet, single_subject=True).all_terms())
         return master, negative
 
+    async def _master_body(self, persona_id: str):
+        try:
+            sheet = self.sheets.get(persona_id)
+            m = sheet.master("master_body")
+            return ReferenceImage(m.reference_id, m.file, sheet.read_master("master_body"), m.sha256)
+        except Exception:  # noqa: BLE001 - sem master_body: proporcoes ficam NAO COMPARAVEIS
+            return None
+
     def _model(self, model: str):
         from app.core.engines.models import ModelUnavailableError
 
@@ -223,7 +231,8 @@ class EnginesV2Service:
             raise EngineRequestError(str(exc)) from exc
 
         async def work() -> dict[str, Any]:
-            engine = await self.factory.replacement(chosen, qwen=req.qwen_face_lock)
+            engine = await self.factory.replacement(chosen, qwen=req.qwen_face_lock, version=req.replacement_version)
+            engine.master_body_loader = self._master_body  # proporcoes da Persona (so leitura)
             out = await engine.run(req)
             return self._finish("replacement", out, {"model": chosen.id, "mode": mode})
 

@@ -52,13 +52,18 @@ def _worse(name: str, cur, new) -> bool:
     return (new < cur - tol) if higher else (new > cur + tol)
 
 
+ORDER = ["current", "v2", "v2.1"]
+
+
 def build(res: dict, img_dir: Path, rel: str) -> tuple[str, dict]:
     runs = {r["id"]: r for r in res.get("resultados", [])}
     fotos = sorted({rid.rsplit("__", 1)[0] for rid in runs if "__" in rid})
+    perfis = [p for p in ORDER if any(rid.endswith(f"__{p}") for rid in runs)]
+    a_tag, b_tag = (perfis[-2], perfis[-1]) if len(perfis) >= 2 else ("current", "v2")
     rows, summary = [], {"fotos": len(fotos), "v2_pior": {}, "v2_melhor": {}, "erros": []}
     for foto in fotos:
-        cur, new = runs.get(f"{foto}__current", {}), runs.get(f"{foto}__v2", {})
-        for tag, r in (("current", cur), ("v2", new)):
+        cur, new = runs.get(f"{foto}__{a_tag}", {}), runs.get(f"{foto}__{b_tag}", {})
+        for tag, r in ((a_tag, cur), (b_tag, new)):
             if r.get("erro"):
                 summary["erros"].append(f"{foto} {tag}: {r['erro']}")
 
@@ -94,12 +99,12 @@ def build(res: dict, img_dir: Path, rel: str) -> tuple[str, dict]:
 <section>
   <h2>{html.escape(foto)}</h2>
   <div class="row">
-    {img(f"{foto}__v2", "original", "original")}
-    {img(f"{foto}__current", "final", "CURRENT (Qwen BFS)")}
-    {img(f"{foto}__v2", "final", "V2 (sem Qwen)")}
+    {img(f"{foto}__{b_tag}", "original", "original")}
+    {img(f"{foto}__{a_tag}", "final", a_tag.upper())}
+    {img(f"{foto}__{b_tag}", "final", b_tag.upper())}
   </div>
-  <div class="row small">{''.join(img(f"{foto}__v2", m, m) for m in MASKS)}</div>
-  <table><tr><th>medida</th><th>current</th><th>v2</th></tr>{''.join(trs)}</table>
+  <div class="row small">{''.join(img(f"{foto}__{b_tag}", m, m) for m in MASKS)}</div>
+  <table><tr><th>medida</th><th>{a_tag}</th><th>{b_tag}</th></tr>{''.join(trs)}</table>
   <p><b>Atributos indesejados achados:</b> {html.escape(', '.join(undesired) or 'nenhum')}.
      <b>Hard fails V2:</b> {html.escape(', '.join(hard) or 'nenhum')}.</p>
   <p class="review"><b>Revisao visual (humana):</b> rosto Luna? ___ corpo/pele Luna? ___ cabelo Luna? ___
@@ -123,9 +128,9 @@ table{{border-collapse:collapse;margin-top:12px;width:100%;max-width:640px}} td,
 .bad{{color:var(--bad);font-weight:600}} .good{{color:var(--good);font-weight:600}} .review{{color:var(--mut)}}
 .verdict{{padding:12px;border:1px solid var(--line);border-radius:8px}}
 </style></head><body>
-<h1>Benchmark A/B do Replacement: CURRENT x V2</h1>
+<h1>Benchmark A/B do Replacement: {a_tag.upper()} x {b_tag.upper()}</h1>
 <p class="verdict"><b>Regra de nao regressao (automatica):</b> {html.escape(verdict)}</p>
-<p>{summary['fotos']} fotos. Verde = V2 melhor, vermelho = V2 pior. ArcFace nao e prova de realismo: a decisao final e a revisao visual.</p>
+<p>{summary['fotos']} fotos. Verde = {b_tag} melhor, vermelho = {b_tag} pior. ArcFace nao e prova de realismo: a decisao final e a revisao visual.</p>
 {''.join(f"<p class='bad'>{html.escape(e)}</p>" for e in summary['erros'])}
 {''.join(rows)}
 </body></html>"""

@@ -53,7 +53,10 @@ PERFIS = {
     "current": {"qwen_face_lock": True, "depth_strength": 0.5, "debug": True},
     # V2: Qwen desligado, forcas da config dedicada (persona_replacement_v2.json)
     "v2": {"debug": True},
+    # V2.1: Persona Canon + continuidade de pele + Qwen so no rosto (persona_replacement_v2_1.json)
+    "v2.1": {"replacement_version": "v2.1", "debug": True},
 }
+CONFIGS = {"v2": "persona_replacement_v2.json", "v2.1": "persona_replacement_v2_1.json"}
 CN = "controlnet-union-sdxl-1.0-promax.safetensors"
 
 
@@ -112,7 +115,11 @@ async def main() -> int:
     adapter = RealVisXLAdapter(session, reg.select_checkpoint("auto"), reg.get("lunavox_sdxl_v1"), CN, region=region,
                                price_per_hour=PRICE)
     face_lock = QwenFaceAdapter(session)
-    usa_qwen = any({**PERFIS.get(ex.get("perfil", ""), {}), **ex.get("request", {})}.get("qwen_face_lock") for ex in execs)
+    def pedido(ex):
+        return {**PERFIS.get(ex.get("perfil", ""), {}), **ex.get("request", {})}
+
+    usa_qwen = any(pedido(ex).get("qwen_face_lock") or (pedido(ex).get("replacement_version") == "v2.1"
+                                                        and pedido(ex).get("qwen_face_lock") is not False) for ex in execs)
     problemas = await adapter.load() + (await face_lock.validate_configuration() if usa_qwen else [])
     if problemas:
         print("CONFIG", problemas, flush=True)
@@ -121,12 +128,20 @@ async def main() -> int:
             "ka2": {"class_type": "LoraLoaderModelOnly", "inputs": {"model": ["ka1", 0], "lora_name": adapter.lora.file,
                                                                     "strength_model": 1.0}},
             "ka3": {"class_type": "PreviewAny", "inputs": {"source": ["ka2", 0]}}}
-    engine = ReplacementEngine(reader=CachedReader(ComfyReferenceReader(client)),
-                               segmenter=CachedSegmenter(ComfySegmenter(session, store)),
-                               analyzer=ComfyImageAnalyzer(client, keep_alive=keep), store=store, adapter=adapter,
-                               config=ReplacementEngine.load_config(ROOT / "config" / "persona_replacement_v2.json"),
-                               price_per_hour=PRICE, provider="comfyui@runpod", face_lock=face_lock if usa_qwen else None)
+    reader, seg = CachedReader(ComfyReferenceReader(client)), CachedSegmenter(ComfySegmenter(session, store))
+    analyzer = ComfyImageAnalyzer(client, keep_alive=keep)
+    engines = {v: ReplacementEngine(reader=reader, segmenter=seg, analyzer=analyzer, store=store, adapter=adapter,
+                                    config=ReplacementEngine.load_config(ROOT / "config" / f),
+                                    price_per_hour=PRICE, provider="comfyui@runpod", face_lock=face_lock if usa_qwen else None)
+               for v, f in CONFIGS.items()}
     sheet = PersonaSheetRepository(ROOT / "personas_run").get("luna")
+
+    async def master_body(_pid):
+        mb = sheet.master("master_body")
+        return ReferenceImage(mb.reference_id, mb.file, sheet.read_master("master_body"), mb.sha256)
+
+    for e in engines.values():
+        e.master_body_loader = master_body
     m = sheet.master("master_face")
     master = ReferenceImage(m.reference_id, m.file, sheet.read_master("master_face"), m.sha256)
     negative = ", ".join(NegativePromptBuilder(json.loads((ROOT / "config" / "persona_engine.json").read_text())["global_negative"])
@@ -150,9 +165,9 @@ async def main() -> int:
                                  negative=negative, keep_intermediates=True, persona_sheet=sheet.data,
                                  preserve_attributes=list(ex.get("preserve", [])), remove_attributes=list(ex.get("remove", [])),
                                  reconstruct_attributes=list(ex.get("reconstruct", [])),
-                                 **{**PERFIS.get(ex.get("perfil", ""), {}), **ex.get("request", {})})
+                                 **pedido(ex))
         try:
-            out = await engine.run(req)
+            out = await engines[req.replacement_version].run(req)
             r = {"id": ex["id"], **ex, **out.to_dict(), "vram_pico_mb": vram_pico(t0), "segundos_parede": round(time.time() - t0, 1)}
             v = out.report
             print("FINAL", ex["id"], out.status, "identidade", out.measures.get("identity"), "original", out.measures.get("original_sim"),

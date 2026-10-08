@@ -1,0 +1,217 @@
+{
+  "_comment": "Persona Replacement V2.1 (spec 'Physical Identity + Skin Continuity'): mesma engine da V2 com o Persona Canon (corpo/pele da Persona Sheet), Qwen como REFINAMENTO de identidade so no rosto (com contexto de preservacao), continuidade de pele rosto->pescoco->corpo e validadores de corpo/pele/fotometria. A V2 (persona_replacement_v2.json) fica intacta para o benchmark V2 x V2.1. Limites marcados 'preliminar' NAO foram calibrados em benchmark.",
+  "version": "replacement-v2.1",
+  "replacement_version": "v2.1",
+  "base_model": "RealVisXL_V5",
+  "lora": {
+    "name": "lunavox_sdxl_v1",
+    "trigger": "lunavox",
+    "_strength_note": "forca FIXA do registro de modelos (model_registry_v2.json); nunca ajustada por pedido nem por retry"
+  },
+  "identity": {
+    "provider": "instantid",
+    "strength": 0.5,
+    "_note": "InstantID = condicionamento de identidade no refino do rosto (nao copia de rosto). 0,5 foi o valor das rodadas reais de 2026-10-07/08; faixa a medir em benchmark_ranges"
+  },
+  "pose": {
+    "provider": "dwpose",
+    "strength": 0.8
+  },
+  "depth": {
+    "enabled": true,
+    "strength": 0.35,
+    "_note": "spec: 0,25-0,45. Antes era 0,5. So no corpo/pele (rosto e cabelo nunca usam a profundidade da foto). Valor NAO medido ainda: benchmark"
+  },
+  "skin_reconstruction": {
+    "enabled": true
+  },
+  "tattoo_removal": {
+    "enabled": true,
+    "hard_fail": true
+  },
+  "accessory_preservation": {
+    "enabled": true,
+    "hard_fail": true
+  },
+  "source_identity_residual": {
+    "enabled": true,
+    "hard_fail": true
+  },
+  "adaptive_retry": true,
+  "qwen": {
+    "enabled": false,
+    "experimental_only": true,
+    "_note": "o Face Lock global (cabeca inteira) segue so experimental"
+  },
+  "debug": {
+    "env": "REPLACEMENT_DEBUG",
+    "default": false
+  },
+  "quality_profiles": {
+    "fast": "FAST",
+    "balanced": "QUALITY",
+    "hyperrealistic": "MAX_QUALITY"
+  },
+  "benchmark_ranges": {
+    "pose_strength": [
+      0.75,
+      0.8,
+      0.9
+    ],
+    "depth_strength": [
+      0.25,
+      0.35,
+      0.45
+    ],
+    "identity_strength": [
+      0.35,
+      0.5,
+      0.6
+    ]
+  },
+  "hard_fail": {
+    "skin_texture_ratio_min": 0.35,
+    "accessory_presence_min": 0.5,
+    "source_pixel_residual_max": 0.35
+  },
+  "prompts": {
+    "identity": "lunavox, a woman, {description}, natural dark brown hair, natural skin with pores, no makeup, same lighting as the photo, candid unretouched smartphone photo",
+    "face": "lunavox, a woman, natural face, no makeup, natural skin texture with pores, natural dark brown hair, candid unretouched photo",
+    "hires": "lunavox, a woman, detailed natural skin with pores, sharp natural eyes, fine hair strands, unretouched photo",
+    "body": "natural skin, same lighting and shadows as the photo, natural anatomy, realistic unretouched photo",
+    "tattoo": "natural clean skin without any tattoos, realistic skin texture with pores and natural color variation, same anatomy, same lighting, shadows and white balance as the photo, candid unretouched smartphone photo",
+    "body_identity": "lunavox, a woman with {body}, {description}, same pose as the photo, natural skin, realistic body proportions, candid unretouched smartphone photo"
+  },
+  "negative": [
+    "heavy makeup",
+    "contour makeup",
+    "false eyelashes",
+    "glossy lipstick",
+    "orange skin",
+    "tan skin",
+    "plastic skin",
+    "waxy skin",
+    "smooth skin",
+    "airbrushed skin",
+    "beauty filter",
+    "studio portrait",
+    "cgi",
+    "3d render",
+    "illustration",
+    "cartoon",
+    "tattoo",
+    "tattoo remnants",
+    "tattoo ghosting",
+    "new earrings",
+    "large hoop earrings",
+    "new jewelry",
+    "extra fingers",
+    "missing fingers",
+    "deformed hands",
+    "extra person",
+    "second face",
+    "duplicate person",
+    "text",
+    "letters",
+    "changed background",
+    "changed clothing",
+    "blurry"
+  ],
+  "segmentation": {
+    "face_grow_frac": 0.12,
+    "max_accessory_face_ratio": 1.0,
+    "min_clothes_coverage": 0.6,
+    "require_clothes_for_tattoo": true
+  },
+  "tattoo": {
+    "reach_frac": 0.03,
+    "edge_frac": 0.01,
+    "ink_dy": 8,
+    "ink_dcr": 2,
+    "ink_dcr_light": 7,
+    "ink_dy_florence": 2,
+    "ink_dcr_florence": 0.5,
+    "close_frac": 0.01,
+    "margin_frac": 0.006,
+    "feather_frac": 0.008,
+    "prefill_radius_frac": 0.012,
+    "tone_radius_frac": 0.012,
+    "face_guard_frac": 0.1
+  },
+  "acceptance": {
+    "max_identity_drop": 0.02,
+    "face_refine_min_gain": 0.02,
+    "stage_seam_tolerance": 0.8,
+    "stage_edges_tolerance": 1.5,
+    "original_crop_margin": 0.6,
+    "face_lock_min_gain": 0.0,
+    "face_lock_floor": 0.65,
+    "face_lock_floor_eyes_covered": 0.5
+  },
+  "duplicate_similarity": 0.45,
+  "thresholds": {
+    "identity": {
+      "pass": 0.72,
+      "reject": 0.55
+    }
+  },
+  "_identity_note": "2026-10-07: o ArcFace (media das referencias) penaliza a maquiagem/luz da Luna - o Face Lock que era a Luna no olho deu 0,74 e um rosto generico deu 0,79. O Face Lock da master e a autoridade do rosto; o numero so barra o que deu errado de verdade (piso 0,65 no Face Lock, aprovacao 0,72).",
+  "body_skin_negative": [
+    "straps",
+    "bra strap",
+    "shoulder strap",
+    "underwear",
+    "panties",
+    "thong",
+    "lingerie",
+    "garter",
+    "lace on skin",
+    "extra clothing",
+    "waistband on skin",
+    "tattoo",
+    "body marks"
+  ],
+  "qwen_identity_refinement": {
+    "enabled": true,
+    "scope": "face",
+    "strength": 1.0,
+    "preserve_context": [
+      "Keep exactly the same clothing, accessories, background, pose and lighting.",
+      "Do not add earrings, jewelry or makeup.",
+      "Natural skin texture, light natural makeup."
+    ],
+    "_note": "A/B 2026-10-08: o Qwen aceito trouxe argola e maquiagem pesada com a cabeca inteira. Aqui so o ROSTO volta (sem orelhas, cabelo, pescoco). strength = opacidade da colagem no rosto; 1,0 = o testado; faixa 0,5-1,0 pendente de benchmark"
+  },
+  "body_identity": {
+    "enabled": true,
+    "profile": "persona_canon",
+    "_note": "corpo/pele do Physical Identity Profile (Persona Sheet). Altura e peso estao UNKNOWN na ficha: nao sao inventados"
+  },
+  "skin_continuity": {
+    "enabled": true,
+    "hard_fail": true,
+    "max_dl": 14.0,
+    "max_dab": 8.0,
+    "thresholds": {
+      "transition_dE": {
+        "pass": 6.0,
+        "reject": 12.0
+      },
+      "skin_hue_deg": {
+        "pass": 25.0
+      },
+      "grain_ratio": {
+        "low": 0.5,
+        "high": 2.0
+      },
+      "face_highlight_dL": {
+        "max": 12.0
+      },
+      "_note": "PRELIMINAR: transition_dE reaproveita a faixa de face_body_tone_delta (6/10) com reject 12; o resto e so aviso. Calibrar no benchmark."
+    }
+  },
+  "photometric_integration": {
+    "enabled": true,
+    "_note": "integracao de borda/grao (integration.py) + continuidade de pele"
+  }
+}

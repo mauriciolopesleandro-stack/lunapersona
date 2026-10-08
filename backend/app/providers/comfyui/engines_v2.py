@@ -23,6 +23,7 @@ from app.validation_backends.skin import _split_locator
 from app.workflow_manager.manager import WorkflowManager
 
 ADAPTERS = {"realvisxl": RealVisXLAdapter, "lustify": LustifyAdapter}
+CONFIGS = {"v2": "persona_replacement_v2.json", "v2.1": "persona_replacement_v2_1.json"}
 
 
 class EngineSetupError(RuntimeError):
@@ -64,20 +65,22 @@ class ComfyEngineFactory:
         self._adapters[model.id] = adapter
         return adapter
 
-    def _parts(self, adapter) -> dict[str, Any]:
+    def _parts(self, adapter, version: str = "v2") -> dict[str, Any]:
         # O checkpoint das passadas fica no grafo da analise para o ComfyUI nao descarrega-lo entre passadas.
         keep = {"ka1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": adapter.model.file}},
                 "ka2": {"class_type": "PreviewAny", "inputs": {"source": ["ka1", 0]}}}
         return {"reader": ComfyReferenceReader(self.client), "segmenter": ComfySegmenter(self.session, self.store),
                 "analyzer": ComfyImageAnalyzer(self.client, keep_alive=keep), "store": self.store, "adapter": adapter,
-                "config": ReplacementEngine.load_config(self.config_dir / "persona_replacement_v2.json"),
+                "config": ReplacementEngine.load_config(self.config_dir / CONFIGS.get(version, "persona_replacement_v2.json")),
                 "price_per_hour": self.price, "provider": "comfyui"}
 
-    async def replacement(self, model: ModelInfo, qwen: bool | None = None) -> ReplacementEngine:
+    async def replacement(self, model: ModelInfo, qwen: bool | None = None, version: str = "v2") -> ReplacementEngine:
         # spec Master 9: o Face Lock Qwen-Image-Edit 2511 + BFS (o da geracao V1) NAO e etapa padrao do Replacement.
         # So e montado quando pedido (qwen=True) ou ligado na config (qwen.enabled) - e entao fica registrado.
-        parts = self._parts(await self._adapter(model))
-        want = bool(qwen) if qwen is not None else bool((parts["config"].get("qwen") or {}).get("enabled", False))
+        parts = self._parts(await self._adapter(model), version)
+        cfg = parts["config"]
+        default = bool((cfg.get("qwen") or {}).get("enabled")) or bool((cfg.get("qwen_identity_refinement") or {}).get("enabled"))
+        want = bool(qwen) if qwen is not None else default
         return ReplacementEngine(**parts, face_lock=await self._face_lock() if want else None)
 
     async def _face_lock(self):

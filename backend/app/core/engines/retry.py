@@ -69,11 +69,13 @@ class RetryPolicyV2:
                            extra={**plan.extra, "mask_shrink": plan.extra.get("mask_shrink", 0) + 1})
             strategy = "mascara mais justa + menos denoise na area"
         elif alvo == "body":
-            p = plan.with_(body_refinement=True, depth=True)
-            strategy = "refino de corpo + profundidade"
+            # V2.1 BODY_FAIL: reforca a identidade corporal (corpo da Persona refeito com um pouco mais de liberdade)
+            p = plan.with_(body_identity=True, body_identity_denoise=min(0.85, plan.body_identity_denoise + 0.05))
+            strategy = "corpo: passe de corpo da Persona reforcado (denoise +0,05; LoRA fixa)"
         elif alvo == "skin":
-            p = plan.with_(photographic_integration=True, hires=True, extra={**plan.extra, "skin_refine": True})
-            strategy = "pele: refino de pele (hi-res do rosto) + integracao fotografica"
+            p = plan.with_(photographic_integration=True, hires=True,
+                           extra={**plan.extra, "skin_refine": True, "skin_boost": plan.extra.get("skin_boost", 0) + 1})
+            strategy = "pele/luz: continuidade de pele mais forte + hi-res do rosto + integracao fotografica"
         else:  # duplicate_persona
             p = plan.with_(identity_denoise=max(0.7, plan.identity_denoise - 0.1), extra={**plan.extra, "mask_shrink": 1})
             strategy = "regiao mais justa (evita segunda Luna)"

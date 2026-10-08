@@ -39,6 +39,15 @@ from app.core.engines.attributes import ITEMS, from_structured
 from app.core.engines.markings import clean_skin_reference, complete_markings, keep_inked_regions
 from app.core.engines.skin import drop_small_blobs, structure_preserving_fill, tone_match
 from app.core.engines.hair import clean_hair_mask
+from app.core.engines.persona_canon import CanonViolation, PersonaCanon, load_canon
+from app.core.engines.skin_continuity import (
+    continuity_residuals,
+    harmonize,
+    master_skin_lab,
+    photometric,
+    skin_identity,
+    skin_regions,
+)
 from app.core.engines.integration import integrate
 from app.core.engines.policies import POLICIES, StagePlan, plan_for
 from app.core.engines.quality_gate import QualityGate, measure_accessories, source_pixel_residual
@@ -75,6 +84,9 @@ from app.providers.base import ProviderImage, ReferenceImage
 
 ENGINE_VERSION = "replacement-v2.2-gate"
 QUALITY_PROFILES = {"fast": "FAST", "balanced": "QUALITY", "hyperrealistic": "MAX_QUALITY"}
+VERSIONS = ("v2", "v2.1")
+QWEN_PRESERVE_CONTEXT = ["Keep exactly the same clothing, accessories, background, pose and lighting.",
+                         "Do not add earrings, jewelry or makeup.", "Natural skin texture, light natural makeup."]
 
 
 class ReplacementRequestError(ValueError):
@@ -127,9 +139,9 @@ class ReplacementRequest:
             raise ReplacementRequestError(f"parametros avancados desconhecidos: {bad}")
         if not self.image or not self.persona_id:
             raise ReplacementRequestError("imagem e persona sao obrigatorias")
-        if self.replacement_version != "v2":
-            raise ReplacementRequestError(f"esta engine e a V2; replacement_version '{self.replacement_version}' roda em "
-                                          "outro orquestrador (V1: core/persona_replacement)")
+        if self.replacement_version not in VERSIONS:
+            raise ReplacementRequestError(f"esta engine roda {VERSIONS}; replacement_version '{self.replacement_version}' "
+                                          "roda em outro orquestrador (V1: core/persona_replacement)")
         if self.quality_profile is not None and self.quality_profile not in QUALITY_PROFILES:
             raise ReplacementRequestError(f"quality_profile invalido: {self.quality_profile} (use {sorted(QUALITY_PROFILES)})")
         for nome, val, top in (("identity_strength", self.identity_strength, 0.8), ("pose_strength", self.pose_strength, 1.0),
@@ -560,8 +572,13 @@ class ReplacementEngine:
                                             keep_hands=True)
             if body_region is not None and body_region.sum() > 200:
                 body_txt = ((req.persona_sheet or {}).get("identity_attributes") or {}).get("body", {}).get("value", "")
+                body_en = body_text_en(body_txt)
+                canon = self.__dict__.get("_canon")
+                if canon is not None and (self.cfg.get("body_identity") or {}).get("profile") == "persona_canon":
+                    # V2.1: o corpo e a pele vem do Physical Identity Profile (so o que a ficha define)
+                    body_en = ", ".join([canon.physical.body_text_en(), canon.physical.skin_text_en()])
                 bprompt = cond(P.get("body_identity", P["identity"]).replace("{description}", description)
-                               .replace("{body}", body_text_en(body_txt)), "skin")
+                               .replace("{body}", body_en), "skin")
                 bctrl = ControlSpec(pose_strength=plan.pose_strength if plan.pose else 0.0, depth_strength=0.0,
                                     end_percent=plan.control_end, structure=req.image)
                 bneg = negative
@@ -579,7 +596,7 @@ class ReplacementEngine:
                     pxb, locb = pxb2, await self.store.save(pxb2, "body_identity_fix")
                 cur, modified = {"pixels": pxb, "image": locb}, np.maximum(modified, body_region)
                 inter["body_identity"] = locb
-                tel.passes[-1]["params"]["body_text"] = body_text_en(body_txt)
+                tel.passes[-1]["params"]["body_text"] = body_en
             else:
                 body_region = None
         prompt = cond(P["identity"].replace("{description}", description), "identity")
@@ -688,12 +705,33 @@ class ReplacementEngine:
                 raise ReplacementRequestError("Face Lock Qwen pedido, mas a porta do Qwen nao foi montada (sem troca silenciosa)")
             if "qwen_face_lock" not in tel.experimental_stages:
                 tel.experimental_stages.append("qwen_face_lock")
-            out = await self.face_lock.lock_face(ProviderImage("comfyui", cur["image"], "", w, h), req.master, req.seed + 211)
+            qcfg = self.cfg.get("qwen_identity_refinement") or {}
+            scope = str(plan.extra.get("qwen_scope", qcfg.get("scope", "identity")))
+            strength = float(plan.extra.get("qwen_strength", qcfg.get("strength", 1.0)))
+            guidance = None
+            if qcfg:  # V2.1: o Qwen recebe o contexto do que NAO pode mudar (A/B 2026-10-08: argola e maquiagem novas)
+                from app.providers.base import FaceLockGuidance
+                guidance = FaceLockGuidance(positive=list(qcfg.get("preserve_context", QWEN_PRESERVE_CONTEXT)))
+            if guidance is not None:
+                out = await self.face_lock.lock_face(ProviderImage("comfyui", cur["image"], "", w, h), req.master,
+                                                     req.seed + 211, guidance=guidance)
+            else:
+                out = await self.face_lock.lock_face(ProviderImage("comfyui", cur["image"], "", w, h), req.master, req.seed + 211)
             px2 = await self.store.load(out.image.locator)
             if px2.shape[:2] != (h, w):  # o Qwen trabalha em ~1 MP: volta ao tamanho da foto
                 from PIL import Image as _Img
                 px2 = np.asarray(_Img.fromarray(px2).resize((w, h), _Img.LANCZOS))
-            region = np.clip(feather(dilate(ident, 3), 3), 0, 1) * (dilate(ident, 3) > 0.5)
+            if scope == "face":
+                # so o ROSTO (sem orelhas/cabelo/pescoco): corpo, roupa, cenario, acessorios e luz global ficam
+                face_core = (scene.face_full > 0.5).astype(np.float32)
+                if scene.masks is not None:
+                    face_core *= (scene.masks.person > 0.5)
+                if scene.accessory is not None:
+                    face_core *= 1 - dilate((scene.accessory > 0.5).astype(np.float32), 2)
+                region = np.clip(feather(face_core, 4), 0, 1) * (face_core > 0.02)
+            else:
+                region = np.clip(feather(dilate(ident, 3), 3), 0, 1) * (dilate(ident, 3) > 0.5)
+            region = region * float(np.clip(strength, 0.0, 1.0))
             px2 = (px2.astype(np.float32) * region[..., None] + cur["pixels"].astype(np.float32) * (1 - region[..., None])
                    + 0.5).astype(np.uint8)
             if paste is not None:  # acessorios mantidos voltam por cima (oculos na frente do rosto)
@@ -715,7 +753,10 @@ class ReplacementEngine:
                 vok, why = visual_ok(visual(cur["pixels"], np.maximum(modified, region)), visual(px2, np.maximum(modified, region)))
                 if not vok:
                     ok, reason = False, f"Face Lock criou defeito visivel ({why}): mantido o anterior"
-            tel.add_pass("face_lock", out.seconds or 0.0, {**(out.effective_parameters or {}), "identity_before": score}, ok, reason)
+            tel.add_pass("face_lock", out.seconds or 0.0, {**(out.effective_parameters or {}), "identity_before": score,
+                                                           "scope": scope, "strength": strength,
+                                                           "guidance": None if guidance is None else guidance.positive},
+                         ok, reason)
             tel.passes[-1]["identity"] = s2
             if ok:
                 cur, modified, score = {"pixels": px2, "image": loc2}, np.maximum(modified, region), s2
@@ -814,6 +855,30 @@ class ReplacementEngine:
             integ["aceita"] = vok
             tel.add_pass("photographic_integration", 0.0, {"cpu_seconds": round(time.monotonic() - t0, 2), **integ}, vok,
                          None if vok else f"integracao criou defeito visivel ({why}): mantida a imagem anterior")
+        sc_cfg = self.cfg.get("skin_continuity") or {}
+        if sc_cfg.get("enabled") and scene.masks is not None:
+            # V2.1 SkinContinuityEngine: rosto, pescoco, ombros, bracos, maos e pernas como UMA pele - o tom da Persona
+            # (rosto) com a luz da foto (variacao entre regioes medida na foto original). So baixa frequencia.
+            t0 = time.monotonic()
+            smasks = semantic_masks(scene, self._hand_mask(scene))
+            res = harmonize(cur["pixels"], orig, smasks, scene.base_pose, scene.sheet.target_face.bbox,
+                            max_dl=float(sc_cfg.get("max_dl", 14.0)), max_dab=float(sc_cfg.get("max_dab", 8.0)),
+                            boost=1.0 + 0.5 * float(plan.extra.get("skin_boost", 0)))
+            ok, why = res.applied, res.note or None
+            if res.applied:
+                changed = (np.abs(res.pixels.astype(np.int16) - cur["pixels"].astype(np.int16)).max(axis=2) > 0)
+                region = np.maximum(modified, changed.astype(np.float32))
+                vok, vwhy = visual_ok(visual(cur["pixels"], region), visual(res.pixels, region))
+                b0, b1 = res.before.get("worst"), res.after.get("worst")
+                if not vok:
+                    ok, why = False, f"continuidade criou defeito visivel ({vwhy}): mantida a anterior"
+                elif b0 is not None and b1 is not None and b1 > b0:
+                    ok, why = False, f"continuidade piorou a transicao ({b0} -> {b1}): mantida a anterior"
+                loc2 = await self.store.save(res.pixels, "skin_continuity")
+                inter["skin_continuity"] = loc2
+                if ok:
+                    cur, modified = {"pixels": res.pixels, "image": loc2}, region
+            tel.add_pass("skin_continuity", 0.0, {"cpu_seconds": round(time.monotonic() - t0, 2), **res.to_dict()}, ok, why)
         # fora do que foi alterado: a FOTO ORIGINAL (garantido aqui, nao confiado ao modelo)
         keep = dilate((modified > 0.02).astype(np.float32), 2) > 0.5
         final = np.where(keep[..., None], cur["pixels"], orig)
@@ -833,7 +898,8 @@ class ReplacementEngine:
                 inter["original"] = req.image
                 for alias, names in (("initial_generation", ("body_identity", "identity")),
                                      ("face_pass", ("face_lock", "face_refine", "identity")), ("skin_pass", ("body_identity",)),
-                                     ("tattoo_pass", ("tattoo_cleanup",)), ("integration_pass", ("integrated",))):
+                                     ("tattoo_pass", ("tattoo_cleanup",)), ("integration_pass", ("integrated",)),
+                                     ("identity_refinement", ("face_lock",)), ("photometric_pass", ("skin_continuity",))):
                     hit = next((inter[n] for n in names if n in inter), None)
                     if hit is not None:
                         inter[alias] = hit
@@ -878,12 +944,54 @@ class ReplacementEngine:
                               texture_ratio=smear, reason=why)
         return {"pixels": px, "image": loc} if ok else None
 
+    def _body_identity(self, body, req) -> dict[str, Any]:
+        """Proporcoes (DWPose, segmento/tronco) do corpo final x Physical Identity Profile. So na MESMA classe de pose
+        da master_body (limites da propria Persona Sheet: validation_profile.body_consistency); senao NAO COMPARAVEL."""
+        from app.core.validation.geometry import body_ratios, pose_distance, ratio_deviation
+
+        canon = self.__dict__.get("_canon")
+        sheet = req.persona_sheet or {}
+        bc = (sheet.get("validation_profile") or {}).get("body_consistency") or {}
+        out: dict[str, Any] = {"profile_version": canon.physical.version if canon else None,
+                               "max_deviation": bc.get("max_deviation"), "pose_match_max_distance": bc.get("pose_match_max_distance")}
+        ref = dict(canon.physical.proportions) if canon else {}
+        master_pose = self.__dict__.get("_master_body_pose")
+        if body is None or not ref:
+            return {**out, "status": "UNKNOWN", "reason": "sem corpo no final ou sem proporcoes no perfil"}
+        ratios = body_ratios(body.keypoints)
+        out["ratios"] = ratios
+        if master_pose is None:
+            return {**out, "status": "NOT_COMPARABLE", "reason": "esqueleto da master_body nao medido nesta execucao"}
+        dist = pose_distance(master_pose, body.keypoints)
+        out["pose_distance"] = dist
+        if dist is None or dist > float(bc.get("pose_match_max_distance", 0.12)):
+            return {**out, "status": "NOT_COMPARABLE",
+                    "reason": f"pose diferente da master_body ({canon.physical.proportions_pose_class}): proporcoes 2D nao comparaveis"}
+        out["deviation"] = ratio_deviation(ratios, ref)
+        out["status"] = "MEASURED"
+        return out
+
     async def _source_hands(self, locator: str, w: int, h: int, master) -> list:
         try:
             body = (await self.analyzer.analyze(ProviderImage("comfyui", locator, "", w, h), master)).main_body()
         except Exception:  # noqa: BLE001 - sem maos medidas: mascara pelo antebraco
             return []
         return list(getattr(body, "hands", None) or []) if body is not None else []
+
+    async def _master_pose(self, req) -> list | None:
+        """Esqueleto da master_body (referencia de proporcao). So leitura; a master nunca e alterada."""
+        loader = getattr(self, "master_body_loader", None)
+        if loader is None:
+            return None
+        try:
+            ref = await loader(req.persona_id)
+            if ref is None:
+                return None
+            an = await self.analyzer.analyze_reference(ref, req.master)
+            body = an.main_body()
+            return body.keypoints if body is not None else None
+        except Exception:  # noqa: BLE001 - sem esqueleto da master: proporcoes ficam NAO COMPARAVEIS
+            return None
 
     async def _faces_in(self, locator: str, w: int, h: int, master) -> int | None:
         cache = self.__dict__.setdefault("_faces_cache", {})
@@ -1089,10 +1197,24 @@ class ReplacementEngine:
                         reg[int(max(a[1] for a in ankles)):, :] = False
                 body_px = source_pixel_residual(orig, final, reg.astype(np.float32))
         faces_orig = await self._faces_in(req.image, w, h, req.master)
+        v21 = {}
+        if (self.cfg.get("skin_continuity") or {}).get("enabled") and scene.masks is not None:
+            smasks = semantic_masks(scene, self._hand_mask(scene))
+            bbox = scene.sheet.target_face.bbox
+            cont = continuity_residuals(final, orig, smasks, scene.base_pose, bbox)
+            rf, ro = skin_regions(final, smasks, scene.base_pose, bbox), skin_regions(orig, smasks, scene.base_pose, bbox)
+            mlab = self.__dict__.setdefault("_master_lab", {}).get(getattr(req.master, "sha256", ""))
+            if mlab is None:
+                mlab = master_skin_lab(getattr(req.master, "data", None))
+                self._master_lab[getattr(req.master, "sha256", "")] = mlab
+            v21 = {"skin_continuity": cont, "skin_identity": skin_identity(final, rf, mlab),
+                   "photometric": photometric(final, orig, modified_mask if modified_mask is not None else scene.identity,
+                                              rf, ro),
+                   "body_identity": self._body_identity(body, req)}
         extra = {"clothes_segmented": scene.clothes_ok, "accessory_objects": measure_accessories(orig, final, scene.layers),
                  "source_face_pixels": source_pixel_residual(orig, final, face_reg.astype(np.float32)),
                  "source_body_pixels": body_px, "faces_original": faces_orig}
-        return {**extra, "identity": face.similarity if face else None, "original_sim": fo.similarity if fo else None, "pose": pose,
+        return {**extra, **v21, "identity": face.similarity if face else None, "original_sim": fo.similarity if fo else None, "pose": pose,
                 "background": background, "tattoo_residual": tattoo_res, "hair_residual": hair_res, "texture_final": tex_final,
                 "texture_ref": tex_ref, "tone_delta": tone_delta, "persona_instances": persona_n, "faces": len(an.faces),
                 "shoulder_ratio": shoulder, "composition_shift": 0.0, "person_found": face is not None or len(an.faces) > 0,
@@ -1119,7 +1241,9 @@ class ReplacementEngine:
         c = self.cfg
         extra = dict(plan.extra)
         qwen = c.get("qwen") or {}
-        extra["qwen_face_lock"] = bool(req.qwen_face_lock) if req.qwen_face_lock is not None else bool(qwen.get("enabled", False))
+        qref = c.get("qwen_identity_refinement") or {}
+        default_qwen = bool(qwen.get("enabled", False)) or bool(qref.get("enabled", False))
+        extra["qwen_face_lock"] = bool(req.qwen_face_lock) if req.qwen_face_lock is not None else default_qwen
         kw: dict[str, Any] = {"extra": extra}
         if plan.name in POLICIES:
             for key, val in (("pose_strength", (c.get("pose") or {}).get("strength")),
@@ -1163,6 +1287,11 @@ class ReplacementEngine:
             "processing_time": tel.duration_s, "cost": tel.estimated_cost_usd,
             "fallback_used": tel.fallback_used, "fallback_model": tel.fallback_model,
             "experimental_stages": list(tel.experimental_stages),
+            "persona_version": (tel.attributes.get("persona_canon") or {}).get("persona_version"),
+            "body_profile_version": (tel.attributes.get("persona_canon") or {}).get("body_profile_version"),
+            "skin_profile_version": (tel.attributes.get("persona_canon") or {}).get("body_profile_version"),
+            "qwen_strength": next((p["params"].get("strength") for p in tel.passes if p["pass"] == "face_lock"), None),
+            "quality_score": tel.gate.get("quality_score"),
         }
 
     async def run(self, req: ReplacementRequest) -> ReplacementOutcome:
@@ -1171,8 +1300,18 @@ class ReplacementEngine:
             req.debug = True
         if req.debug:
             req.keep_intermediates = True
+        cfg_version = str(self.cfg.get("replacement_version", "v2"))
+        if req.replacement_version != cfg_version:
+            raise ReplacementRequestError(f"pedido {req.replacement_version} com a config {cfg_version}: config errada")
         attrs = req.attributes()
         plan = self._configured(req.plan(attrs), req)
+        canon: PersonaCanon | None = None
+        if req.persona_sheet:
+            try:
+                canon = load_canon(req.persona_sheet)
+            except CanonViolation:
+                canon = None
+        self._canon = canon
         start = time.monotonic()
         meta = self.adapter.metadata()
         tel = JobTelemetry(uuid.uuid4().hex[:12], req.persona_id, "replacement", plan.name, model=meta.get("model", ""),
@@ -1184,6 +1323,12 @@ class ReplacementEngine:
         tel.attributes["boxes"] = scene.box_policy
         tel.attributes["source_details"] = source_details(attrs, scene)
         tel.attributes["mask_notes"] = scene.notes
+        if canon is not None:
+            tel.attributes["persona_canon"] = {"canon_hash": canon.canon_hash, "persona_version": canon.persona_version,
+                                               "body_profile_version": canon.physical.version}
+        self._master_body_pose = None
+        if canon is not None and (self.cfg.get("body_identity") or {}).get("enabled"):
+            self._master_body_pose = await self._master_pose(req)
         # a MEDICAO usa sempre a segmentacao real (mesmo quando a geracao nao usa: degraus A..D),
         # senao tatuagem/fundo/cabelo ficariam "desconhecidos" justamente onde falham
         mscene = scene if plan.segmentation else await self._scene(req.image, req.master, plan.with_(segmentation=True), attrs)
@@ -1247,6 +1392,8 @@ class ReplacementEngine:
                                  attempts, areas)
         if req.debug:
             out.debug = {"scene_analysis": analysis.to_dict(), "validation_report": report.to_dict(), "gate": tel.gate,
+                         "body_profile": None if canon is None else canon.physical.to_dict(),
+                         "skin_profile": None if canon is None else dict(canon.physical.skin),
                          "run_log": tel.run_log, "mask_hierarchy_issues": hierarchy,
                          # passe adaptativo que nao rodou (ex.: corpo da Persona ja refez a pele: nada para limpar)
                          "passes_not_run": [a for a in ("initial_generation", "face_pass", "skin_pass", "tattoo_pass",
@@ -1256,7 +1403,8 @@ class ReplacementEngine:
 
 
 # falhas dos validadores novos -> tipo de retry da spec (cada falha com a SUA estrategia)
-_GATE_FAILURE = {"source_pixel_residual": "original_residual", "accessory_objects": "accessories",
+_GATE_FAILURE = {"skin_continuity": "skin", "photometric": "skin", "skin_identity": "skin", "body_identity": "body",
+                 "source_pixel_residual": "original_residual", "accessory_objects": "accessories",
                  "person_count": "duplicate_persona", "hair": "original_residual", "clothing": "background"}
 
 

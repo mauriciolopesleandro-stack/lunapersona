@@ -1,0 +1,8 @@
+{"segundos_por_imagem": 600, "overhead_segundos": 300,
+ "_nota": "V2 x V2.1 nas 2 fotos que o usuario mandou com a spec V2.1 (2026-10-08): espelho com celular e porta cacheada. V2.1 = Persona Canon + continuidade de pele + Qwen so no rosto. Sem retry (comparacao direta). V1 (orquestrador antigo) nao entra: nao esta ligado a sessao.",
+ "execucoes": [
+  {"id": "espelho_celular__v2", "foto": "fotos_v2/espelho_celular.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v2"},
+  {"id": "espelho_celular__v2.1", "foto": "fotos_v2/espelho_celular.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v2.1"},
+  {"id": "porta_cacheada__v2", "foto": "fotos_v2/porta_cacheada.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v2"},
+  {"id": "porta_cacheada__v2.1", "foto": "fotos_v2/porta_cacheada.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v2.1"}
+ ]}

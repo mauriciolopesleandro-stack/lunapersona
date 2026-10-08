@@ -44,6 +44,12 @@ VALIDATORS: dict[str, tuple[str, ...]] = {
     "HairValidator": ("hair",),
     "SceneConsistencyValidator": ("background", "composition"),
     "PersonCountValidator": ("duplicate_persona", "person_count"),
+    # V2.1
+    "BodyIdentityValidator": ("body_identity",),
+    "BodyConsistencyValidator": ("body", "body_identity"),
+    "SkinIdentityValidator": ("skin_identity",),
+    "SkinContinuityValidator": ("skin_continuity",),
+    "PhotometricIntegrationValidator": ("photometric",),
 }
 
 GATE_DEFAULTS = {"skin_texture_ratio_min": 0.35, "accessory_presence_min": 0.5, "source_pixel_residual_max": 0.35,
@@ -192,6 +198,52 @@ def check_clothing(policy: str | None, clothing_change, color_delta, t, segmente
     return c
 
 
+def check_v21(m: dict[str, Any], thr: dict[str, Any], hard: bool, body_pixels) -> dict[str, CheckResult]:
+    """V2.1: continuidade de pele, identidade de pele, fotometria e identidade corporal. Limites PRELIMINARES (config)."""
+    out = {}
+    cont = m.get("skin_continuity") or {}
+    worst = cont.get("worst")
+    t = thr.get("transition_dE", {"pass": 6.0, "reject": 12.0})
+    if worst is None:
+        out["skin_continuity"] = CheckResult("skin_continuity", UNKNOWN, None, t, "pele exposta insuficiente para medir transicoes",
+                                             cont)
+    else:
+        st = PASS if worst <= t["pass"] else (REJECT if worst > t["reject"] and hard else WARN)
+        bad = [k for k, v in (cont.get("transitions") or {}).items() if v["dE"] > t["pass"]]
+        out["skin_continuity"] = CheckResult("skin_continuity", st, worst, t,
+                                             ("transicao de pele fora da luz da foto: " + ", ".join(bad)) if bad else
+                                             "rosto, pescoco e corpo com a mesma pele sob a mesma luz", cont)
+    si = m.get("skin_identity") or {}
+    hd = si.get("hue_diff_deg")
+    th = thr.get("skin_hue_deg", {"pass": 25.0})
+    out["skin_identity"] = CheckResult("skin_identity", UNKNOWN if hd is None else (PASS if hd <= th["pass"] else WARN), hd, th,
+                                       "subtom da pele x master (a luz da cena muda; so aviso)", si)
+    ph = m.get("photometric") or {}
+    gr, hl = ph.get("grain_ratio"), ph.get("face_highlight_dL")
+    tg = thr.get("grain_ratio", {"low": 0.5, "high": 2.0})
+    th_hl = thr.get("face_highlight_dL", {"max": 12.0})
+    reasons, st = [], (UNKNOWN if gr is None and hl is None else PASS)
+    if gr is not None and not tg["low"] <= gr <= tg["high"]:
+        st, reasons = WARN, reasons + [f"grao/nitidez da area refeita {gr:.2f}x o resto da foto"]
+    if hl is not None and abs(hl) > th_hl["max"]:
+        st, reasons = WARN, reasons + [f"brilho do rosto {hl:+.1f} L x a foto"]
+    out["photometric"] = CheckResult("photometric", st, gr, {"grain": tg, "highlight": th_hl}, "; ".join(reasons) or
+                                     "grao e brilho compativeis com a foto", ph)
+    bi = m.get("body_identity") or {}
+    dev, lim = bi.get("deviation"), bi.get("max_deviation")
+    reasons = []
+    if body_pixels is not None and body_pixels > 0.35:
+        status, reasons = REJECT, [f"corpo da pessoa original ({body_pixels:.0%} da pele igual a foto)"]
+    elif bi.get("status") == "MEASURED" and dev is not None and lim is not None:
+        status = PASS if dev <= lim else WARN
+        reasons = [f"proporcoes {dev:.1%} da Persona (limite {lim:.0%}, mesma pose da master)"]
+    else:
+        status = UNKNOWN
+        reasons = [bi.get("reason") or "proporcoes nao comparaveis nesta pose"]
+    out["body_identity"] = CheckResult("body_identity", status, dev, {"max_deviation": lim}, "; ".join(reasons), bi)
+    return out
+
+
 # --- o gate ------------------------------------------------------------------------------------------
 
 @dataclass
@@ -202,7 +254,8 @@ class GateResult:
     validators: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"decision": self.decision, "hard_fails": self.hard_fails, "validators": self.validators}
+        return {"decision": self.decision, "hard_fails": self.hard_fails, "validators": self.validators,
+                "quality_score": QualityGate.quality_score(self.report)}
 
 
 class QualityGate:
@@ -242,6 +295,9 @@ class QualityGate:
                                                           self._hard("source_identity_residual"))
         ch["person_count"] = check_person_count(m.get("faces_original"), m.get("faces"))
         ch["hair"] = check_hair(policy.get("hair"), m.get("hair_residual"), m.get("hair_change"), t)
+        if "skin_continuity" in m:  # V2.1
+            sc = self.cfg.get("skin_continuity") or {}
+            ch.update(check_v21(m, sc.get("thresholds") or {}, self._hard("skin_continuity"), m.get("source_body_pixels")))
         ch["clothing"] = check_clothing(policy.get("clothing"), m.get("clothing_change"), m.get("clothing_color_delta"), t,
                                         m.get("clothes_segmented"))
         return rep
@@ -255,6 +311,13 @@ class QualityGate:
                          "reasons": [rep.checks[c].reason for c in checks if c in rep.checks and rep.checks[c].status
                                      in (REJECT, WARN) and rep.checks[c].reason]}
         return out
+
+    @staticmethod
+    def quality_score(rep: ValidationReportV2) -> float | None:
+        """Media das notas por check (PASS 1, WARN 0,5, REJECT 0; sem medida fica fora). Nunca esconde hard fail:
+        a decisao vem dos REJECT, nao desta media."""
+        vals = [{PASS: 1.0, WARN: 0.5, REJECT: 0.0}[c.status] for c in rep.checks.values() if c.status in (PASS, WARN, REJECT)]
+        return round(sum(vals) / len(vals), 3) if vals else None
 
     def decide(self, rep: ValidationReportV2, can_retry: bool) -> GateResult:
         hard = rep.failures()

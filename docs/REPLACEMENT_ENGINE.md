@@ -364,3 +364,72 @@ Empacotar essas etapas como nós do ComfyUI só faz sentido se forem usadas dent
 - `scripts/v2_engine/relatorio_ab.py`: gera a página lado a lado com original, current, v2 e máscaras, as medidas, a regra de não regressão automática e a coluna de revisão visual.
 - A V2 só é recomendada se não piorar tatuagem, acessórios, pose, mãos, resíduo da pessoa original ou emendas, **e** se passar na revisão visual.
 - **Benchmark ainda não executado** (precisa de GPU e autorização). Há 7 fotos reais no projeto e a spec pede pelo menos 10.
+
+## V2.1: Physical Identity + Skin Continuity (2026-10-08)
+
+A V2.1 é a mesma engine com a config `config/persona_replacement_v2_1.json` e é escolhida por `replacement_version: "v2.1"`.
+A V2 (`persona_replacement_v2.json`) fica intacta, para o benchmark V2 × V2.1. A V1 (`core/persona_replacement`) também não foi tocada.
+A geração normal não foi alterada.
+
+### Persona Canon (`persona_canon.py`)
+
+- `load_canon(persona_sheet)` monta o `PersonaCanon` e o `PhysicalIdentityProfile`. Os dois são congelados (dataclass `frozen` + `MappingProxyType`), com `version` e `canon_hash`.
+- **Valores lidos da ficha:** tipo de corpo, silhueta, busto, cintura e quadril (texto); proporções DWPose do `master_body` (classe de pose `walk34`); tom e subtom da pele; textura; cabelo; idade (27, de 23 a 31); traços persistentes.
+- **Valores que a ficha não tem:** altura e peso estão `UNKNOWN` na ficha e ficam `None` com o motivo. Nada é inventado nem tirado de uma foto.
+- **Trava para o Context Engine:** `apply_scene(canon, mudanças)` recusa qualquer atributo do Canon (corpo, altura, pele, proporções…) e aceita só o estado da cena (lugar, pose, roupa, acessórios, luz, clima, hora, expressão). O Context Engine ainda não existe no código; a trava fica pronta para ele.
+- **Masters protegidos:** `guard_master_promotion` proíbe que uma imagem gerada vire `master_*` ou referência de corpo.
+- **Prompt do corpo:** na V2.1, o passe de corpo usa o texto do perfil, por exemplo "curvy, hourglass figure, full bust, slim waist, rounded hips, toned arms, long legs, sun-kissed tan skin, olive undertone, golden undertone".
+
+### Skin Continuity + integração fotométrica (`skin_continuity.py`)
+
+Regra: **PERSONA = o que a pele É, FOTO = como a luz bate.**
+
+1. **Regiões de pele exposta:** rosto, pescoço, ombros, tronco, braços, mãos e pernas. Fora delas ficam roupa, acessórios, o cabelo original e o cabelo NOVO. O cabelo novo é separado pela luminância e pela saturação em relação à pele do rosto.
+2. **Alvo de cada região, em Lab:** `F_rosto + (O_região − O_rosto)`. A luminância segue inteira a da foto; a cor segue só metade. Motivo: a relação de cor da foto carrega a maquiagem e a base da pessoa original (no quarto, a base clara no rosto).
+3. **Correção:** é um campo de deslocamento Lab suave, só de baixa frequência. Poros, sombras e brilhos locais ficam.
+4. **Gate:** a etapa só fica se reduzir a pior transição e não criar emenda ou bloco.
+
+Testado nas imagens reais do A/B de 08/10 (sem GPU, só CPU), com dE da pior transição (ref. em Lab):
+
+| Foto | Transição | Antes | Depois |
+|---|---|---|---|
+| Espelho | rosto→pescoço | 6,1 | 0,8 |
+| Espelho | braço→mão | 6,2 | 0,9 |
+| Espelho | tronco→pernas | 13,3 | 6,2 |
+| Quarto | rosto→pescoço | 9,5 | 0,2 |
+| Quarto | rosto→tronco | 10,9 | 2,2 |
+
+### Qwen como refinamento de identidade (`qwen_identity_refinement`)
+
+- `enabled: true`, `scope: "face"`, `strength: 1.0`.
+- **Escopo:** só o rosto volta da saída do Qwen. Orelhas, cabelo, pescoço, corpo, roupa, cenário e acessórios ficam. O motivo é o A/B de 08/10, em que a cabeça inteira trouxe uma argola nova e maquiagem pesada.
+- **Contexto de preservação:** o Qwen recebe o texto "mesma roupa/acessórios/fundo/pose/luz; sem brincos, joias ou maquiagem" pela `FaceLockGuidance` que já existia (V1.1). O workflow da geração não muda.
+- **Força:** a força 1,0 é a opacidade da colagem no rosto. A faixa de 0,5 a 1,0 ainda precisa de benchmark.
+- **Piso de identidade:** continua o mesmo, 0,65 (0,5 com óculos escuros).
+
+### Validadores novos
+
+| Validador | O que mede | Status possível |
+|---|---|---|
+| SkinContinuityValidator | pior transição rosto→pescoço→ombros→braços→mãos e tronco→pernas, dE contra a relação da foto | PASS ≤ 6, REJECT > 12 (preliminar) |
+| SkinIdentityValidator | subtom (matiz a\*b\*) da pele contra a master | só aviso |
+| PhotometricIntegrationValidator | grão/nitidez da área refeita contra o resto da foto, e brilho máximo do rosto | só aviso |
+| BodyIdentityValidator / BodyConsistencyValidator | proporções DWPose contra o perfil, só na mesma classe de pose da `master_body` (limites da própria ficha: desvio 15%, distância de pose 0,12) | fora dessa pose: NÃO COMPARÁVEL (UNKNOWN); com > 35% da pele do corpo igual à foto (corpo da pessoa original): REJECT |
+
+- `quality_score` é a média das notas dos checks e vai para o `run_log`. **Não decide nada:** hard fail continua REJECT.
+- O `run_log` ganha `persona_version`, `body_profile_version`, `skin_profile_version` e `qwen_strength`.
+- O modo debug ganha `body_profile`, `skin_profile`, `identity_refinement` e `photometric_pass`.
+
+### Retry
+
+| Falha | Estratégia |
+|---|---|
+| BODY_FAIL | passe de corpo da Persona reforçado (denoise +0,05) |
+| SKIN_FAIL / LIGHTING_FAIL | continuidade de pele mais forte (+50% no limite de deslocamento), hi-res do rosto, integração |
+
+### O que a V2.1 ainda NÃO faz
+
+- **Silhueta (cintura/quadril/busto) medida na imagem final:** o DWPose não mede volume e não há segmentação da imagem final. O corpo da Luna vem do prompt do perfil e da LoRA, e o validador de proporções só compara na pose da master.
+- **Altura e peso:** a ficha não tem esses valores.
+- **Nós customizados do ComfyUI:** valem as mesmas observações da V2.
+- **Benchmark V1 × V2 × V2.1:** a V1 não está ligada à sessão de GPU. O plano `plano_v21.json` compara V2 × V2.1 nas 2 fotos.

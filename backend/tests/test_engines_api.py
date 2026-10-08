@@ -23,6 +23,7 @@ from app.jobs import JobRegistry
 from app.routes import engines_v2
 from app.security import TOKEN_HEADER, token_middleware
 from tests.conftest import REPO
+from tests.test_engines_v21 import CFG21
 from tests.test_engines_replacement import CFG, FakeAdapter, Seg
 from tests.test_persona_replacement import Analyzer, Reader, Store
 from tests.test_persona_transfer import wide_tattoo_photo
@@ -45,10 +46,13 @@ class FakeFactory:
         return {"reader": Reader(), "segmenter": Seg(), "analyzer": Analyzer(FACES), "store": self.store,
                 "adapter": FakeAdapter(self.store), "config": CFG}
 
-    async def replacement(self, model, qwen=None):
+    async def replacement(self, model, qwen=None, version="v2"):
         self.models.append(model.id)
-        self.qwen = qwen
-        return ReplacementEngine(**self._parts(), price_per_hour=0.57, provider="fake")
+        self.qwen, self.version = qwen, version
+        parts = self._parts()
+        if version == "v2.1":
+            parts["config"] = CFG21
+        return ReplacementEngine(**parts, price_per_hour=0.57, provider="fake")
 
     async def face_swap(self, model):
         self.models.append(model.id)
@@ -207,3 +211,16 @@ def test_replacement_request_fields_travel_and_are_checked(engine_dir, tmp_path)
     assert res["telemetry"]["controlnet_strength"] == {"pose": 0.85, "depth": 0.3}
     assert res["gate"]["decision"] in ("PASS", "REJECT") and "scene_analysis" in res["debug"]
     assert factory.qwen is None  # Qwen nao pedido: a fabrica decide pela config (desligado)
+
+
+def test_v21_request_travels_through_the_api(engine_dir, tmp_path):
+    app, factory = make(engine_dir, tmp_path)
+    base = {"persona_id": "luna", "image": "foto.png", "advanced": json.dumps({"max_retries": 0})}
+    with TestClient(app) as c:
+        # V2.1 liga o refinamento Qwen do rosto; o fake nao tem a porta do Qwen: pedido explicito sem Qwen
+        r = c.post("/api/v2/replace", headers=H, data={**base, "replacement": json.dumps(
+            {"replacement_version": "v2.1", "qwen_face_lock": False})})
+        assert r.status_code == 202
+        job = wait(c, r.json()["job_id"])
+    assert job["status"] == "done", job
+    assert factory.version == "v2.1" and "skin_continuity" in job["result"]["validation"]["checks"]
