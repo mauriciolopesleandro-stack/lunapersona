@@ -285,3 +285,43 @@ Defeito que sobrou na 0,6: manchas claras redondas, fracas, no braço esquerdo e
 | Sobra do cacheado original atrás do ombro | Faixa em volta do cabelo original também é refeita |
 
 **Limitação aceita:** roupa redesenhada **parecida**, não idêntica. Na porta, o tomara-que-caia ganhou alças e o short ganhou cordão.
+
+## Spec 46 na GPU: varanda + porta (2026-10-08, autorizado)
+
+| | |
+|---|---|
+| Pod | `d54ru1tmvat0tl`, NVIDIA L4, US$ 0,49/h |
+| Tempo e custo | 25,2 min, **~US$ 0,21** |
+| Erro meu | a etapa da mão se chamava `hand_pose_lock`; o arquivo dela tinha `_pose_` e a sessão descarta essas imagens (prévias de pose), o que deu "terminou sem devolver imagem". Renomeada, com teste de guarda; ~5 min perdidos |
+
+**Varanda: WARN, sem falhas.**
+
+| Medida | Valor |
+|---|---|
+| Tatuagem | **0,0** |
+| Rosto original | 0,18 |
+| Pose | 0,018 |
+| Fundo | 0 |
+| Mãos (pontos de dedo) | 21/21 nas duas, gesto mantido |
+
+- Corset, jeans, pulseiras, relógio e argolas mantidos.
+- Defeitos:
+  - um **morro pintado atrás da cabeça**: o texto da cena citava Copacabana e o modelo preencheu o lugar do coque loiro;
+  - **óculos espelhados tratados como lente clara** (51% do brilho da pele contra limite de 45%), então a lente mudou;
+  - Face Lock recusado (0,606 < 0,65): com óculos escuros o ArcFace cai;
+  - mancha branca na borda do corset.
+
+**Porta: não terminou dentro da trava (L4 mais lenta).** Parcial até o refino de rosto:
+- **roupa idêntica com o corpo da Luna**, rosto e cabelo da Luna;
+- defeitos: o corpo **inventou peças** na pele (alça no ombro, faixa de calcinha, marca na coxa).
+
+**Correções (4dba889, sem GPU):**
+
+| Correção | Detalhe |
+|---|---|
+| Óculos opacos | lente < 60% do brilho da pele ou sem pele real |
+| Texto da cena só com a pessoa | roupa e pose; o cenário já está na foto |
+| Piso do Face Lock com olhos cobertos por óculos mantidos | 0,5 |
+| Negativos de peça de roupa inventada na etapa do corpo | folga maior da borda da roupa |
+
+A mancha branca do corset deve cair com a folga, mas não foi verificada.
