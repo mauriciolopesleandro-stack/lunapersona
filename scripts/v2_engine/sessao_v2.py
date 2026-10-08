@@ -33,6 +33,7 @@ from app.core.generation.negative import NegativePromptBuilder  # noqa: E402
 from app.core.generation.v2_config import load_v2_config  # noqa: E402
 from app.core.persona.sheet import PersonaSheetRepository  # noqa: E402
 from app.providers.base import ReferenceImage  # noqa: E402
+from app.providers.comfyui.face import QwenFaceAdapter  # noqa: E402
 from app.providers.comfyui.region_pass import ComfyRegionPassAdapter  # noqa: E402
 from app.providers.comfyui.replacement import ComfyImageStore, ComfySegmenter  # noqa: E402
 from app.providers.comfyui.sdxl_engine import RealVisXLAdapter  # noqa: E402
@@ -99,7 +100,8 @@ async def main() -> int:
                                     identity_adapters=v2.identity_adapters)
     adapter = RealVisXLAdapter(session, reg.select_checkpoint("auto"), reg.get("lunavox_sdxl_v1"), CN, region=region,
                                price_per_hour=PRICE)
-    problemas = await adapter.load()
+    face_lock = QwenFaceAdapter(session)
+    problemas = await adapter.load() + await face_lock.validate_configuration()
     if problemas:
         print("CONFIG", problemas, flush=True)
         return 2
@@ -111,7 +113,7 @@ async def main() -> int:
                                segmenter=CachedSegmenter(ComfySegmenter(session, store)),
                                analyzer=ComfyImageAnalyzer(client, keep_alive=keep), store=store, adapter=adapter,
                                config=ReplacementEngine.load_config(ROOT / "config" / "replacement_engine_v2.json"),
-                               price_per_hour=PRICE, provider="comfyui@runpod")
+                               price_per_hour=PRICE, provider="comfyui@runpod", face_lock=face_lock)
     sheet = PersonaSheetRepository(ROOT / "personas_run").get("luna")
     m = sheet.master("master_face")
     master = ReferenceImage(m.reference_id, m.file, sheet.read_master("master_face"), m.sha256)

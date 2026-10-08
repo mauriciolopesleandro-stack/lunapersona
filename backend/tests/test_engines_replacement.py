@@ -66,7 +66,8 @@ async def test_quality_pipeline_order_isolation_and_telemetry():
     stages = [c.stage for c in ad.calls]
     assert stages[0] == "identity" and "face_refine" in stages and "tattoo_cleanup" in stages
     ident = ad.calls[0]
-    assert ident.controls.pose_strength == 0.8 and ident.controls.depth_strength == 0.5 and ident.identity.use_lora
+    # rosto/cabelo: so a pose da foto (a profundidade trazia o formato do rosto/cachos da pessoa original)
+    assert ident.controls.pose_strength == 0.8 and ident.controls.depth_strength == 0.0 and ident.identity.use_lora
     face = next(c for c in ad.calls if c.stage == "face_refine")
     assert face.identity.reference is MASTER and 0 < face.identity.reference_strength <= 0.6
     tat = next(c for c in ad.calls if c.stage == "tattoo_cleanup")

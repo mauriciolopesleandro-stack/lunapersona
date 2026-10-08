@@ -12,6 +12,7 @@ from app.core.engines.face_swap import FaceSwapEngine
 from app.core.engines.models import ModelInfo, ModelRegistry
 from app.core.engines.replacement import ReplacementEngine
 from app.core.generation.v2_config import load_v2_config
+from app.providers.comfyui.face import QwenFaceAdapter
 from app.providers.comfyui.region_pass import ComfyRegionPassAdapter
 from app.providers.comfyui.replacement import ComfyImageStore, ComfySegmenter
 from app.providers.comfyui.sdxl_engine import LustifyAdapter, RealVisXLAdapter
@@ -73,7 +74,15 @@ class ComfyEngineFactory:
                 "price_per_hour": self.price, "provider": "comfyui"}
 
     async def replacement(self, model: ModelInfo) -> ReplacementEngine:
-        return ReplacementEngine(**self._parts(await self._adapter(model)))
+        # Face Lock da master = o mesmo da geracao V1 (Qwen-Image-Edit 2511 + BFS head): rosto/cabelo consistentes
+        return ReplacementEngine(**self._parts(await self._adapter(model)), face_lock=await self._face_lock())
+
+    async def _face_lock(self):
+        lock = QwenFaceAdapter(self.session)
+        problems = await lock.validate_configuration()
+        if problems:  # sem os modelos da V1 no pod: erro claro (nao troca para outra coisa em silencio)
+            raise EngineSetupError(f"Face Lock (Qwen BFS) indisponivel: {problems}")
+        return lock
 
     async def face_swap(self, model: ModelInfo) -> FaceSwapEngine:
         parts = self._parts(await self._adapter(model))

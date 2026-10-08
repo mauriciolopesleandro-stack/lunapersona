@@ -14,7 +14,8 @@
              "ink_dcr_florence": 0.5, "close_frac": 0.01, "margin_frac": 0.006, "feather_frac": 0.008, "prefill_radius_frac": 0.012,
              "tone_radius_frac": 0.012, "face_guard_frac": 0.1},
   "acceptance": {"max_identity_drop": 0.02, "face_refine_min_gain": 0.02, "stage_seam_tolerance": 0.8,
-                 "stage_edges_tolerance": 1.5, "original_crop_margin": 0.6},
+                 "stage_edges_tolerance": 1.5, "original_crop_margin": 0.6, "face_lock_min_gain": 0.0},
   "duplicate_similarity": 0.45,
-  "thresholds": {}
+  "thresholds": {"identity": {"pass": 0.80, "reject": 0.60}},
+  "_identity_note": "2026-10-07: 0,73-0,81 ainda parecia outra mulher no olho; aprovacao so a partir de 0,80 (Face Lock da V1 chega a ~0,85)"
 }

@@ -291,3 +291,32 @@ async def test_slippers_labeled_bracelet_and_double_labeled_box_are_not_removed(
     pols = [(b["label"], b["policy"]) for b in out.telemetry.attributes["boxes"]]
     assert ("bracelet", "IGNORE") in pols  # fora da pele
     assert ("earrings", "PRESERVE") in pols and ("watch", "PRESERVE") in pols  # mesma caixa: manter vence
+
+
+async def test_face_lock_with_the_master_is_kept_only_when_identity_rises():
+    """2026-10-07: tres trocas pareciam tres mulheres. O Face Lock (cabeca da master, igual a geracao V1) entra
+    depois do rosto; so a regiao da identidade volta para a foto e so fica se a identidade subir."""
+    from app.providers.base import ProviderImage, StageOutput
+
+    class FakeLock:
+        def __init__(self, store):
+            self.store, self.calls = store, []
+
+        async def lock_face(self, image, master, seed):
+            self.calls.append((image.locator, master.reference_id))
+            px = self.store.images[image.locator].copy()
+            px = np.clip(px.astype(int) + 4, 0, 255).astype(np.uint8)  # muda a imagem INTEIRA, de leve (so a identidade volta)
+            key = await self.store.save(px, "face_lock_raw")
+            return StageOutput(image=ProviderImage("comfyui", key, "", px.shape[1], px.shape[0]), stage="face_lock",
+                               adapter="fake", seconds=20.0, seed=seed, effective_parameters={"workflow": "qwen-bfs-head-swap"})
+
+    for lock_sim, kept in ((0.9, True), (0.5, False)):
+        faces = {"foto": 0.1, "identity": 0.7, "face_refine": 0.7, "face_lock": lock_sim, "tattoo": 0.8,
+                 "integrated": 0.8, "final": 0.8}
+        eng, ad, store = engine(faces)
+        eng.face_lock = FakeLock(store)
+        out = await eng.run(req(advanced={"max_retries": 0}, keep_intermediates=True))
+        fl = next(p for p in out.telemetry.passes if p["pass"] == "face_lock")
+        assert fl["accepted"] is kept and eng.face_lock.calls[0][1] == "m"
+        orig = store.images["foto.png"]
+        assert (out.pixels[0:4, 0:4] == orig[0:4, 0:4]).all()  # fora da identidade: a foto

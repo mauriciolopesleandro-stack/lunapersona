@@ -230,9 +230,12 @@ def box_class(label: str) -> str:
 
 class ReplacementEngine:
     def __init__(self, *, reader, segmenter, analyzer, store, adapter: ModelAdapter, config: dict[str, Any],
-                 lora_hash: str = "", price_per_hour: float | None = None, provider: str = "") -> None:
+                 lora_hash: str = "", price_per_hour: float | None = None, provider: str = "", face_lock=None) -> None:
         self.reader, self.segmenter, self.analyzer, self.store = reader, segmenter, analyzer, store
         self.adapter = adapter
+        # Face Lock da master (o mesmo da geracao V1: Qwen-Image-Edit 2511 + BFS head). Porta opcional:
+        # async lock_face(ProviderImage, ReferenceImage, seed) -> StageOutput. Sem ela, o passo nao roda.
+        self.face_lock = face_lock
         self.cfg = config
         self.lora_hash = lora_hash
         self.price = price_per_hour
@@ -444,8 +447,13 @@ class ReplacementEngine:
         # PASSE 1: reconstrucao da identidade
         prompt = cond(P["identity"].replace("{description}", scene.sheet.description()), "identity")
         paste = None if scene.accessory is None else (scene.accessory, orig)
+        # rosto/cabelo: SO a pose da foto (posicao da cabeca). A profundidade da foto trazia o formato do rosto e dos
+        # cachos da pessoa ORIGINAL (2026-10-07: "o cabelo ficou diferente da Luna"). Profundidade fica no corpo.
+        ident_ctrl = ControlSpec(pose_strength=structure.pose_strength,
+                                 depth_strength=structure.depth_strength if plan.extra.get("identity_depth", False) else 0.0,
+                                 end_percent=structure.end_percent, structure=structure.structure)
         px, loc, _ = await self._pass("identity", cur, ident, prompt, negative, plan.identity_denoise, req.seed, plan, tel,
-                                      controls=structure, accessory=paste)
+                                      controls=ident_ctrl, accessory=paste)
         cur, modified = {"pixels": px, "image": loc}, np.maximum(modified, ident)
         inter["identity"] = loc
         an = await self._identity_of(loc, w, h, req.master)
@@ -509,6 +517,37 @@ class ReplacementEngine:
             gain = None if plan.name == "MAX_QUALITY" else float(acc.get("face_refine_min_gain", 0.02))
             await try_stage("face_refine", scene.face_full, cond(P["face"], "face"), plan.face_denoise, 101, min_gain=gain, identity=idsp,
                             controls=ControlSpec(structure=req.image))
+        # FACE LOCK com a master (2026-10-07: tres trocas com 0,73-0,81 pareciam tres mulheres diferentes - o
+        # rosto herdava o formato do rosto ORIGINAL pela profundidade e a referencia so entrava num refino leve).
+        # A cabeca da master entra pela troca de cabeca da geracao V1; so a regiao da identidade volta para a foto.
+        if self.face_lock is not None and plan.face_reference and plan.extra.get("face_lock", True):
+            out = await self.face_lock.lock_face(ProviderImage("comfyui", cur["image"], "", w, h), req.master, req.seed + 211)
+            px2 = await self.store.load(out.image.locator)
+            if px2.shape[:2] != (h, w):  # o Qwen trabalha em ~1 MP: volta ao tamanho da foto
+                from PIL import Image as _Img
+                px2 = np.asarray(_Img.fromarray(px2).resize((w, h), _Img.LANCZOS))
+            region = np.clip(feather(dilate(ident, 3), 3), 0, 1) * (dilate(ident, 3) > 0.5)
+            px2 = (px2.astype(np.float32) * region[..., None] + cur["pixels"].astype(np.float32) * (1 - region[..., None])
+                   + 0.5).astype(np.uint8)
+            if paste is not None:  # oculos/acessorio mantido volta por cima
+                a = np.clip(feather(paste[0], 2), 0, 1)[..., None]
+                px2 = (orig.astype(np.float32) * a + px2.astype(np.float32) * (1 - a) + 0.5).astype(np.uint8)
+            loc2 = await self.store.save(px2, "face_lock")
+            inter["face_lock"] = loc2
+            an2 = await self._identity_of(loc2, w, h, req.master)
+            f2 = an2.persona_face()
+            s2 = f2.similarity if f2 else None
+            gain = float(acc.get("face_lock_min_gain", 0.0))
+            ok = s2 is not None and (score is None or s2 >= score + gain)
+            reason = None if ok else f"Face Lock nao aumentou a identidade ({score} -> {s2}): mantido o anterior"
+            if ok:
+                vok, why = visual_ok(visual(cur["pixels"], np.maximum(modified, region)), visual(px2, np.maximum(modified, region)))
+                if not vok:
+                    ok, reason = False, f"Face Lock criou defeito visivel ({why}): mantido o anterior"
+            tel.add_pass("face_lock", out.seconds or 0.0, {**(out.effective_parameters or {}), "identity_before": score}, ok, reason)
+            tel.passes[-1]["identity"] = s2
+            if ok:
+                cur, modified, score = {"pixels": px2, "image": loc2}, np.maximum(modified, region), s2
         # hi-res do rosto (detalhe de pele/olhos, sem referencia)
         if plan.hires:
             await try_stage("face_hires", scene.face_full, P["hires"], 0.25, 131, work_side=plan.hires_side,
