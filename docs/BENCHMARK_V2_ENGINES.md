@@ -257,3 +257,31 @@ Defeito que sobrou na 0,6: manchas claras redondas, fracas, no braço esquerdo e
   - Offline: porta 12 → 5,6; espelho 15,9 → 1,0 (passam).
 
 **Limitação que fica:** a sombra cinza da virilha (entre as coxas, sobre o short) ainda pode virar "tinta". Nenhuma regra testada separou com segurança.
+
+
+## Porta e espelho com Face Lock + corpo da Luna (2026-10-07, autorizado)
+
+| | |
+|---|---|
+| Tempo e custo | 19,6 min, **~US$ 0,19** |
+| Contexto | o usuário viu que as versões anteriores (0,80/0,81) "pareciam pessoas diferentes"; decisão: corpo da Luna vale mais que roupa idêntica |
+
+**Porta: é a Luna.**
+- Rosto igual ao da master (argolas e gargantilha dela), cabelo dela, corpo mais curvilíneo.
+- Pose, porta, toalha e mãos intactas.
+- Face Lock aceito (0,768 → 0,805).
+
+**Espelho:**
+- O Face Lock **era a Luna no olho**, mas foi descartado: o ArcFace deu 0,74 contra 0,79 do refino genérico. O número escolheu errado.
+- Corpo, cabelo, celular, mão e chinelos: ok.
+
+**Falhas e correções (commit dc61770):**
+
+| Falha | Correção |
+|---|---|
+| Face Lock descartado pelo número | O Face Lock passa a ser a **autoridade** do rosto (sai só abaixo do piso 0,65 ou com defeito visível). Aprovação de identidade 0,72 |
+| "Tatuagem" falsa no corpo redesenhado | As marcas antigas não contam onde o corpo foi redesenhado |
+| "Blocos" que eram linhas novas da roupa | Linhas novas da roupa (barra, cordão) não contam |
+| Sobra do cacheado original atrás do ombro | Faixa em volta do cabelo original também é refeita |
+
+**Limitação aceita:** roupa redesenhada **parecida**, não idêntica. Na porta, o tomara-que-caia ganhou alças e o short ganhou cordão.
