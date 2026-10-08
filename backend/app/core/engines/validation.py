@@ -34,6 +34,7 @@ DEFAULT_THRESHOLDS: dict[str, Any] = {
     "clothing_change": {"pass": 0.01, "reject": 0.05},
     "hair_change": {"pass": 0.02, "reject": 0.08},
     "accessory_change": {"pass": 0.02, "reject": 0.08},
+    "clothing_color_delta": {"pass": 12.0, "reject": 25.0},  # roupa REDESENHADA: cor media Lab parecida
 }
 
 
@@ -343,6 +344,12 @@ def check_attribute_policy(m: dict[str, Any], policy: dict[str, str], t: dict[st
                 thr = t["original_face_similarity"]
                 st = UNKNOWN if src is None else REJECT if src > thr["reject"] else WARN if src > thr["warn"] else PASS
                 put("source_identity_residual", "REMOVE", st, src, thr, "semelhanca com o rosto ORIGINAL")
+            elif attr == "clothing":
+                c = _band(attr, m.get("clothing_color_delta"), t["clothing_color_delta"], False,
+                          reason="roupa redesenhada: diferenca de cor media (Lab)")
+                put(attr, pol, c.status, c.score, t["clothing_color_delta"], "roupa redesenhada parecida (mesma cor)")
+            elif attr == "body":
+                put(attr, pol, UNKNOWN, reason="corpo da Persona: sem medida automatica de proporcao (DWPose nao mede cintura)")
             elif attr == "skin":
                 c = check_skin(m.get("texture_final"), m.get("texture_ref"), m.get("tone_delta"), t["skin_texture_ratio"],
                                t["face_body_tone_delta"])

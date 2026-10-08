@@ -398,6 +398,12 @@
           "change": "identity_attributes, identity_exclusions e replacement_policy (spec 45, Attribute Authority)",
           "identity_changed": false,
           "generation_changed": false
+        },
+        {
+          "date": "2026-10-07",
+          "change": "replacement_policy: roupa RECONSTRUCT (corpo da Luna)",
+          "identity_changed": false,
+          "generation_changed": false
         }
       ]
     }
@@ -460,13 +466,12 @@
     "unwanted_marks": []
   },
   "replacement_policy": {
-    "_comment": "Padrao do Replacement para a Luna. O pedido do usuario tem prioridade. Oculos escuros mantidos (regra do usuario).",
+    "_comment": "Padrao do Replacement para a Luna. Decisao do usuario 2026-10-07: o CORPO da Luna vale mais que a roupa identica - roupa redesenhada parecida (mesmo tipo/cor) na mesma pose. O pedido do usuario tem prioridade. Oculos escuros mantidos (regra do usuario).",
     "preserve": [
       "pose",
       "composition",
       "camera_angle",
       "perspective",
-      "clothing",
       "background",
       "lighting",
       "expression",
@@ -478,7 +483,8 @@
       "body",
       "skin",
       "hair",
-      "age"
+      "age",
+      "clothing"
     ],
     "remove": [
       "tattoos",

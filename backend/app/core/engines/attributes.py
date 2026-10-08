@@ -29,7 +29,7 @@ ATTRIBUTES: dict[str, tuple[str, tuple[str, ...]]] = {
     "composition": (PRESERVE, (PRESERVE,)),
     "camera_angle": (PRESERVE, (PRESERVE,)),
     "perspective": (PRESERVE, (PRESERVE,)),
-    "clothing": (PRESERVE, (PRESERVE,)),
+    "clothing": (PRESERVE, (PRESERVE, RECONSTRUCT)),  # RECONSTRUCT = redesenhada parecida (mesmo tipo/cor) no corpo da Persona
     "background": (PRESERVE, (PRESERVE,)),
     "lighting": (PRESERVE, (PRESERVE,)),
     "objects": (PRESERVE, (PRESERVE,)),

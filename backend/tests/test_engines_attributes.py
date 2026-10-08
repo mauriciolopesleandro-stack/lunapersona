@@ -45,7 +45,7 @@ def test_conflicts_and_unsupported_policies_are_refused():
     with pytest.raises(AttributePolicyError):
         resolve(preserve=["tattoos"], remove=["tatuagens"])  # alias do mesmo atributo em duas listas
     with pytest.raises(AttributePolicyError):
-        resolve(reconstruct=["clothing"])  # o motor nao regenera roupa
+        resolve(reconstruct=["background"])  # o motor nao regenera o cenario
     with pytest.raises(AttributePolicyError):
         resolve(reconstruct=["unicornio"])
     with pytest.raises(ReplacementRequestError):
@@ -62,7 +62,7 @@ def test_identity_never_compensates_a_policy_violation():
     assert ok.checks["attribute_policy"].status != REJECT
     src = validate_v2({**GOOD, "original_sim": 0.45}, policy=pol)
     assert "source_identity_residual" in src.checks["attribute_policy"].metadata["violations"]
-    roupa = validate_v2({**GOOD, "clothing_change": 0.2}, policy=pol)
+    roupa = validate_v2({**GOOD, "clothing_change": 0.2}, policy=resolve(LUNA, preserve=["clothing"]).policy)
     assert "clothing" in roupa.checks["attribute_policy"].metadata["violations"]
 
 
@@ -104,7 +104,7 @@ async def test_example_45_13_shoulder_tattoo_is_reconstructed_as_luna_skin():
 async def test_makeup_preserve_reaches_prompt_and_negative():
     eng, ad, _ = engine(FACES)
     await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, preserve_attributes=["makeup"]))
-    ident = ad.calls[0]
+    ident = next(c for c in ad.calls if c.stage == "identity")
     assert "no makeup" not in ident.prompt and "same makeup as in the photo" in ident.prompt
     assert "heavy makeup" not in ident.negative
 
@@ -112,7 +112,7 @@ async def test_makeup_preserve_reaches_prompt_and_negative():
 async def test_hair_preserve_keeps_the_source_hair_out_of_the_identity_mask():
     eng, ad, store = engine(FACES)
     out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, preserve_attributes=["hair"]))
-    ident_mask = ad.calls[0].mask
+    ident_mask = next(c for c in ad.calls if c.stage == "identity").mask
     from tests.test_persona_transfer import wide_tattoo_photo
 
     hair = wide_tattoo_photo()[2]
@@ -137,3 +137,26 @@ async def test_sunglasses_preserved_but_earrings_removed_by_label():
     boxes = {b["label"]: b["policy"] for b in out.telemetry.attributes["boxes"]}
     assert boxes == {"sunglasses": PRESERVE, "earrings": REMOVE}
     assert (out.pixels[50:53, 70:90] == (15, 15, 20)).all()  # oculos da foto mantidos
+
+
+async def test_luna_body_redraws_body_with_pose_only_and_keeps_hands():
+    """Decisao do usuario (2026-10-07): corpo da Luna vale mais que roupa identica. Corpo+roupa redesenhados na
+    pose da foto, com a LoRA e o corpo da Persona Sheet, SEM profundidade; maos ficam da foto."""
+    eng, ad, _ = engine(FACES)
+    out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA))
+    body = next(c for c in ad.calls if c.stage == "body_identity")
+    assert body.controls.depth_strength == 0.0 and body.controls.pose_strength > 0 and body.identity.use_lora
+    assert "hourglass" in body.prompt and "curly" not in body.prompt
+    assert [c.stage for c in ad.calls].index("body_identity") < [c.stage for c in ad.calls].index("identity")
+    assert out.report.checks["attribute_policy"].metadata["verdicts"]["clothing"]["policy"] == RECONSTRUCT
+    pres = await engine(FACES)[0].run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, preserve_attributes=["clothing"]))
+    assert "body_identity" not in [p["pass"] for p in pres.telemetry.passes]  # roupa identica pedida: corpo da foto
+
+
+def test_caption_loses_the_original_persons_hair_and_face():
+    from app.core.engines.replacement import scrub_identity
+
+    cap = ("The image shows a young woman with long, curly dark hair standing in front of a wooden door. "
+           "She is wearing a black strapless crop top and black shorts. Her makeup is natural.")
+    out = scrub_identity(cap)
+    assert "curly" not in out and "makeup" not in out and "black strapless crop top" in out and "wooden door" in out

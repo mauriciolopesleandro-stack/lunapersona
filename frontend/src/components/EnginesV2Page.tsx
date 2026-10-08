@@ -395,7 +395,11 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
                             >
                               {a.allowed.map((p) => (
                                 <option key={p} value={p}>
-                                  {POLICY_LABEL[p] ?? p}
+                                  {a.attribute === "clothing" && p === "RECONSTRUCT"
+                                    ? "Redesenhar parecida (corpo da persona)"
+                                    : a.attribute === "clothing" && p === "PRESERVE"
+                                      ? "Idêntica à foto (corpo da foto)"
+                                      : POLICY_LABEL[p] ?? p}
                                 </option>
                               ))}
                             </select>

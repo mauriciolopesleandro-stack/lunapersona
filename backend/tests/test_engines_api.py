@@ -177,7 +177,7 @@ def test_attribute_lists_travel_from_api_to_engine(engine_dir, tmp_path):
         assert pol["policy"]["tattoos"] == "REMOVE" and pol["policy"]["accessories"] == "PRESERVE"
         bad = c.post("/api/v2/replace", headers=H, data={**base, "preserve_attributes": '["tattoos"]', "remove_attributes": '["tattoos"]'})
         assert bad.status_code == 400
-        assert c.post("/api/v2/replace", headers=H, data={**base, "reconstruct_attributes": '["clothing"]'}).status_code == 400
+        assert c.post("/api/v2/replace", headers=H, data={**base, "reconstruct_attributes": '["background"]'}).status_code == 400
         r = c.post("/api/v2/replace", headers=H, data={**base, "preserve_attributes": '["pose", "black_top"]',
                                                        "remove_attributes": '["tattoos"]', "reconstruct_attributes": '["face", "skin"]'})
         assert r.status_code == 202

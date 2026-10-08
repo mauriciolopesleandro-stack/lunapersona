@@ -124,7 +124,11 @@ class ReplacementRequest:
         over: dict[str, Any] = dict(self.advanced)
         if self.mode in ("FAST", "QUALITY", "MAX_QUALITY"):  # a escada A..H do benchmark fica como esta
             over.setdefault("tattoo_cleanup", attrs.removes_skin_markings())
-            if attrs.is_("body", RECONSTRUCT) and self.mode != "FAST":
+            if attrs.is_("body", RECONSTRUCT) and attrs.is_("clothing", RECONSTRUCT):
+                # corpo da Persona (decisao do usuario): corpo+roupa redesenhados; o refino de faixa nao e preciso
+                over.setdefault("body_identity", True)
+                over.setdefault("body_refinement", False)
+            elif attrs.is_("body", RECONSTRUCT) and self.mode != "FAST":
                 over.setdefault("body_refinement", True)
         if not attrs.removes_skin_markings():  # tudo PRESERVE: nada de limpeza, em qualquer modo
             over["tattoo_cleanup"] = False
@@ -445,7 +449,26 @@ class ReplacementEngine:
         if shrink:
             ident = erode(ident, 4 * shrink)
         # PASSE 1: reconstrucao da identidade
-        prompt = cond(P["identity"].replace("{description}", scene.sheet.description()), "identity")
+        description = scrub_identity(scene.sheet.description())  # sem cabelo/rosto da pessoa ORIGINAL no texto
+        # CORPO DA PERSONA (antes do rosto): corpo e roupa redesenhados na pose da foto, com a LoRA e o corpo da
+        # Persona Sheet. Sem profundidade (ela prende o formato do corpo ORIGINAL). Maos e calcado ficam da foto.
+        body_region = None
+        if plan.body_identity and scene.masks is not None:
+            body_region = self._body_region(scene, ident, plan)
+            if body_region is not None and body_region.sum() > 200:
+                body_txt = ((req.persona_sheet or {}).get("identity_attributes") or {}).get("body", {}).get("value", "")
+                bprompt = cond(P.get("body_identity", P["identity"]).replace("{description}", description)
+                               .replace("{body}", body_text_en(body_txt)), "skin")
+                bctrl = ControlSpec(pose_strength=plan.pose_strength if plan.pose else 0.0, depth_strength=0.0,
+                                    end_percent=plan.control_end, structure=req.image)
+                pxb, locb, _ = await self._pass("body_identity", cur, body_region, bprompt, negative, plan.body_identity_denoise,
+                                                req.seed + 41, plan, tel, controls=bctrl, accessory=None)
+                cur, modified = {"pixels": pxb, "image": locb}, np.maximum(modified, body_region)
+                inter["body_identity"] = locb
+                tel.passes[-1]["params"]["body_text"] = body_text_en(body_txt)
+            else:
+                body_region = None
+        prompt = cond(P["identity"].replace("{description}", description), "identity")
         paste = None if scene.accessory is None else (scene.accessory, orig)
         # rosto/cabelo: SO a pose da foto (posicao da cabeca). A profundidade da foto trazia o formato do rosto e dos
         # cachos da pessoa ORIGINAL (2026-10-07: "o cabelo ficou diferente da Luna"). Profundidade fica no corpo.
@@ -577,6 +600,8 @@ class ReplacementEngine:
             # cabelo e a regiao da identidade ficam fora (no smoke test a pele pintou os fios do ombro)
             keep_out = np.maximum(dilate((scene.masks.hair > 0.5).astype(np.float32), 4), dilate((ident > 0.5).astype(np.float32), 3))
             zone = np.clip(zone * (1 - keep_out), 0, 1)
+            if body_region is not None:  # o corpo ja foi redesenhado sem marcas: so sobra o que ficou da foto (maos)
+                zone = np.clip(zone * (1 - (body_region > 0.5)), 0, 1)
             if zone.sum() > 30:
                 soft = np.clip(feather(zone, max(2, int(px_min * float(tt["feather_frac"])))), 0, 1) * (zone > 0.02)
                 known = ((scene.masks.skin > 0.5) & (scene.masks.person > 0.5) & ~(dilate_round(zone, 2) > 0.5)).astype(np.float32)
@@ -654,6 +679,32 @@ class ReplacementEngine:
         return final, final_loc, inter, {"modified_area": round(float((modified > 0.5).mean()), 4), "integration": integ,
                                          "modified_mask": modified}
 
+    def _body_region(self, scene: _Scene, ident: np.ndarray, plan: StagePlan) -> np.ndarray | None:
+        """Pessoa (corpo + roupa) sem a cabeca, sem as maos (pulsos do DWPose) e sem o calcado (abaixo dos
+        tornozelos), com uma folga em volta do contorno para a silhueta da Persona caber."""
+        from app.core.validation.geometry import point
+
+        m = scene.masks
+        h, w = m.person.shape
+        fx1, fy1, fx2, fy2 = scene.sheet.target_face.bbox
+        fh = max(1.0, fy2 - fy1)
+        grow = max(3, int(min(h, w) * plan.body_identity_grow_frac))
+        region = dilate((m.person > 0.5).astype(np.float32), grow)
+        region *= 1 - dilate((ident > 0.5).astype(np.float32), 2)
+        region *= 1 - (m.protect > 0.5)
+        keep = np.zeros((h, w), np.float32)
+        pose = scene.base_pose
+        if pose:
+            for name in ("rwri", "lwri"):
+                p = point(pose, name)
+                if p:
+                    keep = np.maximum(keep, ellipse(h, w, p[0], p[1], fh * 0.85, fh * 0.85))
+            ankles = [p for p in (point(pose, "rank"), point(pose, "lank")) if p]
+            if ankles:
+                keep[int(max(a[1] for a in ankles)):, :] = 1
+        region *= 1 - keep
+        return np.clip(region, 0, 1) if region.sum() > 0 else None
+
     def _markings_residual(self, scene: _Scene, img: np.ndarray) -> float | None:
         """Fracao da marca original (miolo da zona) ainda detectada como tinta/marca na imagem."""
         if scene.ink_zone is None or scene.masks is None or scene.body is None:
@@ -670,6 +721,13 @@ class ReplacementEngine:
         return round(float(((found > 0.5) & (core > 0.5)).sum()) / max(1.0, float((core > 0.5).sum())), 4)
 
     # --- medidas para a validacao --------------------------------------------------------------
+    def _clothing_color_delta(self, scene: _Scene, final: np.ndarray) -> float | None:
+        if scene.masks is None or not (scene.masks.clothing > 0.5).any():
+            return None
+        core = erode((scene.masks.clothing > 0.5).astype(np.float32), 6)
+        a, b = lab_mean(scene.original, core), lab_mean(final, core)
+        return None if a is None or b is None else round(float(np.linalg.norm(a - b)), 2)
+
     def _preserved_change(self, scene: _Scene, final: np.ndarray, attr: str, modified_mask: np.ndarray | None) -> float | None:
         """Atributo PRESERVE: fracao alterada dentro dele (miolo, sem a borda de transicao)."""
         if scene.masks is None:
@@ -708,6 +766,8 @@ class ReplacementEngine:
         body = an.main_body()
         pose = pose_distance(scene.base_pose, body.keypoints) if scene.base_pose and body else None
         protect = scene.masks.person if scene.masks is not None else np.clip(scene.identity, 0, 1)
+        if modified_mask is not None:  # corpo da Persona pode passar um pouco do contorno original (folga medida)
+            protect = np.maximum(protect, modified_mask)
         background = changed_fraction(orig, final, 1 - dilate((protect > 0.02).astype(np.float32), 3))
         tattoo_res = self._markings_residual(scene, final)
         hair_res = None
@@ -739,7 +799,10 @@ class ReplacementEngine:
                 "texture_ref": tex_ref, "tone_delta": tone_delta, "persona_instances": persona_n, "faces": len(an.faces),
                 "shoulder_ratio": shoulder, "composition_shift": 0.0, "person_found": face is not None or len(an.faces) > 0,
                 "modified_area": modified_area,
-                "clothing_change": self._preserved_change(scene, final, "clothing", modified_mask),
+                "clothing_change": self._preserved_change(scene, final, "clothing", modified_mask)
+                if not (attrs is not None and attrs.is_("clothing", RECONSTRUCT)) else None,
+                "clothing_color_delta": self._clothing_color_delta(scene, final)
+                if attrs is not None and attrs.is_("clothing", RECONSTRUCT) else None,
                 "hair_change": self._preserved_change(scene, final, "hair", modified_mask) if attrs_hair_preserved else None,
                 "accessory_change": self._preserved_change(scene, final, "accessories", modified_mask),
                 "seam_excess": None if modified_mask is None else seam_excess(orig, final, modified_mask),
@@ -842,6 +905,37 @@ def _specific(report: ValidationReportV2, failures: list[str]) -> list[str]:
         viol = report.checks["attribute_policy"].metadata.get("violations", [])
         out += [_ATTR_FAILURE[a] for a in viol if a in _ATTR_FAILURE and _ATTR_FAILURE[a] not in out]
     return out
+
+
+_IDENTITY_WORDS = ("hair", "curl", "blond", "brunette", "redhead", "face", "eyes", "eyebrow", "lips", "makeup", "freckle",
+                   "tattoo", "skin", "complexion", "ethnic", "asian", "latina", "caucasian", "african", "beard")
+
+
+def scrub_identity(text: str) -> str:
+    """Tira da descricao da cena o que e da pessoa ORIGINAL (cabelo, rosto, olhos, pele, tatuagem). A legenda do
+    Florence dizia "long curly dark hair" e isso ia para o prompt da Luna (2026-10-07: cabelo diferente da Luna)."""
+    import re
+
+    out = []
+    for sent in re.split(r"(?<=[.!?;])\s+", text or ""):
+        s2 = re.sub(r"\s*\b(with|has|having)\b[^.;]*?\b(hair|eyes|face|skin|makeup|lips|freckles|tattoos?)\b", "", sent,
+                    flags=re.I)
+        if any(w in s2.lower() for w in _IDENTITY_WORDS):
+            continue  # frase ainda sobre a pessoa original: sai inteira
+        s2 = s2.strip().rstrip(".").strip()
+        if s2:
+            out.append(s2)
+    return ". ".join(out)
+
+
+_BODY_PT_EN = (("curvilinea", "curvy"), ("ampulheta", "hourglass figure"), ("busto cheio", "full bust"),
+               ("cintura fina", "slim waist"), ("quadril arredondado", "rounded hips"), ("bracos tonificados", "toned arms"))
+
+
+def body_text_en(text: str) -> str:
+    """Corpo da Persona Sheet (pt) em termos que o SDXL entende."""
+    out = [en for pt, en in _BODY_PT_EN if pt in (text or "").lower()]
+    return ", ".join(out) if out else "curvy hourglass figure"
 
 
 def _png(pixels: np.ndarray) -> bytes:

@@ -23,6 +23,7 @@ class StagePlan:
     tattoo_cleanup: bool = True        # tatuagem/residuo da pessoa original
     photographic_integration: bool = True  # luz/cor/grao/borda medidos na propria foto
     hires: bool = False                # refino em alta resolucao do rosto
+    body_identity: bool = False        # CORPO da Persona: corpo+roupa redesenhados na pose da foto (LoRA, sem profundidade)
     # parametros
     identity_denoise: float = 0.9
     pose_strength: float = 0.8
@@ -31,6 +32,8 @@ class StagePlan:
     face_denoise: float = 0.4
     face_reference_strength: float = 0.5
     body_denoise: float = 0.35
+    body_identity_denoise: float = 0.75
+    body_identity_grow_frac: float = 0.015  # folga em volta do contorno para a silhueta da Persona caber
     # spec 45.5: a pele das marcas e RECONSTRUIDA pelo modelo (denoise alto + LoRA), nao pintada;
     # anatomia segura por profundidade da pele limpa + pose; depois refino local leve e integracao de textura
     # teste de 2026-10-07 na foto do usuario: 0,6 manteve o punho e os dedos e tirou a rosa da mao; 0,75 deixou

@@ -6,16 +6,79 @@
     "face": "lunavox, a woman, natural face, no makeup, natural skin texture with pores, natural dark brown hair, candid unretouched photo",
     "hires": "lunavox, a woman, detailed natural skin with pores, sharp natural eyes, fine hair strands, unretouched photo",
     "body": "natural skin, same lighting and shadows as the photo, natural anatomy, realistic unretouched photo",
-    "tattoo": "natural clean skin without any tattoos, realistic skin texture with pores and natural color variation, same anatomy, same lighting, shadows and white balance as the photo, candid unretouched smartphone photo"
+    "tattoo": "natural clean skin without any tattoos, realistic skin texture with pores and natural color variation, same anatomy, same lighting, shadows and white balance as the photo, candid unretouched smartphone photo",
+    "body_identity": "lunavox, a woman with {body}, {description}, same pose as the photo, natural skin, realistic body proportions, candid unretouched smartphone photo"
   },
-  "negative": ["heavy makeup", "contour makeup", "false eyelashes", "glossy lipstick", "orange skin", "tan skin", "plastic skin", "waxy skin", "smooth skin", "airbrushed skin", "beauty filter", "studio portrait", "cgi", "3d render", "illustration", "cartoon", "tattoo", "tattoo remnants", "tattoo ghosting", "new earrings", "large hoop earrings", "new jewelry", "extra fingers", "missing fingers", "deformed hands", "extra person", "second face", "duplicate person", "text", "letters", "changed background", "changed clothing", "blurry"],
-  "segmentation": {"face_grow_frac": 0.12, "max_accessory_face_ratio": 1.0, "min_clothes_coverage": 0.6, "require_clothes_for_tattoo": true},
-  "tattoo": {"reach_frac": 0.03, "edge_frac": 0.01, "ink_dy": 8, "ink_dcr": 2, "ink_dcr_light": 7, "ink_dy_florence": 2,
-             "ink_dcr_florence": 0.5, "close_frac": 0.01, "margin_frac": 0.006, "feather_frac": 0.008, "prefill_radius_frac": 0.012,
-             "tone_radius_frac": 0.012, "face_guard_frac": 0.1},
-  "acceptance": {"max_identity_drop": 0.02, "face_refine_min_gain": 0.02, "stage_seam_tolerance": 0.8,
-                 "stage_edges_tolerance": 1.5, "original_crop_margin": 0.6, "face_lock_min_gain": 0.0},
+  "negative": [
+    "heavy makeup",
+    "contour makeup",
+    "false eyelashes",
+    "glossy lipstick",
+    "orange skin",
+    "tan skin",
+    "plastic skin",
+    "waxy skin",
+    "smooth skin",
+    "airbrushed skin",
+    "beauty filter",
+    "studio portrait",
+    "cgi",
+    "3d render",
+    "illustration",
+    "cartoon",
+    "tattoo",
+    "tattoo remnants",
+    "tattoo ghosting",
+    "new earrings",
+    "large hoop earrings",
+    "new jewelry",
+    "extra fingers",
+    "missing fingers",
+    "deformed hands",
+    "extra person",
+    "second face",
+    "duplicate person",
+    "text",
+    "letters",
+    "changed background",
+    "changed clothing",
+    "blurry"
+  ],
+  "segmentation": {
+    "face_grow_frac": 0.12,
+    "max_accessory_face_ratio": 1.0,
+    "min_clothes_coverage": 0.6,
+    "require_clothes_for_tattoo": true
+  },
+  "tattoo": {
+    "reach_frac": 0.03,
+    "edge_frac": 0.01,
+    "ink_dy": 8,
+    "ink_dcr": 2,
+    "ink_dcr_light": 7,
+    "ink_dy_florence": 2,
+    "ink_dcr_florence": 0.5,
+    "close_frac": 0.01,
+    "margin_frac": 0.006,
+    "feather_frac": 0.008,
+    "prefill_radius_frac": 0.012,
+    "tone_radius_frac": 0.012,
+    "face_guard_frac": 0.1
+  },
+  "acceptance": {
+    "max_identity_drop": 0.02,
+    "face_refine_min_gain": 0.02,
+    "stage_seam_tolerance": 0.8,
+    "stage_edges_tolerance": 1.5,
+    "original_crop_margin": 0.6,
+    "face_lock_min_gain": 0.0
+  },
   "duplicate_similarity": 0.45,
-  "thresholds": {"identity": {"pass": 0.80, "reject": 0.60}},
+  "thresholds": {
+    "identity": {
+      "pass": 0.8,
+      "reject": 0.6
+    }
+  },
   "_identity_note": "2026-10-07: 0,73-0,81 ainda parecia outra mulher no olho; aprovacao so a partir de 0,80 (Face Lock da V1 chega a ~0,85)"
 }
