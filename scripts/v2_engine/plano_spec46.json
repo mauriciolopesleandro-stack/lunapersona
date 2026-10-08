@@ -1,0 +1,6 @@
+{"segundos_por_imagem": 480, "overhead_segundos": 300,
+ "_nota": "Spec 46: varanda (oculos escuros, argolas, pulseiras, tatuagens) e porta (mesma roupa + corpo da Luna). Politica padrao da Luna.",
+ "execucoes": [
+  {"id": "varanda_46", "foto": "fotos_v2/varanda.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0},
+  {"id": "porta_46", "foto": "fotos_v2/porta_cacheada.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0}
+ ]}

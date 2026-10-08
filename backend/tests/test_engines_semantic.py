@@ -84,16 +84,16 @@ async def test_hand_pose_lock_stage_uses_the_gesture_not_the_pixels():
     eng, ad, _ = engine(FACES)
     out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA))
     stages = [c.stage for c in ad.calls]
-    if "hand_pose_lock" in stages:  # o esqueleto falso tem pulsos: a etapa roda
-        hand = next(c for c in ad.calls if c.stage == "hand_pose_lock")
+    if "hand_gesture_lock" in stages:  # o esqueleto falso tem pulsos: a etapa roda
+        hand = next(c for c in ad.calls if c.stage == "hand_gesture_lock")
         assert hand.controls.pose_strength == 1.0 and hand.controls.depth_strength > 0 and hand.identity.use_lora
-        assert hand.denoise < 0.6 and stages.index("hand_pose_lock") < stages.index("identity")
+        assert hand.denoise < 0.6 and stages.index("hand_gesture_lock") < stages.index("identity")
     details = {d["detail"]: d for d in out.telemetry.attributes["source_details"]}
     assert details["hands"]["mode"] == "POSE_LOCK" and details["tattoos"]["policy"] == REMOVE
     assert details["clothing"]["policy"] == PRESERVE and "hands" in out.report.checks and "accessories" in out.report.checks
     eng2, ad2, _ = engine(FACES)
     await eng2.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, preserve_attributes=["hands"]))
-    assert "hand_pose_lock" not in [c.stage for c in ad2.calls]  # mao PRESERVE pedida = pixels da foto
+    assert "hand_gesture_lock" not in [c.stage for c in ad2.calls]  # mao PRESERVE pedida = pixels da foto
 
 
 async def test_hand_stage_really_runs_with_a_wrist_on_the_arm():
@@ -117,11 +117,23 @@ async def test_hand_stage_really_runs_with_a_wrist_on_the_arm():
     eng.reader = WristReader()
     out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA))
     stages = [c.stage for c in ad.calls]
-    assert "hand_pose_lock" in stages and stages.index("hand_pose_lock") < stages.index("identity")
-    hand = next(c for c in ad.calls if c.stage == "hand_pose_lock")
+    assert "hand_gesture_lock" in stages and stages.index("hand_gesture_lock") < stages.index("identity")
+    hand = next(c for c in ad.calls if c.stage == "hand_gesture_lock")
     assert hand.controls.pose_strength == 1.0 and hand.controls.depth_strength > 0 and hand.identity.use_lora
     assert hand.mask[200, 46] > 0.5 and hand.denoise < 0.6
-    hp = next(p for p in out.telemetry.passes if p["pass"] == "hand_pose_lock")
+    hp = next(p for p in out.telemetry.passes if p["pass"] == "hand_gesture_lock")
     assert "hand_points" in hp  # medida de dedos registrada (sem maos no detector falso: razao None, etapa aceita)
     body_call = next(c for c in ad.calls if c.stage == "body_identity")
     assert body_call.mask[200, 46] < 0.5  # o corpo nao refaz a mao: ela tem etapa propria
+
+
+def test_no_stage_name_contains_the_pose_preview_marker():
+    """2026-10-08: a etapa 'hand_pose_lock' gerava arquivo com '_pose_' e a sessao do ComfyUI descarta essas
+    imagens (sao previas de pose) -> 'terminou sem devolver imagem' na GPU real. Nome de etapa nunca pode ter isso."""
+    import re
+
+    from tests.conftest import BACKEND
+
+    src = (BACKEND / "app" / "core" / "engines" / "replacement.py").read_text(encoding="utf-8")
+    stages = re.findall(r'self\._pass\(\s*"([^"]+)"', src) + re.findall(r'try_stage\(\s*"([^"]+)"', src)
+    assert stages and not [s for s in stages if "_pose_" in f"repl_{s}_x"]

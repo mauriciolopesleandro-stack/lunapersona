@@ -731,10 +731,10 @@ class ReplacementEngine:
                                               "fingers, natural nails"), "skin")
         ctrl = ControlSpec(pose_strength=1.0, depth_strength=plan.hand_depth_strength, end_percent=0.9, structure=src_loc)
         soft = np.clip(feather(hmask, 4), 0, 1)
-        px, loc, _ = await self._pass("hand_pose_lock", {"pixels": cur["pixels"], "image": src_loc}, soft, prompt, negative,
+        px, loc, _ = await self._pass("hand_gesture_lock", {"pixels": cur["pixels"], "image": src_loc}, soft, prompt, negative,
                                       plan.hand_denoise, seed, plan, tel, controls=ctrl, identity=IdentitySpec(use_lora=True),
                                       accessory=paste)
-        inter["hand_pose_lock"] = loc
+        inter["hand_gesture_lock"] = loc
         before = await self._hand_counts(req.image, w, h, req.master)
         after = await self._hand_counts(loc, w, h, req.master)
         ratio = hand_ratio(before, after)
