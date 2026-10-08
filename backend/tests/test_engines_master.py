@@ -226,3 +226,76 @@ async def test_identity_grow_enlarges_the_reconstructed_region():
     await eng2.run(req(persona_sheet=LUNA, advanced={"max_retries": 0}))
     assert next(c for c in ad2.calls if c.stage == "identity").mask.sum() > first
     assert base.extra == {}
+
+
+# --- correcoes do A/B real (2026-10-08) ------------------------------------------------------------------
+
+async def test_unmeasurable_hand_is_kept_from_the_photo_and_said_so():
+    """Quarto: punho fechado sem dedos no DWPose virou mao 'fantasma'. Sem gesto medivel a etapa nao roda."""
+    from dataclasses import replace as dc_replace
+
+    from tests.fakes import body
+    from tests.test_persona_replacement import Reader
+
+    kps = [(0.0, 0.0, 0.0)] * 18
+    kps[3], kps[4] = (46.0, 150.0, 0.9), (46.0, 200.0, 0.9)
+    for i in (0, 1, 2, 5, 8, 11):
+        kps[i] = (80.0, 60.0 + 10 * i, 0.9)
+
+    class WristReader(Reader):
+        async def read(self, image, master):
+            return dc_replace(await super().read(image, master), target_body=body(kps))
+
+    eng, ad, _ = engine(FACES)
+    eng.reader = WristReader()
+    out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA))
+    assert "hand_gesture_lock" not in [c.stage for c in ad.calls]
+    hp = next(p for p in out.telemetry.passes if p["pass"] == "hand_gesture_lock")
+    assert hp["accepted"] is False and "nao medivel" in hp["reason"]
+
+
+def test_hand_mask_follows_the_forearm_not_the_face_height():
+    """Close-up: rosto enorme. A mao tem o tamanho do antebraco, nao 0,8 x altura do rosto."""
+    from types import SimpleNamespace
+
+    from app.core.engines.replacement import ReplacementEngine
+
+    kps = [(0.0, 0.0, 0.0)] * 18
+    kps[3], kps[4] = (300.0, 500.0, 0.9), (300.0, 600.0, 0.9)  # antebraco de 100 px
+    scene = SimpleNamespace(base_pose=kps, original=np.zeros((900, 700, 3), np.uint8), hands=[],
+                            sheet=SimpleNamespace(target_face=SimpleNamespace(bbox=(200.0, 50.0, 500.0, 450.0))))
+    m = ReplacementEngine._hand_mask(None, scene)
+    assert m is not None and m.sum() < np.pi * 130 ** 2  # rosto de 400 px: antes eram ~320 px de raio
+    assert ReplacementEngine._hand_mask(None, scene, measurable_only=True) is None
+    pts = [(290.0 + (i % 5) * 5, 610.0 + (i // 5) * 6, 0.9) for i in range(21)]
+    scene.hands = [pts]
+    mm = ReplacementEngine._hand_mask(None, scene, measurable_only=True)
+    assert mm is not None and mm[620, 300] > 0.5 and mm[450, 300] < 0.5
+
+
+def test_background_halo_is_restored_and_new_hair_kept():
+    from app.core.engines.replacement import restore_background
+
+    orig = np.full((40, 40, 3), 200, np.uint8)
+    person = np.zeros((40, 40), np.float32)
+    person[10:30, 10:30] = 1
+    px = orig.copy()
+    px[:, :10] = 212  # parede repintada um pouco mais clara (halo)
+    px[0:5, 30:40] = 40  # cabelo novo sobre a parede
+    region = np.ones((40, 40), np.float32)
+    out = restore_background(px, orig, person, region)
+    assert np.abs(out[20, 2].astype(int) - 200).max() <= 1 and out[2, 35, 0] == 40
+
+
+def test_texture_ratio_flags_a_smeared_patch():
+    from app.core.engines.replacement import zone_texture_ratio
+
+    rng = np.random.default_rng(1)
+    img = (150 + rng.normal(0, 12, (60, 60, 3))).clip(0, 255).astype(np.uint8)
+    zone = np.zeros((60, 60), np.float32)
+    zone[20:40, 20:40] = 1
+    known = np.ones((60, 60), np.float32)
+    assert zone_texture_ratio(img, zone, known) > 0.7
+    smeared = img.copy()
+    smeared[20:40, 20:40] = (230, 160, 90)  # mancha laranja lisa
+    assert zone_texture_ratio(smeared, zone, known) < 0.2

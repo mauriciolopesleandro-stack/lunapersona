@@ -115,6 +115,15 @@ async def test_hand_stage_really_runs_with_a_wrist_on_the_arm():
 
     eng, ad, _ = engine(FACES)
     eng.reader = WristReader()
+    hand21 = [(40.0 + (i % 5) * 3, 205.0 + (i // 5) * 4, 0.9) for i in range(21)]  # mao com os dedos visiveis
+
+    async def hands(*a):
+        return [hand21]
+
+    async def counts(*a):
+        return [21]
+
+    eng._source_hands, eng._hand_counts = hands, counts
     out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA))
     stages = [c.stage for c in ad.calls]
     assert "hand_gesture_lock" in stages and stages.index("hand_gesture_lock") < stages.index("identity")
@@ -122,7 +131,7 @@ async def test_hand_stage_really_runs_with_a_wrist_on_the_arm():
     assert hand.controls.pose_strength == 1.0 and hand.controls.depth_strength > 0 and hand.identity.use_lora
     assert hand.mask[200, 46] > 0.5 and hand.denoise < 0.6
     hp = next(p for p in out.telemetry.passes if p["pass"] == "hand_gesture_lock")
-    assert "hand_points" in hp  # medida de dedos registrada (sem maos no detector falso: razao None, etapa aceita)
+    assert "hand_points" in hp and hp["hand_points"]["razao"] == 1.0
     body_call = next(c for c in ad.calls if c.stage == "body_identity")
     assert body_call.mask[200, 46] < 0.5  # o corpo nao refaz a mao: ela tem etapa propria
 

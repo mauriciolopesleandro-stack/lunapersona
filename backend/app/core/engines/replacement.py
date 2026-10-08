@@ -255,6 +255,8 @@ class _Scene:
     box_policy: list[dict[str, Any]] = field(default_factory=list)  # cada caixa detectada -> classe e politica
     jewelry_body: np.ndarray | None = None  # joias REMOVE fora da cabeca (preenchimento cheio na reconstrucao)
     layers: list[AccessoryLayer] = field(default_factory=list)  # spec 46.2: um objeto = uma camada (mascara/ordem/politica)
+    # maos do DWPose na foto ORIGINAL (21 pontos cada): definem o tamanho da mascara da mao e se o gesto e medivel
+    hands: list = field(default_factory=list)
 
 
 JEWELRY_WORDS = ("earring", "bracelet", "necklace", "ring", "jewel", "brinco", "pulseira", "colar")
@@ -553,6 +555,14 @@ class ReplacementEngine:
                     bneg = ", ".join(dict.fromkeys([t for t in negative.split(", ") if t] + list(self.cfg.get("body_skin_negative", []))))
                 pxb, locb, _ = await self._pass("body_identity", cur, body_region, bprompt, bneg, plan.body_identity_denoise,
                                                 req.seed + 41, plan, tel, controls=bctrl, accessory=None)
+                pxb2 = restore_background(pxb, orig, scene.masks.person, body_region)
+                band = skin_band(scene.masks, body_region, ident)
+                if band is not None:  # espelho 2026-10-08: faixa de pele clara (a ORIGINAL) na barra do short
+                    known = ((body_region > 0.5) & (skin_pixels(pxb2) > 0.5)).astype(np.float32)
+                    pxb2 = tone_match(pxb2, pxb2, band, known, radius=max(3, int(min(h, w) * 0.01)), max_shift=45.0)
+                    body_region = np.maximum(body_region, band)
+                if pxb2 is not pxb:
+                    pxb, locb = pxb2, await self.store.save(pxb2, "body_identity_fix")
                 cur, modified = {"pixels": pxb, "image": locb}, np.maximum(modified, body_region)
                 inter["body_identity"] = locb
                 tel.passes[-1]["params"]["body_text"] = body_text_en(body_txt)
@@ -567,7 +577,13 @@ class ReplacementEngine:
         # MAO com POSE TRAVADA (spec 46.4): gesto/posicao/relacao com objetos da foto, anatomia e pele da Persona.
         # Entrada sem tatuagem (fechamento/push-pull) quando houver tinta na mao; estrutura da mao original.
         if plan.hand_pose_lock and scene.masks is not None:
-            hmask = self._hand_mask(scene)
+            # quarto 2026-10-08: punho fechado segurando o top (o DWPose nao ve os dedos) foi refeito sem medida e virou
+            # uma mao branca "fantasma"; a limpeza de tatuagem em cima dela fez uma mancha laranja. Mao sem gesto medivel
+            # fica da foto (a tinta sai na limpeza de pele, que preserva os dedos).
+            hmask = self._hand_mask(scene, measurable_only=True)
+            if hmask is None and self._hand_mask(scene) is not None:
+                tel.add_pass("hand_gesture_lock", 0.0, {}, False,
+                             "gesto da mao nao medivel na foto (DWPose sem dedos): mao mantida, tinta sai na limpeza de pele")
             if hmask is not None:
                 hmask = hmask * dilate((scene.masks.person > 0.5).astype(np.float32), 4)
                 hand = await self._hand_stage(req, scene, plan, tel, cur, hmask, negative, cond, paste, inter, w, h)
@@ -580,6 +596,10 @@ class ReplacementEngine:
                                  end_percent=structure.end_percent, structure=structure.structure)
         px, loc, _ = await self._pass("identity", cur, ident, prompt, negative, plan.identity_denoise, req.seed, plan, tel,
                                       controls=ident_ctrl, accessory=paste)
+        if scene.masks is not None:  # espelho 2026-10-08: halo claro na parede em volta do cabelo original
+            px2 = restore_background(px, orig, scene.masks.person, ident)
+            if px2 is not px:
+                px, loc = px2, await self.store.save(px2, "identity_bg")
         cur, modified = {"pixels": px, "image": loc}, np.maximum(modified, ident)
         inter["identity"] = loc
         an = await self._identity_of(loc, w, h, req.master)
@@ -754,6 +774,10 @@ class ReplacementEngine:
                 region = np.maximum(modified, ring)
                 residual = self._markings_residual(scene, px3)
                 vok, why = visual_ok(visual(cur["pixels"], region), visual(px3, region))
+                smear = zone_texture_ratio(px3, zone, known)
+                if vok and smear is not None and smear < float(self.cfg["acceptance"].get("min_zone_texture_ratio", 0.45)):
+                    vok, why = False, f"pele refeita borrada/lisa (textura {smear:.2f} da pele em volta)"
+                tel.passes[tidx]["texture_ratio"] = smear
                 why_txt = None if vok else f"reconstrucao criou defeito visivel ({why}): marcas mantidas"
                 tel.passes[tidx].update(accepted=vok, residual=residual, integration=info_t, reason=why_txt)
                 if tel.passes[-1]["pass"] == "skin_refine":
@@ -827,10 +851,25 @@ class ReplacementEngine:
         before = await self._hand_counts(req.image, w, h, req.master)
         after = await self._hand_counts(loc, w, h, req.master)
         ratio = hand_ratio(before, after)
-        ok = ratio is None or ratio >= float(self.cfg["acceptance"].get("hand_min_ratio", 0.85))
+        ok = ratio is not None and ratio >= float(self.cfg["acceptance"].get("hand_min_ratio", 0.85))
+        smear = zone_texture_ratio(px, hmask, scene.masks.skin * scene.masks.person if scene.masks is not None else None)
+        why = None
+        if ratio is None:
+            why = "dedos nao medidos na etapa: mantida a mao da foto (sem prova de gesto)"
+        elif not ok:
+            why = f"mao perdeu dedos no detector ({ratio}): mantida a anterior"
+        if ok and smear is not None and smear < float(self.cfg["acceptance"].get("min_zone_texture_ratio", 0.45)):
+            ok, why = False, f"mao borrada/lisa (textura {smear:.2f} da pele em volta): mantida a anterior"
         tel.passes[-1].update(accepted=ok, hand_points={"original": before, "novo": after, "razao": ratio},
-                              reason=None if ok else f"mao perdeu dedos no detector ({ratio}): mantida a anterior")
+                              texture_ratio=smear, reason=why)
         return {"pixels": px, "image": loc} if ok else None
+
+    async def _source_hands(self, locator: str, w: int, h: int, master) -> list:
+        try:
+            body = (await self.analyzer.analyze(ProviderImage("comfyui", locator, "", w, h), master)).main_body()
+        except Exception:  # noqa: BLE001 - sem maos medidas: mascara pelo antebraco
+            return []
+        return list(getattr(body, "hands", None) or []) if body is not None else []
 
     async def _faces_in(self, locator: str, w: int, h: int, master) -> int | None:
         cache = self.__dict__.setdefault("_faces_cache", {})
@@ -849,8 +888,11 @@ class ReplacementEngine:
             cache[locator] = [] if body is None else [sum(1 for p in hand if p[2] and p[2] > 0.3) for hand in (body.hands or [])]
         return cache[locator]
 
-    def _hand_mask(self, scene: _Scene) -> np.ndarray | None:
-        """Mao = elipse no pulso puxada na direcao cotovelo -> pulso (DWPose). Sem pulso detectado: None."""
+    def _hand_mask(self, scene: _Scene, measurable_only: bool = False) -> np.ndarray | None:
+        """Mao = a caixa dos pontos da mao do DWPose (com folga) quando a foto mostra os dedos; senao uma elipse
+        alem do pulso com o tamanho do ANTEBRACO. Quarto 2026-10-08: o raio era 0,8 x altura do rosto - num close-up
+        a "mao" cobria antebraco e colo inteiros (o corpo da Persona pulava o braco e a tatuagem ficava).
+        measurable_only: so maos com >= 10 pontos de dedo (gesto que da para travar e conferir)."""
         from app.core.validation.geometry import point
 
         if not scene.base_pose:
@@ -859,14 +901,29 @@ class ReplacementEngine:
         fx1, fy1, fx2, fy2 = scene.sheet.target_face.bbox
         fh = max(1.0, fy2 - fy1)
         out = np.zeros((h, w), np.float32)
+        hands = [[q for q in hd if q[2] and q[2] > 0.3] for hd in (scene.hands or [])]
         for wri, elb in (("rwri", "relb"), ("lwri", "lelb")):
             p, e = point(scene.base_pose, wri), point(scene.base_pose, elb)
             if not p:
                 continue
+            fore = float(np.hypot(p[0] - e[0], p[1] - e[1])) if e else fh * 0.9
+            near = [hd for hd in hands if hd and np.hypot(np.mean([q[0] for q in hd]) - p[0],
+                                                          np.mean([q[1] for q in hd]) - p[1]) < max(fore, fh * 0.5)]
+            pts = max(near, key=len) if near else []
+            if len(pts) >= 10:
+                xs, ys = [q[0] for q in pts] + [p[0]], [q[1] for q in pts] + [p[1]]
+                cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+                rx = (max(xs) - min(xs)) / 2 * 1.3 + fore * 0.08
+                ry = (max(ys) - min(ys)) / 2 * 1.3 + fore * 0.08
+                out = np.maximum(out, ellipse(h, w, cx, cy, rx, ry))
+                continue
+            if measurable_only:
+                continue
             dx, dy = (p[0] - e[0], p[1] - e[1]) if e else (0.0, 0.0)
             n = max(1.0, (dx * dx + dy * dy) ** 0.5)
-            cx, cy = p[0] + dx / n * fh * 0.45, p[1] + dy / n * fh * 0.45
-            out = np.maximum(out, ellipse(h, w, cx, cy, fh * 0.8, fh * 0.8))
+            r = float(np.clip(fore * 0.45, fh * 0.2, fh * 0.6))
+            cx, cy = p[0] + dx / n * r * 0.6, p[1] + dy / n * r * 0.6
+            out = np.maximum(out, ellipse(h, w, cx, cy, r, r))
         return out if out.any() else None
 
     def _body_region(self, scene: _Scene, ident: np.ndarray, plan: StagePlan, keep_clothing: bool = False,
@@ -1108,6 +1165,8 @@ class ReplacementEngine:
         # senao tatuagem/fundo/cabelo ficariam "desconhecidos" justamente onde falham
         mscene = scene if plan.segmentation else await self._scene(req.image, req.master, plan.with_(segmentation=True), attrs)
         h, w = scene.original.shape[:2]
+        src_hands = await self._source_hands(req.image, w, h, req.master)
+        scene.hands = mscene.hands = src_hands
         # spec Master 5: analise estruturada da foto (so dados; nenhum modelo gera nada aqui)
         analysis = analyze_scene(mscene, attrs, await self._faces_in(req.image, w, h, req.master))
         tel.attributes["scene_analysis"] = analysis.to_dict()
@@ -1193,6 +1252,45 @@ def source_details(attrs: AttributePolicy, scene: _Scene) -> list[dict[str, Any]
         det.append({"detail": f"camada:{layer.item or layer.label}", "policy": layer.policy, "kind": layer.kind,
                     "order": layer.order})
     return det
+
+
+def restore_background(px: np.ndarray, original: np.ndarray, person: np.ndarray, region: np.ndarray,
+                       tol: int = 28) -> np.ndarray:
+    """Onde a foto era FUNDO e o modelo so repintou o fundo (cor perto da original), volta o pixel original com borda
+    suave: o cabelo novo sobre a parede fica, o halo claro (parede levemente diferente) some."""
+    bg = (region > 0.02) & (dilate((person > 0.5).astype(np.float32), 1) < 0.5)
+    if not bg.any():
+        return px
+    close = np.abs(px.astype(np.int16) - original.astype(np.int16)).max(axis=2) <= tol
+    m = (bg & close).astype(np.float32)
+    if not m.any():
+        return px
+    a = np.clip(feather(m, 2), 0, 1)[..., None] * (m[..., None] > 0)
+    return np.clip(original.astype(np.float32) * a + px.astype(np.float32) * (1 - a) + 0.5, 0, 255).astype(np.uint8)
+
+
+def skin_band(masks, body_region: np.ndarray, ident: np.ndarray) -> np.ndarray | None:
+    """Pele da foto que sobrou ENTRE o corpo refeito e a roupa (folga de seguranca da roupa): recebe o tom do corpo
+    novo, senao vira uma faixa clara na barra da roupa."""
+    near = dilate((body_region > 0.5).astype(np.float32), 12) > 0.5
+    band = ((masks.skin > 0.5) & (masks.person > 0.5) & (masks.clothing < 0.5) & (body_region < 0.5) & (ident < 0.5)
+            & (masks.protect < 0.5) & near)
+    return band.astype(np.float32) if band.sum() > 30 else None
+
+
+def zone_texture_ratio(img: np.ndarray, zone: np.ndarray, known: np.ndarray | None) -> float | None:
+    """Microtextura dentro da zona refeita / na pele em volta (mesma imagem). Mancha borrada ou lisa fica bem abaixo
+    de 1 mesmo quando a cor casa - o check de emenda nao ve isso (quarto 2026-10-08: mao virou mancha laranja)."""
+    if known is None:
+        return None
+    z = (zone > 0.5)
+    ring = (dilate(z.astype(np.float32), 12) > 0.5) & ~(dilate(z.astype(np.float32), 3) > 0.5) & (known > 0.5)
+    inner = erode(z.astype(np.float32), 2) > 0.5  # a borda da zona (degrau de cor) nao e textura
+    tz = texture_energy(img, (inner if inner.sum() >= 50 else z).astype(np.float32))
+    tr = texture_energy(img, ring.astype(np.float32))
+    if tz is None or tr is None or tr <= 0:
+        return None
+    return round(float(tz / tr), 3)
 
 
 def hand_ratio(before: list[int], after: list[int]) -> float | None:
