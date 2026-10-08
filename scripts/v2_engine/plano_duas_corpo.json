@@ -1,0 +1,6 @@
+{"segundos_por_imagem": 420, "overhead_segundos": 300,
+ "_nota": "Porta e espelho com Face Lock da master + corpo da Luna (roupa redesenhada parecida), politica padrao da Luna.",
+ "execucoes": [
+  {"id": "porta_luna", "foto": "fotos_v2/porta_cacheada.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0},
+  {"id": "espelho_luna", "foto": "fotos_v2/espelho_celular.png", "modo": "QUALITY", "semente": 7801, "max_retries": 0}
+ ]}

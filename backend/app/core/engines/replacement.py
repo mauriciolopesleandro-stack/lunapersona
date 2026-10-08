@@ -309,6 +309,11 @@ class ReplacementEngine:
                 head_jewelry = np.maximum(head_jewelry, dilate(jb, 2))
         if head_jewelry.any():
             ident = np.clip(ident + head_jewelry * (1 - masks.clothing) * (1 - masks.protect), 0, 1)
+        if attrs.is_("hair", RECONSTRUCT) and masks.hair.any():
+            # porta (2026-10-07): o cacheado original passava do cabelo novo da Luna e sobrava atras do ombro
+            band = max(3, int(min(h, w) * float(sg.get("hair_band_frac", 0.02))))
+            ident = np.clip(ident + dilate((masks.hair > 0.5).astype(np.float32), band) * (1 - masks.clothing)
+                            * (1 - masks.protect), 0, 1)
         if attrs.is_("hair", PRESERVE):  # cabelo da foto fica: so rosto/pescoco recebem a identidade
             ident = np.clip(ident * (1 - dilate((masks.hair > 0.5).astype(np.float32), 2)) + masks.face_full * masks.person, 0, 1)
         accessory = None
@@ -492,6 +497,8 @@ class ReplacementEngine:
         # bloco = remendo em PELE reconstruida fora da identidade; rosto/cabelo/pescoco novos tem tracos e cachos novos
         new_features = dilate(np.maximum(scene.identity, scene.face_full if scene.masks is None else
                                          np.maximum(scene.face_full, scene.masks.hair)).astype(np.float32), 4) > 0.5
+        if body_region is not None:  # roupa/corpo redesenhados tem linhas novas (barra, cordao) - nao sao remendos
+            new_features = new_features | (body_region > 0.5)
 
         def visual(px, region):
             return seam_excess(orig, px, region, ignore=bg_edge), straight_edges(orig, px, region, ignore=new_features)
@@ -560,9 +567,12 @@ class ReplacementEngine:
             an2 = await self._identity_of(loc2, w, h, req.master)
             f2 = an2.persona_face()
             s2 = f2.similarity if f2 else None
-            gain = float(acc.get("face_lock_min_gain", 0.0))
-            ok = s2 is not None and (score is None or s2 >= score + gain)
-            reason = None if ok else f"Face Lock nao aumentou a identidade ({score} -> {s2}): mantido o anterior"
+            # o Face Lock (cabeca da MASTER) e a autoridade do rosto. Teste do espelho (2026-10-07): o ArcFace deu
+            # 0,74 ao Face Lock (era a Luna no olho) e 0,79 ao refino (outra mulher) - o numero escolheu errado.
+            # So sai se a identidade cair abaixo de um piso absoluto (deu errado de verdade) ou criar defeito visivel.
+            floor = float(acc.get("face_lock_floor", 0.65))
+            ok = s2 is not None and s2 >= floor
+            reason = None if ok else f"Face Lock abaixo do piso de identidade ({s2} < {floor}): mantido o anterior"
             if ok:
                 vok, why = visual_ok(visual(cur["pixels"], np.maximum(modified, region)), visual(px2, np.maximum(modified, region)))
                 if not vok:
@@ -677,7 +687,7 @@ class ReplacementEngine:
                 if mk is not None:
                     inter[nm] = await self.store.save(np.repeat((np.clip(mk, 0, 1) * 255).astype(np.uint8)[..., None], 3, 2), nm)
         return final, final_loc, inter, {"modified_area": round(float((modified > 0.5).mean()), 4), "integration": integ,
-                                         "modified_mask": modified}
+                                         "modified_mask": modified, "body_region": body_region}
 
     def _body_region(self, scene: _Scene, ident: np.ndarray, plan: StagePlan) -> np.ndarray | None:
         """Pessoa (corpo + roupa) sem a cabeca, sem as maos (pulsos do DWPose) e sem o calcado (abaixo dos
@@ -705,12 +715,14 @@ class ReplacementEngine:
         region *= 1 - keep
         return np.clip(region, 0, 1) if region.sum() > 0 else None
 
-    def _markings_residual(self, scene: _Scene, img: np.ndarray) -> float | None:
+    def _markings_residual(self, scene: _Scene, img: np.ndarray, skip: np.ndarray | None = None) -> float | None:
         """Fracao da marca original (miolo da zona) ainda detectada como tinta/marca na imagem."""
         if scene.ink_zone is None or scene.masks is None or scene.body is None:
             return None
         h, w = img.shape[:2]
         core = erode(scene.ink_zone, max(2, int(min(h, w) * 0.006)))
+        if skip is not None:  # corpo redesenhado: a marca da pessoa original nao existe mais ali (e o corpo mudou de lugar)
+            core = core * (1 - (dilate((skip > 0.5).astype(np.float32), 3) > 0.5))
         if not (core > 0.5).any():
             return 0.0
         tt = self.cfg["tattoo"]
@@ -746,7 +758,8 @@ class ReplacementEngine:
         return changed_fraction(scene.original, final, core, threshold=10)
 
     async def _measure(self, req: ReplacementRequest, scene: _Scene, final: np.ndarray, final_loc: str, modified_area: float,
-                       modified_mask: np.ndarray | None = None, attrs: AttributePolicy | None = None) -> dict[str, Any]:
+                       modified_mask: np.ndarray | None = None, attrs: AttributePolicy | None = None,
+                       body_region: np.ndarray | None = None) -> dict[str, Any]:
         attrs_hair_preserved = attrs is not None and attrs.is_("hair", PRESERVE)
         orig = scene.original
         h, w = orig.shape[:2]
@@ -769,7 +782,7 @@ class ReplacementEngine:
         if modified_mask is not None:  # corpo da Persona pode passar um pouco do contorno original (folga medida)
             protect = np.maximum(protect, modified_mask)
         background = changed_fraction(orig, final, 1 - dilate((protect > 0.02).astype(np.float32), 3))
-        tattoo_res = self._markings_residual(scene, final)
+        tattoo_res = self._markings_residual(scene, final, skip=body_region)
         hair_res = None
         if scene.masks is not None and scene.masks.hair.any():
             hm = scene.masks.hair > 0.5
@@ -808,8 +821,9 @@ class ReplacementEngine:
                 "seam_excess": None if modified_mask is None else seam_excess(orig, final, modified_mask),
                 "straight_edges": None if modified_mask is None else straight_edges(
                     orig, final, modified_mask,
-                    ignore=dilate(np.maximum(scene.identity, scene.face_full if scene.masks is None else
-                                             np.maximum(scene.face_full, scene.masks.hair)), 4))}
+                    ignore=np.maximum(dilate(np.maximum(scene.identity, scene.face_full if scene.masks is None else
+                                                        np.maximum(scene.face_full, scene.masks.hair)), 4),
+                                      np.zeros_like(scene.identity) if body_region is None else body_region))}
 
     # --- job completo --------------------------------------------------------------------------
     async def run(self, req: ReplacementRequest) -> ReplacementOutcome:
@@ -839,7 +853,8 @@ class ReplacementEngine:
             tel.denoise = {"identity": plan.identity_denoise, "face": plan.face_denoise, "tattoo": plan.tattoo_denoise,
                            "body": plan.body_denoise}
             final, loc, inter, info = await self._attempt(req, scene, plan, tel, attrs)
-            m = await self._measure(req, mscene, final, loc, info["modified_area"], info.get("modified_mask"), attrs)
+            m = await self._measure(req, mscene, final, loc, info["modified_area"], info.get("modified_mask"), attrs,
+                                    info.get("body_region"))
             report = validate_v2(m, self.cfg.get("thresholds") or None, attrs.policy)
             rec = {"attempt": attempt, "plan": plan.name, "status": report.status, "failures": report.failures(),
                    "warnings": report.warnings(), "image": loc, "identity": m["identity"]}
