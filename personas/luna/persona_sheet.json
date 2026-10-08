@@ -404,6 +404,12 @@
           "change": "replacement_policy: roupa RECONSTRUCT (corpo da Luna)",
           "identity_changed": false,
           "generation_changed": false
+        },
+        {
+          "date": "2026-10-08",
+          "change": "replacement_policy spec 46: roupa e joias PRESERVE, maos RECONSTRUCT (pose lock)",
+          "identity_changed": false,
+          "generation_changed": false
         }
       ]
     }
@@ -466,7 +472,7 @@
     "unwanted_marks": []
   },
   "replacement_policy": {
-    "_comment": "Padrao do Replacement para a Luna. Decisao do usuario 2026-10-07: o CORPO da Luna vale mais que a roupa identica - roupa redesenhada parecida (mesmo tipo/cor) na mesma pose. O pedido do usuario tem prioridade. Oculos escuros mantidos (regra do usuario).",
+    "_comment": "Padrao do Replacement para a Luna (spec 46, 2026-10-08): MESMA roupa, MESMOS acessorios (oculos, brincos, pulseiras), mesma pose/cenario/luz; rosto, cabelo, corpo, pele e maos (pose travada) da Luna; tatuagens/marcas da pessoa original saem. 'Roupa redesenhada parecida' continua disponivel por pedido. O pedido do usuario tem prioridade.",
     "preserve": [
       "pose",
       "composition",
@@ -476,7 +482,9 @@
       "lighting",
       "expression",
       "objects",
-      "accessories"
+      "accessories",
+      "clothing",
+      "jewelry"
     ],
     "reconstruct": [
       "face",
@@ -484,7 +492,7 @@
       "skin",
       "hair",
       "age",
-      "clothing"
+      "hands"
     ],
     "remove": [
       "tattoos",
@@ -492,7 +500,6 @@
       "piercings",
       "birthmarks",
       "makeup",
-      "jewelry",
       "original_person_marks"
     ]
   }

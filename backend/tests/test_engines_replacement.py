@@ -62,7 +62,8 @@ def req(mode="QUALITY", **kw):
 
 async def test_quality_pipeline_order_isolation_and_telemetry():
     eng, ad, store = engine({"foto": 0.1, "identity": 0.62, "face_refine": 0.78, "tattoo": 0.78, "integrated": 0.78, "final": 0.78})
-    out = await eng.run(req(keep_intermediates=True))
+    # corpo e maos da foto (fluxo classico de rosto + limpeza de pele); o corpo da Persona tem teste proprio
+    out = await eng.run(req(keep_intermediates=True, preserve_attributes=["body", "hands"]))
     stages = [c.stage for c in ad.calls]
     assert stages[0] == "identity" and "face_refine" in stages and "tattoo_cleanup" in stages
     ident = ad.calls[0]

@@ -94,7 +94,7 @@ async def test_stage_that_creates_blocks_is_rolled_back():
     faces = {"foto": 0.1, "identity": 0.8, "face_refine": 0.8, "tattoo": 0.8, "integrated": 0.8, "final": 0.8}
     eng, _, store = engine(faces)
     eng.adapter = BlockyTattoo(store)
-    out = await eng.run(req(advanced={"max_retries": 0}, keep_intermediates=True))
+    out = await eng.run(req(advanced={"max_retries": 0}, keep_intermediates=True, preserve_attributes=["body", "hands"]))
     tat = next(p for p in out.telemetry.passes if p["pass"] == "tattoo_cleanup")
     assert tat["accepted"] is False and "defeito visivel" in tat["reason"]
     # rosto/cabelo novos nao contam como bloco: na foto sintetica sobra pouca pele modificada (pode nao haver medida)
@@ -127,7 +127,7 @@ async def test_sunglasses_are_generated_over_and_pasted_back():
     store.images["foto.png"][48:55, 66:94] = (15, 15, 20)  # lentes escuras
     eng.segmenter = GlassesSeg()
     out = await eng.run(req(advanced={"max_retries": 0}))
-    ident = ad.calls[0]
+    ident = next(c for c in ad.calls if c.stage == "identity")
     assert ident.stage == "identity" and ident.mask[51, 80] > 0.5  # oculos DENTRO da mascara de geracao
     assert (out.pixels[50:53, 70:90] == (15, 15, 20)).all()  # e de volta por cima no final
 

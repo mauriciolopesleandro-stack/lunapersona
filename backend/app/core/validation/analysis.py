@@ -30,6 +30,8 @@ class DetectedBody:
     bbox: tuple[float, float, float, float]
     height_frac: float  # altura do corpo / altura da imagem
     visible_points: int
+    # spec 46.4/46.11: 21 pontos por mao (DWPose); vazio quando o detector nao devolve maos
+    hands: list[list[Keypoint]] = field(default_factory=list)
 
 
 @dataclass

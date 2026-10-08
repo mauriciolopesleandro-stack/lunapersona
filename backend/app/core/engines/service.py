@@ -189,7 +189,8 @@ class EnginesV2Service:
                           advanced: dict[str, Any] | None = None, keep_intermediates: bool | None = None,
                           processing: str = "local", preserve_attributes: list[str] | None = None,
                           remove_attributes: list[str] | None = None,
-                          reconstruct_attributes: list[str] | None = None) -> dict[str, Any]:
+                          reconstruct_attributes: list[str] | None = None,
+                          structured_policy: dict[str, Any] | None = None) -> dict[str, Any]:
         self._processing(processing)
         if mode not in POLICIES and mode not in LADDER:
             raise EngineRequestError(f"modo invalido: {mode}")
@@ -203,6 +204,7 @@ class EnginesV2Service:
                                  keep_intermediates=bool(keep), preserve_attributes=list(preserve_attributes or []),
                                  remove_attributes=list(remove_attributes or []),
                                  reconstruct_attributes=list(reconstruct_attributes or []),
+                                 structured_policy=structured_policy or None,
                                  persona_sheet=self.sheets.get(persona_id).data)
         try:
             req.validate()

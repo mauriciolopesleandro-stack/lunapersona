@@ -46,6 +46,28 @@ def parse_pose(text: str) -> list[list[tuple[float, float, float]]]:
     return people
 
 
+def parse_hands(text: str) -> list[list[list[tuple[float, float, float]]]]:
+    """Maos de cada pessoa do DWPose (esquerda e direita, 21 pontos cada) - spec 46.4/46.11."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = ast.literal_eval(text)
+    frame = data[0] if isinstance(data, list) else data
+    cw, ch = frame.get("canvas_width", 1), frame.get("canvas_height", 1)
+    out = []
+    for person in frame.get("people", []):
+        hands = []
+        for key in ("hand_left_keypoints_2d", "hand_right_keypoints_2d"):
+            pts = person.get(key) or []
+            triples = [tuple(float(v) for v in pts[i:i + 3]) for i in range(0, len(pts), 3)]
+            if triples and max(max(t[0], t[1]) for t in triples) <= 1.0:
+                triples = [(x * cw, y * ch, c) for x, y, c in triples]
+            if triples:
+                hands.append(triples)
+        out.append(hands)
+    return out
+
+
 def to_body(kp: list[tuple[float, float, float]], height: int) -> DetectedBody | None:
     pts = [(x, y) for x, y, c in kp[:18] if c and c > 0.3]
     visible = sum(1 for x in kp[:14] if x[2] > 0.3)
@@ -116,7 +138,13 @@ class ComfyImageAnalyzer:
         people = parse_pose(texts["dwp"]) if texts.get("dwp") else []
         if not height and people:
             height = 1216  # sem tamanho informado: so afeta a fracao de altura
-        bodies = [b for b in (to_body(kp, height or 1) for kp in people) if b]
+        hands = parse_hands(texts["dwp"]) if texts.get("dwp") else []
+        bodies = []
+        for i, kp in enumerate(people):
+            b = to_body(kp, height or 1)
+            if b:
+                b.hands = hands[i] if i < len(hands) else []
+                bodies.append(b)
         faces = [to_face(f) for f in json.loads(texts.get("lf", "[]"))]
         return ImageAnalysis(width, height, faces, bodies, round(time.monotonic() - start, 2))
 

@@ -34,6 +34,10 @@ class StagePlan:
     body_denoise: float = 0.35
     body_identity_denoise: float = 0.75
     body_identity_grow_frac: float = 0.015  # folga em volta do contorno para a silhueta da Persona caber
+    # spec 46.4 HAND_POSE_LOCK: mao reconstruida com o GESTO da foto (openpose com maos + estrutura da mao original)
+    hand_pose_lock: bool = False
+    hand_denoise: float = 0.45
+    hand_depth_strength: float = 0.6
     # spec 45.5: a pele das marcas e RECONSTRUIDA pelo modelo (denoise alto + LoRA), nao pintada;
     # anatomia segura por profundidade da pele limpa + pose; depois refino local leve e integracao de textura
     # teste de 2026-10-07 na foto do usuario: 0,6 manteve o punho e os dedos e tirou a rosa da mao; 0,75 deixou

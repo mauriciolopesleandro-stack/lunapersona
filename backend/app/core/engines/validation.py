@@ -35,6 +35,8 @@ DEFAULT_THRESHOLDS: dict[str, Any] = {
     "hair_change": {"pass": 0.02, "reject": 0.08},
     "accessory_change": {"pass": 0.02, "reject": 0.08},
     "clothing_color_delta": {"pass": 12.0, "reject": 25.0},  # roupa REDESENHADA: cor media Lab parecida
+    # spec 46.11: maos - fracao dos pontos de dedo que o DWPose ainda acha (final / original); proxy de anatomia
+    "hand_anatomy": {"pass": 0.85, "reject": 0.6},
 }
 
 
@@ -348,6 +350,9 @@ def check_attribute_policy(m: dict[str, Any], policy: dict[str, str], t: dict[st
                 c = _band(attr, m.get("clothing_color_delta"), t["clothing_color_delta"], False,
                           reason="roupa redesenhada: diferenca de cor media (Lab)")
                 put(attr, pol, c.status, c.score, t["clothing_color_delta"], "roupa redesenhada parecida (mesma cor)")
+            elif attr == "hands":
+                c = _band(attr, m.get("hand_anatomy"), t["hand_anatomy"], True, reason="pose da mao travada, anatomia refeita")
+                put(attr, pol, c.status, c.score, t["hand_anatomy"], "mao com o gesto da foto e anatomia da Persona")
             elif attr == "body":
                 put(attr, pol, UNKNOWN, reason="corpo da Persona: sem medida automatica de proporcao (DWPose nao mede cintura)")
             elif attr == "skin":
@@ -384,6 +389,11 @@ def validate_v2(m: dict[str, Any], thresholds: dict[str, Any] | None = None,
         "body": check_body(m.get("shoulder_ratio"), t["body_shoulder_ratio"]),
         "anatomy": check_anatomy(bool(m.get("person_found", True))),
         "seams": check_seams(m.get("seam_excess"), m.get("straight_edges"), t["seam_excess"], t["straight_edges"]),
+        # spec 46.11: maos e acessorios com veredito proprio (retry especifico: mao / acessorio)
+        "hands": _band("hands", m.get("hand_anatomy"), t["hand_anatomy"], True,
+                       reason="dedos que o detector ainda acha (final/original); sem maos na foto = sem medida"),
+        "accessories": _band("accessories", m.get("accessory_change"), t["accessory_change"], False,
+                             reason="fracao alterada nos acessorios mantidos (oculos, brincos, pulseiras...)"),
         "composition": _band("composition", m.get("composition_shift"), t["composition_shift"], False,
                              reason="deslocamento global da imagem (enquadramento)"),
     }

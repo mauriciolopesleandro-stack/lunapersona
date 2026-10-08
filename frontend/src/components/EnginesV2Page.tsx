@@ -81,6 +81,20 @@ const ATTR_LABEL: Record<string, string> = {
   makeup: "Maquiagem",
   jewelry: "Joias (brincos, colares)",
   original_person_marks: "Outras marcas da pessoa original",
+  hands: "Mãos",
+};
+
+// Textos por atributo quando o generico confunde (spec 46: "manter" nao e travar pixels).
+const OPTION_TEXT: Record<string, Record<string, string>> = {
+  clothing: {
+    PRESERVE: "Idêntica à foto (corpo da persona por baixo)",
+    RECONSTRUCT: "Redesenhar parecida (silhueta da persona)",
+  },
+  hands: {
+    RECONSTRUCT: "Da persona, mesmo gesto da foto",
+    PRESERVE: "Iguais à foto (pixels)",
+  },
+  body: { RECONSTRUCT: "Da persona", PRESERVE: "Da foto" },
 };
 
 const POLICY_LABEL: Record<string, string> = {
@@ -395,11 +409,7 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
                             >
                               {a.allowed.map((p) => (
                                 <option key={p} value={p}>
-                                  {a.attribute === "clothing" && p === "RECONSTRUCT"
-                                    ? "Redesenhar parecida (corpo da persona)"
-                                    : a.attribute === "clothing" && p === "PRESERVE"
-                                      ? "Idêntica à foto (corpo da foto)"
-                                      : POLICY_LABEL[p] ?? p}
+                                  {OPTION_TEXT[a.attribute]?.[p] ?? POLICY_LABEL[p] ?? p}
                                 </option>
                               ))}
                             </select>

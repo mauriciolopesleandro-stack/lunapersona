@@ -8,7 +8,8 @@ from typing import Any
 from app.core.engines.policies import StagePlan
 
 # ordem de prioridade: corrige o mais grave primeiro (um ajuste por tentativa)
-PRIORITY = ["background", "duplicate_persona", "original_residual", "identity", "tattoo", "pose", "body", "skin", "composition"]
+PRIORITY = ["background", "duplicate_persona", "original_residual", "identity", "tattoo", "hands", "accessories", "pose", "body",
+            "skin", "composition"]
 
 
 @dataclass
@@ -49,6 +50,14 @@ class RetryPolicyV2:
             p = plan.with_(tattoo_cleanup=True, tattoo_denoise=min(0.7, plan.tattoo_denoise + 0.05),
                            extra={**plan.extra, "tattoo_margin_boost": plan.extra.get("tattoo_margin_boost", 0) + 1})
             strategy = "marcas da pessoa original: mascara ampliada + reconstrucao de pele (RealVisXL + LoRA) + integracao de textura"
+        elif alvo == "hands":
+            p = plan.with_(hand_pose_lock=True, hand_denoise=max(0.3, plan.hand_denoise - 0.08),
+                           hand_depth_strength=min(0.9, plan.hand_depth_strength + 0.1),
+                           extra={**plan.extra, "hand_retry": plan.extra.get("hand_retry", 0) + 1})
+            strategy = "mao: refazer so a mao (outra semente, menos denoise, mais estrutura da mao original)"
+        elif alvo == "accessories":
+            p = plan.with_(extra={**plan.extra, "accessory_grow": plan.extra.get("accessory_grow", 0) + 1})
+            strategy = "acessorio: mascara do objeto um pouco maior ao recolocar por cima"
         elif alvo == "pose":
             p = plan.with_(pose=True, pose_strength=min(1.0, plan.pose_strength + 0.15), control_end=min(1.0, plan.control_end + 0.1))
             strategy = "ControlNet de pose mais forte"

@@ -103,12 +103,15 @@ async def replace(
     preserve_attributes: str = Form(""),
     remove_attributes: str = Form(""),
     reconstruct_attributes: str = Form(""),
+    policy: str = Form(""),
 ):
     _touch(request)
     opts, adv = _json(options, "options"), _json(advanced, "advanced")
     attrs = {"preserve_attributes": _list(preserve_attributes, "preserve_attributes"),
              "remove_attributes": _list(remove_attributes, "remove_attributes"),
-             "reconstruct_attributes": _list(reconstruct_attributes, "reconstruct_attributes")}
+             "reconstruct_attributes": _list(reconstruct_attributes, "reconstruct_attributes"),
+             # spec 46.10: politica estruturada ({"preserve": {"accessories": [...]}, "remove": {"markings": [...]}})
+             "structured_policy": _json(policy, "policy")}
     locator = await _image(request, file, image)
     try:
         return _svc(request).start_replacement(image=locator, persona_id=persona_id, mode=mode, model=model, seed=seed,

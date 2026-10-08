@@ -89,11 +89,17 @@ async def test_example_45_13_shoulder_tattoo_is_reconstructed_as_luna_skin():
                             preserve_attributes=["pose", "clothing", "background", "lighting", "composition", "black_top"],
                             remove_attributes=["tattoos"], reconstruct_attributes=["face", "body", "skin"]))
     stages = [c.stage for c in ad.calls]
-    assert "tattoo_cleanup" in stages and "body_refine" in stages  # body RECONSTRUCT
-    ident = ad.calls[0]
+    # corpo RECONSTRUCT (spec 46): a pele do braco e refeita como pele da Luna na etapa do corpo (a tatuagem sai ali)
+    body = next(c for c in ad.calls if c.stage == "body_identity")
+    assert "clean natural skin" in body.prompt and "tattoo outline" in body.negative and body.identity.use_lora
+    ident = next(c for c in ad.calls if c.stage == "identity")
     assert "no tattoos" in ident.negative or "tattoo" in ident.negative
     assert "keep the black top" in ident.prompt
-    tat = next(c for c in ad.calls if c.stage == "tattoo_cleanup")
+    # com o corpo da FOTO pedido, a tatuagem sai pela reconstrucao de pele propria
+    eng2, ad2, _ = engine(FACES)
+    await eng2.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, remove_attributes=["tattoos"],
+                       preserve_attributes=["body", "hands"]))
+    tat = next(c for c in ad2.calls if c.stage == "tattoo_cleanup")
     assert "clean natural skin" in tat.prompt and "tattoo outline" in tat.negative and tat.identity.use_lora
     t = out.telemetry.to_dict()["attributes"]
     assert t["policy"]["tattoos"] == REMOVE and t["source"]["tattoos"] == "request" and t["preserve_items"] == ["black top"]
@@ -133,24 +139,32 @@ async def test_sunglasses_preserved_but_earrings_removed_by_label():
     eng, ad, store = engine(FACES)
     store.images["foto.png"][48:55, 66:94] = (15, 15, 20)
     eng.segmenter = LabeledSeg()
-    out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA))
+    out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, remove_attributes=["earrings"]))
     boxes = {b["label"]: b["policy"] for b in out.telemetry.attributes["boxes"]}
-    assert boxes == {"sunglasses": PRESERVE, "earrings": REMOVE}
+    assert boxes == {"sunglasses": PRESERVE, "earrings": REMOVE}  # objeto a objeto: oculos ficam, brinco sai (pedido)
     assert (out.pixels[50:53, 70:90] == (15, 15, 20)).all()  # oculos da foto mantidos
 
 
 async def test_luna_body_redraws_body_with_pose_only_and_keeps_hands():
-    """Decisao do usuario (2026-10-07): corpo da Luna vale mais que roupa identica. Corpo+roupa redesenhados na
-    pose da foto, com a LoRA e o corpo da Persona Sheet, SEM profundidade; maos ficam da foto."""
+    """Corpo da Luna na pose da foto, com a LoRA e o corpo da Persona Sheet, SEM profundidade. Roupa redesenhada
+    so quando pedida (spec 46: o padrao e a MESMA roupa - so a pele visivel e refeita)."""
+    from tests.test_persona_transfer import wide_tattoo_photo
+
+    clothes = wide_tattoo_photo()[3]
+    eng0, ad0, _ = engine(FACES)
+    await eng0.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA))
+    same = next(c for c in ad0.calls if c.stage == "body_identity")
+    assert float((same.mask[clothes > 0.5] > 0.5).mean()) < 0.05  # mesma roupa: a roupa nao entra na mascara
     eng, ad, _ = engine(FACES)
-    out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA))
+    out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, reconstruct_attributes=["clothing"]))
     body = next(c for c in ad.calls if c.stage == "body_identity")
+    assert float((body.mask[clothes > 0.5] > 0.5).mean()) > 0.5  # roupa redesenhada pedida: entra
     assert body.controls.depth_strength == 0.0 and body.controls.pose_strength > 0 and body.identity.use_lora
     assert "hourglass" in body.prompt and "curly" not in body.prompt
     assert [c.stage for c in ad.calls].index("body_identity") < [c.stage for c in ad.calls].index("identity")
     assert out.report.checks["attribute_policy"].metadata["verdicts"]["clothing"]["policy"] == RECONSTRUCT
-    pres = await engine(FACES)[0].run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, preserve_attributes=["clothing"]))
-    assert "body_identity" not in [p["pass"] for p in pres.telemetry.passes]  # roupa identica pedida: corpo da foto
+    pres = await engine(FACES)[0].run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, preserve_attributes=["body"]))
+    assert "body_identity" not in [p["pass"] for p in pres.telemetry.passes]  # corpo da foto pedido
 
 
 def test_caption_loses_the_original_persons_hair_and_face():
