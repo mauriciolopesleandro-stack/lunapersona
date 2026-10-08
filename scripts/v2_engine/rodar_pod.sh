@@ -31,7 +31,7 @@ rm -rf personas_run && mkdir -p personas_run/luna
 cp /workspace/lunapersona/personas/luna/persona.json personas_run/luna/
 ln -s /workspace/lunapersona/personas/luna/references personas_run/luna/references
 cp personas/luna/persona_sheet.json personas_run/luna/
-( while true; do curl -s -o /dev/null localhost:8000/api/generate/jobs/keepalive; sleep 45; done ) &
+( while true; do curl -s -m 10 -o /dev/null localhost:8000/api/generate/jobs/keepalive; sleep 45; done ) &
 KA=$!
 ( while true; do echo "$(date +%s),$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)" >> vram_v2.log; sleep 2; done ) &
 NV=$!
@@ -39,11 +39,20 @@ wait "${PIDS[@]}"
 echo "download $(date +%s) $(stat -c '%n=%s' $TMP/* | tr '\n' ' ')" >> $LOG
 echo "sha $(cd $TMP && sha256sum * | cut -c1-16 | tr '\n' ' ')" >> $LOG
 while read -r dest; do ln -sfn "$TMP/$(basename "$dest")" "$COMFY/models/$dest"; done < linkados.txt
-until curl -s -o /dev/null 127.0.0.1:8188/queue; do sleep 2; done
-curl -s -X POST 127.0.0.1:8188/api/refresh > /dev/null 2>&1
+# 2026-10-08: pod NOVO leva ~6,5 min para o ComfyUI subir (Manager instala dependencias) e aceita a conexao antes
+# de responder - curl SEM tempo limite ficou pendurado 20 min (GPU parada). Agora: tempo limite em todo curl,
+# uma linha de log por minuto e desistencia com erro claro depois de 12 min.
+OK=0
+for i in $(seq 1 144); do
+  if curl -s -m 5 -o /dev/null 127.0.0.1:8188/queue; then OK=1; break; fi
+  [ $((i % 12)) -eq 0 ] && echo "esperando ComfyUI $((i * 5))s" >> $LOG
+  sleep 5
+done
+if [ $OK -ne 1 ]; then echo "ERRO ComfyUI nao respondeu em 12 min" >> $LOG; echo FIM >> $LOG; kill $KA $NV; exit 3; fi
+curl -s -m 30 -X POST 127.0.0.1:8188/api/refresh > /dev/null 2>&1
 # ComfyUI recem-ligado responde /queue antes de montar a lista de nos: espera /object_info (ate 5 min)
 for i in $(seq 1 60); do curl -s -m 30 -o /dev/null -w "%{http_code}" 127.0.0.1:8188/object_info | grep -q 200 && break; sleep 5; done
-echo "comfy $(date +%s) $(curl -s 127.0.0.1:8188/system_stats | head -c 400)" >> $LOG
+echo "comfy $(date +%s) $(curl -s -m 15 127.0.0.1:8188/system_stats | head -c 400)" >> $LOG
 set -a; [ -f /workspace/lunapersona/.env ] && . /workspace/lunapersona/.env; set +a
 V2_ROOT=/workspace/v2test V2_PRECO_HORA=$PRECO $PY sessao_v2.py --plano "$PLANO" --saida "$SAIDA" --autorizado "$AUT" >> $LOG 2>&1
 echo "EXIT $? $(date +%s)" >> $LOG
