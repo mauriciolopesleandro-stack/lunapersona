@@ -471,7 +471,9 @@ class ReplacementEngine:
         if shrink:
             ident = erode(ident, 4 * shrink)
         # PASSE 1: reconstrucao da identidade
-        description = scrub_identity(scene.sheet.description())  # sem cabelo/rosto da pessoa ORIGINAL no texto
+        # sem cabelo/rosto da pessoa ORIGINAL e sem o CENARIO no texto: o cenario ja esta nos pixels da foto. Varanda
+        # 2026-10-08: "Copacabana" no texto fez o modelo pintar um morro onde ficava o coque loiro da pessoa original
+        description = person_text(scrub_identity(scene.sheet.description()))
         # CORPO DA PERSONA (antes do rosto): corpo e roupa redesenhados na pose da foto, com a LoRA e o corpo da
         # Persona Sheet. Sem profundidade (ela prende o formato do corpo ORIGINAL). Maos e calcado ficam da foto.
         body_region = None
@@ -484,7 +486,10 @@ class ReplacementEngine:
                                .replace("{body}", body_text_en(body_txt)), "skin")
                 bctrl = ControlSpec(pose_strength=plan.pose_strength if plan.pose else 0.0, depth_strength=0.0,
                                     end_percent=plan.control_end, structure=req.image)
-                pxb, locb, _ = await self._pass("body_identity", cur, body_region, bprompt, negative, plan.body_identity_denoise,
+                bneg = negative
+                if not attrs.is_("clothing", RECONSTRUCT):  # porta 2026-10-08: alca, calcinha e marca inventadas na pele
+                    bneg = ", ".join(dict.fromkeys([t for t in negative.split(", ") if t] + list(self.cfg.get("body_skin_negative", []))))
+                pxb, locb, _ = await self._pass("body_identity", cur, body_region, bprompt, bneg, plan.body_identity_denoise,
                                                 req.seed + 41, plan, tel, controls=bctrl, accessory=None)
                 cur, modified = {"pixels": pxb, "image": locb}, np.maximum(modified, body_region)
                 inter["body_identity"] = locb
@@ -601,6 +606,8 @@ class ReplacementEngine:
             # 0,74 ao Face Lock (era a Luna no olho) e 0,79 ao refino (outra mulher) - o numero escolheu errado.
             # So sai se a identidade cair abaixo de um piso absoluto (deu errado de verdade) ou criar defeito visivel.
             floor = float(acc.get("face_lock_floor", 0.65))
+            if any(x.kind == "glasses_dark" and x.policy == PRESERVE for x in scene.layers):
+                floor = float(acc.get("face_lock_floor_eyes_covered", 0.5))  # olhos cobertos: o ArcFace nao ve os olhos
             ok = s2 is not None and s2 >= floor
             reason = None if ok else f"Face Lock abaixo do piso de identidade ({s2} < {floor}): mantido o anterior"
             if ok:
@@ -784,7 +791,7 @@ class ReplacementEngine:
         grow = max(3, int(min(h, w) * plan.body_identity_grow_frac))
         if keep_clothing:  # MESMA roupa: so a pele visivel da pessoa, com folga so para fora da pele
             skin_vis = (m.person > 0.5).astype(np.float32) * (1 - dilate((m.clothing > 0.5).astype(np.float32), 2))
-            region = dilate(skin_vis, grow) * (1 - dilate((m.clothing > 0.5).astype(np.float32), 2))
+            region = dilate(skin_vis, grow) * (1 - dilate((m.clothing > 0.5).astype(np.float32), max(3, grow // 2)))
         else:
             region = dilate((m.person > 0.5).astype(np.float32), grow)
         region *= 1 - dilate((ident > 0.5).astype(np.float32), 2)
@@ -1055,6 +1062,25 @@ def scrub_identity(text: str) -> str:
         if s2:
             out.append(s2)
     return ". ".join(out)
+
+
+_PERSON_WORDS = ("wear", "top", "shirt", "blouse", "dress", "jeans", "shorts", "pants", "skirt", "corset", "bikini", "swimsuit",
+                 "jacket", "coat", "sweater", "hoodie", "tank", "crop", "bra", "outfit", "clothes", "clothing", "stand",
+                 "sitting", "seated", "lean", "pose", "posing", "arm", "hand", "holding", "selfie", "mirror", "smil",
+                 "looking", "woman", "girl", "person", "photo", "shot", "portrait", "full body", "half body", "close-up")
+_PLACE_WORDS = ("background", "beach", "sea", "ocean", "mountain", "hill", "sky", "city", "street", "building", "balcony",
+                "view", "landscape", "room", "door", "wall", "window", "bed", "garden", "park", "copacabana", "rio")
+
+
+def person_text(text: str) -> str:
+    """So o que descreve a PESSOA (roupa, pose, enquadramento). Lugar/cenario fica de fora: ele ja esta na foto."""
+    keep = []
+    for sent in (text or "").replace(";", ".").split("."):
+        for part in sent.split(","):
+            low = part.lower()
+            if any(w in low for w in _PERSON_WORDS) and not any(w in low for w in _PLACE_WORDS):
+                keep.append(part.strip())
+    return ", ".join(dict.fromkeys(k for k in keep if k)) or "a woman"
 
 
 _BODY_PT_EN = (("curvilinea", "curvy"), ("ampulheta", "hourglass figure"), ("busto cheio", "full bust"),

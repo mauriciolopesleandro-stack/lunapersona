@@ -72,7 +72,8 @@
     "stage_edges_tolerance": 1.5,
     "original_crop_margin": 0.6,
     "face_lock_min_gain": 0.0,
-    "face_lock_floor": 0.65
+    "face_lock_floor": 0.65,
+    "face_lock_floor_eyes_covered": 0.5
   },
   "duplicate_similarity": 0.45,
   "thresholds": {
@@ -81,5 +82,20 @@
       "reject": 0.55
     }
   },
-  "_identity_note": "2026-10-07: o ArcFace (media das referencias) penaliza a maquiagem/luz da Luna - o Face Lock que era a Luna no olho deu 0,74 e um rosto generico deu 0,79. O Face Lock da master e a autoridade do rosto; o numero so barra o que deu errado de verdade (piso 0,65 no Face Lock, aprovacao 0,72)."
+  "_identity_note": "2026-10-07: o ArcFace (media das referencias) penaliza a maquiagem/luz da Luna - o Face Lock que era a Luna no olho deu 0,74 e um rosto generico deu 0,79. O Face Lock da master e a autoridade do rosto; o numero so barra o que deu errado de verdade (piso 0,65 no Face Lock, aprovacao 0,72).",
+  "body_skin_negative": [
+    "straps",
+    "bra strap",
+    "shoulder strap",
+    "underwear",
+    "panties",
+    "thong",
+    "lingerie",
+    "garter",
+    "lace on skin",
+    "extra clothing",
+    "waistband on skin",
+    "tattoo",
+    "body marks"
+  ]
 }

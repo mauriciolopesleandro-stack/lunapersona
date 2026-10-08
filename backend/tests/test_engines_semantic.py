@@ -137,3 +137,26 @@ def test_no_stage_name_contains_the_pose_preview_marker():
     src = (BACKEND / "app" / "core" / "engines" / "replacement.py").read_text(encoding="utf-8")
     stages = re.findall(r'self\._pass\(\s*"([^"]+)"', src) + re.findall(r'try_stage\(\s*"([^"]+)"', src)
     assert stages and not [s for s in stages if "_pose_" in f"repl_{s}_x"]
+
+
+def test_mirrored_sunglasses_at_half_skin_brightness_are_opaque():
+    """Varanda (2026-10-08): lente espelhada a ~51% do brilho da pele foi tratada como clara e o objeto mudou."""
+    img = face_photo((70, 78, 72))  # lente esverdeada/espelhada, ~50% da pele
+    layer = build_layer(img, (18, 28, 102, 52), "sunglasses", "glasses", PRESERVE)
+    assert layer.kind == "glasses_dark" and layer.mask[40, 50] > 0.5
+
+
+def test_scene_text_keeps_the_person_and_drops_the_place():
+    from app.core.engines.replacement import person_text, scrub_identity
+
+    cap = ("The image shows a woman with blonde hair wearing sunglasses and a white lace corset with blue jeans, standing on "
+           "a balcony with a view of Copacabana beach and the ocean. She is leaning on a glass railing with her arms spread.")
+    out = person_text(scrub_identity(cap))
+    assert "corset" in out and "railing" in out and "Copacabana" not in out and "ocean" not in out and "blonde" not in out
+
+
+async def test_body_skin_pass_forbids_inventing_clothes_on_skin():
+    eng, ad, _ = engine(FACES)
+    await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA))
+    body = next(c for c in ad.calls if c.stage == "body_identity")
+    assert "bra strap" in body.negative and "underwear" in body.negative

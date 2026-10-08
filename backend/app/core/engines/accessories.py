@@ -65,7 +65,13 @@ def build_layer(original: np.ndarray, bbox, label: str, item: str | None, policy
     lens_lum = float(np.median(lum[inner]))
     ring = (dilate(box, max(3, bh // 2)) > 0.5) & ~(box > 0.5) & (skin_pixels(original) > 0.5)
     skin_lum = float(np.median(lum[ring])) if ring.any() else 160.0
-    if lens_lum < 0.45 * skin_lum:  # lente escura: oculos de sol - volta tudo (lente + armacao)
+    x = original.astype(np.float32)
+    sat = (x.max(axis=2) - x.min(axis=2)) / np.maximum(x.max(axis=2), 1.0)
+    real_skin = float(((skin_pixels(original) > 0.5) & (sat > 0.22))[inner].mean())
+    # lente clara deixa a pele passar com ~85-100% do brilho; oculos de sol (escuro OU espelhado) fica bem abaixo.
+    # Varanda 2026-10-08: lente espelhada a 51% do brilho da pele foi tratada como clara (limite antigo 45%) e o
+    # rosto apareceu atras de uma lente que na foto era opaca - o objeto mudou.
+    if lens_lum < 0.6 * skin_lum or real_skin < 0.3:  # lente opaca: volta tudo (lente + armacao)
         layer.kind = "glasses_dark"
         layer.mask = np.clip(np.maximum(obj, erode(box, 1) * (lum < 0.6 * skin_lum)), 0, 1)
         return layer
