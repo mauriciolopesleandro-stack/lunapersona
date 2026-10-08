@@ -11,7 +11,7 @@ from tests.test_persona_replacement import Analyzer, Reader, Store
 from tests.test_persona_transfer import wide_tattoo_photo
 from tests.test_v2_multipass import MASTER
 
-CFG = ReplacementEngine.load_config(REPO / "config" / "replacement_engine_v2.json")
+CFG = ReplacementEngine.load_config(REPO / "config" / "persona_replacement_v2.json")
 
 
 class FakeAdapter(ModelAdapter):

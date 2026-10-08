@@ -1,6 +1,79 @@
 {
-  "_comment": "ReplacementEngine V2 (feature/persona-v2-hyperreal-replacement). Prompts, negativo, limites de mascara e limiares da validacao. Modelos/arquivos ficam em model_registry_v2.json; nada de checkpoint aqui.",
-  "version": "replacement-v2.0",
+  "_comment": "Persona Replacement V2 (spec 'Master Implementation'): configuracao DEDICADA do Replacement. Independente da geracao normal (persona_engine_v2.json e so LIDO para os modelos/InstantID; nada da geracao e alterado). Forcas sao pontos de partida submetidos a benchmark (benchmark_ranges), nao valores definitivos.",
+  "version": "replacement-v2.2",
+  "replacement_version": "v2",
+  "base_model": "RealVisXL_V5",
+  "lora": {
+    "name": "lunavox_sdxl_v1",
+    "trigger": "lunavox",
+    "_strength_note": "forca FIXA do registro de modelos (model_registry_v2.json); nunca ajustada por pedido nem por retry"
+  },
+  "identity": {
+    "provider": "instantid",
+    "strength": 0.5,
+    "_note": "InstantID = condicionamento de identidade no refino do rosto (nao copia de rosto). 0,5 foi o valor das rodadas reais de 2026-10-07/08; faixa a medir em benchmark_ranges"
+  },
+  "pose": {
+    "provider": "dwpose",
+    "strength": 0.8
+  },
+  "depth": {
+    "enabled": true,
+    "strength": 0.35,
+    "_note": "spec: 0,25-0,45. Antes era 0,5. So no corpo/pele (rosto e cabelo nunca usam a profundidade da foto). Valor NAO medido ainda: benchmark"
+  },
+  "skin_reconstruction": {
+    "enabled": true
+  },
+  "tattoo_removal": {
+    "enabled": true,
+    "hard_fail": true
+  },
+  "accessory_preservation": {
+    "enabled": true,
+    "hard_fail": true
+  },
+  "source_identity_residual": {
+    "enabled": true,
+    "hard_fail": true
+  },
+  "adaptive_retry": true,
+  "qwen": {
+    "enabled": false,
+    "experimental_only": true,
+    "_note": "Qwen-Image-Edit 2511 + BFS (Face Lock da V1) NAO e etapa padrao. Ligado so por pedido explicito (perfil 'current' do benchmark ou advanced.qwen_face_lock); quando roda fica registrado em experimental_stages"
+  },
+  "debug": {
+    "env": "REPLACEMENT_DEBUG",
+    "default": false
+  },
+  "quality_profiles": {
+    "fast": "FAST",
+    "balanced": "QUALITY",
+    "hyperrealistic": "MAX_QUALITY"
+  },
+  "benchmark_ranges": {
+    "pose_strength": [
+      0.75,
+      0.8,
+      0.9
+    ],
+    "depth_strength": [
+      0.25,
+      0.35,
+      0.45
+    ],
+    "identity_strength": [
+      0.35,
+      0.5,
+      0.6
+    ]
+  },
+  "hard_fail": {
+    "skin_texture_ratio_min": 0.35,
+    "accessory_presence_min": 0.5,
+    "source_pixel_residual_max": 0.35
+  },
   "prompts": {
     "identity": "lunavox, a woman, {description}, natural dark brown hair, natural skin with pores, no makeup, same lighting as the photo, candid unretouched smartphone photo",
     "face": "lunavox, a woman, natural face, no makeup, natural skin texture with pores, natural dark brown hair, candid unretouched photo",

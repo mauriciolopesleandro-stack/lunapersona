@@ -35,6 +35,12 @@ class JobTelemetry:
     workflow_versions: dict[str, str] = field(default_factory=dict)
     license: dict[str, Any] = field(default_factory=dict)
     attributes: dict[str, Any] = field(default_factory=dict)  # politica de atributos resolvida (spec 45) e a origem
+    # spec Master 33/35: nada de fallback silencioso; etapas experimentais (Qwen) sempre registradas
+    fallback_used: bool = False
+    fallback_model: str | None = None
+    experimental_stages: list[str] = field(default_factory=list)
+    gate: dict[str, Any] = field(default_factory=dict)  # QualityGate: decisao, hard fails, veredito por validador
+    run_log: dict[str, Any] = field(default_factory=dict)  # registro por execucao (replacement_id, masters, forcas, ...)
 
     def add_pass(self, name: str, seconds: float, params: dict[str, Any], accepted: bool, reason: str | None = None) -> None:
         self.passes.append({"pass": name, "seconds": seconds, "params": params, "accepted": accepted, "reason": reason})

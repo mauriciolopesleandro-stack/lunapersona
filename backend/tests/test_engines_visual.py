@@ -315,8 +315,10 @@ async def test_face_lock_with_the_master_is_kept_only_when_identity_rises():
                  "integrated": 0.8, "final": 0.8}
         eng, ad, store = engine(faces)
         eng.face_lock = FakeLock(store)
-        out = await eng.run(req(advanced={"max_retries": 0}, keep_intermediates=True))
+        # spec Master 9: o Qwen e experimental - so roda pedido explicitamente, e fica registrado
+        out = await eng.run(req(advanced={"max_retries": 0}, keep_intermediates=True, qwen_face_lock=True))
         fl = next(p for p in out.telemetry.passes if p["pass"] == "face_lock")
         assert fl["accepted"] is kept and eng.face_lock.calls[0][1] == "m"
+        assert out.telemetry.experimental_stages == ["qwen_face_lock"] and out.telemetry.run_log["experimental_stages"]
         orig = store.images["foto.png"]
         assert (out.pixels[0:4, 0:4] == orig[0:4, 0:4]).all()  # fora da identidade: a foto

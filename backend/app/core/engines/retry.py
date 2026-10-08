@@ -43,9 +43,12 @@ class RetryPolicyV2:
                            face_denoise=min(0.55, plan.face_denoise + 0.08), face_refine_if_identity_below=1.01)
             strategy = "identidade baixa: condicionamento de identidade (mais referencia facial + refino obrigatorio; LoRA fixa)"
         elif alvo == "original_residual":
+            # spec Master 24 SOURCE_RESIDUAL_FAIL: amplia a mascara da identidade original + reconstrucao localizada
             p = plan.with_(identity_denoise=min(1.0, plan.identity_denoise + 0.05), refinement=True,
-                           face_refine_if_identity_below=1.01)
-            strategy = "rosto original sobrando: reconstrucao do rosto (identidade mais forte + refino obrigatorio)"
+                           face_refine_if_identity_below=1.01,
+                           extra={**plan.extra, "identity_grow": plan.extra.get("identity_grow", 0) + 1})
+            strategy = ("residuo da pessoa original: mascara da identidade ampliada + reconstrucao localizada "
+                        "(denoise um pouco maior + refino obrigatorio)")
         elif alvo == "tattoo":
             p = plan.with_(tattoo_cleanup=True, tattoo_denoise=min(0.7, plan.tattoo_denoise + 0.05),
                            extra={**plan.extra, "tattoo_margin_boost": plan.extra.get("tattoo_margin_boost", 0) + 1})

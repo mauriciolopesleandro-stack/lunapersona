@@ -15,6 +15,7 @@ Nada aqui conhece ComfyUI, RunPod ou nome de checkpoint: tudo passa pelo ModelAd
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from dataclasses import dataclass, field, replace
@@ -38,7 +39,9 @@ from app.core.engines.attributes import ITEMS, from_structured
 from app.core.engines.markings import clean_skin_reference, complete_markings, keep_inked_regions
 from app.core.engines.skin import drop_small_blobs, structure_preserving_fill, tone_match
 from app.core.engines.integration import integrate
-from app.core.engines.policies import StagePlan, plan_for
+from app.core.engines.policies import POLICIES, StagePlan, plan_for
+from app.core.engines.quality_gate import QualityGate, measure_accessories, source_pixel_residual
+from app.core.engines.scene_analysis import analyze_scene, check_hierarchy, render_pose_map, semantic_masks
 from app.core.engines.retry import PRIORITY, RetryPolicyV2
 from app.core.engines.telemetry import JobTelemetry
 from app.core.engines.validation import (
@@ -69,7 +72,8 @@ from app.core.persona_replacement.transfer import (
 from app.core.validation.geometry import point
 from app.providers.base import ProviderImage, ReferenceImage
 
-ENGINE_VERSION = "replacement-v2.1-attributes"
+ENGINE_VERSION = "replacement-v2.2-gate"
+QUALITY_PROFILES = {"fast": "FAST", "balanced": "QUALITY", "hyperrealistic": "MAX_QUALITY"}
 
 
 class ReplacementRequestError(ValueError):
@@ -95,11 +99,23 @@ class ReplacementRequest:
     persona_sheet: dict[str, Any] | None = None  # dados da Persona Sheet (identity_exclusions, replacement_policy)
     # spec 46.10: a mesma politica em formato ESTRUTURADO (preserve: {accessories: [...]}, remove: {markings: [...]})
     structured_policy: dict[str, Any] | None = None
+    # spec Master 29: atalhos do pedido (None = nao pedido; vale a Persona Sheet/padrao) e forcas por pedido
+    replacement_version: str = "v2"
+    pose_required: bool | None = None
+    clothing_required: bool | None = None
+    accessories_required: bool | None = None
+    remove_tattoos: bool | None = None
+    quality_profile: str | None = None  # fast | balanced | hyperrealistic (substitui `mode` quando vem)
+    identity_strength: float | None = None  # InstantID
+    pose_strength: float | None = None
+    depth_strength: float | None = None
+    debug: bool = False  # REPLACEMENT_DEBUG: mascaras, mapa de pose, cada passe e o relatorio
+    qwen_face_lock: bool | None = None  # Qwen BFS: so experimental, so por pedido explicito (ou config qwen.enabled)
 
-    OPTIONS = ("preserve_pose", "preserve_clothes", "preserve_background", "preserve_lighting", "remove_original_tattoos",
+    OPTIONS =("preserve_pose", "preserve_clothes", "preserve_background", "preserve_lighting", "remove_original_tattoos",
                "identity_lock", "body_lock", "skin_realism", "photographic_integration")
-    ADVANCED = ("steps", "cfg", "identity_denoise", "face_denoise", "face_reference_strength", "pose_strength",
-                "depth_strength", "tattoo_denoise", "body_denoise", "max_retries")
+    ADVANCED = ("steps", "cfg", "identity_denoise", "face_denoise", "face_reference_strength", "identity_strength",
+                "pose_strength", "depth_strength", "tattoo_denoise", "body_denoise", "max_retries")
 
     def validate(self) -> None:
         bad = [k for k in self.options if k not in self.OPTIONS]
@@ -110,11 +126,37 @@ class ReplacementRequest:
             raise ReplacementRequestError(f"parametros avancados desconhecidos: {bad}")
         if not self.image or not self.persona_id:
             raise ReplacementRequestError("imagem e persona sao obrigatorias")
+        if self.replacement_version != "v2":
+            raise ReplacementRequestError(f"esta engine e a V2; replacement_version '{self.replacement_version}' roda em "
+                                          "outro orquestrador (V1: core/persona_replacement)")
+        if self.quality_profile is not None and self.quality_profile not in QUALITY_PROFILES:
+            raise ReplacementRequestError(f"quality_profile invalido: {self.quality_profile} (use {sorted(QUALITY_PROFILES)})")
+        for nome, val, top in (("identity_strength", self.identity_strength, 0.8), ("pose_strength", self.pose_strength, 1.0),
+                               ("depth_strength", self.depth_strength, 1.0)):
+            if val is not None and not 0.0 <= float(val) <= top:
+                raise ReplacementRequestError(f"{nome} fora de 0..{top}")
+
+    @property
+    def effective_mode(self) -> str:
+        return QUALITY_PROFILES[self.quality_profile] if self.quality_profile else self.mode
 
     def attributes(self) -> AttributePolicy:
         """Politica de atributos resolvida: padrao < Persona Sheet < pedido. As opcoes antigas viram atributos."""
         preserve, remove = list(self.preserve_attributes), list(self.remove_attributes)
         reconstruct = list(self.reconstruct_attributes)
+        # atalhos (spec Master 29): so o que foi pedido de verdade entra (None = fica a ficha/padrao)
+        for flag, attrs_ in ((self.pose_required, ["pose"]), (self.clothing_required, ["clothing"]),
+                             (self.accessories_required, ["accessories", "jewelry"])):
+            if flag is True:
+                preserve += [a for a in attrs_ if a not in preserve]
+        if self.clothing_required is False and "clothing" not in preserve:
+            reconstruct.append("clothing")
+        if self.accessories_required is False:
+            remove += [a for a in ("accessories", "jewelry") if a not in preserve]
+        if self.remove_tattoos is True and "tattoos" not in remove:
+            remove.append("tattoos")
+        elif self.remove_tattoos is False and "tattoos" not in preserve:
+            preserve.append("tattoos")
         if self.structured_policy:
             try:
                 sp, sr, sc = from_structured(self.structured_policy)
@@ -133,7 +175,14 @@ class ReplacementRequest:
         o = {k: bool(v) for k, v in self.options.items()}
         attrs = attrs or self.attributes()
         over: dict[str, Any] = dict(self.advanced)
-        if self.mode in ("FAST", "QUALITY", "MAX_QUALITY"):  # a escada A..H do benchmark fica como esta
+        if "identity_strength" in over:  # nome da spec para a forca do InstantID
+            over["face_reference_strength"] = over.pop("identity_strength")
+        for key, val in (("face_reference_strength", self.identity_strength), ("pose_strength", self.pose_strength),
+                         ("depth_strength", self.depth_strength)):
+            if val is not None:
+                over[key] = float(val)
+        mode = self.effective_mode
+        if mode in ("FAST", "QUALITY", "MAX_QUALITY"):  # a escada A..H do benchmark fica como esta
             over.setdefault("tattoo_cleanup", attrs.removes_skin_markings())
             if attrs.is_("body", RECONSTRUCT):
                 # corpo da Persona: roupa RECONSTRUCT = corpo+roupa redesenhados; roupa PRESERVE (spec 46) = so a pele
@@ -156,7 +205,14 @@ class ReplacementRequest:
             over["body_refinement"] = o["body_lock"]
         if o.get("preserve_background") is False or o.get("preserve_clothes") is False:
             raise ReplacementRequestError("o Replacement sempre preserva fundo e roupa (nao ha modo que os regenere)")
-        return plan_for(self.mode, over)
+        return plan_for(mode, over)
+
+    def explicit(self, key: str) -> bool:
+        """O pedido fixou este parametro do plano? (entao a config dedicada nao o sobrescreve)"""
+        alias = {"face_reference_strength": ("identity_strength",)}
+        own = {"face_reference_strength": self.identity_strength, "pose_strength": self.pose_strength,
+               "depth_strength": self.depth_strength}
+        return key in self.advanced or any(a in self.advanced for a in alias.get(key, ())) or own.get(key) is not None
 
 
 @dataclass
@@ -170,11 +226,12 @@ class ReplacementOutcome:
     intermediates: dict[str, str] = field(default_factory=dict)
     attempts: list[dict[str, Any]] = field(default_factory=list)
     mask_areas: dict[str, float] = field(default_factory=dict)
+    debug: dict[str, Any] = field(default_factory=dict)  # REPLACEMENT_DEBUG: analise, relatorio, registro
 
     def to_dict(self) -> dict[str, Any]:
         return {"image": self.image, "status": self.status, "validation": self.report.to_dict(), "measures": self.measures,
                 "telemetry": self.telemetry.to_dict(), "intermediates": self.intermediates, "attempts": self.attempts,
-                "mask_areas": self.mask_areas}
+                "mask_areas": self.mask_areas, "gate": self.telemetry.gate, "debug": self.debug}
 
 
 @dataclass
@@ -470,6 +527,11 @@ class ReplacementEngine:
         shrink = int(plan.extra.get("mask_shrink", 0))
         if shrink:
             ident = erode(ident, 4 * shrink)
+        grow_n = int(plan.extra.get("identity_grow", 0))
+        if grow_n and scene.masks is not None:  # retry de residuo da pessoa original: mascara da identidade maior
+            g = max(3, int(min(h, w) * 0.012)) * grow_n
+            ident = np.clip(dilate(ident, g) * (scene.masks.person > 0.5) * (1 - (scene.masks.clothing > 0.5))
+                            * (1 - (scene.masks.protect > 0.5)) + ident, 0, 1)
         # PASSE 1: reconstrucao da identidade
         # sem cabelo/rosto da pessoa ORIGINAL e sem o CENARIO no texto: o cenario ja esta nos pixels da foto. Varanda
         # 2026-10-08: "Copacabana" no texto fez o modelo pintar um morro onde ficava o coque loiro da pessoa original
@@ -586,7 +648,12 @@ class ReplacementEngine:
         # FACE LOCK com a master (2026-10-07: tres trocas com 0,73-0,81 pareciam tres mulheres diferentes - o
         # rosto herdava o formato do rosto ORIGINAL pela profundidade e a referencia so entrava num refino leve).
         # A cabeca da master entra pela troca de cabeca da geracao V1; so a regiao da identidade volta para a foto.
-        if self.face_lock is not None and plan.face_reference and plan.extra.get("face_lock", True):
+        # Spec Master 9: o Qwen NAO e etapa padrao - so roda pedido explicitamente (experimental) e fica registrado.
+        if plan.extra.get("qwen_face_lock", False) and plan.face_reference:
+            if self.face_lock is None:
+                raise ReplacementRequestError("Face Lock Qwen pedido, mas a porta do Qwen nao foi montada (sem troca silenciosa)")
+            if "qwen_face_lock" not in tel.experimental_stages:
+                tel.experimental_stages.append("qwen_face_lock")
             out = await self.face_lock.lock_face(ProviderImage("comfyui", cur["image"], "", w, h), req.master, req.seed + 211)
             px2 = await self.store.load(out.image.locator)
             if px2.shape[:2] != (h, w):  # o Qwen trabalha em ~1 MP: volta ao tamanho da foto
@@ -719,9 +786,24 @@ class ReplacementEngine:
             masks_out = [("mask_identity", ident), ("mask_modified", modified), ("mask_face", scene.face_full),
                          ("mask_ink", scene.ink_zone), ("mask_hair", None if scene.masks is None else scene.masks.hair)]
             masks_out += [(k, v) for k, v in scene.source_masks.items()]
+            if req.debug:  # spec Master 36: todas as mascaras com nome + mapa de pose + apelidos de cada passe
+                masks_out += list(semantic_masks(scene, self._hand_mask(scene) if scene.masks is not None else None).items())
+                body = scene.sheet.target_body
+                inter["pose_map"] = await self.store.save(render_pose_map(h, w, scene.base_pose,
+                                                                          getattr(body, "hands", None) if body else None),
+                                                          "pose_map")
+                inter["original"] = req.image
+                for alias, names in (("initial_generation", ("body_identity", "identity")),
+                                     ("face_pass", ("face_lock", "face_refine", "identity")), ("skin_pass", ("body_identity",)),
+                                     ("tattoo_pass", ("tattoo_cleanup",)), ("integration_pass", ("integrated",))):
+                    hit = next((inter[n] for n in names if n in inter), None)
+                    if hit is not None:
+                        inter[alias] = hit
             for nm, mk in masks_out:
                 if mk is not None:
                     inter[nm] = await self.store.save(np.repeat((np.clip(mk, 0, 1) * 255).astype(np.uint8)[..., None], 3, 2), nm)
+            if req.debug:
+                inter["final"] = final_loc
         return final, final_loc, inter, {"modified_area": round(float((modified > 0.5).mean()), 4), "integration": integ,
                                          "modified_mask": modified, "body_region": body_region}
 
@@ -749,6 +831,15 @@ class ReplacementEngine:
         tel.passes[-1].update(accepted=ok, hand_points={"original": before, "novo": after, "razao": ratio},
                               reason=None if ok else f"mao perdeu dedos no detector ({ratio}): mantida a anterior")
         return {"pixels": px, "image": loc} if ok else None
+
+    async def _faces_in(self, locator: str, w: int, h: int, master) -> int | None:
+        cache = self.__dict__.setdefault("_faces_cache", {})
+        if locator not in cache:
+            try:
+                cache[locator] = len((await self._identity_of(locator, w, h, master)).faces)
+            except Exception:  # noqa: BLE001 - contagem e medida auxiliar: sem ela o check fica UNKNOWN
+                cache[locator] = None
+        return cache[locator]
 
     async def _hand_counts(self, locator: str, w: int, h: int, master) -> list[int]:
         cache = self.__dict__.setdefault("_hand_cache", {})
@@ -900,7 +991,29 @@ class ReplacementEngine:
                 return None if not (a and b) else float(np.hypot(a[0] - b[0], a[1] - b[1]))
             wo, wf = width(scene.base_pose), width(body.keypoints)
             shoulder = round(wf / wo, 3) if wo and wf else None
-        return {"identity": face.similarity if face else None, "original_sim": fo.similarity if fo else None, "pose": pose,
+        # spec Master 14/19: acessorio por objeto e pixels da pessoa original nas regioes que a politica reconstroi
+        kept = np.zeros((h, w), np.float32) if scene.accessory is None else dilate((scene.accessory > 0.5).astype(np.float32), 2)
+        face_reg = (scene.face_full > 0.5) & ~(kept > 0.5)
+        if scene.masks is not None:
+            face_reg &= scene.masks.person > 0.5
+        body_px = None
+        if scene.masks is not None and attrs is not None and attrs.is_("body", RECONSTRUCT):
+            src_body = scene.source_masks.get("source_body_mask")
+            if src_body is not None:
+                reg = (src_body > 0.5) & (scene.masks.skin > 0.5) & ~(kept > 0.5)
+                hm = self._hand_mask(scene)
+                if hm is not None and attrs.is_("hands", PRESERVE):
+                    reg &= ~(hm > 0.5)
+                if scene.base_pose:  # calcado/pes ficam da foto
+                    ankles = [p for p in (point(scene.base_pose, "rank"), point(scene.base_pose, "lank")) if p]
+                    if ankles:
+                        reg[int(max(a[1] for a in ankles)):, :] = False
+                body_px = source_pixel_residual(orig, final, reg.astype(np.float32))
+        faces_orig = await self._faces_in(req.image, w, h, req.master)
+        extra = {"accessory_objects": measure_accessories(orig, final, scene.layers),
+                 "source_face_pixels": source_pixel_residual(orig, final, face_reg.astype(np.float32)),
+                 "source_body_pixels": body_px, "faces_original": faces_orig}
+        return {**extra, "identity": face.similarity if face else None, "original_sim": fo.similarity if fo else None, "pose": pose,
                 "background": background, "tattoo_residual": tattoo_res, "hair_residual": hair_res, "texture_final": tex_final,
                 "texture_ref": tex_ref, "tone_delta": tone_delta, "persona_instances": persona_n, "faces": len(an.faces),
                 "shoulder_ratio": shoulder, "composition_shift": 0.0, "person_found": face is not None or len(an.faces) > 0,
@@ -921,10 +1034,66 @@ class ReplacementEngine:
                                       np.zeros_like(scene.identity) if body_region is None else body_region))}
 
     # --- job completo --------------------------------------------------------------------------
+    def _configured(self, plan: StagePlan, req: ReplacementRequest) -> StagePlan:
+        """Config dedicada (persona_replacement_v2.json) -> plano. Vale para FAST/QUALITY/MAX_QUALITY; a escada A..H do
+        benchmark fica como esta. O que o pedido fixou explicitamente (forcas, advanced) nao e sobrescrito."""
+        c = self.cfg
+        extra = dict(plan.extra)
+        qwen = c.get("qwen") or {}
+        extra["qwen_face_lock"] = bool(req.qwen_face_lock) if req.qwen_face_lock is not None else bool(qwen.get("enabled", False))
+        kw: dict[str, Any] = {"extra": extra}
+        if plan.name in POLICIES:
+            for key, val in (("pose_strength", (c.get("pose") or {}).get("strength")),
+                             ("depth_strength", (c.get("depth") or {}).get("strength")),
+                             ("face_reference_strength", (c.get("identity") or {}).get("strength"))):
+                if val is not None and not req.explicit(key):
+                    kw[key] = float(val)
+            if (c.get("depth") or {}).get("enabled") is False:
+                kw["depth"] = False
+            if (c.get("tattoo_removal") or {}).get("enabled") is False:
+                kw["tattoo_cleanup"] = False
+            if c.get("adaptive_retry") is False and "max_retries" not in req.advanced:
+                kw["max_retries"] = 0
+        return plan.with_(**kw)
+
+    def _run_log(self, req: ReplacementRequest, tel: JobTelemetry, plan: StagePlan, scene: _Scene, report: ValidationReportV2,
+                 m: dict[str, Any], retry_reasons: list[str]) -> dict[str, Any]:
+        sheet = req.persona_sheet or {}
+        masters = {r.get("id") or r.get("reference_id"): r for r in (sheet.get("master_references") or [])
+                   if isinstance(r, dict)}
+        body = masters.get("master_body") or {}
+        meta = self.adapter.metadata()
+        return {
+            "replacement_id": tel.job_id, "persona_id": req.persona_id, "replacement_version": req.replacement_version,
+            "source_image": req.image,
+            "master_face": {"file": getattr(req.master, "file", ""), "sha256": getattr(req.master, "sha256", "")},
+            "master_body": {"file": body.get("file"), "sha256": body.get("sha256")} if body else None,
+            "base_model": meta.get("model", ""), "lora": (self.cfg.get("lora") or {}).get("name", "lunavox_sdxl_v1"),
+            "lora_strength": meta.get("lora_strength", "registro (fixa)"),
+            "instantid_strength": plan.face_reference_strength if plan.face_reference else 0.0,
+            "pose_strength": plan.pose_strength if plan.pose else 0.0,
+            "depth_strength": plan.depth_strength if plan.depth else 0.0, "seed": req.seed, "mode": plan.name,
+            "passes": [{"pass": p["pass"], "accepted": p.get("accepted"), "seconds": p.get("seconds"),
+                        "identity": p.get("identity"), "reason": p.get("reason")} for p in tel.passes],
+            "masks": {k: round(float((v > 0.5).mean()), 4) for k, v in scene.source_masks.items()},
+            "validators": tel.gate.get("validators", {}),
+            "scores": {k: m.get(k) for k in ("identity", "original_sim", "pose", "tattoo_residual", "hair_residual",
+                                             "hand_anatomy", "accessory_change", "source_face_pixels", "source_body_pixels",
+                                             "background", "seam_excess", "straight_edges")},
+            "retry_reason": retry_reasons, "final_status": report.status, "gate_decision": tel.gate.get("decision"),
+            "processing_time": tel.duration_s, "cost": tel.estimated_cost_usd,
+            "fallback_used": tel.fallback_used, "fallback_model": tel.fallback_model,
+            "experimental_stages": list(tel.experimental_stages),
+        }
+
     async def run(self, req: ReplacementRequest) -> ReplacementOutcome:
         req.validate()
+        if os.environ.get((self.cfg.get("debug") or {}).get("env", "REPLACEMENT_DEBUG"), "").lower() in ("1", "true", "yes"):
+            req.debug = True
+        if req.debug:
+            req.keep_intermediates = True
         attrs = req.attributes()
-        plan = req.plan(attrs)
+        plan = self._configured(req.plan(attrs), req)
         start = time.monotonic()
         meta = self.adapter.metadata()
         tel = JobTelemetry(uuid.uuid4().hex[:12], req.persona_id, "replacement", plan.name, model=meta.get("model", ""),
@@ -939,10 +1108,18 @@ class ReplacementEngine:
         # senao tatuagem/fundo/cabelo ficariam "desconhecidos" justamente onde falham
         mscene = scene if plan.segmentation else await self._scene(req.image, req.master, plan.with_(segmentation=True), attrs)
         h, w = scene.original.shape[:2]
+        # spec Master 5: analise estruturada da foto (so dados; nenhum modelo gera nada aqui)
+        analysis = analyze_scene(mscene, attrs, await self._faces_in(req.image, w, h, req.master))
+        tel.attributes["scene_analysis"] = analysis.to_dict()
+        hierarchy = [] if mscene.masks is None else check_hierarchy(semantic_masks(mscene))
+        if hierarchy:
+            tel.attributes["mask_hierarchy_issues"] = hierarchy
         tel.resolution = [w, h]
         retry = RetryPolicyV2()
+        gate = QualityGate(self.cfg)
         attempts, best = [], None
         attempt = 0
+        retry_reasons: list[str] = []
         while True:
             tel.controlnet_strength = {"pose": plan.pose_strength if plan.pose else 0.0, "depth": plan.depth_strength if plan.depth else 0.0}
             tel.reference_strength = plan.face_reference_strength if plan.face_reference else 0.0
@@ -951,35 +1128,54 @@ class ReplacementEngine:
             final, loc, inter, info = await self._attempt(req, scene, plan, tel, attrs)
             m = await self._measure(req, mscene, final, loc, info["modified_area"], info.get("modified_mask"), attrs,
                                     info.get("body_region"))
-            report = validate_v2(m, self.cfg.get("thresholds") or None, attrs.policy)
-            rec = {"attempt": attempt, "plan": plan.name, "status": report.status, "failures": report.failures(),
-                   "warnings": report.warnings(), "image": loc, "identity": m["identity"]}
+            report = gate.evaluate(m, attrs.policy)
+            verdict = gate.decide(report, can_retry=attempt < plan.max_retries)
+            rec = {"attempt": attempt, "plan": plan.name, "status": report.status, "decision": verdict.decision,
+                   "failures": report.failures(), "warnings": report.warnings(), "image": loc, "identity": m["identity"]}
             attempts.append(rec)
             rank = (report.status == PASS, report.status != REJECT, m["identity"] or 0.0)
             if best is None or rank > best[0]:
-                best = (rank, final, loc, inter, report, m, info)
-            if report.status == PASS:
+                best = (rank, final, loc, inter, report, m, info, verdict)
+            if verdict.decision != "RETRY":
                 break
-            fails = sorted(report.failures(), key=lambda f: PRIORITY.index(f) if f in PRIORITY else len(PRIORITY))
+            fails = sorted(report.failures(), key=lambda f: PRIORITY.index(_GATE_FAILURE.get(f, f))
+                           if _GATE_FAILURE.get(f, f) in PRIORITY else len(PRIORITY))
             failures = _specific(report, fails or _by_severity(report, report.warnings()))
             nxt = retry.next_plan(plan, failures, attempt + 1)
             if nxt is None:
                 break
             plan, step = nxt
             step.result = report.status
+            retry_reasons.append(f"{step.failure_type}: {step.strategy}")
             attempt += 1
-        _, final, loc, inter, report, m, info = best
+        _, final, loc, inter, report, m, info, verdict = best
         tel.retry_count = len(retry.history)
         tel.retries = [s.to_dict() for s in retry.history]
         tel.duration_s = round(time.monotonic() - start, 2)
         tel.estimated_cost_usd = self.adapter.estimate_cost(tel.gpu_seconds, self.price)
         tel.validation_result = report.status
         tel.failure_reason = "; ".join(f"{n}: {report.checks[n].reason}" for n in report.failures()) or None
+        final_decision = verdict.decision if verdict.decision != "RETRY" else ("REJECT" if report.failures() else "PASS")
+        tel.gate = {**gate.decide(report, can_retry=False).to_dict(), "decision": final_decision}
+        tel.run_log = self._run_log(req, tel, plan, scene, report, m, retry_reasons)
         areas = {"identity": round(float((scene.identity > 0.5).mean()), 4), **({} if scene.ink_zone is None else
                  {"tattoo_zone": round(float((scene.ink_zone > 0.5).mean()), 4)}), "modified": info["modified_area"],
                  "clothes_segmented": scene.clothes_ok}
-        return ReplacementOutcome(loc, final, report.status, report, m, tel, inter if req.keep_intermediates else {},
-                                  attempts, areas)
+        out = ReplacementOutcome(loc, final, report.status, report, m, tel, inter if req.keep_intermediates else {},
+                                 attempts, areas)
+        if req.debug:
+            out.debug = {"scene_analysis": analysis.to_dict(), "validation_report": report.to_dict(), "gate": tel.gate,
+                         "run_log": tel.run_log, "mask_hierarchy_issues": hierarchy,
+                         # passe adaptativo que nao rodou (ex.: corpo da Persona ja refez a pele: nada para limpar)
+                         "passes_not_run": [a for a in ("initial_generation", "face_pass", "skin_pass", "tattoo_pass",
+                                                        "integration_pass") if a not in inter],
+                         "depth_map": "gerado dentro do ComfyUI (Depth Anything V2); nao exportado pelo workflow"}
+        return out
+
+
+# falhas dos validadores novos -> tipo de retry da spec (cada falha com a SUA estrategia)
+_GATE_FAILURE = {"source_pixel_residual": "original_residual", "accessory_objects": "accessories",
+                 "person_count": "duplicate_persona", "hair": "original_residual", "clothing": "background"}
 
 
 # spec 45.11: violacao da politica vira a falha ESPECIFICA do atributo (nunca retry generico)
@@ -1030,8 +1226,8 @@ def _by_severity(report: ValidationReportV2, warnings: list[str]) -> list[str]:
 
 
 def _specific(report: ValidationReportV2, failures: list[str]) -> list[str]:
-    out = [f for f in failures if f != "attribute_policy"]
-    orr = report.checks.get("original_residual")
+    out = list(dict.fromkeys(_GATE_FAILURE.get(f, f) for f in failures if f != "attribute_policy"))
+    orr =report.checks.get("original_residual")
     if "original_residual" in out and orr is not None:
         face = (orr.metadata or {}).get("rosto_original")
         # residuo so de tatuagem/cabelo (rosto original ja nao parece): a falha especifica e a da marca

@@ -60,7 +60,7 @@ Tela: aba **Persona V2**.
 - Opções da Substituição. As configurações avançadas ficam escondidas e não incluem a força da LoRA, de propósito.
 - No resultado: tabela de validação, custo e tentativas.
 
-Configuração: `config/engines_v2.json` (retenção, só local, ControlNet, preço de reserva) e `config/replacement_engine_v2.json`.
+Configuração: `config/engines_v2.json` (retenção, só local, ControlNet, preço de reserva) e `config/persona_replacement_v2.json`.
 Se a configuração V2 quebrar, só a V2 desliga; a V1 sobe igual.
 
 ## Onde está cada coisa

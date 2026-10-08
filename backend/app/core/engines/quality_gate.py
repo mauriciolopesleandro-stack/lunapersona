@@ -1,0 +1,268 @@
+"""QualityGate do Replacement (spec Master 22/23): validadores com NOME e responsabilidade unica, hard fails
+configuraveis e uma decisao por tentativa: PASS / RETRY / REJECT.
+
+Os validadores reaproveitam as medidas da Validation V2 (validate_v2: uma decisao por dimensao) e acrescentam o que
+faltava: acessorio POR OBJETO (presenca, posicao, forma, cor, escala), residuo de PIXELS da pessoa original nas
+regioes reconstruidas, contagem de pessoas, cabelo e roupa com veredito proprio. Nenhum validador sozinho aprova:
+ArcFace alto nao compensa tatuagem, acessorio perdido, pele plastica ou rosto original sobrando.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+
+from app.core.engines.validation import (
+    DEFAULT_THRESHOLDS,
+    PASS,
+    REJECT,
+    UNKNOWN,
+    WARN,
+    CheckResult,
+    ValidationReportV2,
+    _band,
+    changed_fraction,
+    lab_mean,
+    luma,
+    validate_v2,
+)
+
+RETRY = "RETRY"
+
+# validador -> checks da Validation V2 que ele assina
+VALIDATORS: dict[str, tuple[str, ...]] = {
+    "IdentityValidator": ("identity",),
+    "PoseValidator": ("pose",),
+    "AnatomyValidator": ("anatomy", "body"),
+    "TattooResidualValidator": ("tattoo",),
+    "SourceIdentityResidualValidator": ("original_residual", "source_pixel_residual"),
+    "SkinConsistencyValidator": ("skin", "seams"),
+    "AccessoryPreservationValidator": ("accessories", "accessory_objects"),
+    "ClothingPreservationValidator": ("clothing",),
+    "HandValidator": ("hands",),
+    "HairValidator": ("hair",),
+    "SceneConsistencyValidator": ("background", "composition"),
+    "PersonCountValidator": ("duplicate_persona", "person_count"),
+}
+
+GATE_DEFAULTS = {"skin_texture_ratio_min": 0.35, "accessory_presence_min": 0.5, "source_pixel_residual_max": 0.35,
+                 "source_pixel_residual_warn": 0.15}
+
+
+# --- medidas novas (numpy puro) ------------------------------------------------------------------------
+
+def _edges(rgb: np.ndarray, thr: float = 14.0) -> np.ndarray:
+    y = luma(rgb)
+    gx = np.zeros_like(y)
+    gy = np.zeros_like(y)
+    gx[:, 1:] = np.abs(np.diff(y, axis=1))
+    gy[1:, :] = np.abs(np.diff(y, axis=0))
+    return np.maximum(gx, gy) > thr
+
+
+def measure_accessories(original: np.ndarray, final: np.ndarray, layers: list) -> list[dict[str, Any]]:
+    """Cada objeto PRESERVE: presenca (pixels do objeto iguais a foto), cor (dE Lab), forma (IoU das bordas na caixa),
+    posicao (deslocamento do centro das bordas / diagonal da caixa) e escala (massa de bordas final/original)."""
+    out = []
+    h, w = original.shape[:2]
+    for layer in layers:
+        if layer.policy != "PRESERVE":
+            continue
+        core = layer.mask > 0.5
+        if core.sum() < 10:
+            continue
+        x1, y1, x2, y2 = (int(v) for v in layer.bbox)
+        x1, y1, x2, y2 = max(0, x1), max(0, y1), min(w, x2 + 1), min(h, y2 + 1)
+        changed = changed_fraction(original, final, core.astype(np.float32), threshold=12)
+        presence = None if changed is None else round(1.0 - changed, 4)
+        a, b = lab_mean(original, core.astype(np.float32)), lab_mean(final, core.astype(np.float32))
+        color = None if a is None or b is None else round(float(np.linalg.norm(a - b)), 2)
+        eo = _edges(original[y1:y2, x1:x2]) & core[y1:y2, x1:x2]
+        ef = _edges(final[y1:y2, x1:x2]) & core[y1:y2, x1:x2]
+        shape = pos = scale = None
+        if eo.sum() >= 8:
+            inter = (eo & ef).sum()
+            union = (eo | ef).sum()
+            shape = round(float(inter) / max(1.0, float(union)), 4)
+            scale = round(float(ef.sum()) / float(eo.sum()), 4)
+            if ef.sum() >= 4:
+                yo, xo = np.nonzero(eo)
+                yf, xf = np.nonzero(ef)
+                diag = max(1.0, float(np.hypot(x2 - x1, y2 - y1)))
+                pos = round(float(np.hypot(xo.mean() - xf.mean(), yo.mean() - yf.mean())) / diag, 4)
+            else:
+                pos = 1.0
+        out.append({"item": layer.item or layer.label or "objeto", "kind": layer.kind, "presence": presence,
+                    "color_delta": color, "shape_iou": shape, "position_shift": pos, "scale_ratio": scale,
+                    "area_px": int(core.sum())})
+    return out
+
+
+def source_pixel_residual(original: np.ndarray, final: np.ndarray, region: np.ndarray, threshold: int = 6) -> float | None:
+    """Fracao da regiao que a politica manda RECONSTRUIR e que ficou com o pixel da pessoa original (praticamente
+    igual a foto). Rosto refeito de verdade fica perto de 0; rosto original sobrando (mascara curta, etapa
+    descartada) aparece aqui mesmo quando o ArcFace nao percebe."""
+    sel = region > 0.5
+    if sel.sum() < 50:
+        return None
+    same = np.abs(original.astype(np.int16) - final.astype(np.int16)).max(axis=2) <= threshold
+    return round(float(same[sel].mean()), 4)
+
+
+# --- validadores novos -------------------------------------------------------------------------------
+
+def check_accessory_objects(objs: list[dict[str, Any]] | None, required: bool, presence_min: float,
+                            hard_fail: bool) -> CheckResult:
+    if not objs:
+        return CheckResult("accessory_objects", UNKNOWN, None, None, "nenhum acessorio mantido na foto")
+    worst, reasons = PASS, []
+    for o in objs:
+        pres = o.get("presence")
+        if pres is None:
+            continue
+        if pres < presence_min:
+            st = REJECT if (required and hard_fail) else WARN
+            reasons.append(f"{o['item']} desapareceu/mudou ({pres:.2f} do objeto igual a foto)")
+        elif (o.get("shape_iou") is not None and o["shape_iou"] < 0.6) or (o.get("position_shift") or 0) > 0.1 \
+                or (o.get("color_delta") or 0) > 12 or abs((o.get("scale_ratio") or 1.0) - 1.0) > 0.3:
+            st = WARN
+            reasons.append(f"{o['item']}: forma/posicao/cor/escala diferente")
+        else:
+            continue
+        worst = REJECT if REJECT in (worst, st) else WARN
+    score = min((o["presence"] for o in objs if o.get("presence") is not None), default=None)
+    return CheckResult("accessory_objects", worst, score, {"presence_min": presence_min, "hard_fail": hard_fail},
+                       "; ".join(reasons) or "todos os acessorios mantidos no lugar", {"objects": objs})
+
+
+def check_source_pixels(face_res: float | None, body_res: float | None, warn: float, reject: float,
+                        hard_fail: bool) -> CheckResult:
+    meta = {"rosto": face_res, "corpo": body_res}
+    vals = [v for v in (face_res, body_res) if v is not None]
+    if not vals:
+        return CheckResult("source_pixel_residual", UNKNOWN, None, None, "sem regiao reconstruida medivel", meta)
+    worst, reasons = PASS, []
+    for nome, v in (("rosto", face_res), ("corpo", body_res)):
+        if v is None:
+            continue
+        if v > reject:
+            st = REJECT if hard_fail else WARN
+            reasons.append(f"{nome} da pessoa original ainda na imagem ({v:.0%} da regiao igual a foto)")
+        elif v > warn:
+            st = WARN
+            reasons.append(f"{nome}: {v:.0%} da regiao igual a foto")
+        else:
+            continue
+        worst = REJECT if REJECT in (worst, st) else WARN
+    return CheckResult("source_pixel_residual", worst, max(vals), {"warn": warn, "reject": reject}, "; ".join(reasons), meta)
+
+
+def check_person_count(faces_original: int | None, faces_final: int | None) -> CheckResult:
+    if faces_original is None or faces_final is None:
+        return CheckResult("person_count", UNKNOWN, None, None, "contagem de rostos indisponivel")
+    if faces_final > faces_original:
+        return CheckResult("person_count", REJECT, float(faces_final), faces_original,
+                           f"apareceu pessoa nova ({faces_original} -> {faces_final} rostos)")
+    if faces_final < faces_original:
+        return CheckResult("person_count", WARN, float(faces_final), faces_original,
+                           f"rosto sumiu ({faces_original} -> {faces_final}): conferir oclusao/oculos")
+    return CheckResult("person_count", PASS, float(faces_final), faces_original, "mesmo numero de pessoas")
+
+
+def check_hair(policy: str | None, hair_residual, hair_change, t) -> CheckResult:
+    if policy == "PRESERVE":
+        return _band("hair", hair_change, t["hair_change"], False, reason="cabelo PRESERVE: fracao alterada")
+    c = _band("hair", hair_residual, t["hair_residual"], False,
+              reason="cabelo da Persona: fios claros da pessoa original que sobraram")
+    if hair_residual is None:
+        c.reason = "cabelo original escuro (sem cor para medir residuo): conferir no olho"
+    return c
+
+
+def check_clothing(policy: str | None, clothing_change, color_delta, t) -> CheckResult:
+    if policy == "RECONSTRUCT":
+        return _band("clothing", color_delta, t["clothing_color_delta"], False,
+                     reason="roupa redesenhada: diferenca de cor media (Lab)")
+    return _band("clothing", clothing_change, t["clothing_change"], False,
+                 reason="roupa PRESERVE: fracao alterada (deformacao/perda)")
+
+
+# --- o gate ------------------------------------------------------------------------------------------
+
+@dataclass
+class GateResult:
+    decision: str  # PASS | RETRY | REJECT
+    report: ValidationReportV2
+    hard_fails: list[str] = field(default_factory=list)
+    validators: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"decision": self.decision, "hard_fails": self.hard_fails, "validators": self.validators}
+
+
+class QualityGate:
+    def __init__(self, cfg: dict[str, Any] | None = None) -> None:
+        cfg = cfg or {}
+        self.cfg = cfg
+        self.thresholds = {**DEFAULT_THRESHOLDS, **(cfg.get("thresholds") or {})}
+        self.limits = {**GATE_DEFAULTS, **(cfg.get("hard_fail") or {})}
+
+    def _hard(self, key: str) -> bool:
+        return bool((self.cfg.get(key) or {}).get("hard_fail", True))
+
+    def evaluate(self, m: dict[str, Any], policy: dict[str, str] | None = None) -> ValidationReportV2:
+        t = self.thresholds
+        rep = validate_v2(m, t, policy)
+        ch = rep.checks
+        policy = policy or {}
+        # TattooResidualValidator: qualquer tinta da pessoa original acima do limite de aprovacao = REJECT
+        if self._hard("tattoo_removal") and policy.get("tattoos", "REMOVE") == "REMOVE":
+            c = ch["tattoo"]
+            if c.status == WARN:
+                ch["tattoo"] = CheckResult("tattoo", REJECT, c.score, c.threshold,
+                                           f"tatuagem residual ({c.score}) - hard fail: nao pertence a Persona", c.metadata)
+        # SkinConsistencyValidator: pele extremamente plastica = REJECT (o resto da pele segue WARN)
+        sk = ch["skin"]
+        ratio = (sk.metadata or {}).get("razao_textura")
+        if ratio is not None and ratio < float(self.limits["skin_texture_ratio_min"]):
+            ch["skin"] = CheckResult("skin", REJECT, sk.score, sk.threshold,
+                                     f"pele extremamente plastica (textura {ratio:.2f} da foto)", sk.metadata)
+        ch["accessory_objects"] = check_accessory_objects(m.get("accessory_objects"), policy.get("accessories") == "PRESERVE"
+                                                          or policy.get("jewelry") == "PRESERVE",
+                                                          float(self.limits["accessory_presence_min"]),
+                                                          self._hard("accessory_preservation"))
+        ch["source_pixel_residual"] = check_source_pixels(m.get("source_face_pixels"), m.get("source_body_pixels"),
+                                                          float(self.limits["source_pixel_residual_warn"]),
+                                                          float(self.limits["source_pixel_residual_max"]),
+                                                          self._hard("source_identity_residual"))
+        ch["person_count"] = check_person_count(m.get("faces_original"), m.get("faces"))
+        ch["hair"] = check_hair(policy.get("hair"), m.get("hair_residual"), m.get("hair_change"), t)
+        ch["clothing"] = check_clothing(policy.get("clothing"), m.get("clothing_change"), m.get("clothing_color_delta"), t)
+        return rep
+
+    def summary(self, rep: ValidationReportV2) -> dict[str, dict[str, Any]]:
+        out = {}
+        for name, checks in VALIDATORS.items():
+            sts = [rep.checks[c].status for c in checks if c in rep.checks]
+            st = REJECT if REJECT in sts else WARN if WARN in sts else PASS if PASS in sts else UNKNOWN
+            out[name] = {"status": st, "checks": {c: rep.checks[c].status for c in checks if c in rep.checks},
+                         "reasons": [rep.checks[c].reason for c in checks if c in rep.checks and rep.checks[c].status
+                                     in (REJECT, WARN) and rep.checks[c].reason]}
+        return out
+
+    def decide(self, rep: ValidationReportV2, can_retry: bool) -> GateResult:
+        hard = rep.failures()
+        if rep.status == PASS:
+            decision = PASS
+        elif can_retry and self.cfg.get("adaptive_retry", True):
+            decision = RETRY
+        elif hard:
+            decision = REJECT
+        else:
+            decision = PASS  # so avisos e sem retry possivel: aprovado com observacoes (status WARN no relatorio)
+        return GateResult(decision, rep, hard, self.summary(rep))
+
+
+__all__ = ["GateResult", "QualityGate", "RETRY", "VALIDATORS", "check_accessory_objects", "check_person_count",
+           "check_source_pixels", "measure_accessories", "source_pixel_residual"]

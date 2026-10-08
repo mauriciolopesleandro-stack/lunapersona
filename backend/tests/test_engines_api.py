@@ -45,8 +45,9 @@ class FakeFactory:
         return {"reader": Reader(), "segmenter": Seg(), "analyzer": Analyzer(FACES), "store": self.store,
                 "adapter": FakeAdapter(self.store), "config": CFG}
 
-    async def replacement(self, model):
+    async def replacement(self, model, qwen=None):
         self.models.append(model.id)
+        self.qwen = qwen
         return ReplacementEngine(**self._parts(), price_per_hour=0.57, provider="fake")
 
     async def face_swap(self, model):
@@ -186,3 +187,23 @@ def test_attribute_lists_travel_from_api_to_engine(engine_dir, tmp_path):
     attrs = job["result"]["telemetry"]["attributes"]
     assert attrs["preserve_items"] == ["black top"] and attrs["source"]["tattoos"] == "request"
     assert "attribute_policy" in job["result"]["validation"]["checks"]
+
+
+def test_replacement_request_fields_travel_and_are_checked(engine_dir, tmp_path):
+    """Spec Master 29: campos do ReplacementRequest pela API; V1 e campo desconhecido recusados antes da GPU."""
+    app, factory = make(engine_dir, tmp_path)
+    base = {"persona_id": "luna", "image": "foto.png", "advanced": json.dumps({"max_retries": 0})}
+    with TestClient(app) as c:
+        for bad in ({"replacement_version": "v1"}, {"turbo": True}, {"identity_strength": 2.0},
+                    {"quality_profile": "ultra"}):
+            assert c.post("/api/v2/replace", headers=H, data={**base, "replacement": json.dumps(bad)}).status_code == 400
+        assert factory.models == []
+        r = c.post("/api/v2/replace", headers=H, data={**base, "replacement": json.dumps(
+            {"remove_tattoos": True, "pose_required": True, "pose_strength": 0.85, "depth_strength": 0.3, "debug": True})})
+        assert r.status_code == 202
+        job = wait(c, r.json()["job_id"])
+    assert job["status"] == "done", job
+    res = job["result"]
+    assert res["telemetry"]["controlnet_strength"] == {"pose": 0.85, "depth": 0.3}
+    assert res["gate"]["decision"] in ("PASS", "REJECT") and "scene_analysis" in res["debug"]
+    assert factory.qwen is None  # Qwen nao pedido: a fabrica decide pela config (desligado)

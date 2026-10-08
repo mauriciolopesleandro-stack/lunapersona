@@ -27,6 +27,8 @@ from app.providers.base import ReferenceImage
 log = logging.getLogger(__name__)
 
 ENGINES = ("generation", "replacement", "face_swap")
+REQUEST_FIELDS = ("replacement_version", "pose_required", "clothing_required", "accessories_required", "remove_tattoos",
+                  "quality_profile", "identity_strength", "pose_strength", "depth_strength", "debug", "qwen_face_lock")
 MODES = ("FAST", "QUALITY", "MAX_QUALITY")
 
 
@@ -35,7 +37,7 @@ class EngineRequestError(ValueError):
 
 
 class EngineFactory(Protocol):
-    async def replacement(self, model: Any): ...
+    async def replacement(self, model: Any, qwen: bool | None = None): ...
 
     async def face_swap(self, model: Any): ...
 
@@ -190,8 +192,16 @@ class EnginesV2Service:
                           processing: str = "local", preserve_attributes: list[str] | None = None,
                           remove_attributes: list[str] | None = None,
                           reconstruct_attributes: list[str] | None = None,
-                          structured_policy: dict[str, Any] | None = None) -> dict[str, Any]:
+                          structured_policy: dict[str, Any] | None = None,
+                          request_fields: dict[str, Any] | None = None) -> dict[str, Any]:
         self._processing(processing)
+        fields = dict(request_fields or {})
+        bad = [k for k in fields if k not in REQUEST_FIELDS]
+        if bad:
+            raise EngineRequestError(f"campos desconhecidos no pedido: {bad}")
+        if fields.get("replacement_version", "v2") == "v1":
+            raise EngineRequestError("a Persona Replacement V1 continua disponivel so pelo script (scripts/replacement_teste1.py); "
+                                     "a rota /api/v2/replace roda a V2")
         if mode not in POLICIES and mode not in LADDER:
             raise EngineRequestError(f"modo invalido: {mode}")
         if "lora_strength" in (advanced or {}):
@@ -205,7 +215,7 @@ class EnginesV2Service:
                                  remove_attributes=list(remove_attributes or []),
                                  reconstruct_attributes=list(reconstruct_attributes or []),
                                  structured_policy=structured_policy or None,
-                                 persona_sheet=self.sheets.get(persona_id).data)
+                                 persona_sheet=self.sheets.get(persona_id).data, **fields)
         try:
             req.validate()
             req.plan()  # resolve a politica de atributos: conflito/atributo invalido = 400 antes da GPU
@@ -213,7 +223,7 @@ class EnginesV2Service:
             raise EngineRequestError(str(exc)) from exc
 
         async def work() -> dict[str, Any]:
-            engine = await self.factory.replacement(chosen)
+            engine = await self.factory.replacement(chosen, qwen=req.qwen_face_lock)
             out = await engine.run(req)
             return self._finish("replacement", out, {"model": chosen.id, "mode": mode})
 

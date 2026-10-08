@@ -1,0 +1,18 @@
+{"segundos_por_imagem": 420, "overhead_segundos": 420,
+ "_nota": "Spec Master 30: benchmark A/B CURRENT (Qwen BFS, profundidade 0,5) x V2 (sem Qwen, config dedicada), modo debug. 7 fotos do usuario ja no projeto; a spec pede >= 10 - faltam 3 (pessoa com oculos de grau, roupa complexa, outro angulo). Politica padrao da Luna (mesma roupa e acessorios, corpo/pele/cabelo/rosto da Luna, sem tatuagem).",
+ "execucoes": [
+  {"id": "quarto_tatuagem__current", "foto": "fotos_v2/quarto_usuario.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "current"},
+  {"id": "quarto_tatuagem__v2", "foto": "fotos_v2/quarto_usuario.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "v2"},
+  {"id": "varanda_oculos__current", "foto": "fotos_v2/varanda.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "current"},
+  {"id": "varanda_oculos__v2", "foto": "fotos_v2/varanda.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "v2"},
+  {"id": "porta_cacheada__current", "foto": "fotos_v2/porta_cacheada.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "current"},
+  {"id": "porta_cacheada__v2", "foto": "fotos_v2/porta_cacheada.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "v2"},
+  {"id": "espelho_celular__current", "foto": "fotos_v2/espelho_celular.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "current"},
+  {"id": "espelho_celular__v2", "foto": "fotos_v2/espelho_celular.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "v2"},
+  {"id": "espelho_braco__current", "foto": "fotos_v2/2_espelho_braco_cabeca.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "current"},
+  {"id": "espelho_braco__v2", "foto": "fotos_v2/2_espelho_braco_cabeca.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "v2"},
+  {"id": "rua_bege__current", "foto": "fotos_v2/3_rua_conjunto_bege.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "current"},
+  {"id": "rua_bege__v2", "foto": "fotos_v2/3_rua_conjunto_bege.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "v2"},
+  {"id": "carro_selfie__current", "foto": "fotos_v2/4_carro_selfie.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "current"},
+  {"id": "carro_selfie__v2", "foto": "fotos_v2/4_carro_selfie.png", "modo": "QUALITY", "semente": 7801, "max_retries": 1, "perfil": "v2"}
+ ]}

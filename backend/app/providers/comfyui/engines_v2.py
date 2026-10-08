@@ -70,12 +70,15 @@ class ComfyEngineFactory:
                 "ka2": {"class_type": "PreviewAny", "inputs": {"source": ["ka1", 0]}}}
         return {"reader": ComfyReferenceReader(self.client), "segmenter": ComfySegmenter(self.session, self.store),
                 "analyzer": ComfyImageAnalyzer(self.client, keep_alive=keep), "store": self.store, "adapter": adapter,
-                "config": ReplacementEngine.load_config(self.config_dir / "replacement_engine_v2.json"),
+                "config": ReplacementEngine.load_config(self.config_dir / "persona_replacement_v2.json"),
                 "price_per_hour": self.price, "provider": "comfyui"}
 
-    async def replacement(self, model: ModelInfo) -> ReplacementEngine:
-        # Face Lock da master = o mesmo da geracao V1 (Qwen-Image-Edit 2511 + BFS head): rosto/cabelo consistentes
-        return ReplacementEngine(**self._parts(await self._adapter(model)), face_lock=await self._face_lock())
+    async def replacement(self, model: ModelInfo, qwen: bool | None = None) -> ReplacementEngine:
+        # spec Master 9: o Face Lock Qwen-Image-Edit 2511 + BFS (o da geracao V1) NAO e etapa padrao do Replacement.
+        # So e montado quando pedido (qwen=True) ou ligado na config (qwen.enabled) - e entao fica registrado.
+        parts = self._parts(await self._adapter(model))
+        want = bool(qwen) if qwen is not None else bool((parts["config"].get("qwen") or {}).get("enabled", False))
+        return ReplacementEngine(**parts, face_lock=await self._face_lock() if want else None)
 
     async def _face_lock(self):
         lock = QwenFaceAdapter(self.session)

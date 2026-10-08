@@ -8,6 +8,11 @@ cada execucao chama o ComfyUI de verdade e mede com o analisador do estudio.
 plano.json: {"execucoes": [{"id": "smoke_quarto", "foto": "fotos_ref/1_quarto_top_preto.png",
                             "modo": "QUALITY", "semente": 7801, "max_retries": 1}, ...],
              "regressao_v1": {"cena": "...", "semente": 4242} }
+
+Benchmark A/B (spec Master 30): cada execucao pode ter "perfil":
+  "current" = o pipeline das rodadas de 2026-10-07/08 (Face Lock Qwen BFS ligado, profundidade 0,5) - so para comparar
+  "v2"      = o Replacement V2 novo (sem Qwen, forcas da config dedicada, modo debug)
+e "request": campos extras do ReplacementRequest (remove_tattoos, quality_profile, *_strength, ...).
 """
 import argparse
 import asyncio
@@ -43,6 +48,12 @@ from app.validation_backends.reference import ComfyReferenceReader  # noqa: E402
 from app.workflow_manager.manager import WorkflowManager  # noqa: E402
 
 PRICE = float(os.environ.get("V2_PRECO_HORA", "0.57"))
+PERFIS = {
+    # o pipeline da secao 2 da spec (o que rodou ate 2026-10-08): Qwen BFS obrigatorio e profundidade 0,5
+    "current": {"qwen_face_lock": True, "depth_strength": 0.5, "debug": True},
+    # V2: Qwen desligado, forcas da config dedicada (persona_replacement_v2.json)
+    "v2": {"debug": True},
+}
 CN = "controlnet-union-sdxl-1.0-promax.safetensors"
 
 
@@ -101,7 +112,8 @@ async def main() -> int:
     adapter = RealVisXLAdapter(session, reg.select_checkpoint("auto"), reg.get("lunavox_sdxl_v1"), CN, region=region,
                                price_per_hour=PRICE)
     face_lock = QwenFaceAdapter(session)
-    problemas = await adapter.load() + await face_lock.validate_configuration()
+    usa_qwen = any({**PERFIS.get(ex.get("perfil", ""), {}), **ex.get("request", {})}.get("qwen_face_lock") for ex in execs)
+    problemas = await adapter.load() + (await face_lock.validate_configuration() if usa_qwen else [])
     if problemas:
         print("CONFIG", problemas, flush=True)
         return 2
@@ -112,8 +124,8 @@ async def main() -> int:
     engine = ReplacementEngine(reader=CachedReader(ComfyReferenceReader(client)),
                                segmenter=CachedSegmenter(ComfySegmenter(session, store)),
                                analyzer=ComfyImageAnalyzer(client, keep_alive=keep), store=store, adapter=adapter,
-                               config=ReplacementEngine.load_config(ROOT / "config" / "replacement_engine_v2.json"),
-                               price_per_hour=PRICE, provider="comfyui@runpod", face_lock=face_lock)
+                               config=ReplacementEngine.load_config(ROOT / "config" / "persona_replacement_v2.json"),
+                               price_per_hour=PRICE, provider="comfyui@runpod", face_lock=face_lock if usa_qwen else None)
     sheet = PersonaSheetRepository(ROOT / "personas_run").get("luna")
     m = sheet.master("master_face")
     master = ReferenceImage(m.reference_id, m.file, sheet.read_master("master_face"), m.sha256)
@@ -137,7 +149,8 @@ async def main() -> int:
                                  seed=int(ex["semente"]), advanced={"max_retries": int(ex.get("max_retries", 0)), **ex.get("advanced", {})},
                                  negative=negative, keep_intermediates=True, persona_sheet=sheet.data,
                                  preserve_attributes=list(ex.get("preserve", [])), remove_attributes=list(ex.get("remove", [])),
-                                 reconstruct_attributes=list(ex.get("reconstruct", [])))
+                                 reconstruct_attributes=list(ex.get("reconstruct", [])),
+                                 **{**PERFIS.get(ex.get("perfil", ""), {}), **ex.get("request", {})})
         try:
             out = await engine.run(req)
             r = {"id": ex["id"], **ex, **out.to_dict(), "vram_pico_mb": vram_pico(t0), "segundos_parede": round(time.time() - t0, 1)}
