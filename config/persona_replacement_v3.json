@@ -120,7 +120,10 @@
     "face_grow_frac": 0.12,
     "max_accessory_face_ratio": 1.0,
     "min_clothes_coverage": 0.6,
-    "require_clothes_for_tattoo": true
+    "require_clothes_for_tattoo": true,
+    "protect": "sunglasses. bracelet. earrings. watch. cell phone. handbag",
+    "max_object_face_ratio": 4.0,
+    "_protect_note": "V3 (09/10): o celular do espelho mudou de branco para preto - objetos seguros (celular, bolsa) agora sao detectados e voltam por cima como camada (ordem de oclusao)"
   },
   "tattoo": {
     "reach_frac": 0.03,

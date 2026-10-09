@@ -31,11 +31,32 @@ LUNA = json.loads((REPO / "personas" / "luna" / "persona_sheet.json").read_text(
 CFG3 = ReplacementEngine.load_config(REPO / "config" / "persona_replacement_v3.json")
 
 
+class SegV3(Seg):
+    """Segmentador falso que aceita os objetos protegidos da V3 (celular, bolsa)."""
+
+    def __init__(self):
+        self.protect = []
+
+    async def segment(self, image, sheet, protect=None):
+        self.protect.append(protect)
+        return await super().segment(image, sheet)
+
+
+class Describer:
+    def __init__(self):
+        self.calls = []
+
+    async def describe(self, image, box):
+        self.calls.append(box)
+        return ("The image shows a black ribbed knit crop top with a sweetheart neckline. The woman has long hair. "
+                "Black tailored shorts with a button closure and belt loops.")
+
+
 def engine3(faces):
     img = wide_tattoo_photo()[0]
     store = Store(img)
     ad = FakeAdapter(store)
-    eng = PersonaReplacementV3(reader=Reader(), segmenter=Seg(), analyzer=Analyzer(faces, 0.1), store=store, adapter=ad,
+    eng = PersonaReplacementV3(reader=Reader(), segmenter=SegV3(), analyzer=Analyzer(faces, 0.1), store=store, adapter=ad,
                                config=CFG3, price_per_hour=0.57, provider="comfyui")
     return eng, ad, store
 
@@ -194,3 +215,52 @@ async def test_v3_needs_its_own_config_and_v2_is_untouched():
         await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, replacement_version="v3"))
     v2 = json.loads((REPO / "config" / "persona_replacement_v2.json").read_text(encoding="utf-8"))
     assert v2["replacement_version"] == "v2" and "full_reconstruction" not in v2
+
+
+# --- correcoes da 1a rodada na GPU (09/10) ---------------------------------------------------------------
+
+def test_clothing_sentences_keep_only_the_garments():
+    from app.core.engines.conditions_v3 import clothing_sentences
+
+    cap = ("The image shows a young woman with long curly hair standing in front of a wooden door. She is wearing a "
+           "black strapless ribbed crop top and black tailored shorts with a button and belt loops. A white towel hangs on the wall.")
+    out = clothing_sentences(cap)
+    assert "ribbed crop top" in out and "belt loops" in out
+    assert "curly" not in out and "door" not in out and "towel" not in out
+
+
+def test_garment_details_go_to_the_prompt_and_unmentioned_inventions_to_the_negative():
+    img, clothes, _ = outfit()
+    c = clothing_condition(img, clothes, kp_standing())
+    c.garments[0].details = "black ribbed knit crop top with a sweetheart neckline"
+    c.garments[1].details = "black tailored shorts with a button closure and belt loops"
+    p = c.prompt()
+    assert "sweetheart neckline" in p and "belt loops" in p and "strapless" in p
+    neg = c.negative()
+    assert "drawstring" in neg and "white trim" in neg and "straps" in neg
+
+
+async def test_v3_describes_each_garment_and_protects_held_objects():
+    eng, ad, store = engine3({"foto": 0.1, "v3_full": 0.8, "final": 0.8})
+    eng.describer = Describer()
+    out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, replacement_version="v3"))
+    assert eng.describer.calls  # uma descricao por peca recortada
+    assert "button closure" in ad.calls[0].prompt or "ribbed" in ad.calls[0].prompt
+    assert "cell phone" in (eng.segmenter.protect[0] or "")  # celular entra na deteccao de objetos protegidos
+    assert out.telemetry.attributes["v3_conditions"]["clothing"]["garments"]
+
+
+def test_body_change_and_hair_are_not_invented_clothing():
+    img, clothes, person = outfit()
+    wider = clothes.copy()
+    wider[50:95, 34:86] = 1  # a roupa vestindo um corpo um pouco maior (avanca alguns pixels para os lados)
+    out = img.copy()
+    out[wider > 0.5] = (15, 15, 18)
+    c = clothing_consistency(img, out, clothes, wider, person, kp_standing())
+    assert c["new_clothing_on_skin"] < 0.01
+    hair = np.zeros_like(clothes)
+    hair[35:50, 38:43] = 1  # cabelo escuro caindo no ombro (segmentado como "roupa")
+    with_hair = clothes.copy()
+    with_hair[35:50, 38:43] = 1
+    c2 = clothing_consistency(img, img.copy(), clothes, with_hair, person, kp_standing(), hair_f=hair)
+    assert c2["straps_invented"] is False

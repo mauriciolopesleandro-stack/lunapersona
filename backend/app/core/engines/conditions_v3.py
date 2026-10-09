@@ -111,8 +111,14 @@ class Garment:
     bbox: list[float]
     straps: bool | None = None  # so para "top": ha tecido sobre os ombros?
     length: str = ""
+    details: str = ""  # descricao da PECA recortada (Florence): botao, passantes, canelado, decote, laco...
 
     def text(self) -> str:
+        if self.details:  # a descricao da peca manda; o medido completa (cor/alcas/corte)
+            bits = [self.details]
+            if self.part == "top" and self.straps is False and "strapless" not in self.details.lower():
+                bits.append("strapless")
+            return ", ".join(bits)
         bits = [self.color]
         if self.part == "top" and self.straps is False:
             bits.append("strapless")
@@ -136,16 +142,47 @@ class ClothingCondition:
             parts.append(self.caption)
         for g in self.garments:
             noun = {"top": "top", "bottom": "bottom", "full": "outfit"}[g.part]
-            parts.append(f"{g.text()} {noun}")
+            parts.append(g.text() if g.details else f"{g.text()} {noun}")
         if any(g.part == "top" and g.straps is False for g in self.garments):
             parts.append("bare shoulders, no straps")
         return ", ".join(dict.fromkeys(p for p in parts if p))
 
     def negative(self) -> list[str]:
         out = ["different clothes", "changed outfit color", "extra garment", "added pattern", "logo"]
+        # detalhe que a foto NAO tem e o modelo costuma inventar (09/10: cordao e debrum branco no short)
+        said = " ".join([self.caption] + [g.details for g in self.garments]).lower()
+        out += [t for t in INVENTED_DETAILS if not any(w in said for w in t.split())]
         if any(g.part == "top" and g.straps is False for g in self.garments):
             out += ["straps", "shoulder strap", "spaghetti straps", "bra strap"]
         return out
+
+
+INVENTED_DETAILS = ("drawstring", "contrast piping", "white trim", "graphic print", "lace trim", "deep neckline")
+_GARMENT_WORDS = ("top", "shirt", "t-shirt", "blouse", "tank", "crop", "corset", "bra", "bikini", "dress", "skirt", "shorts",
+                  "jeans", "pants", "trousers", "leggings", "jacket", "coat", "sweater", "hoodie", "camisole", "bodysuit",
+                  "romper", "jumpsuit", "outfit", "garment", "fabric", "neckline", "button", "belt", "loop", "strap",
+                  "ribbed", "knit", "lace", "bow", "pocket", "zipper", "pleat", "stripe", "print", "waistband", "hem",
+                  "sleeve", "collar", "drawstring", "denim", "cotton", "satin", "silk", "linen", "seam", "trim")
+_NOT_CLOTHING = ("hair", "face", "eyes", "skin", "smil", "lips", "makeup", "tattoo", "background", "wall", "door", "room",
+                 "window", "bed", "mirror", "phone", "towel", "floor", "light", "her face", "looking at")
+
+
+def clothing_sentences(text: str) -> str:
+    """So as frases/partes que descrevem a ROUPA (legenda da foto ou da peca recortada). Pessoa, cabelo, pele e cena
+    ficam de fora: quem e a pessoa vem da Persona; o cenario ja esta nos pixels."""
+    import re
+
+    out = []
+    # palavra INTEIRA no filtro de exclusao ("ribbed" contem "bed")
+    not_clothing = re.compile(r"\b(" + "|".join(re.escape(w.strip()) for w in _NOT_CLOTHING) + r")", re.I)
+    for sent in re.split(r"(?<=[.!?;])\s+|,\s+(?=and\s)", text or ""):
+        low = sent.lower()
+        if any(w in low for w in _GARMENT_WORDS) and not not_clothing.search(low):
+            s = re.sub(r"^(the image shows|this is|in this image,?|the woman is wearing|she is wearing|wearing)\s+", "",
+                       sent.strip().rstrip("."), flags=re.I)
+            if s:
+                out.append(s)
+    return "; ".join(dict.fromkeys(out))[:400]
 
 
 def clothing_condition(original: np.ndarray, clothes: np.ndarray | None, kp, caption: str = "") -> ClothingCondition:
@@ -205,12 +242,16 @@ def clothing_condition(original: np.ndarray, clothes: np.ndarray | None, kp, cap
 
 
 def clothing_consistency(original: np.ndarray, final: np.ndarray, clothes_o: np.ndarray | None,
-                         clothes_f: np.ndarray | None, person_o: np.ndarray, kp) -> dict[str, Any]:
+                         clothes_f: np.ndarray | None, person_o: np.ndarray, kp,
+                         hair_f: np.ndarray | None = None) -> dict[str, Any]:
     """Identidade VISUAL da roupa sem pixel igual: cor de cada peca, cobertura, forma (IoU com folga) e PECA NOVA na pele
     (porta 2026-10-08: alca inventada no tomara-que-caia)."""
     if clothes_o is None or clothes_f is None or not (clothes_o > 0.5).any():
         return {"status": "UNKNOWN", "reason": "roupa nao segmentada na foto ou no resultado"}
     co, cf = clothes_o > 0.5, clothes_f > 0.5
+    if hair_f is not None:  # cabelo escuro sobre o ombro nao e alca (porta 09/10: falso positivo)
+        cf = cf & ~(dilate((hair_f > 0.5).astype(np.float32), 3) > 0.5)
+        clothes_f = cf.astype(np.float32)
     lab_o, lab_f = rgb_to_lab(original), rgb_to_lab(final)
     out: dict[str, Any] = {}
     cond_o = clothing_condition(original, clothes_o, kp)
@@ -232,8 +273,10 @@ def clothing_consistency(original: np.ndarray, final: np.ndarray, clothes_o: np.
     g = max(3, int(min(co.shape) * 0.02))
     inter = (cf & (dilate(co.astype(np.float32), g) > 0.5)).sum()
     out["shape_iou_loose"] = round(float(inter) / max(1.0, float((cf | co).sum())), 3)
-    # peca NOVA na pele: roupa no resultado onde a foto tinha PELE e longe da roupa original
-    skin_o = (skin_pixels(original) > 0.5) & (person_o > 0.5) & ~(dilate(co.astype(np.float32), g) > 0.5)
+    # peca NOVA na pele: roupa no resultado onde a foto tinha PELE e LONGE da roupa original. O corpo da Persona e
+    # maior/diferente: a roupa vestindo esse corpo avanca alguns % para os lados (09/10: 10,6% contado como "peca nova")
+    tol = max(g, int(min(co.shape) * 0.045))
+    skin_o = (skin_pixels(original) > 0.5) & (person_o > 0.5) & ~(dilate(co.astype(np.float32), tol) > 0.5)
     new = cf & skin_o
     out["new_clothing_on_skin"] = round(float(new.sum()) / max(1.0, float(co.sum())), 4)
     out["straps_invented"] = any(p.get("straps_o") is False and p.get("straps_f") is True for p in per)

@@ -145,8 +145,11 @@ async def main() -> int:
         mb = sheet.master("master_body")
         return ReferenceImage(mb.reference_id, mb.file, sheet.read_master("master_body"), mb.sha256)
 
+    from app.providers.comfyui.replacement import ComfyGarmentDescriber  # noqa: E402
+
     for e in engines.values():
         e.master_body_loader = master_body
+    engines["v3"].describer = ComfyGarmentDescriber(client)
     m = sheet.master("master_face")
     master = ReferenceImage(m.reference_id, m.file, sheet.read_master("master_face"), m.sha256)
     negative = ", ".join(NegativePromptBuilder(json.loads((ROOT / "config" / "persona_engine.json").read_text())["global_negative"])

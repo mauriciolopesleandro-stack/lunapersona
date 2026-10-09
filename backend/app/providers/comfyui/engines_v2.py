@@ -84,7 +84,10 @@ class ComfyEngineFactory:
         want = bool(qwen) if qwen is not None else default
         if version == "v3":
             from app.core.engines.replacement_v3 import PersonaReplacementV3
-            return PersonaReplacementV3(**parts, face_lock=await self._face_lock() if want else None)
+            from app.providers.comfyui.replacement import ComfyGarmentDescriber
+            eng = PersonaReplacementV3(**parts, face_lock=await self._face_lock() if want else None)
+            eng.describer = ComfyGarmentDescriber(self.client)
+            return eng
         return ReplacementEngine(**parts, face_lock=await self._face_lock() if want else None)
 
     async def _face_lock(self):

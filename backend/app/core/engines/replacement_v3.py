@@ -28,6 +28,7 @@ from app.core.engines.accessories import composite_layers
 from app.core.engines.attributes import PRESERVE, RECONSTRUCT, AttributePolicy, resolve
 from app.core.engines.conditions_v3 import (
     boundary_halo,
+    clothing_sentences,
     clothing_condition,
     clothing_consistency,
     compare_face_geometry,
@@ -151,8 +152,10 @@ class PersonaReplacementV3(ReplacementEngine):
         geom = face_geometry(face)
         gz = gaze(geom)
         keep_clothes = attrs.is_("clothing", PRESERVE) and plan.extra.get("mode") == "hybrid"
-        cloth = clothing_condition(orig, m.clothing if scene.clothes_ok else None, kp,
-                                   caption=(getattr(scene.sheet, "fields", {}) or {}).get("clothing", ""))
+        caption = (getattr(scene.sheet, "fields", {}) or {}).get("clothing", "") or \
+            clothing_sentences(getattr(scene.sheet, "caption", "") or "")
+        cloth = clothing_condition(orig, m.clothing if scene.clothes_ok else None, kp, caption=caption)
+        await self._describe_garments(req, cloth, w, h)
         tel.attributes["v3_conditions"] = {
             "mode": plan.extra.get("mode"), "pose": {"keypoints": len(kp or []), "strength": plan.pose_strength,
                                                      "hands": len(scene.hands or [])},
@@ -338,6 +341,25 @@ class PersonaReplacementV3(ReplacementEngine):
         return final, final_loc, inter, {"modified_area": round(float((modified > 0.5).mean()), 4), "integration": integ,
                                          "modified_mask": modified, "body_region": region}
 
+    async def _describe_garments(self, req, cloth, w, h) -> None:
+        """Descricao de CADA peca recortada (Florence, legenda detalhada): botao, passantes, textura, decote, laco.
+        09/10: so cor/alcas/corte no texto -> o modelo trocou short de alfaiataria por short de cordao."""
+        describer = getattr(self, "describer", None)
+        if describer is None:
+            return
+        cache = self.__dict__.setdefault("_garment_cache", {})
+        for g in cloth.garments:
+            key = (req.image, tuple(round(v) for v in g.bbox))
+            if key not in cache:
+                x1, y1, x2, y2 = g.bbox
+                px, py = (x2 - x1) * 0.08, (y2 - y1) * 0.08
+                box = (max(0.0, x1 - px), max(0.0, y1 - py), min(float(w), x2 + px), min(float(h), y2 + py))
+                try:
+                    cache[key] = clothing_sentences(await describer.describe(req.image, box))
+                except Exception:  # noqa: BLE001 - sem descricao: fica a cor/corte medidos
+                    cache[key] = ""
+            g.details = cache[key]
+
     async def _reflection_regions(self, req, scene, w, h) -> list[np.ndarray]:
         """Rostos da MESMA pessoa original em outro lugar da foto (reflexo no espelho) -> regiao de cabeca a refazer."""
         if not (self.cfg.get("reflection") or {}).get("enabled", True):
@@ -378,11 +400,12 @@ class PersonaReplacementV3(ReplacementEngine):
             seg = None
         clothes_f = getattr(seg, "clothes", None) if seg is not None else None
         person_f = getattr(seg, "person", None) if seg is not None else None
+        hair_f = getattr(seg, "hair", None) if seg is not None else None
         an = await self._identity_of(final_loc, w, h, req.master)
         body = an.main_body()
         kp_f = body.keypoints if body is not None else None
         m["clothing_v3"] = clothing_consistency(scene.original, final, scene.masks.clothing if scene.clothes_ok else None,
-                                                clothes_f, scene.masks.person, scene.base_pose)
+                                                clothes_f, scene.masks.person, scene.base_pose, hair_f=hair_f)
         m["silhouette"] = {"original": silhouette(scene.masks.person, scene.base_pose),
                            "final": silhouette(person_f, kp_f or scene.base_pose)}
         m["boundary"] = boundary_halo(scene.original, final, scene.masks.person,

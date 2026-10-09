@@ -275,6 +275,7 @@ class _Scene:
 
 
 JEWELRY_WORDS = ("earring", "bracelet", "necklace", "ring", "jewel", "brinco", "pulseira", "colar")
+OBJECT_WORDS = ("phone", "smartphone", "cellphone", "handbag", "bag", "cup", "bottle", "glass of", "celular", "bolsa")
 
 
 def _drop_below_ankles(mask: np.ndarray, pose) -> np.ndarray:
@@ -357,12 +358,20 @@ class ReplacementEngine:
             face_full = ellipse(h, w, (x1 + x2) / 2, (y1 + y2) / 2 + fh * 0.06, fw * 0.55, fh * 0.62)
             return _Scene(original, sheet, None, ident, face_full, None, None, None, base_pose, False,
                           source_masks={"source_identity_mask": ident, "source_face_mask": face_full})
-        raw = await self.segmenter.segment(image, sheet)
+        protect = (sg.get("protect") or "").strip()
+        # V3: objetos seguros (celular, bolsa) tambem entram na deteccao para voltarem por cima (oclusao)
+        raw = await (self.segmenter.segment(image, sheet, protect=protect) if protect else self.segmenter.segment(image, sheet))
         # cada caixa (oculos, brinco...) segue a politica do SEU atributo: PRESERVE = protegida e colada de volta;
         # REMOVE = nao e protegida (no rosto: regenerada; no corpo: entra na mascara de marcas)
         labels = list(getattr(raw, "protect_labels", []) or [])
         labels += [""] * (len(raw.protect_boxes) - len(labels))
         plausible = set(plausible_accessories(raw.protect_boxes, bbox, float(sg["max_accessory_face_ratio"])))
+        # objeto seguro (celular, bolsa, copo) e maior que um brinco: limite proprio de tamanho
+        obj_ratio = float(sg.get("max_object_face_ratio", 0))
+        if obj_ratio > 0:
+            labs = list(getattr(raw, "protect_labels", []) or []) + [""] * len(raw.protect_boxes)
+            big = [b for b, lab in zip(raw.protect_boxes, labs) if any(w in (lab or "").lower() for w in OBJECT_WORDS)]
+            plausible |= set(plausible_accessories(big, bbox, obj_ratio))
         keep_boxes, drop_boxes, box_policy = [], [], []
         preserved = {b for b, lab in zip(raw.protect_boxes, labels) if attrs.item_policy(lab)[1] == PRESERVE}
         kept_labels: dict[tuple, str] = {}

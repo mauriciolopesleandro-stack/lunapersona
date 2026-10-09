@@ -102,11 +102,14 @@ class ComfySegmenter:
         self.session = session
         self.store = store
 
-    async def segment(self, image: str, sheet: ReferenceSheet) -> RawSegments:
+    async def segment(self, image: str, sheet: ReferenceSheet, protect: str | None = None) -> RawSegments:
         pos, neg = sam_points(sheet)
         client = self.session.client
         try:
-            graph = self.session.workflows.render(SEGMENT_WORKFLOW, {"IMAGE": image, "POINTS_POS": pos, "POINTS_NEG": neg})
+            values = {"IMAGE": image, "POINTS_POS": pos, "POINTS_NEG": neg}
+            if protect:  # V3: objetos seguros (celular, bolsa) alem dos acessorios
+                values["PROTECT"] = protect
+            graph = self.session.workflows.render(SEGMENT_WORKFLOW, values)
             entry = await client.wait_for_completion(await client.queue_prompt(graph))
         except ComfyUIError as exc:
             raise ProviderError(f"segmentacao falhou: {exc}") from exc
@@ -132,6 +135,34 @@ class ComfySegmenter:
         return RawSegments(person=person, hair=await mask_of("hair"), protect_boxes=[b for b, _ in labeled],
                            tattoos=await mask_of("tattoo"), clothes=await union_of("clothes"),
                            protect_labels=[label for _, label in labeled])
+
+
+class ComfyGarmentDescriber:
+    """Legenda detalhada (Florence-2) de UMA peca de roupa recortada da foto. So mede, nao gera."""
+
+    def __init__(self, client: ComfyUIClient, florence: str = "microsoft/Florence-2-large") -> None:
+        self.client = client
+        self.florence = florence
+
+    async def describe(self, image: str, box) -> str:
+        x1, y1, x2, y2 = (int(round(v)) for v in box)
+        graph = {
+            "1": {"class_type": "LoadImage", "inputs": {"image": image}},
+            "2": {"class_type": "ImageCrop", "inputs": {"image": ["1", 0], "width": max(16, x2 - x1),
+                                                        "height": max(16, y2 - y1), "x": max(0, x1), "y": max(0, y1)}},
+            "fm": {"class_type": "DownloadAndLoadFlorence2Model", "inputs": {"model": self.florence, "precision": "fp16"}},
+            "fr": {"class_type": "Florence2Run", "inputs": {
+                "image": ["2", 0], "florence2_model": ["fm", 0], "text_input": "", "task": "more_detailed_caption",
+                "fill_mask": False, "keep_model_loaded": False, "max_new_tokens": 256, "num_beams": 3,
+                "do_sample": False, "output_mask_select": "", "seed": 1}},
+            "p": {"class_type": "PreviewAny", "inputs": {"source": ["fr", 2]}},
+        }
+        try:
+            entry = await self.client.wait_for_completion(await self.client.queue_prompt(graph))
+        except ComfyUIError as exc:
+            raise ProviderError(f"descricao da roupa falhou: {exc}") from exc
+        texts = [str(v["text"][0]) for v in entry.get("outputs", {}).values() if v.get("text")]
+        return texts[0] if texts else ""
 
 
 class ComfyReplacementTransformer:
