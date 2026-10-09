@@ -509,3 +509,11 @@ Espelho: roupa 'full' escala 0,49 -> nada colado; **invented_ink marcou 36438 px
 peito (regressao)**; tatuagem do antebraco da original continuou. Rollback em 72cf2a7: invented_markings desligado,
 workflow de segmentacao original. Diagnostico: a preservacao por pixels so funciona quando o corpo novo tem quase o mesmo
 contorno da roupa original - nas 3 fotos o alinhamento por caixa falhou.
+
+### Teste de 254007f (garment_lock DD, Qwen fora, tatuagem sem roupa) - 09/10, pod 6k4qp7qi94oobk, branch rodando em copia (~US$ 0,26)
+
+Todas REJECT por seams. Rua: clothing_v3 PASSOU (roupa igual pela 1a vez; garment_lock 65% da pessoa) - imagem ficou no
+volume (pod desligado antes do download). Quarto: rosto natural sem maquiagem (sem Qwen), mas o top de coracoes (tela cor de
+pele) nao entrou na mascara de roupa (garment 5%) e virou um bloco bege; contorno claro nas pernas/quadril. Espelho: tatuagem
+do antebraco continuou (deteccao sem roupa nao achou) e a mao deixou de cobrir como na foto. NAO publicado no site.
+Proximo caminho proposto: troca de rosto+cabelo mantendo corpo/roupa da foto para fotos de lingerie/nu parcial.
