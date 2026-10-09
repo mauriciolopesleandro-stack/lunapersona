@@ -379,3 +379,24 @@ Conclusões:
 - **Corpo:** com a roupa PRESERVE (pixel a pixel), busto, cintura e quadril continuam com o formato da roupa da pessoa original. Só braços, ombros, pernas e pele mudam. Para o corpo da Luna aparecer, a roupa precisa ser redesenhada (clothing RECONSTRUCT).
 - **Alça inventada:** acontece nas duas versões. O negativo `body_skin_negative` não basta; falta um detector de peça nova na pele.
 - **Bug corrigido depois da rodada:** a identidade de pele saiu "master sem pele" porque o campo da master é `content` e eu tinha usado `data`.
+
+## V3 na GPU: espelho e porta (2026-10-09)
+
+Antes desta rodada, a V3 foi tentada 7 vezes (08/10 à noite e madrugada de 09/10), cerca de US$ 0,99 no total, sem resultado. O ComfyUI travava esperando o disco de rede do EU-RO-1 (`request_wait_answer`). O que destravou:
+
+- **Sondagem antes do teste:** liga o pod sem teste e só sobe a V3 se o ComfyUI continuar respondendo depois da inicialização do Manager.
+- **Script do pod:** passou a ter tempo limite em todos os `curl` (7ccb162).
+
+Esta rodada (pod `lpfimwvl6lk3vp`, RTX PRO 4000 Blackwell) custou ~US$ 0,24, com sondagem e teste juntos.
+
+| Foto | Tempo | Identidade | Halo (dE) | Gate | No olho |
+|---|---|---|---|---|---|
+| espelho V3 | 486 s | 0,81 (V2: 0,78) | 2,85 (PASS) | REJECT por roupa | **uma pessoa só, coerente**: corpo da Luna (atlético e curvilíneo), pele e luz iguais do rosto aos pés, sem halo. Problemas: o top virou regata comprida com decote (sem o laço), o short virou short de corrida com cordão e debrum branco, e o **celular mudou de branco para preto** |
+| porta V3 | 422 s | 0,74 (V2: 0,78) | 1,40 (PASS) | REJECT por roupa | **o melhor resultado até agora**: corpo da Luna, top tomara-que-caia **sem a alça inventada** que a V2 punha, rosto natural, sem halo. Problemas: o top perdeu a textura canelada e o decote coração, e o short perdeu o botão e os passantes (virou short com cordão) |
+
+O que aprendemos:
+
+- A reconstrução inteira resolve o que a V2 não resolvia: corpo da Luna, uma pele só, sem halo, sem alça inventada.
+- **A roupa perde detalhes.** A ClothingCondition só tinha cor, alças e corte: a legenda de roupa do Florence veio vazia (`fields.clothing`). Botão, passantes, textura canelada, decote e laço não entram no texto.
+- **Objetos seguros (o celular) não estão protegidos.** O celular não vira camada de acessório.
+- **Falso positivo no ClothingValidator:** o corpo da Luna é maior, então a roupa cobre áreas que eram pele na foto. Isso contou como "peça nova sobre a pele" (10,6%). A "alça inventada" na porta também foi falso positivo: provavelmente o cabelo escuro sobre o ombro.
