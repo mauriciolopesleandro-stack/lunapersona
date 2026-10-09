@@ -475,3 +475,15 @@ No olho:
 - Rosto da Luna natural (sorriso aberto virou sorriso fechado).
 - **Defeitos:** contorno escuro (oliva) em volta do top tomara-que-caia (borda da colagem da roupa); mancha translucida bege na cintura onde as maos originais cobriam a calca; graos/pontilhado na pele e na calca (grain_match forte demais); aneis e colar com pingente da original sumiram.
 - Imagens: generated/v2/engines/v31_prod/.
+
+### Reteste apos 14e2702 (09/10, pod engbyacutsg3j5 RTX PRO 4000, seed 7801, keep_intermediates)
+
+REJECT (seams 17,4). Job 488 s. Custo do reteste ~US$ 0,23 (o pod ficou 8 min ocioso depois do job ate o desligamento
+automatico; o acompanhamento por SSH travou) + ~US$ 0,03 para religar e buscar as imagens no volume.
+Etapas em generated/v2/engines/v31_prod/reteste/ (+ telemetria.json).
+- Resolvido: contorno oliva do top sumiu; pontilhado sumiu (grao so na pele gerada: 3,69 -> 4,32, teto 2,5); colar com pingente voltou.
+- Novo/restante: o top original alinhado (escala y 0,90, deslocamento y +27 px) fica com cara de adesivo (borda dura, reta em cima);
+  mancha na cintura continua (agora com borda dura); faixa clara do lado direito da calca (fantasma da pessoa original) e
+  contorno claro no ombro direito.
+- Conclusao: colar a roupa original num corpo diferente gera bordas duras; proximo passo proposto = clothing_preservation
+  desligado (roupa da reconstrucao, como na V3, que ficou limpa no top) mantendo grao/negativos/continuidade validada.
