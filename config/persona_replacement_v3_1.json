@@ -125,12 +125,14 @@
     "max_object_face_ratio": 4.0,
     "_protect_note": "V3 (09/10): o celular do espelho mudou de branco para preto - objetos seguros (celular, bolsa) agora sao detectados e voltam por cima como camada (ordem de oclusao)",
     "clothing_trust_florence": true,
-    "clothes_min_frac": 0.04,
+    "clothes_min_frac": 0.02,
     "require_caption_for": [
       "glasses",
       "object"
     ],
-    "object_max_skin_frac": 0.35
+    "object_max_skin_frac": 0.35,
+    "workflow": "replacement-segment-v31",
+    "clothes_min_inside": 0.6
   },
   "tattoo": {
     "reach_frac": 0.03,
@@ -276,7 +278,7 @@
     "clothing_preservation": true,
     "seam_denoise": 0.35,
     "max_scale_dev": 0.25,
-    "clothes_min_frac": 0.04,
+    "clothes_min_frac": 0.02,
     "grain_match": true,
     "boundary_from_segmentation": true,
     "boundary_soft_px": 2,
@@ -299,6 +301,20 @@
         "ring"
       ]
     },
-    "_note_producao_0910": "1a troca em producao (rua bege): contorno escuro no top, mancha na cintura, pontilhado e colar/aneis apagados -> seam_pass desligado (emenda por campo de cor em preserve_clothing), grao so na pele gerada com teto max_grain, negativos de joia so se a foto nao tem a joia"
+    "_note_producao_0910": "1a troca em producao (rua bege): contorno escuro no top, mancha na cintura, pontilhado e colar/aneis apagados -> seam_pass desligado (emenda por campo de cor em preserve_clothing), grao so na pele gerada com teto max_grain, negativos de joia so se a foto nao tem a joia",
+    "garment_pass": {
+      "enabled": true,
+      "denoise": 0.42,
+      "margin_px": 6,
+      "max_color_shift": 8.0,
+      "_note": "reteste 09/10: roupa colada com cara de adesivo; valores iniciais, sem benchmark"
+    },
+    "invented_markings": {
+      "enabled": true,
+      "min_px": 40,
+      "denoise": 0.55,
+      "_note": "foto do quarto 09/10: tatuagem inventada na mao (a Luna nao tem tatuagem)"
+    },
+    "ghost_color_fix": true
   }
 }

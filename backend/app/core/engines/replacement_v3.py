@@ -52,7 +52,7 @@ from app.core.engines.replacement import (
     scrub_identity,
 )
 from app.core.engines.skin import structure_preserving_fill
-from app.core.engines.skin_continuity import continuity_residuals, harmonize
+from app.core.engines.skin_continuity import continuity_residuals, harmonize, rgb_to_lab
 from app.core.engines.scene_analysis import semantic_masks
 from app.core.engines.telemetry import JobTelemetry
 from app.core.engines.v31_integration import (
@@ -350,9 +350,9 @@ class PersonaReplacementV3(ReplacementEngine):
                     # 1a troca em producao (09/10): o passe de emenda (SDXL 0,35 numa faixa fina) e suspeito do contorno
                     # escuro do top; a emenda agora e resolvida em preserve_clothing (campo de cor + borda). Passe so se
                     # ligado na config.
+                    ctext = cloth.prompt() or "the same clothes as the photo"
                     if v31.get("seam_pass", False) and (cp.to_reconstruct > 0.5).sum() > 200:
                         seam = np.clip(feather(cp.to_reconstruct, 2), 0, 1) * (cp.to_reconstruct > 0.02)
-                        ctext = cloth.prompt() or "the same clothes as the photo"
                         pxs, lcs, _ = await self._pass(
                             "clothing_seam", cur, seam, f"{ctext}, same fabric texture and color as the photo, natural folds",
                             neg, float(v31.get("seam_denoise", 0.35)), req.seed + 341, plan, tel,
@@ -360,6 +360,29 @@ class PersonaReplacementV3(ReplacementEngine):
                             identity=IdentitySpec(use_lora=False), accessory=paste)
                         cur = {"pixels": pxs, "image": lcs}
                         inter["clothing_seam"] = lcs
+                    # reteste em producao (09/10): a roupa original alinhada num corpo de outro tamanho fica com cara de
+                    # adesivo (borda dura). Passe moderado na peca inteira + margem: funde a roupa no corpo da Persona sem
+                    # redesenhar (a guarda recusa se a cor da peca mudar).
+                    gp = v31.get("garment_pass") or {}
+                    if gp.get("enabled") and (cp.pasted > 0.5).sum() > 200:
+                        mg = int(gp.get("margin_px", 6))
+                        gm = ((dilate(np.maximum(cp.pasted, cp.to_reconstruct), mg) > 0.5) & (dilate(clothes_n, mg) > 0.5)
+                              & ~(keep_out > 0.5))
+                        gmask = np.clip(feather(gm.astype(np.float32), 3), 0, 1) * gm
+                        pxh, lch, _ = await self._pass(
+                            "clothing_harmonize", cur, gmask,
+                            f"{ctext}, exactly the same garment as the photo, same design and details, fitted naturally to "
+                            f"her body, natural folds and shading", neg, float(gp.get("denoise", 0.42)), req.seed + 343, plan,
+                            tel, controls=ControlSpec(pose_strength=0.6, depth_strength=0.5, end_percent=0.8, structure=lcp),
+                            identity=IdentitySpec(use_lora=False), accessory=paste)
+                        core_c = erode(clothes_n, 3) > 0.5
+                        shift = float(np.linalg.norm(rgb_to_lab(pxh)[core_c].mean(axis=0)
+                                                     - rgb_to_lab(cur["pixels"])[core_c].mean(axis=0))) if core_c.any() else 0.0
+                        ok_h = shift <= float(gp.get("max_color_shift", 8.0))
+                        info["garment_pass"] = {"color_shift_dE": round(shift, 2), "accepted": ok_h}
+                        if ok_h:
+                            cur = {"pixels": pxh, "image": lch}
+                            inter["clothing_harmonize"] = lch
                     modified = np.maximum(modified, clothes_n)
                     tel.add_pass("clothing_preservation", 0.0, {"cpu_seconds": round(time.monotonic() - t0, 2), **info}, True,
                                  None)
@@ -408,6 +431,30 @@ class PersonaReplacementV3(ReplacementEngine):
                 cur, modified = {"pixels": res.pixels, "image": l2}, np.maximum(modified, changed.astype(np.float32))
             tel.add_pass("skin_continuity", 0.0, {"cpu_seconds": round(time.monotonic() - t0, 2), **res.to_dict()}, ok,
                          None if ok else (res.note or "sem ganho"))
+        # 1a troca em producao (09/10, foto do quarto): a LoRA desenhou uma tatuagem na mao (a Luna nao tem). Tinta na pele
+        # da Persona e tirada com a formula da tatuagem (entrada sem o traco + passe com a LoRA so na marca).
+        im_cfg = v31.get("invented_markings") or {}
+        if im_cfg.get("enabled") and skin_n is not None:
+            from app.core.engines.v31_integration import invented_ink
+
+            ink_n = invented_ink(cur["pixels"], skin_n, scene.face_full, self.cfg["tattoo"], float(face.bbox[3] - face.bbox[1]))
+            n_ink = int((ink_n > 0.5).sum())
+            tel.attributes["invented_markings"] = {"px": n_ink, "min_px": int(im_cfg.get("min_px", 40))}
+            if n_ink >= int(im_cfg.get("min_px", 40)):
+                zone = dilate_round(ink_n, 2)
+                known = ((skin_n > 0.5) & ~(zone > 0.5)).astype(np.float32)
+                pre, _ = structure_preserving_fill(cur["pixels"], zone, known, line_radius=max(2, int(min(h, w) * 0.004)))
+                lpre = await self.store.save(pre, "invented_ink_prefill")
+                imask = np.clip(feather(dilate_round(zone, 2), 2), 0, 1)
+                pxi, lci, _ = await self._pass(
+                    "invented_ink", {"pixels": pre, "image": lpre}, imask, cond(P["tattoo"], "skin"), neg,
+                    float(im_cfg.get("denoise", 0.55)), req.seed + 351, plan, tel,
+                    controls=ControlSpec(pose_strength=0.6, depth_strength=0.4, end_percent=0.8, structure=lpre),
+                    identity=IdentitySpec(use_lora=True), accessory=paste)
+                cur, modified = {"pixels": pxi, "image": lci}, np.maximum(modified, imask)
+                inter["invented_ink"] = lci
+                tel.attributes["invented_markings"]["after_px"] = int(
+                    (invented_ink(pxi, skin_n, scene.face_full, self.cfg["tattoo"], float(face.bbox[3] - face.bbox[1])) > 0.5).sum())
         integ = {}
         if v31.get("grain_match") and person_n is not None:
             from app.core.persona_replacement.lighting import match_grain, noise_level
@@ -442,6 +489,12 @@ class PersonaReplacementV3(ReplacementEngine):
         # composicao na cena: fora da pessoa reconstruida = a foto; acessorios/objetos da frente por cima
         if v31.get("boundary_from_segmentation") and person_n is not None:
             # V3.1: fora da pessoa NOVA (e do 'fantasma' da original) volta o fundo ORIGINAL exato - sem tolerancia
+            if v31.get("ghost_color_fix", True):
+                from app.core.engines.v31_integration import ghost_color_fix
+
+                gfix, ginfo = ghost_color_fix(orig, cur["pixels"], person_n, m.person, region)
+                cur = {"pixels": gfix, "image": cur["image"]}
+                tel.attributes["ghost_color_fix"] = ginfo
             a = boundary_alpha(person_n, m.person, region, soft_px=int(v31.get("boundary_soft_px", 2)))
             keep = a > 0.02
             final = (orig.astype(np.float32) * (1 - a[..., None]) + cur["pixels"].astype(np.float32) * a[..., None]

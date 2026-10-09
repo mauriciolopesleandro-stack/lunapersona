@@ -509,6 +509,8 @@ class ReplacementEngine:
             from app.core.engines.v31_integration import trusted_clothes
             tc, clothes_trust = trusted_clothes(raw.clothes, masks.person, float(sg.get("clothes_min_frac", 0.04)))
             clothes_ok = tc is not None
+            if getattr(self.segmenter, "dropped_clothes", None):
+                clothes_trust["pedidos_descartados"] = list(self.segmenter.dropped_clothes)
         px_min = min(h, w)
         body = ink = None
         if clothes_ok:

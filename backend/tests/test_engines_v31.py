@@ -132,6 +132,9 @@ async def test_v31_engine_runs_new_segmentation_clothing_preservation_and_bounda
         assert k in out.intermediates, k
     assert "multiescala" in out.measures["boundary"] or out.measures["boundary"].get("status") == "UNKNOWN"
     assert out.telemetry.attributes["v31_segmentation"]["clothes_new"]["status"] == "aceita"
+    # producao 09/10: passe que funde a roupa (no lugar da emenda fina), fantasma corrigido, tinta inventada medida
+    assert "clothing_harmonize" in passes and "clothing_seam" not in passes
+    assert "ghost_color_fix" in out.telemetry.attributes and "invented_markings" in out.telemetry.attributes
 
 
 def test_grounding_boxes_need_evidence_glasses_and_held_objects():
@@ -201,3 +204,75 @@ def test_jewelry_negatives_respect_what_the_photo_has():
     assert "pendant" not in neg and "rings on every finger" not in neg and "bangles" in neg
     by_box = SimpleNamespace(sheet=SimpleNamespace(caption=""), box_policy=[{"label": "necklace", "policy": "PRESERVE"}])
     assert "pendant" not in _extra_negative(v31, by_box)
+
+
+def test_ghost_background_gets_the_real_background_color():
+    """Foto do quarto (09/10): onde estava a pessoa original o fundo gerado saiu mais claro (contorno claro no braco)."""
+    from app.core.engines.v31_integration import ghost_color_fix
+
+    rng = np.random.default_rng(2)
+    orig = (np.array([120, 120, 125]) + rng.normal(0, 4, (120, 120, 3))).clip(0, 255).astype(np.uint8)
+    person_o = np.zeros((120, 120), np.float32)
+    person_o[20:110, 40:90] = 1
+    orig[person_o > 0.5] = (200, 160, 140)
+    person_n = np.zeros_like(person_o)
+    person_n[20:110, 46:84] = 1  # Persona mais estreita: faixas de 6 px viram fundo gerado
+    gen = orig.copy()
+    gen[(person_o > 0.5) & (person_n < 0.5)] = (150, 150, 155)  # fundo gerado CLARO no fantasma (+30)
+    gen[person_n > 0.5] = (190, 150, 130)
+    gen[person_o < 0.5] = np.clip(orig[person_o < 0.5].astype(int) + 30, 0, 255)  # gerado todo mais claro que o real
+    region = np.zeros_like(person_o)
+    region[10:118, 25:105] = 1
+    fixed, info = ghost_color_fix(orig, gen, person_n, person_o, region)
+    ghost = (person_o > 0.5) & ~(np.pad(person_n, 1)[1:-1, 2:] + person_n + np.pad(person_n, 1)[1:-1, :-2] > 0.5)
+    bg = orig[(person_o < 0.5)].reshape(-1, 3).astype(float).mean(axis=0)
+    before = np.abs(gen[ghost].astype(float).mean(axis=0) - bg).max()
+    after = np.abs(fixed[ghost].astype(float).mean(axis=0) - bg).max()
+    assert info["status"] == "aplicado" and before > 25 and after < 8
+    assert (fixed[person_n > 0.5] == gen[person_n > 0.5]).all()  # a Persona nao muda
+
+
+def test_invented_ink_on_persona_skin_is_found_and_nails_are_not():
+    from app.core.engines.v31_integration import invented_ink
+
+    rng = np.random.default_rng(3)
+    img = (np.array([205, 160, 135]) + rng.normal(0, 3, (160, 160, 3))).clip(0, 255).astype(np.uint8)
+    skin = np.zeros((160, 160), np.float32)
+    skin[10:150, 10:150] = 1
+    clean = invented_ink(img, skin, None, CFG31["tattoo"], 30.0)
+    img[90:96, 60:100] = (95, 100, 110)  # traco de tatuagem (escuro e frio) na mao
+    img[40:46, 40:52] = (200, 30, 40)  # unha vermelha (quente): nao e tatuagem
+    ink = invented_ink(img, skin, None, CFG31["tattoo"], 30.0)
+    assert clean.sum() == 0
+    assert ink[93, 80] > 0.5 and ink[43, 46] < 0.5
+
+
+async def test_segmenter_drops_clothes_queries_outside_the_person():
+    """Foto do quarto: 'pants'/'shirt' marcaram a cama; a lingerie ('lingerie') fica."""
+    from types import SimpleNamespace
+
+    from app.providers.comfyui.replacement import ComfySegmenter
+
+    person = np.zeros((50, 50), bool)
+    person[10:40, 15:35] = True
+    bed = np.zeros((50, 50), bool)
+    bed[35:50, 0:50] = True
+    bra = np.zeros((50, 50), bool)
+    bra[18:22, 18:32] = True
+    masks = {"x_clothes4_00001_.png": bed, "x_clothes5_00001_.png": bra}
+
+    class St:
+        async def load(self, name):
+            m = masks[name]
+            return np.repeat((m * 255).astype(np.uint8)[..., None], 3, 2)
+
+    seg = ComfySegmenter(session=None, store=St(), workflow="replacement-segment-v31", clothes_min_inside=0.6)
+    import app.providers.comfyui.replacement as R
+    orig = R.output_name
+    R.output_name = lambda i: i.filename
+    try:
+        out, dropped = await seg._clothes_inside([SimpleNamespace(filename=k) for k in masks], person.astype(np.float32))
+    finally:
+        R.output_name = orig
+    assert out is not None and out[20, 25] > 0.5 and out[45, 5] < 0.5
+    assert len(dropped) == 1 and dropped[0].startswith("4")

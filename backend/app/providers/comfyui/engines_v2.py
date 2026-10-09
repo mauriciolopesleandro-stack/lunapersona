@@ -75,7 +75,11 @@ class ComfyEngineFactory:
         # O checkpoint das passadas fica no grafo da analise para o ComfyUI nao descarrega-lo entre passadas.
         keep = {"ka1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": adapter.model.file}},
                 "ka2": {"class_type": "PreviewAny", "inputs": {"source": ["ka1", 0]}}}
-        return {"reader": ComfyReferenceReader(self.client), "segmenter": ComfySegmenter(self.session, self.store),
+        seg_cfg = (ReplacementEngine.load_config(self.config_dir / CONFIGS.get(version, "persona_replacement_v2.json"))
+                   .get("segmentation") or {})
+        segmenter = (ComfySegmenter(self.session, self.store, seg_cfg["workflow"], float(seg_cfg.get("clothes_min_inside", 0.6)))
+                     if seg_cfg.get("workflow") else ComfySegmenter(self.session, self.store))
+        return {"reader": ComfyReferenceReader(self.client), "segmenter": segmenter,
                 "analyzer": ComfyImageAnalyzer(self.client, keep_alive=keep), "store": self.store, "adapter": adapter,
                 "config": ReplacementEngine.load_config(self.config_dir / CONFIGS.get(version, "persona_replacement_v2.json")),
                 "price_per_hour": self.price, "provider": "comfyui"}

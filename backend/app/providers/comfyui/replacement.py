@@ -98,9 +98,16 @@ class ComfyImageStore:
 
 
 class ComfySegmenter:
-    def __init__(self, session: ComfySession, store: ComfyImageStore) -> None:
+    def __init__(self, session: ComfySession, store: ComfyImageStore, workflow: str = SEGMENT_WORKFLOW,
+                 clothes_min_inside: float | None = None) -> None:
         self.session = session
         self.store = store
+        self.workflow = workflow
+        # V3.1 (1a troca em producao, foto do quarto): 'pants'/'shirt' marcaram a CAMA e a uniao de todos os pedidos
+        # ficou 66% fora da pessoa -> a roupa inteira foi rejeitada e a lingerie redesenhada. Com isto, cada pedido de
+        # roupa que cai majoritariamente fora da pessoa e descartado sozinho (os outros ficam). None = uniao simples (V1).
+        self.clothes_min_inside = clothes_min_inside
+        self.dropped_clothes: list[str] = []
 
     async def segment(self, image: str, sheet: ReferenceSheet, protect: str | None = None) -> RawSegments:
         pos, neg = sam_points(sheet)
@@ -109,7 +116,7 @@ class ComfySegmenter:
             values = {"IMAGE": image, "POINTS_POS": pos, "POINTS_NEG": neg}
             if protect:  # V3: objetos seguros (celular, bolsa) alem dos acessorios
                 values["PROTECT"] = protect
-            graph = self.session.workflows.render(SEGMENT_WORKFLOW, values)
+            graph = self.session.workflows.render(self.workflow, values)
             entry = await client.wait_for_completion(await client.queue_prompt(graph))
         except ComfyUIError as exc:
             raise ProviderError(f"segmentacao falhou: {exc}") from exc
@@ -132,9 +139,30 @@ class ComfySegmenter:
         if person is None:
             raise ProviderError("a segmentacao nao devolveu a mascara da pessoa")
         labeled = parse_labeled_boxes(texts.get("f6", ""))
+        clothes = await union_of("clothes")
+        if self.clothes_min_inside is not None:
+            clothes, self.dropped_clothes = await self._clothes_inside(images, person)
         return RawSegments(person=person, hair=await mask_of("hair"), protect_boxes=[b for b, _ in labeled],
-                           tattoos=await mask_of("tattoo"), clothes=await union_of("clothes"),
+                           tattoos=await mask_of("tattoo"), clothes=clothes,
                            protect_labels=[label for _, label in labeled])
+
+    async def _clothes_inside(self, images, person: np.ndarray) -> tuple[np.ndarray | None, list[str]]:
+        p = person > 0.5
+        keep, dropped = [], []
+        for i in images:
+            if "_clothes" not in i.filename:
+                continue
+            m = (await self.store.load(output_name(i)))[..., 0] > 127
+            if not m.any():
+                continue
+            inside = float((m & p).sum()) / float(m.sum())
+            if inside < self.clothes_min_inside:
+                dropped.append(f"{i.filename.split('_clothes')[-1].split('_')[0]}: {inside:.2f} dentro da pessoa")
+                continue
+            keep.append(m & p)
+        if not keep:
+            return None, dropped
+        return np.max(np.stack(keep), axis=0).astype(np.float32), dropped
 
 
 class ComfyGarmentDescriber:

@@ -256,5 +256,53 @@ def halo_multiscale(original: np.ndarray, final: np.ndarray, person_new: np.ndar
     return out
 
 
-__all__ = ["ClothingPreservation", "GarmentResult", "ambiguity", "boundary_alpha", "garment_masks", "halo_multiscale",
-           "preserve_clothing", "trusted_clothes", "validated_skin"]
+# --- 1a troca em producao (09/10): fantasma claro e tatuagem inventada --------------------------------------------
+
+def ghost_color_fix(original: np.ndarray, generated: np.ndarray, person_new: np.ndarray, person_orig: np.ndarray,
+                    region: np.ndarray, radius: int = 16) -> tuple[np.ndarray, dict[str, Any]]:
+    """O 'fantasma' (onde estava a pessoa original e agora e fundo) so pode vir do gerado, mas o fundo gerado sai mais
+    claro/outra cor que o real (contorno claro no braco/lateral na foto do quarto, faixa ao lado da calca na rua). O fundo
+    gerado ali recebe o campo de cor de baixa frequencia (fundo real - fundo gerado) medido no fundo VISTO nas duas
+    imagens em volta. So cor/luz: a textura gerada fica."""
+    from app.core.persona_replacement.transfer import local_mean
+
+    pn = dilate((person_new > 0.5).astype(np.float32), 1) > 0.5
+    ghost = (person_orig > 0.5) & ~pn & (region > 0.5)
+    info: dict[str, Any] = {"ghost_px": int(ghost.sum())}
+    if ghost.sum() < 20:
+        return generated.copy(), info
+    po = dilate((person_orig > 0.5).astype(np.float32), 2) > 0.5
+    known = ~po & ~(dilate(pn.astype(np.float32), 2) > 0.5) & (dilate(ghost.astype(np.float32), radius * 2) > 0.5)
+    if known.sum() < 50:
+        return generated.copy(), {**info, "status": "sem fundo real em volta"}
+    o, g = original.astype(np.float32), generated.astype(np.float32)
+    field = local_mean(o - g, known, radius)
+    # peso 1 no fantasma inteiro (a faixa e fina: 4-8 px), suave so para FORA dele; nunca na Persona
+    w = np.maximum(ghost.astype(np.float32), np.clip(feather(dilate(ghost.astype(np.float32), 2), 2), 0, 1)) * ~pn
+    out = g + field * w[..., None]
+    info.update(status="aplicado", correcao_media=[round(float(v), 1) for v in field[ghost].mean(axis=0)])
+    return np.clip(out + 0.5, 0, 255).astype(np.uint8), info
+
+
+def invented_ink(final: np.ndarray, skin: np.ndarray, face_full: np.ndarray | None, tt: dict[str, Any],
+                 face_h: float) -> np.ndarray:
+    """Tinta NA PELE DA PERSONA (a Luna nao tem tatuagem): mesma medida da tatuagem da pessoa original (mais escura e
+    mais fria que a pele vizinha), so na pele validada e longe do rosto. Unha vermelha, umbigo e sombra sao quentes."""
+    from app.core.persona_replacement.transfer import tattoo_zones
+
+    h, w = final.shape[:2]
+    px_min = min(h, w)
+
+    def f(k: str) -> int:
+        return max(1, int(px_min * float(tt[k])))
+
+    face = face_full if face_full is not None else np.zeros((h, w), np.float32)
+    guard = max(4, int(face_h * float(tt.get("face_guard_frac", 0.1))))
+    z = tattoo_zones(final, skin, skin, np.zeros((h, w), np.float32), face, f("reach_frac"), f("edge_frac"),
+                     float(tt["ink_dy"]), float(tt["ink_dcr"]), float(tt["ink_dcr_light"]), float(tt["ink_dy_florence"]),
+                     float(tt["ink_dcr_florence"]), f("close_frac"), f("margin_frac"), guard)
+    return (z > 0.5).astype(np.float32)
+
+
+__all__ = ["ClothingPreservation", "GarmentResult", "ambiguity", "boundary_alpha", "garment_masks", "ghost_color_fix", "halo_multiscale",
+           "invented_ink", "preserve_clothing", "trusted_clothes", "validated_skin"]

@@ -487,3 +487,15 @@ Etapas em generated/v2/engines/v31_prod/reteste/ (+ telemetria.json).
   contorno claro no ombro direito.
 - Conclusao: colar a roupa original num corpo diferente gera bordas duras; proximo passo proposto = clothing_preservation
   desligado (roupa da reconstrucao, como na V3, que ficou limpa no top) mantendo grao/negativos/continuidade validada.
+
+### Trocas do usuario pelo site (09/10, pod hurv7p7e3pczlf) e correcoes
+
+- **Quarto (lingerie vermelha):** REJECT (seams 14,8; clothing_v3 cor dE 19,7 e alca inventada 16%). Roupa redesenhada:
+  `pants`/`shirt` do Florence marcaram a CAMA, a uniao ficou 34% dentro da pessoa e a roupa inteira foi rejeitada (sem
+  preservacao). Tatuagem inventada na mao esquerda. Contorno claro no braco/lateral (fantasma da pessoa original).
+- **Espelho (calcinha preta):** REJECT (seams 28,5). Roupa da foto original nao aceita (clothes_orig null). Tatuagem do
+  antebraco da pessoa original continuou; contorno claro no braco/cintura; colar e brinco trocados.
+- Correcoes (sem GPU): workflow `replacement-segment-v31` (+lingerie, bikini, underwear; cada pedido fora da pessoa e
+  descartado sozinho, min_frac 0,02); passe `clothing_harmonize` (peca inteira + 6 px, denoise 0,42, guarda de cor 8 dE)
+  no lugar da emenda fina; `ghost_color_fix` (campo de cor do fundo real no fantasma); `invented_markings` (tinta na pele
+  da Persona -> entrada sem o traco + passe LoRA 0,55). Nao testado na GPU.
