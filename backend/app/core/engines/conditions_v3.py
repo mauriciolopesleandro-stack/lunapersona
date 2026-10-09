@@ -163,8 +163,15 @@ _GARMENT_WORDS = ("top", "shirt", "t-shirt", "blouse", "tank", "crop", "corset",
                   "romper", "jumpsuit", "outfit", "garment", "fabric", "neckline", "button", "belt", "loop", "strap",
                   "ribbed", "knit", "lace", "bow", "pocket", "zipper", "pleat", "stripe", "print", "waistband", "hem",
                   "sleeve", "collar", "drawstring", "denim", "cotton", "satin", "silk", "linen", "seam", "trim")
+# 3a rodada (09/10): "accentuates her large breasts and cleavage" (corpo da pessoa ORIGINAL - o corpo e da Persona),
+# "gold heart-shaped necklace / bracelet on her left wrist" (acessorio descrito errado e redesenhado no braco errado) e
+# "cobblestone pathway surrounded by greenery" (cenario) entraram no texto da roupa
 _NOT_CLOTHING = ("hair", "face", "eyes", "skin", "smil", "lips", "makeup", "tattoo", "background", "wall", "door", "room",
-                 "window", "bed", "mirror", "phone", "towel", "floor", "light", "her face", "looking at")
+                 "window", "bed", "mirror", "phone", "towel", "floor", "light", "her face", "looking at",
+                 "breast", "cleavage", "bust", "chest", "curv", "figure", "body", "accentuat", "slim", "legs",
+                 "necklace", "bracelet", "earring", "ring", "watch", "jewel", "pendant", "chain",
+                 "pathway", "path", "street", "greenery", "garden", "tree", "bush", "hedge", "sky", "cobblestone",
+                 "surrounded", "standing", "posing", "shoot", "camera", "selfie", "photo", "image")
 
 
 def clothing_sentences(text: str) -> str:
@@ -175,7 +182,14 @@ def clothing_sentences(text: str) -> str:
     out = []
     # palavra INTEIRA no filtro de exclusao ("ribbed" contem "bed")
     not_clothing = re.compile(r"\b(" + "|".join(re.escape(w.strip()) for w in _NOT_CLOTHING) + r")", re.I)
-    for sent in re.split(r"(?<=[.!?;])\s+|,\s+(?=and\s)", text or ""):
+    # frase -> o trecho depois de "wearing" (quando houver) -> cortado nas ORACOES (that/which/standing/while/, she...)
+    pieces = []
+    for sent in re.split(r"(?<=[.!?;])\s+", text or ""):
+        m = re.search(r"\bwearing\s+", sent, re.I)
+        if m:
+            sent = sent[m.end():]
+        pieces += re.split(r",?\s+(?=(?:that|which|standing|posing|while|surrounded|with her|and she|she)\b)", sent, flags=re.I)
+    for sent in pieces:
         low = sent.lower()
         if any(w in low for w in _GARMENT_WORDS) and not not_clothing.search(low):
             s = re.sub(r"^(the image shows|this is|in this image,?|the woman is wearing|she is wearing|wearing)\s+", "",

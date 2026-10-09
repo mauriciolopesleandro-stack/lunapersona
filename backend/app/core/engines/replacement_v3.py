@@ -296,7 +296,11 @@ class PersonaReplacementV3(ReplacementEngine):
 
         # pele + luz: a pessoa ja nasceu inteira; continuidade so se a medida pedir
         sc_cfg = self.cfg.get("skin_continuity") or {}
-        if sc_cfg.get("enabled"):
+        # sem roupa segmentada, roupa cor de pele (calca bege da rua, 09/10) vira "perna" e ganha manchas de tom
+        if sc_cfg.get("enabled") and not scene.clothes_ok:
+            tel.add_pass("skin_continuity", 0.0, {}, False, "roupa nao segmentada: continuidade de pele desligada "
+                                                            "(roupa cor de pele seria tratada como pele)")
+        elif sc_cfg.get("enabled"):
             t0 = time.monotonic()
             smasks = semantic_masks(scene, self._hand_mask(scene))
             res = harmonize(cur["pixels"], orig, smasks, kp, face.bbox, max_dl=float(sc_cfg.get("max_dl", 14.0)),

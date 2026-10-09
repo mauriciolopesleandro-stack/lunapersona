@@ -892,7 +892,7 @@ class ReplacementEngine:
             tel.add_pass("photographic_integration", 0.0, {"cpu_seconds": round(time.monotonic() - t0, 2), **integ}, vok,
                          None if vok else f"integracao criou defeito visivel ({why}): mantida a imagem anterior")
         sc_cfg = self.cfg.get("skin_continuity") or {}
-        if sc_cfg.get("enabled") and scene.masks is not None:
+        if sc_cfg.get("enabled") and scene.masks is not None and scene.clothes_ok:
             # V2.1 SkinContinuityEngine: rosto, pescoco, ombros, bracos, maos e pernas como UMA pele - o tom da Persona
             # (rosto) com a luz da foto (variacao entre regioes medida na foto original). So baixa frequencia.
             t0 = time.monotonic()
