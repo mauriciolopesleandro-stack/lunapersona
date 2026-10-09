@@ -84,7 +84,7 @@ from app.providers.base import ProviderImage, ReferenceImage
 
 ENGINE_VERSION = "replacement-v2.2-gate"
 QUALITY_PROFILES = {"fast": "FAST", "balanced": "QUALITY", "hyperrealistic": "MAX_QUALITY"}
-VERSIONS = ("v2", "v2.1", "v3")
+VERSIONS = ("v2", "v2.1", "v3", "v3.1")
 QWEN_PRESERVE_CONTEXT = ["Keep exactly the same clothing, accessories, background, pose and lighting.",
                          "Do not add earrings, jewelry or makeup.", "Natural skin texture, light natural makeup."]
 
@@ -469,6 +469,12 @@ class ReplacementEngine:
         cov = (float(((raw.clothes > 0.5) & heuristic).sum()) / max(1.0, float(heuristic.sum()))
                if getattr(raw, "clothes", None) is not None else 0.0)
         clothes_ok = cov >= float(sg["min_clothes_coverage"])
+        clothes_trust = None
+        if not clothes_ok and sg.get("clothing_trust_florence") and getattr(raw, "clothes", None) is not None:
+            # V3.1: top claro / calca bege reprovavam no teste de COR e a roupa virava "pele" (09/10)
+            from app.core.engines.v31_integration import trusted_clothes
+            tc, clothes_trust = trusted_clothes(raw.clothes, masks.person, float(sg.get("clothes_min_frac", 0.04)))
+            clothes_ok = tc is not None
         px_min = min(h, w)
         body = ink = None
         if clothes_ok:
@@ -517,7 +523,7 @@ class ReplacementEngine:
                   "source_body_mask": np.clip(masks.person * (1 - masks.clothing) * (1 - ident), 0, 1)}
         if markings is not None:
             source["source_markings_mask"] = markings
-        notes = {"hair": hair_info}
+        notes = {"hair": hair_info, "clothes_trust": clothes_trust}
         if not clothes_ok:
             notes["clothing"] = ("roupa nao segmentada pelo detector: com a roupa PRESERVE o corpo/roupa da foto ficam "
                                  "(sem como separar pele de roupa)")

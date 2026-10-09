@@ -23,7 +23,8 @@ from app.validation_backends.skin import _split_locator
 from app.workflow_manager.manager import WorkflowManager
 
 ADAPTERS = {"realvisxl": RealVisXLAdapter, "lustify": LustifyAdapter}
-CONFIGS = {"v2": "persona_replacement_v2.json", "v2.1": "persona_replacement_v2_1.json", "v3": "persona_replacement_v3.json"}
+CONFIGS = {"v2": "persona_replacement_v2.json", "v2.1": "persona_replacement_v2_1.json", "v3": "persona_replacement_v3.json",
+           "v3.1": "persona_replacement_v3_1.json"}
 
 
 class EngineSetupError(RuntimeError):
@@ -82,7 +83,7 @@ class ComfyEngineFactory:
         default = bool((cfg.get("qwen") or {}).get("enabled")) or bool((cfg.get("qwen_identity_refinement") or {}).get("enabled")) \
             or bool((cfg.get("identity_refinement") or {}).get("qwen_allowed"))
         want = bool(qwen) if qwen is not None else default
-        if version == "v3":
+        if version.startswith("v3"):
             from app.core.engines.replacement_v3 import PersonaReplacementV3
             from app.providers.comfyui.replacement import ComfyGarmentDescriber
             eng = PersonaReplacementV3(**parts, face_lock=await self._face_lock() if want else None)

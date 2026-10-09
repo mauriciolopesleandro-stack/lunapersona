@@ -89,10 +89,12 @@ def exposed_skin(img: np.ndarray, masks: dict[str, np.ndarray]) -> np.ndarray:
     return skin
 
 
-def skin_regions(img: np.ndarray, masks: dict[str, np.ndarray], kp, face_bbox) -> dict[str, np.ndarray]:
+def skin_regions(img: np.ndarray, masks: dict[str, np.ndarray], kp, face_bbox,
+                 skin_override: np.ndarray | None = None) -> dict[str, np.ndarray]:
     """Regioes de pele EXPOSTA (pele detectada na imagem, fora da roupa) por parte do corpo."""
     h, w = img.shape[:2]
-    skin = exposed_skin(img, masks)
+    # V3.1: pele validada pela SEGMENTACAO (pessoa - roupa - cabelo - acessorio) quando houver; senao a cor
+    skin = (skin_override > 0.5) if skin_override is not None else exposed_skin(img, masks)
     face = (masks["face_mask"] > 0.5) & skin
     face = erode(face.astype(np.float32), 2) > 0.5  # sem a borda (cabelo/fundo misturados)
     out = {"face": face}
@@ -143,7 +145,8 @@ def continuity_residuals(final: np.ndarray, original: np.ndarray, masks: dict[st
                          face_bbox) -> dict[str, Any]:
     """Para cada transicao a->b: |(F_b - F_a) - (O_b - O_a)| em Lab (dE). 0 = a variacao de pele entre as duas
     regioes e exatamente a variacao de luz que a foto ja tinha."""
-    fr, orr = skin_regions(final, masks, kp, face_bbox), skin_regions(original, masks, kp, face_bbox)
+    fr = skin_regions(final, masks, kp, face_bbox, masks.get("validated_skin_final"))
+    orr = skin_regions(original, masks, kp, face_bbox, masks.get("validated_skin_original"))
     fs, os_ = region_stats(rgb_to_lab(final), fr), region_stats(rgb_to_lab(original), orr)
     res = {}
     for a, b in TRANSITIONS:
@@ -160,7 +163,8 @@ def harmonize(final: np.ndarray, original: np.ndarray, masks: dict[str, np.ndarr
               smooth_frac: float = 0.03, boost: float = 1.0) -> ContinuityResult:
     """SkinContinuityEngine + SkinToneTransfer: campo de deslocamento Lab SUAVE so na pele exposta (rosto = ref.)."""
     h, w = final.shape[:2]
-    fr, orr = skin_regions(final, masks, kp, face_bbox), skin_regions(original, masks, kp, face_bbox)
+    fr = skin_regions(final, masks, kp, face_bbox, masks.get("validated_skin_final"))
+    orr = skin_regions(original, masks, kp, face_bbox, masks.get("validated_skin_original"))
     lab = rgb_to_lab(final)
     fs, os_ = region_stats(lab, fr), region_stats(rgb_to_lab(original), orr)
     before = continuity_residuals(final, original, masks, kp, face_bbox)
@@ -192,7 +196,8 @@ def harmonize(final: np.ndarray, original: np.ndarray, masks: dict[str, np.ndarr
     field_num = _box(acc, rad)
     field_den = _box(wsum + face_w, rad)
     fld = field_num / np.maximum(field_den, 1e-3)[..., None]
-    skin = exposed_skin(final, masks)
+    vs = masks.get("validated_skin_final")
+    skin = (vs > 0.5) if vs is not None else exposed_skin(final, masks)
     skin &= ~(fr["face"]) & (dilate(known.astype(np.float32), rad) > 0.5)
     wgt = np.clip(feather(skin.astype(np.float32), max(2, rad // 3)), 0, 1)[..., None] * skin[..., None]
     out_lab = lab + fld * wgt

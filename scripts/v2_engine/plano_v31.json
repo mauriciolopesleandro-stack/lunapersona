@@ -1,0 +1,6 @@
+{"segundos_por_imagem": 540, "overhead_segundos": 240,
+ "_nota": "V3.1 x V3 (09/10): mesmas fotos e semente da 3a rodada da V3 (generated/v2/engines/v3c = linha de base). Muda so o que a V3.1 acrescenta: roupa por imagem, pele validada pela segmentacao, grao, borda pela pessoa nova, colar/anel protegidos.",
+ "execucoes": [
+  {"id": "espelho_braco__v3.1", "foto": "fotos_v2/v3_espelho_braco.jpg", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v3.1"},
+  {"id": "rua_bege__v3.1", "foto": "fotos_v2/v3_rua_bege.jpg", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v3.1"}
+ ]}

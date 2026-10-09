@@ -57,8 +57,11 @@ PERFIS = {
     "v2.1": {"replacement_version": "v2.1", "debug": True},
     # V3: reconstrucao da PESSOA INTEIRA (persona_replacement_v3.json); Qwen so adaptativo
     "v3": {"replacement_version": "v3", "debug": True},
+    # V3.1: roupa preservada por imagem, pele validada pela segmentacao, borda pela pessoa nova
+    "v3.1": {"replacement_version": "v3.1", "debug": True},
 }
-CONFIGS = {"v2": "persona_replacement_v2.json", "v2.1": "persona_replacement_v2_1.json", "v3": "persona_replacement_v3.json"}
+CONFIGS = {"v2": "persona_replacement_v2.json", "v2.1": "persona_replacement_v2_1.json", "v3": "persona_replacement_v3.json",
+           "v3.1": "persona_replacement_v3_1.json"}
 CN = "controlnet-union-sdxl-1.0-promax.safetensors"
 
 
@@ -120,7 +123,7 @@ async def main() -> int:
     def pedido(ex):
         return {**PERFIS.get(ex.get("perfil", ""), {}), **ex.get("request", {})}
 
-    usa_qwen = any(pedido(ex).get("qwen_face_lock") or (pedido(ex).get("replacement_version") in ("v2.1", "v3")
+    usa_qwen = any(pedido(ex).get("qwen_face_lock") or (pedido(ex).get("replacement_version") in ("v2.1", "v3", "v3.1")
                                                         and pedido(ex).get("qwen_face_lock") is not False) for ex in execs)
     problemas = await adapter.load() + (await face_lock.validate_configuration() if usa_qwen else [])
     if problemas:
@@ -134,7 +137,7 @@ async def main() -> int:
     analyzer = ComfyImageAnalyzer(client, keep_alive=keep)
     from app.core.engines.replacement_v3 import PersonaReplacementV3  # noqa: E402
 
-    engines = {v: (PersonaReplacementV3 if v == "v3" else ReplacementEngine)(
+    engines = {v: (PersonaReplacementV3 if v.startswith("v3") else ReplacementEngine)(
                    reader=reader, segmenter=seg, analyzer=analyzer, store=store, adapter=adapter,
                                     config=ReplacementEngine.load_config(ROOT / "config" / f),
                                     price_per_hour=PRICE, provider="comfyui@runpod", face_lock=face_lock if usa_qwen else None)
@@ -150,6 +153,7 @@ async def main() -> int:
     for e in engines.values():
         e.master_body_loader = master_body
     engines["v3"].describer = ComfyGarmentDescriber(client)
+    engines["v3.1"].describer = ComfyGarmentDescriber(client)
     m = sheet.master("master_face")
     master = ReferenceImage(m.reference_id, m.file, sheet.read_master("master_face"), m.sha256)
     negative = ", ".join(NegativePromptBuilder(json.loads((ROOT / "config" / "persona_engine.json").read_text())["global_negative"])

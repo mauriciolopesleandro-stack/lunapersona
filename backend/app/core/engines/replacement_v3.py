@@ -50,9 +50,16 @@ from app.core.engines.replacement import (
     scrub_identity,
 )
 from app.core.engines.skin import structure_preserving_fill
-from app.core.engines.skin_continuity import harmonize
+from app.core.engines.skin_continuity import continuity_residuals, harmonize
 from app.core.engines.scene_analysis import semantic_masks
 from app.core.engines.telemetry import JobTelemetry
+from app.core.engines.v31_integration import (
+    ambiguity,
+    boundary_alpha,
+    preserve_clothing,
+    trusted_clothes,
+    validated_skin,
+)
 from app.core.persona_replacement.blending import feather
 from app.core.persona_replacement.segmentation import dilate, ellipse, erode
 from app.core.persona_replacement.transfer import dilate_round
@@ -196,7 +203,8 @@ class PersonaReplacementV3(ReplacementEngine):
         prompt = cond(template.format(body=body_txt, skin=skin_txt, hair=hair_txt,
                                       clothing=cloth.prompt() or "the same clothes as the photo", scene=scene_txt), "identity")
         neg = ", ".join(dict.fromkeys([t for t in negative.split(", ") if t] + cloth.negative() + NO_BEAUTIFY
-                                      + list(self.cfg.get("body_skin_negative", []))))
+                                      + list(self.cfg.get("body_skin_negative", []))
+                                      + list((self.cfg.get("v31") or {}).get("extra_negative", []))))
         layers = scene.layers
         if plan.extra.get("accessory_grow"):
             from dataclasses import replace as dc_replace
@@ -294,10 +302,74 @@ class PersonaReplacementV3(ReplacementEngine):
             cur, modified = {"pixels": pxr, "image": locr}, np.maximum(modified, rr)
             inter[f"reflection_{i}"] = locr
 
+        # ---- V3.1: a pessoa NOVA segmentada (roupa, cabelo, contorno) -> roupa original preservada -> pele validada
+        v31 = self.cfg.get("v31") or {}
+        seg_new = person_n = clothes_n = hair_n = skin_n = skin_o = None
+        if v31.get("enabled"):
+            seg_new = await self._segment_current(cur["image"], scene)
+            if seg_new is not None:
+                person_n = (seg_new.person > 0.5).astype(np.float32)
+                hair_n = None if seg_new.hair is None else (seg_new.hair > 0.5).astype(np.float32)
+                clothes_n, cinfo = trusted_clothes(getattr(seg_new, "clothes", None), person_n,
+                                                   float(v31.get("clothes_min_frac", 0.04)))
+                tel.attributes["v31_segmentation"] = {"clothes_new": cinfo, "clothes_orig": scene.notes.get("clothes_trust"),
+                                                      "ambiguity": ambiguity(cur["pixels"], clothes_n, person_n)}
+                clothes_o = m.clothing if scene.clothes_ok else None
+                if v31.get("clothing_preservation", True) and clothes_o is not None and clothes_n is not None:
+                    t0 = time.monotonic()
+                    keep_out = np.zeros((h, w), np.float32)
+                    for k in (hair_n, scene.accessory, self._hand_mask(scene)):
+                        if k is not None:
+                            keep_out = np.maximum(keep_out, (k > 0.5).astype(np.float32))
+                    cp = preserve_clothing(cur["pixels"], orig, clothes_o, clothes_n, kp, kp, keep_out,
+                                           max_scale_dev=float(v31.get("max_scale_dev", 0.25)))
+                    lcp = await self.store.save(cp.pixels, "clothing_preserved")
+                    inter["clothing_preserved"] = lcp
+                    cur = {"pixels": cp.pixels, "image": lcp}
+                    info = cp.to_dict()
+                    if (cp.to_reconstruct > 0.5).sum() > 200:  # so as emendas e o que os originais nao cobrem
+                        seam = np.clip(feather(cp.to_reconstruct, 2), 0, 1) * (cp.to_reconstruct > 0.02)
+                        ctext = cloth.prompt() or "the same clothes as the photo"
+                        pxs, lcs, _ = await self._pass(
+                            "clothing_seam", cur, seam, f"{ctext}, same fabric texture and color as the photo, natural folds",
+                            neg, float(v31.get("seam_denoise", 0.35)), req.seed + 341, plan, tel,
+                            controls=ControlSpec(pose_strength=0.6, depth_strength=0.5, end_percent=0.8, structure=lcp),
+                            identity=IdentitySpec(use_lora=False), accessory=paste)
+                        cur = {"pixels": pxs, "image": lcs}
+                        inter["clothing_seam"] = lcs
+                    modified = np.maximum(modified, clothes_n)
+                    tel.add_pass("clothing_preservation", 0.0, {"cpu_seconds": round(time.monotonic() - t0, 2), **info}, True,
+                                 None)
+                skin_n = validated_skin(person_n, clothes_n, hair_n, scene.accessory)
+                skin_o = validated_skin(m.person, clothes_o, m.hair, scene.accessory)
+
         # pele + luz: a pessoa ja nasceu inteira; continuidade so se a medida pedir
         sc_cfg = self.cfg.get("skin_continuity") or {}
-        # sem roupa segmentada, roupa cor de pele (calca bege da rua, 09/10) vira "perna" e ganha manchas de tom
-        if sc_cfg.get("enabled") and not scene.clothes_ok:
+        if sc_cfg.get("enabled") and skin_n is not None:
+            # V3.1: so na pele VALIDADA pela segmentacao (nunca roupa/cabelo/acessorio) e so se a transicao pedir
+            t0 = time.monotonic()
+            smasks = semantic_masks(scene, self._hand_mask(scene))
+            smasks["validated_skin_final"], smasks["validated_skin_original"] = skin_n, skin_o
+            pass_lim = float(((sc_cfg.get("thresholds") or {}).get("transition_dE") or {}).get("pass", 6.0))
+            before = continuity_residuals(cur["pixels"], orig, smasks, kp, face.bbox)
+            if before.get("worst") is None or before["worst"] <= pass_lim:
+                tel.add_pass("skin_continuity", 0.0, {"before": before}, False,
+                             "pele ja continua (ou sem medida): nada aplicado")
+            else:
+                res = harmonize(cur["pixels"], orig, smasks, kp, face.bbox, max_dl=float(sc_cfg.get("max_dl", 14.0)),
+                                max_dab=float(sc_cfg.get("max_dab", 8.0)),
+                                boost=1.0 + 0.5 * float(plan.extra.get("skin_boost", 0)))
+                changed = np.abs(res.pixels.astype(np.int16) - cur["pixels"].astype(np.int16)).max(axis=2) > 0
+                on_cloth = int((changed & (dilate(clothes_n, 1) > 0.5)).sum()) if clothes_n is not None else 0
+                ok = res.applied and (res.after.get("worst") or 0) <= (res.before.get("worst") or 0) and on_cloth == 0
+                if ok:
+                    l2 = await self.store.save(res.pixels, "skin_integration")
+                    inter["skin_integration"] = l2
+                    cur, modified = {"pixels": res.pixels, "image": l2}, np.maximum(modified, changed.astype(np.float32))
+                tel.add_pass("skin_continuity", 0.0, {"cpu_seconds": round(time.monotonic() - t0, 2),
+                                                      "skin_changed_on_clothing_px": on_cloth, **res.to_dict()}, ok,
+                             None if ok else ("mexeria na roupa: recusado" if on_cloth else (res.note or "sem ganho")))
+        elif sc_cfg.get("enabled") and not scene.clothes_ok:
             tel.add_pass("skin_continuity", 0.0, {}, False, "roupa nao segmentada: continuidade de pele desligada "
                                                             "(roupa cor de pele seria tratada como pele)")
         elif sc_cfg.get("enabled"):
@@ -314,6 +386,17 @@ class PersonaReplacementV3(ReplacementEngine):
             tel.add_pass("skin_continuity", 0.0, {"cpu_seconds": round(time.monotonic() - t0, 2), **res.to_dict()}, ok,
                          None if ok else (res.note or "sem ganho"))
         integ = {}
+        if v31.get("grain_match") and person_n is not None:
+            from app.core.persona_replacement.lighting import match_grain, noise_level
+
+            inner_o = (m.person > 0.5) & ~(dilate((m.person < 0.5).astype(np.float32), 4) > 0.5)
+            inner_n = (person_n > 0.5) & ~(dilate((person_n < 0.5).astype(np.float32), 4) > 0.5)
+            ref, before_n = noise_level(orig, inner_o.astype(np.float32)), noise_level(cur["pixels"], inner_n.astype(np.float32))
+            pxg = match_grain(cur["pixels"], inner_n.astype(np.float32), ref, seed=req.seed)
+            lg = await self.store.save(pxg, "grain_match")
+            cur = {"pixels": pxg, "image": lg}
+            tel.add_pass("grain_match", 0.0, {"ref_person_noise": ref, "before": before_n,
+                                              "after": noise_level(pxg, inner_n.astype(np.float32))}, True, None)
         if plan.photographic_integration:
             px3, integ = integrate(orig, cur["pixels"], modified, face=scene.face_full, body_skin=None, seed=req.seed)
             l3 = await self.store.save(px3, "photometric_integration")
@@ -322,8 +405,19 @@ class PersonaReplacementV3(ReplacementEngine):
             tel.add_pass("photometric_integration", 0.0, integ, True, None)
 
         # composicao na cena: fora da pessoa reconstruida = a foto; acessorios/objetos da frente por cima
-        keep = dilate((modified > 0.02).astype(np.float32), 2) > 0.5
-        final = np.where(keep[..., None], cur["pixels"], orig)
+        if v31.get("boundary_from_segmentation") and person_n is not None:
+            # V3.1: fora da pessoa NOVA (e do 'fantasma' da original) volta o fundo ORIGINAL exato - sem tolerancia
+            a = boundary_alpha(person_n, m.person, region, soft_px=int(v31.get("boundary_soft_px", 2)))
+            keep = a > 0.02
+            final = (orig.astype(np.float32) * (1 - a[..., None]) + cur["pixels"].astype(np.float32) * a[..., None]
+                     + 0.5).astype(np.uint8)
+            modified = a
+            if req.keep_intermediates:
+                inter["boundary_alpha"] = await self.store.save(np.repeat((a * 255).astype(np.uint8)[..., None], 3, 2),
+                                                                "boundary_alpha")
+        else:
+            keep = dilate((modified > 0.02).astype(np.float32), 2) > 0.5
+            final = np.where(keep[..., None], cur["pixels"], orig)
         if scene.layers:
             final = composite_layers(final, orig, scene.layers, within=keep.astype(np.float32))
         final_loc = await self.store.save(final, "final")
@@ -341,9 +435,25 @@ class PersonaReplacementV3(ReplacementEngine):
                                                           "pose_map")
                 inter["original"] = req.image
                 inter["final"] = final_loc
-        self._v3_last = {"region": region, "clothing": cloth, "geom": geom}
+                for nm, mk in (("person_new", person_n), ("clothes_new", clothes_n), ("hair_new", hair_n),
+                               ("skin_validated", skin_n)):
+                    if mk is not None:
+                        inter[nm] = await self.store.save(np.repeat((np.clip(mk, 0, 1) * 255).astype(np.uint8)[..., None], 3, 2), nm)
+                diff = np.clip(np.abs(final.astype(np.int16) - orig.astype(np.int16)).max(axis=2) * 3, 0, 255).astype(np.uint8)
+                inter["diff_map"] = await self.store.save(np.repeat(diff[..., None], 3, 2), "diff_map")
+        self._v3_last = {"region": region, "clothing": cloth, "geom": geom, "person_new": person_n}
         return final, final_loc, inter, {"modified_area": round(float((modified > 0.5).mean()), 4), "integration": integ,
                                          "modified_mask": modified, "body_region": region}
+
+    async def _segment_current(self, locator: str, scene):
+        """Segmenta a imagem RECONSTRUIDA (pessoa, cabelo, roupa) - a geometria nova da Persona."""
+        protect = ((self.cfg.get("segmentation") or {}).get("protect") or "").strip()
+        try:
+            if protect:
+                return await self.segmenter.segment(locator, scene.sheet, protect=protect)
+            return await self.segmenter.segment(locator, scene.sheet)
+        except Exception:  # noqa: BLE001 - sem segmentacao nova: V3.1 cai no comportamento da V3 (registrado)
+            return None
 
     async def _describe_garments(self, req, cloth, w, h) -> None:
         """Descricao de CADA peca recortada (Florence, legenda detalhada): botao, passantes, textura, decote, laco.
@@ -417,6 +527,9 @@ class PersonaReplacementV3(ReplacementEngine):
                            "final": silhouette(person_f, kp_f or scene.base_pose)}
         m["boundary"] = boundary_halo(scene.original, final, scene.masks.person,
                                       last.get("region") if last.get("region") is not None else scene.identity, person_f)
+        if person_f is not None and last.get("region") is not None:
+            from app.core.engines.v31_integration import halo_multiscale
+            m["boundary"]["multiescala"] = halo_multiscale(scene.original, final, person_f, last["region"])
         fface = an.persona_face()
         m["face_geometry"] = compare_face_geometry(last.get("geom") or face_geometry(scene.sheet.target_face), face_geometry(fface))
         # reflexo ainda com a pessoa original?
