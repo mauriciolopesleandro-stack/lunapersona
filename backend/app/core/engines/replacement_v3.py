@@ -345,7 +345,10 @@ class PersonaReplacementV3(ReplacementEngine):
         """Descricao de CADA peca recortada (Florence, legenda detalhada): botao, passantes, textura, decote, laco.
         09/10: so cor/alcas/corte no texto -> o modelo trocou short de alfaiataria por short de cordao."""
         describer = getattr(self, "describer", None)
-        if describer is None:
+        # 2a rodada (09/10): a legenda detalhada INVENTOU detalhes (cordao no short do espelho, "botoes na frente" que
+        # foram parar no top da porta, que ainda virou verde-oliva) e o texto longo baixou a identidade 0,81 -> 0,67.
+        # Fica desligado ate haver condicionamento VISUAL da roupa.
+        if describer is None or not (self.cfg.get("full_reconstruction") or {}).get("garment_details", False):
             return
         cache = self.__dict__.setdefault("_garment_cache", {})
         for g in cloth.garments:

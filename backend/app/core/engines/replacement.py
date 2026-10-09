@@ -314,6 +314,21 @@ def _jewelry_plausible(label: str, box, face_bbox, pose) -> bool:
     return any(abs(cx - wx) <= reach and abs(cy - wy) <= reach for wx, wy in wrists)
 
 
+def _held(box, pose, face_bbox) -> bool:
+    """Objeto seguro (celular, bolsa) so vale perto de um pulso do DWPose (09/10: travesseiro detectado como bolsa)."""
+    from app.core.validation.geometry import point
+
+    if not pose:
+        return False
+    wrists = [p for p in (point(pose, "rwri"), point(pose, "lwri")) if p]
+    if not wrists:
+        return False
+    bx1, by1, bx2, by2 = box
+    fh = max(1.0, face_bbox[3] - face_bbox[1])
+    reach = fh * 0.8
+    return any(bx1 - reach <= wx <= bx2 + reach and by1 - reach <= wy <= by2 + reach for wx, wy in wrists)
+
+
 def box_class(label: str) -> str:
     """Rotulo do detector -> atributo. Sem rotulo (detector antigo) = acessorio (conservador: mantido)."""
     lab = (label or "").lower()
@@ -381,6 +396,10 @@ class ReplacementEngine:
             item, pol = attrs.item_policy(lab)
             cls = ITEMS[item] if item else box_class(lab)
             note = ""
+            if any(w in (lab or "").lower() for w in OBJECT_WORDS) and not _held(b, base_pose, bbox):
+                box_policy.append({"box": [round(v, 1) for v in b], "label": lab, "item": item, "attribute": cls,
+                                   "policy": "IGNORE", "note": "objeto longe das maos: falso positivo do detector"})
+                continue
             if cls == "jewelry" and b not in {x for x, y in zip(raw.protect_boxes, labels) if box_class(y) != "jewelry"} \
                     and not _jewelry_plausible(lab, b, bbox, base_pose):
                 pol, note = "IGNORE", "rotulo de joia longe do pulso/cabeca no esqueleto: ignorado"
@@ -428,7 +447,14 @@ class ReplacementEngine:
             # spec 46.2/46.3: cada objeto mantido vira camada (oculos de lente clara: so a armacao)
             for b in raw.protect_boxes:
                 lab = kept_labels.get(b, "")
-                layers.append(build_layer(original, b, lab, attrs.item_policy(lab)[0], PRESERVE))
+                layer = build_layer(original, b, lab, attrs.item_policy(lab)[0], PRESERVE)
+                if any(w in (lab or "").lower() for w in OBJECT_WORDS):
+                    bx = np.zeros((h, w), np.float32)
+                    x1b, y1b, x2b, y2b = (int(v) for v in b)
+                    bx[max(0, y1b):y2b + 1, max(0, x1b):x2b + 1] = 1
+                    layer.mask = erode(bx, 1)
+                    layer.kind = "object"
+                layers.append(layer)
             layers = [x for x in layers if (x.mask > 0.5).sum() > 20 or x.lens is not None]
             accessory = preserved_mask(layers)
             # a mascara de geracao cobre o acessorio (rosto inteiro e coerente); ele volta colado depois

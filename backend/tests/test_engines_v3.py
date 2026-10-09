@@ -241,7 +241,12 @@ def test_garment_details_go_to_the_prompt_and_unmentioned_inventions_to_the_nega
 
 
 async def test_v3_describes_each_garment_and_protects_held_objects():
+    eng0, _, _ = engine3({"foto": 0.1, "v3_full": 0.8, "final": 0.8})
+    eng0.describer = Describer()
+    await eng0.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, replacement_version="v3"))
+    assert eng0.describer.calls == []  # padrao: desligado (a legenda detalhada inventou cordao/botoes em 09/10)
     eng, ad, store = engine3({"foto": 0.1, "v3_full": 0.8, "final": 0.8})
+    eng.cfg = {**CFG3, "full_reconstruction": {**CFG3["full_reconstruction"], "garment_details": True}}
     eng.describer = Describer()
     out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, replacement_version="v3"))
     assert eng.describer.calls  # uma descricao por peca recortada
@@ -264,3 +269,13 @@ def test_body_change_and_hair_are_not_invented_clothing():
     with_hair[35:50, 38:43] = 1
     c2 = clothing_consistency(img, img.copy(), clothes, with_hair, person, kp_standing(), hair_f=hair)
     assert c2["straps_invented"] is False
+
+
+def test_held_objects_only_near_a_wrist():
+    from app.core.engines.replacement import _held
+
+    kp = kp_standing()  # pulsos em (33,95) e (87,95)
+    face = (50.0, 10.0, 70.0, 35.0)
+    assert _held((80, 85, 95, 110), kp, face) is True  # celular na mao
+    assert _held((0, 160, 20, 199), kp, face) is False  # "bolsa" no travesseiro, longe das maos
+    assert _held((80, 85, 95, 110), None, face) is False  # sem esqueleto: nao arrisca colar pixels

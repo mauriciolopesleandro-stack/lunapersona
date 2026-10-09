@@ -400,3 +400,18 @@ O que aprendemos:
 - **A roupa perde detalhes.** A ClothingCondition só tinha cor, alças e corte: a legenda de roupa do Florence veio vazia (`fields.clothing`). Botão, passantes, textura canelada, decote e laço não entram no texto.
 - **Objetos seguros (o celular) não estão protegidos.** O celular não vira camada de acessório.
 - **Falso positivo no ClothingValidator:** o corpo da Luna é maior, então a roupa cobre áreas que eram pele na foto. Isso contou como "peça nova sobre a pele" (10,6%). A "alça inventada" na porta também foi falso positivo: provavelmente o cabelo escuro sobre o ombro.
+
+### V3, 2ª rodada (2026-10-09, com as correções 30e00d9)
+
+Pod `lpfimwvl6lk3vp` (RTX PRO 4000 Blackwell). Sondagem + teste: ~US$ 0,25. Antes houve uma falha de ~1 min no script, por causa de `Cache` sem kwargs.
+
+| Foto | Identidade | No olho |
+|---|---|---|
+| espelho | 0,67 (1ª: 0,81) | **pior**: short virou branco com cordão, top virou regata comprida; celular continuou preto |
+| porta | 0,66 (1ª: 0,74) | short voltou a ter botão e passantes, mas o top virou **verde-oliva com botões na frente** |
+
+Por quê:
+
+- **A legenda detalhada do Florence por peça INVENTA detalhes.** No espelho escreveu "drawstring waistband" (o short não tem cordão). Na porta escreveu "button-down front" e "cinched with a thin strap", e esses botões foram parar no top. O texto longo ainda diluiu a identidade. **Desligado** (`garment_details: false`).
+- **Celular:** a camada só cobriu 1.455 de ~15.000 pixels da caixa, porque o celular bege foi lido como pele. Agora objeto seguro = **caixa inteira**, e só perto de um pulso do DWPose. Foi um travesseiro que virou "bolsa".
+- **Conclusão:** texto não segura detalhe de roupa. Para manter a roupa idêntica com o corpo da Luna, falta condicionamento **visual** da roupa: pixels da roupa original onde a forma coincide + passe leve de integração, ou um adaptador de imagem para roupa.

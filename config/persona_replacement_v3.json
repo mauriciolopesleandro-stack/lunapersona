@@ -225,7 +225,9 @@
     "face_denoise": 0.35,
     "work_side": 1280,
     "background_tolerance": 28,
-    "_note": "denoise 0,85 refaz corpo e roupa (o corpo da Persona aparece); pose 0,85 e profundidade 0,35 seguram a estrutura. Valores iniciais, a medir"
+    "_note": "denoise 0,85 refaz corpo e roupa (o corpo da Persona aparece); pose 0,85 e profundidade 0,35 seguram a estrutura. Valores iniciais, a medir",
+    "garment_details": false,
+    "_garment_details_note": "desligado em 09/10: a legenda detalhada do Florence inventou cordao/botoes e mudou a cor; falta condicionamento VISUAL da roupa"
   },
   "prompts_v3": {
     "full": "lunavox, a woman with {body}, {skin}, {hair}, wearing {clothing}, {scene}, natural face, natural skin with pores, no makeup, same pose and same lighting as the photo, candid unretouched smartphone photo"
