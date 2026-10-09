@@ -22,6 +22,28 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EngineV2Result | null>(null);
   const timer = useRef<number | null>(null);
+  // A imagem do resultado e baixada para o navegador assim que fica pronta: o botao Baixar vira um link local
+  // (sem esperar rede depois do toque - o celular, principalmente o iPhone, ignora o download que chega atrasado)
+  // e a imagem continua na tela mesmo depois que o pod desliga.
+  const [localUrl, setLocalUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!result) return setLocalUrl(null);
+    let url: string | null = null;
+    let cancelled = false;
+    fetch(result.image_url)
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((b) => {
+        if (cancelled) return;
+        url = URL.createObjectURL(b);
+        setLocalUrl(url);
+      })
+      .catch(() => setLocalUrl(null));
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [result]);
 
   useEffect(() => {
     if (!personaId && personas[0]) setPersonaId(personas.find((p) => p.id === "luna")?.id ?? personas[0].id);
@@ -113,11 +135,18 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
           )}
           <div className="v2-compare">
             {preview && <img src={preview} alt="Original" />}
-            <img src={result.image_url} alt="Resultado" />
+            <img src={localUrl ?? result.image_url} alt="Resultado" />
           </div>
-          <button type="button" className="small" onClick={() => downloadFile(result.image_url, `troca_${personaId}.png`)}>
-            Baixar
-          </button>
+          {localUrl ? (
+            <a className="button-link" href={localUrl} download={`troca_${personaId}.png`}>
+              Baixar
+            </a>
+          ) : (
+            <button type="button" className="small" onClick={() => downloadFile(result.image_url, `troca_${personaId}.png`)}>
+              Baixar
+            </button>
+          )}
+          <p className="muted small">No celular, se não baixar: toque e segure a imagem e escolha “Salvar imagem”.</p>
         </div>
       )}
     </div>

@@ -505,6 +505,19 @@ button.small {
   font-size: 12px;
 }
 
+/* link de download com cara de botao (Trocar pessoa: a imagem ja esta no navegador) */
+a.button-link {
+  display: inline-block;
+  background: var(--bg-panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-weight: 600;
+  font-size: 12px;
+  text-decoration: none;
+}
+
 button.danger {
   background: var(--danger-bg);
   color: var(--danger);
