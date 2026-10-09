@@ -131,8 +131,9 @@
       "object"
     ],
     "object_max_skin_frac": 0.35,
-    "workflow": "replacement-segment-v31",
-    "clothes_min_inside": 0.6
+    "workflow": "replacement-segment",
+    "clothes_min_inside": 0.6,
+    "_note_workflow": "replacement-segment-v31 (+lingerie/bikini/underwear) testado em 09/10: na rua o top novo virou 1,13x1,47 do original (os pedidos novos pegaram pele) e na lingerie nada foi colado - voltou ao workflow original, mantendo o descarte de pedido fora da pessoa (clothes_min_inside)"
   },
   "tattoo": {
     "reach_frac": 0.03,
@@ -310,10 +311,10 @@
       "_note": "reteste 09/10: roupa colada com cara de adesivo; valores iniciais, sem benchmark"
     },
     "invented_markings": {
-      "enabled": true,
+      "enabled": false,
       "min_px": 40,
       "denoise": 0.55,
-      "_note": "foto do quarto 09/10: tatuagem inventada na mao (a Luna nao tem tatuagem)"
+      "_note": "DESLIGADO apos o teste de 09/10: o detector marcou pele sa como tinta (1780 px na rua sem tatuagem, 36438 px no espelho) e o passe LoRA 0,55 redesenhou o peito no espelho. So religar com detector que nao confunda sombra/pele bronzeada com tinta."
     },
     "ghost_color_fix": true
   }

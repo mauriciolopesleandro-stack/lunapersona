@@ -134,7 +134,9 @@ async def test_v31_engine_runs_new_segmentation_clothing_preservation_and_bounda
     assert out.telemetry.attributes["v31_segmentation"]["clothes_new"]["status"] == "aceita"
     # producao 09/10: passe que funde a roupa (no lugar da emenda fina), fantasma corrigido, tinta inventada medida
     assert "clothing_harmonize" in passes and "clothing_seam" not in passes
-    assert "ghost_color_fix" in out.telemetry.attributes and "invented_markings" in out.telemetry.attributes
+    assert "ghost_color_fix" in out.telemetry.attributes
+    # tinta inventada: desligada apos o teste de 09/10 (detector confundiu pele com tinta)
+    assert "invented_markings" not in out.telemetry.attributes and "invented_ink" not in passes
 
 
 def test_grounding_boxes_need_evidence_glasses_and_held_objects():
