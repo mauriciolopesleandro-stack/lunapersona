@@ -148,3 +148,56 @@ def test_grounding_boxes_need_evidence_glasses_and_held_objects():
     assert _unconfirmed("cell phone", None, (5, 5, 30, 40), gate, "a woman on a cobblestone path", img, 0.35)
     assert _unconfirmed("necklace", "necklace", (5, 5, 30, 40), gate, "", img, 0.35) is None  # joias: sem esse portao
     assert _unconfirmed("sunglasses", "glasses", (20, 20, 50, 35), [], "", img, 0.35) is None  # V3/V2: sem portao
+
+
+def test_production_0910_seam_contour_and_waist_patch_are_harmonized():
+    """1a troca em producao (rua bege): contorno escuro em volta do top (faixa da peca que os originais nao cobrem)
+    e mancha na cintura (lugar das maos originais) com a cor da reconstrucao."""
+    img, person, pants = beige_scene()
+    kp = kp_standing()
+    top_o = np.zeros_like(person)
+    top_o[50:80, 36:84] = 1
+    clothes_o = np.maximum(top_o, pants)
+    img[top_o > 0.5] = (214, 176, 140)
+    img[100:120, 50:70] = (200, 150, 125)  # maos originais por cima da cintura: fora da roupa original
+    clothes_o[100:120, 50:70] = 0
+    cur = img.copy()
+    cur[pants > 0.5] = (236, 200, 160)  # reconstrucao mais clara/saturada que a calca original
+    cur[100:120, 50:70] = (236, 200, 160)
+    top_n = np.zeros_like(person)
+    top_n[49:81, 35:85] = 1
+    cur[top_n > 0.5] = (214, 176, 140)
+    edge = (top_n > 0.5) & ~(np.pad(top_n, 1)[2:, 1:-1] * np.pad(top_n, 1)[:-2, 1:-1]
+                             * np.pad(top_n, 1)[1:-1, 2:] * np.pad(top_n, 1)[1:-1, :-2] > 0.5)
+    ring = np.zeros_like(person, bool)
+    ring[49:81, 35:85] = True
+    ring[52:78, 38:82] = False
+    cur[ring] = (90, 95, 60)  # contorno oliva desenhado pela reconstrucao
+    clothes_n = np.maximum(top_n, pants)
+    clothes_n[100:120, 50:70] = 1  # maos da Persona em outro lugar: ali agora e calca
+    old = preserve_clothing(cur, img, clothes_o, clothes_n, kp, kp, harmonize=False)
+    new = preserve_clothing(cur, img, clothes_o, clothes_n, kp, kp)
+    ref_top = np.array((214, 176, 140), np.float32)
+    d_old = np.linalg.norm(old.pixels[ring].astype(np.float32) - ref_top, axis=-1).mean()
+    d_new = np.linalg.norm(new.pixels[ring].astype(np.float32) - ref_top, axis=-1).mean()
+    assert d_old > 60 and d_new < 15, (d_old, d_new)  # o contorno sumiu
+    waist = new.pixels[104:116, 54:66].reshape(-1, 3).astype(np.float32).mean(axis=0)
+    pants_o = img[150:180, 40:80].reshape(-1, 3).astype(np.float32).mean(axis=0)
+    assert np.linalg.norm(waist - pants_o) < 12  # sem mancha: a cintura tem a cor da calca original
+    assert edge.any()
+
+
+def test_jewelry_negatives_respect_what_the_photo_has():
+    from types import SimpleNamespace
+
+    from app.core.engines.replacement_v3 import _extra_negative
+
+    v31 = CFG31["v31"]
+    plain = SimpleNamespace(sheet=SimpleNamespace(caption="a woman standing on a cobblestone path"), box_policy=[])
+    assert "pendant" in _extra_negative(v31, plain)
+    with_necklace = SimpleNamespace(sheet=SimpleNamespace(caption="a woman wearing a gold necklace and rings"),
+                                    box_policy=[])
+    neg = _extra_negative(v31, with_necklace)
+    assert "pendant" not in neg and "rings on every finger" not in neg and "bangles" in neg
+    by_box = SimpleNamespace(sheet=SimpleNamespace(caption=""), box_policy=[{"label": "necklace", "policy": "PRESERVE"}])
+    assert "pendant" not in _extra_negative(v31, by_box)

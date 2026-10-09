@@ -16,6 +16,8 @@ re-renderizada vestindo o corpo da Persona. A V2 continua disponivel (replacemen
 """
 from __future__ import annotations
 
+import re
+
 import math
 import time
 from dataclasses import dataclass, field
@@ -113,6 +115,22 @@ class ReplacementV3Request:
                                   reconstruction_mode=self.mode)
 
 
+def _extra_negative(v31: dict, scene) -> list[str]:
+    """Negativos da V3.1 contra joias que a LoRA/master inventa. 1a troca em producao (09/10): 'pendant' apagou o colar
+    com pingente QUE A FOTO TEM. Termo cujo objeto aparece na foto (legenda ou acessorio mantido) sai da lista."""
+    seen = " ".join([(getattr(getattr(scene, "sheet", None), "caption", "") or "")]
+                    + [str(b.get("label", "")) for b in (getattr(scene, "box_policy", None) or [])
+                       if b.get("policy") == "PRESERVE"]).lower()
+    unless = v31.get("extra_negative_unless_seen") or {}
+    out = []
+    for t in v31.get("extra_negative", []):
+        words = unless.get(t) or []
+        if any(re.search(rf"\b{re.escape(wd)}s?\b", seen) for wd in words):
+            continue
+        out.append(t)
+    return out
+
+
 class PersonaReplacementV3(ReplacementEngine):
     """Mesma analise/segmentacao/medidas/gate da V2; o _attempt e a reconstrucao da PESSOA INTEIRA."""
 
@@ -204,7 +222,7 @@ class PersonaReplacementV3(ReplacementEngine):
                                       clothing=cloth.prompt() or "the same clothes as the photo", scene=scene_txt), "identity")
         neg = ", ".join(dict.fromkeys([t for t in negative.split(", ") if t] + cloth.negative() + NO_BEAUTIFY
                                       + list(self.cfg.get("body_skin_negative", []))
-                                      + list((self.cfg.get("v31") or {}).get("extra_negative", []))))
+                                      + _extra_negative(self.cfg.get("v31") or {}, scene)))
         layers = scene.layers
         if plan.extra.get("accessory_grow"):
             from dataclasses import replace as dc_replace
@@ -304,7 +322,7 @@ class PersonaReplacementV3(ReplacementEngine):
 
         # ---- V3.1: a pessoa NOVA segmentada (roupa, cabelo, contorno) -> roupa original preservada -> pele validada
         v31 = self.cfg.get("v31") or {}
-        seg_new = person_n = clothes_n = hair_n = skin_n = skin_o = None
+        seg_new = person_n = clothes_n = hair_n = skin_n = skin_o = cp = None
         if v31.get("enabled"):
             seg_new = await self._segment_current(cur["image"], scene)
             if seg_new is not None:
@@ -329,7 +347,10 @@ class PersonaReplacementV3(ReplacementEngine):
                     inter["clothing_preserved"] = lcp
                     cur = {"pixels": cp.pixels, "image": lcp}
                     info = cp.to_dict()
-                    if (cp.to_reconstruct > 0.5).sum() > 200:  # so as emendas e o que os originais nao cobrem
+                    # 1a troca em producao (09/10): o passe de emenda (SDXL 0,35 numa faixa fina) e suspeito do contorno
+                    # escuro do top; a emenda agora e resolvida em preserve_clothing (campo de cor + borda). Passe so se
+                    # ligado na config.
+                    if v31.get("seam_pass", False) and (cp.to_reconstruct > 0.5).sum() > 200:
                         seam = np.clip(feather(cp.to_reconstruct, 2), 0, 1) * (cp.to_reconstruct > 0.02)
                         ctext = cloth.prompt() or "the same clothes as the photo"
                         pxs, lcs, _ = await self._pass(
@@ -391,14 +412,26 @@ class PersonaReplacementV3(ReplacementEngine):
         if v31.get("grain_match") and person_n is not None:
             from app.core.persona_replacement.lighting import match_grain, noise_level
 
-            inner_o = (m.person > 0.5) & ~(dilate((m.person < 0.5).astype(np.float32), 4) > 0.5)
-            inner_n = (person_n > 0.5) & ~(dilate((person_n < 0.5).astype(np.float32), 4) > 0.5)
-            ref, before_n = noise_level(orig, inner_o.astype(np.float32)), noise_level(cur["pixels"], inner_n.astype(np.float32))
-            pxg = match_grain(cur["pixels"], inner_n.astype(np.float32), ref, seed=req.seed)
+            # 1a troca em producao (09/10): a referencia era a pessoa inteira (calca canelada, cabelo, nitidez do celular)
+            # e o ruido entrava por cima da roupa ORIGINAL colada -> pontilhado na pele e na calca. Agora: referencia =
+            # pele original validada, ruido so na pele GERADA (nunca nos pixels originais colados), com teto.
+            def _inner(mk):
+                return (mk > 0.5) & ~(dilate((mk < 0.5).astype(np.float32), 3) > 0.5)
+
+            ref_m = _inner(skin_o) if skin_o is not None else _inner(m.person)
+            gen = _inner(skin_n) if skin_n is not None else _inner(person_n)
+            if cp is not None:
+                gen &= ~(dilate(cp.pasted, 2) > 0.5)
+            ref, before_n = noise_level(orig, ref_m.astype(np.float32)), noise_level(cur["pixels"], gen.astype(np.float32))
+            cap = float(v31.get("max_grain", 2.5))
+            if ref is not None:
+                ref = min(ref, float(np.sqrt((before_n or 0.0) ** 2 + cap ** 2)))
+            pxg = match_grain(cur["pixels"], gen.astype(np.float32), ref, seed=req.seed) if gen.any() else cur["pixels"]
             lg = await self.store.save(pxg, "grain_match")
             cur = {"pixels": pxg, "image": lg}
-            tel.add_pass("grain_match", 0.0, {"ref_person_noise": ref, "before": before_n,
-                                              "after": noise_level(pxg, inner_n.astype(np.float32))}, True, None)
+            tel.add_pass("grain_match", 0.0, {"ref_skin_noise": ref, "max_grain": cap, "before": before_n,
+                                              "after": noise_level(pxg, gen.astype(np.float32)), "px": int(gen.sum())},
+                         True, None)
         if plan.photographic_integration:
             px3, integ = integrate(orig, cur["pixels"], modified, face=scene.face_full, body_skin=None, seed=req.seed)
             l3 = await self.store.save(px3, "photometric_integration")

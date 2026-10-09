@@ -124,18 +124,29 @@ def _warp(arr: np.ndarray, sx: float, sy: float, tx: float, ty: float, shape, re
 
 def preserve_clothing(current: np.ndarray, original: np.ndarray, clothes_o: np.ndarray | None,
                       clothes_n: np.ndarray | None, kp_o, kp_n, keep_out: np.ndarray | None = None,
-                      max_scale_dev: float = 0.25, max_aspect_dev: float = 0.15, seam_px: int = 4) -> ClothingPreservation:
+                      max_scale_dev: float = 0.25, max_aspect_dev: float = 0.15, seam_px: int = 4,
+                      harmonize: bool = True, field_radius: int = 12, edge_px: int = 6,
+                      edge_outlier: float = 28.0) -> ClothingPreservation:
     """ClothingPreservationEngine. Para cada peca: A) pixels originais se a peca nova esta no mesmo lugar e tamanho;
     B) alinhamento geometrico controlado (escala e deslocamento pelas caixas, deformacao limitada) quando o corpo da
     Persona mudou o caimento; C) reconstrucao local so do que os originais nao cobrem + emendas. Nunca cola a roupa
-    como textura plana fora da peca nova; cabelo, maos e acessorios (keep_out) ficam por cima como estao."""
+    como textura plana fora da peca nova; cabelo, maos e acessorios (keep_out) ficam por cima como estao.
+
+    1a troca em producao (09/10, rua bege): a parte da peca que os originais NAO cobrem (faixa de 2-4 px na borda do top,
+    o lugar das maos originais na cintura) ficou com a cor da reconstrucao -> contorno escuro em volta do top e mancha
+    translucida na cintura. Agora (harmonize): a reconstrucao dessas partes recebe o campo de cor de baixa frequencia
+    (original colado - reconstrucao) antes da mistura, a mistura e larga (seam_px), e na faixa da borda o pixel que
+    destoa da cor local da peca (> edge_outlier) vira a cor local - o contorno e um defeito, nao um detalhe da roupa."""
+    from app.core.persona_replacement.transfer import local_mean
+
     h, w = current.shape[:2]
-    out = current.astype(np.float32).copy()
+    cur_f = current.astype(np.float32)
     pasted = np.zeros((h, w), np.float32)
     recon = np.zeros((h, w), np.float32)
     go, gn = garment_masks(clothes_o, kp_o), garment_masks(clothes_n, kp_n)
     results: list[GarmentResult] = []
     ko = np.zeros((h, w), bool) if keep_out is None else (keep_out > 0.5)
+    pieces: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []  # (area colada, imagem alinhada, peca nova)
     for part, mn in gn.items():
         mo = go.get(part)
         if mo is None and "full" in go:
@@ -160,8 +171,7 @@ def preserve_clothing(current: np.ndarray, original: np.ndarray, clothes_o: np.n
             wmask = _warp(((mo > 0.5) * 255).astype(np.uint8), sx, sy, tx, ty, (h, w), Image.NEAREST) > 127
         inner_new = erode((mn > 0.5).astype(np.float32), 2) > 0.5
         area = inner_new & (erode(wmask.astype(np.float32), 2) > 0.5) & ~ko
-        a = np.clip(feather(area.astype(np.float32), 2), 0, 1) * area
-        out = out * (1 - a[..., None]) + wimg.astype(np.float32) * a[..., None]
+        pieces.append((area, wimg.astype(np.float32), mn > 0.5))
         pasted = np.maximum(pasted, area.astype(np.float32))
         covered = float(area.sum()) / max(1.0, float((mn > 0.5).sum()))
         # emenda (anel na borda do que foi colado, dentro da peca) + o que os originais nao cobrem
@@ -169,6 +179,28 @@ def preserve_clothing(current: np.ndarray, original: np.ndarray, clothes_o: np.n
         rest = (mn > 0.5) & ~area
         recon = np.maximum(recon, ((ring & (dilate((mn > 0.5).astype(np.float32), 2) > 0.5)) | rest).astype(np.float32))
         results.append(GarmentResult(part, "pixel" if identity else "aligned", (sx, sy), (tx, ty), covered))
+    base = cur_f.copy()
+    if harmonize:
+        for area, wimg, mn in pieces:
+            core = erode(area.astype(np.float32), 1) > 0.5
+            if core.sum() < 50:
+                continue
+            af = area.astype(np.float32)
+            # campo de cor (baixa frequencia) original - reconstrucao, levado para a peca inteira (nao colada inclusive)
+            field = local_mean(np.where(core[..., None], wimg - cur_f, 0.0), core, field_radius)
+            zone = mn & ~ko
+            base[zone] = cur_f[zone] + field[zone]
+            # faixa da emenda (fora do colado e a parte de dentro onde a mistura ainda deixa a reconstrucao aparecer):
+            # pixel que destoa da cor local da peca vira a cor local
+            band = zone & (dilate(af, edge_px) > 0.5) & ~(erode(af, seam_px + 1) > 0.5)
+            if band.any():
+                local = local_mean(wimg, core, edge_px + seam_px)
+                bad = band & (np.linalg.norm(base - local, axis=-1) > edge_outlier)
+                base[bad] = local[bad]
+    out = base.copy()
+    for area, wimg, _ in pieces:
+        a = np.clip(feather(area.astype(np.float32), seam_px if harmonize else 2), 0, 1) * area
+        out = out * (1 - a[..., None]) + wimg * a[..., None]
     recon = recon * (1 - ko)
     return ClothingPreservation(np.clip(out + 0.5, 0, 255).astype(np.uint8), pasted, recon, results)
 

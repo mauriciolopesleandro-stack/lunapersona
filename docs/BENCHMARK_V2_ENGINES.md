@@ -462,3 +462,16 @@ Arquivos em `generated/v2/engines/v31/mascaras/saida_mascaras/`: painel por foto
 
 - A máscara de braços do DWPose no espelho continua imprecisa. Ela só afeta a divisão por região da continuidade de pele, que agora roda apenas na pele validada pela segmentação. O próximo diagnóstico salva os keypoints para confirmar.
 - Um pano vinho no canto do espelho conta como pessoa e roupa (efeito pequeno: seria preservado como estava).
+
+## V3.1 em producao - 1a troca real (09/10, pelo site, pod wvel1d18h8gb1k L4 US$ 0,59/h)
+
+Rua bege, QUALITY, max_retries 0, codigo main 13daa37. Download dos 4 modelos do HF oficial: 113 s. Job: 547 s
+(GPU 126 s). Custo do pod do teste: ~US$ 0,16 (saldo 3,359 -> 3,202). Status **REJECT** (seams 18,6).
+Medidas: identidade 0,708 (WARN), clothing_v3 PASS, boundary PASS (sem halo), pose/cenario/composicao PASS,
+skin WARN (textura exagerada), photometric WARN (grao 0,48x), skin_continuity WARN (ombros->bracos).
+
+No olho:
+- Melhor que a V3 na mesma foto: calca e top na cor certa, sem as manchas de tom da V3, fundo intacto, sem halo, pose e relogio mantidos.
+- Rosto da Luna natural (sorriso aberto virou sorriso fechado).
+- **Defeitos:** contorno escuro (oliva) em volta do top tomara-que-caia (borda da colagem da roupa); mancha translucida bege na cintura onde as maos originais cobriam a calca; graos/pontilhado na pele e na calca (grain_match forte demais); aneis e colar com pingente da original sumiram.
+- Imagens: generated/v2/engines/v31_prod/.

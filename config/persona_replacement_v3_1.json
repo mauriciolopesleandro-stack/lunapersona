@@ -287,6 +287,18 @@
       "heart necklace",
       "rings on every finger"
     ],
-    "_note": "seam_denoise 0,35 e max_scale_dev 0,25 sao valores iniciais (sem benchmark)"
+    "_note": "seam_denoise 0,35 e max_scale_dev 0,25 sao valores iniciais (sem benchmark)",
+    "seam_pass": false,
+    "max_grain": 2.5,
+    "extra_negative_unless_seen": {
+      "pendant": [
+        "necklace",
+        "pendant"
+      ],
+      "rings on every finger": [
+        "ring"
+      ]
+    },
+    "_note_producao_0910": "1a troca em producao (rua bege): contorno escuro no top, mancha na cintura, pontilhado e colar/aneis apagados -> seam_pass desligado (emenda por campo de cor em preserve_clothing), grao so na pele gerada com teto max_grain, negativos de joia so se a foto nao tem a joia"
   }
 }
