@@ -1,0 +1,6 @@
+{"segundos_por_imagem": 480, "overhead_segundos": 300,
+ "_nota": "V3 (com as correcoes 5dcfee9) nas 2 fotos pedidas pelo usuario em 2026-10-09: espelho com braco na cabeca (top branco de renda, colar, relogio) e rua com conjunto bege (top tomara-que-caia + calca pantalona, colar, relogio, aneis). Sem retry.",
+ "execucoes": [
+  {"id": "espelho_braco__v3", "foto": "fotos_v2/v3_espelho_braco.jpg", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v3"},
+  {"id": "rua_bege__v3", "foto": "fotos_v2/v3_rua_bege.jpg", "modo": "QUALITY", "semente": 7801, "max_retries": 0, "perfil": "v3"}
+ ]}
