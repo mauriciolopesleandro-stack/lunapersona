@@ -125,7 +125,12 @@
     "max_object_face_ratio": 4.0,
     "_protect_note": "V3 (09/10): o celular do espelho mudou de branco para preto - objetos seguros (celular, bolsa) agora sao detectados e voltam por cima como camada (ordem de oclusao)",
     "clothing_trust_florence": true,
-    "clothes_min_frac": 0.04
+    "clothes_min_frac": 0.04,
+    "require_caption_for": [
+      "glasses",
+      "object"
+    ],
+    "object_max_skin_frac": 0.35
   },
   "tattoo": {
     "reach_frac": 0.03,

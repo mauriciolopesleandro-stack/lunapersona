@@ -132,3 +132,19 @@ async def test_v31_engine_runs_new_segmentation_clothing_preservation_and_bounda
         assert k in out.intermediates, k
     assert "multiescala" in out.measures["boundary"] or out.measures["boundary"].get("status") == "UNKNOWN"
     assert out.telemetry.attributes["v31_segmentation"]["clothes_new"]["status"] == "aceita"
+
+
+def test_grounding_boxes_need_evidence_glasses_and_held_objects():
+    """Mascaras de 09/10: 'oculos de sol' nos olhos de quem nao usa oculos e 'celular' em cima das maos."""
+    from app.core.engines.replacement import _unconfirmed
+
+    img = np.full((100, 100, 3), (60, 60, 70), np.uint8)
+    img[60:90, 60:90] = (205, 160, 135)  # maos (pele)
+    gate = ["glasses", "object"]
+    assert _unconfirmed("sunglasses", "glasses", (20, 20, 50, 35), gate, "a woman with long dark hair", img, 0.35)
+    assert _unconfirmed("sunglasses", "glasses", (20, 20, 50, 35), gate, "a woman wearing sunglasses", img, 0.35) is None
+    assert "pele" in _unconfirmed("cell phone", None, (60, 60, 90, 90), gate, "selfie in a mirror", img, 0.35)
+    assert _unconfirmed("cell phone", None, (5, 5, 30, 40), gate, "a mirror selfie of a woman", img, 0.35) is None
+    assert _unconfirmed("cell phone", None, (5, 5, 30, 40), gate, "a woman on a cobblestone path", img, 0.35)
+    assert _unconfirmed("necklace", "necklace", (5, 5, 30, 40), gate, "", img, 0.35) is None  # joias: sem esse portao
+    assert _unconfirmed("sunglasses", "glasses", (20, 20, 50, 35), [], "", img, 0.35) is None  # V3/V2: sem portao

@@ -314,6 +314,29 @@ def _jewelry_plausible(label: str, box, face_bbox, pose) -> bool:
     return any(abs(cx - wx) <= reach and abs(cy - wy) <= reach for wx, wy in wrists)
 
 
+_MENTIONS = {"glasses": ("glasses", "sunglasses", "eyewear", "shades", "spectacles"),
+             "object": ("phone", "smartphone", "cellphone", "mobile", "bag", "purse", "handbag", "cup", "bottle")}
+
+
+def _unconfirmed(label: str, item: str | None, box, gate: list[str], caption: str, original: np.ndarray,
+                 max_skin: float) -> str | None:
+    """Motivo para IGNORAR uma caixa do grounding sem evidencia (None = aceita). So vale para as classes em `gate`."""
+    lab = (label or "").lower()
+    cap = (caption or "").lower()
+    kind = "glasses" if item == "glasses" else "object" if any(w in lab for w in OBJECT_WORDS) else None
+    if kind is None or kind not in gate:
+        return None
+    mentions = _MENTIONS[kind] + (("selfie", "mirror") if kind == "object" and "phone" in lab else ())
+    if not any(w in cap for w in mentions):  # selfie no espelho quase nunca cita o celular, mas ele esta na mao
+        return f"{label}: a legenda da foto nao menciona - caixa do grounding sem objeto (falso positivo)"
+    if kind == "object":
+        x1, y1, x2, y2 = (int(v) for v in box)
+        crop = original[max(0, y1):y2 + 1, max(0, x1):x2 + 1]
+        if crop.size and float((skin_pixels(crop) > 0.5).mean()) > max_skin:
+            return f"{label}: a caixa e quase toda pele (maos) - colaria as maos originais"
+    return None
+
+
 def _held(box, pose, face_bbox) -> bool:
     """Objeto seguro (celular, bolsa) so vale perto de um pulso do DWPose (09/10: travesseiro detectado como bolsa)."""
     from app.core.validation.geometry import point
@@ -399,6 +422,17 @@ class ReplacementEngine:
             if any(w in (lab or "").lower() for w in OBJECT_WORDS) and not _held(b, base_pose, bbox):
                 box_policy.append({"box": [round(v, 1) for v in b], "label": lab, "item": item, "attribute": cls,
                                    "policy": "IGNORE", "note": "objeto longe das maos: falso positivo do detector"})
+                continue
+            # V3.1 (mascaras de 09/10): o grounding do Florence devolve uma caixa para CADA palavra pedida, mesmo sem o
+            # objeto - "oculos de sol" nos olhos de quem nao usa oculos (colaria os olhos ORIGINAIS no rosto da Persona)
+            # e "celular" em cima das maos (colaria as maos originais). Exige evidencia: a legenda da foto menciona o
+            # objeto; e um "objeto" que e quase todo pele (maos) e recusado.
+            gate = sg.get("require_caption_for") or []
+            why = _unconfirmed(lab, item, b, gate, getattr(sheet, "caption", "") or "", original,
+                               float(sg.get("object_max_skin_frac", 0.35)))
+            if why:
+                box_policy.append({"box": [round(v, 1) for v in b], "label": lab, "item": item, "attribute": cls,
+                                   "policy": "IGNORE", "note": why})
                 continue
             if cls == "jewelry" and b not in {x for x, y in zip(raw.protect_boxes, labels) if box_class(y) != "jewelry"} \
                     and not _jewelry_plausible(lab, b, bbox, base_pose):

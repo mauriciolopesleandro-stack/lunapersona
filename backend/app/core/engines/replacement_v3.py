@@ -318,7 +318,9 @@ class PersonaReplacementV3(ReplacementEngine):
                 if v31.get("clothing_preservation", True) and clothes_o is not None and clothes_n is not None:
                     t0 = time.monotonic()
                     keep_out = np.zeros((h, w), np.float32)
-                    for k in (hair_n, scene.accessory, self._hand_mask(scene)):
+                    # so maos com dedos detectados (mascaras de 09/10: pulso estimado caiu no tronco e a 'mao'
+                    # cobria o top - a roupa ali deixaria de ser preservada)
+                    for k in (hair_n, scene.accessory, self._hand_mask(scene, measurable_only=True)):
                         if k is not None:
                             keep_out = np.maximum(keep_out, (k > 0.5).astype(np.float32))
                     cp = preserve_clothing(cur["pixels"], orig, clothes_o, clothes_n, kp, kp, keep_out,

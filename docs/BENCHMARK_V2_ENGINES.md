@@ -429,3 +429,36 @@ Causas, corrigidas em 08ca8be (offline):
 
 - **Texto da roupa** (frases da legenda do Florence): entraram junto "accentuates her large breasts and cleavage" (corpo da pessoa ORIGINAL), "gold heart-shaped necklace" e "gold bracelet on her left wrist" (joias descritas errado, redesenhadas no braço errado) e o cenário. Agora só entram as orações de roupa: "a white, lace-trimmed top", "a strapless beige crop top and wide-legged pants".
 - **Manchas na calça:** com a roupa não segmentada, a calça cor de pele virou "perna", e a continuidade de pele mudou o tom dela em manchas. A continuidade agora desliga quando a roupa não foi segmentada.
+
+## V3.1: diagnóstico de máscaras (2026-10-09)
+
+Antes de gastar GPU com reconstrução, rodei **só as máscaras** com `mascaras_v31.py`. O script usa o mesmo `_scene` e a mesma config da V3.1.
+
+**Custo da rodada: ~US$ 0,25 (teto US$ 0,30), sem reconstrução.**
+
+- Primeiro pod: ~13 min. O pod se desligou sozinho por inatividade do estúdio: a sondagem e as máscaras rodaram sem o keepalive que o `rodar_pod.sh` manda. Erro meu.
+- Segundo pod: ~12,5 min, desta vez com keepalive.
+
+Arquivos em `generated/v2/engines/v31/mascaras/saida_mascaras/`: painel por foto (`*__mascaras.jpg`), imagem por classe e `mascaras.json`.
+
+| Critério | Rua (bege) | Espelho (top branco) |
+|---|---|---|
+| Roupa reconhecida como roupa | ✅ 70% da pessoa (top + calça bege) | ✅ 20% (top de renda) |
+| Pele exclui roupa, cabelo, acessórios e fundo | ✅ 0 px de vazamento | ✅ 0 px |
+| Ambíguas fora da correção de pele | ✅ tecido cor de pele = 99% da roupa, excluído | ✅ 52% da roupa, excluído |
+| Braço levantado separado de cabelo/fundo | — | ✅ pessoa e pele; ❌ a máscara de mãos/braços (DWPose) marca o tronco e não o braço levantado |
+| Acessórios reais | ✅ colar, relógio, anéis, brincos | ✅ relógio, colar, anel |
+| Acessórios inexistentes | ❌ "celular" sobre as mãos: colaria as mãos originais | ❌ "óculos de sol" nos olhos: colaria olhos e sobrancelhas originais no rosto da Persona |
+
+**Veredito: REPROVADO.** A roupa passou, mas o grounding do Florence devolve uma caixa para cada palavra pedida, mesmo sem o objeto. Pelas regras combinadas, a reconstrução **não** foi executada.
+
+**Correções** (offline, 489 testes):
+
+- **Exigência de evidência** (`require_caption_for: glasses, object`): óculos e objetos seguros só valem se a legenda da foto os mencionar. Para celular, também valem "selfie" e "mirror". Um "objeto" que é mais de 35% pele (mãos) é recusado.
+  - Conferido nas caixas reais desta rodada: óculos do espelho → IGNORE; celular da rua → IGNORE; colar, relógio, anéis, brincos e pulseiras → continuam PRESERVE.
+- **Preservação da roupa:** só protege a área de mão quando a mão tem dedos detectados. O pulso estimado caiu no tronco e cobriria o top.
+
+**Pendências:**
+
+- A máscara de braços do DWPose no espelho continua imprecisa. Ela só afeta a divisão por região da continuidade de pele, que agora roda apenas na pele validada pela segmentação. O próximo diagnóstico salva os keypoints para confirmar.
+- Um pano vinho no canto do espelho conta como pessoa e roupa (efeito pequeno: seria preservado como estava).

@@ -108,6 +108,7 @@ async def main() -> int:
                            for b in sc.box_policy],
             "camadas": [x.to_dict() for x in sc.layers],
             "legenda": getattr(sc.sheet, "caption", ""),
+            "dwpose": [[round(float(v), 1) for v in k] for k in (sc.base_pose or [])],  # para conferir bracos/maos
         }
         # imagens por classe + sobreposicao
         panels = [("original", px), ("pessoa (azul) x fundo", tint(px, person, COLORS["pessoa"])),
