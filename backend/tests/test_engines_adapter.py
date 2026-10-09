@@ -27,6 +27,7 @@ class InfoComfy(FakeComfyV2):
     async def get_object_info(self):
         return {"DWPreprocessor": {}, "DepthAnythingV2Preprocessor": {}, "SetUnionControlNetType": {},
                 "ControlNetApplyAdvanced": {},
+                "DifferentialDiffusion": {},
                 "CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [self.checkpoints]}}},
                 "LoraLoaderModelOnly": {"input": {"required": {"lora_name": [self.loras]}}},
                 "ControlNetLoader": {"input": {"required": {"control_net_name": [self.cns]}}}}

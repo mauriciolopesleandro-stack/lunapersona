@@ -513,10 +513,16 @@ class ReplacementEngine:
                 clothes_trust["pedidos_descartados"] = list(self.segmenter.dropped_clothes)
         px_min = min(h, w)
         body = ink = None
-        if clothes_ok:
-            body, _ = skin_region(masks, raw.clothes, ident, original, max(3, int(px_min * 0.006)),
-                                  max(6, int(px_min * float(tt["reach_frac"]))), 12.0)
-            masks = replace(masks, clothing=np.clip((raw.clothes > 0.5) * masks.person - ident, 0, 1).astype(np.float32))
+        # V3.1 (foto do espelho, 09/10): sem roupa segmentada pelo detector a tatuagem da pessoa original nem era
+        # procurada - a do antebraco passou para a Luna. Agora, sem a roupa do Florence, a pele vem da COR (a roupa
+        # cor de pele e o caso raro; tatuagem que sobra e o defeito que o usuario ve).
+        if clothes_ok or sg.get("tattoo_without_clothes"):
+            if clothes_ok:
+                body, _ = skin_region(masks, raw.clothes, ident, original, max(3, int(px_min * 0.006)),
+                                      max(6, int(px_min * float(tt["reach_frac"]))), 12.0)
+                masks = replace(masks, clothing=np.clip((raw.clothes > 0.5) * masks.person - ident, 0, 1).astype(np.float32))
+            else:
+                body = np.clip(masks.body_skin * (1 - (ident > 0.5)), 0, 1).astype(np.float32)
             guard = max(4, int((bbox[3] - bbox[1]) * float(tt["face_guard_frac"])))
             f = lambda k: max(1, int(px_min * float(tt[k])))  # noqa: E731
             ink = tattoo_zones(original, body, masks.skin, masks.tattoos, masks.face_full, f("reach_frac"), f("edge_frac"),
@@ -570,11 +576,11 @@ class ReplacementEngine:
     async def _pass(self, name: str, cur: dict, mask: np.ndarray, prompt: str, negative: str, denoise: float, seed: int,
                     plan: StagePlan, tel: JobTelemetry, *, controls: ControlSpec | None = None, identity: IdentitySpec | None = None,
                     image: str | None = None, work_side: int | None = None,
-                    accessory=None) -> tuple[np.ndarray, str, float]:
+                    accessory=None, strength_map: np.ndarray | None = None) -> tuple[np.ndarray, str, float]:
         req = InpaintRequest(image=image or cur["image"], mask=mask, prompt=prompt, negative=negative, denoise=denoise,
                              seed=seed % 2**32, stage=name, controls=controls or ControlSpec(),
                              identity=identity or IdentitySpec(), steps=plan.steps, cfg=plan.cfg,
-                             work_side=work_side or plan.work_side)
+                             work_side=work_side or plan.work_side, strength_map=strength_map)
         res = await self.adapter.inpaint(req)
         px = await self.store.load(res.image)
         keep = mask > 0.02  # fora da mascara: nada vem do modelo

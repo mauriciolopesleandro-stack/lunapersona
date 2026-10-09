@@ -133,7 +133,8 @@
     "object_max_skin_frac": 0.35,
     "workflow": "replacement-segment",
     "clothes_min_inside": 0.6,
-    "_note_workflow": "replacement-segment-v31 (+lingerie/bikini/underwear) testado em 09/10: na rua o top novo virou 1,13x1,47 do original (os pedidos novos pegaram pele) e na lingerie nada foi colado - voltou ao workflow original, mantendo o descarte de pedido fora da pessoa (clothes_min_inside)"
+    "_note_workflow": "replacement-segment-v31 (+lingerie/bikini/underwear) testado em 09/10: na rua o top novo virou 1,13x1,47 do original (os pedidos novos pegaram pele) e na lingerie nada foi colado - voltou ao workflow original, mantendo o descarte de pedido fora da pessoa (clothes_min_inside)",
+    "tattoo_without_clothes": true
   },
   "tattoo": {
     "reach_frac": 0.03,
@@ -276,7 +277,7 @@
   },
   "v31": {
     "enabled": true,
-    "clothing_preservation": true,
+    "clothing_preservation": false,
     "seam_denoise": 0.35,
     "max_scale_dev": 0.25,
     "clothes_min_frac": 0.02,
@@ -304,18 +305,27 @@
     },
     "_note_producao_0910": "1a troca em producao (rua bege): contorno escuro no top, mancha na cintura, pontilhado e colar/aneis apagados -> seam_pass desligado (emenda por campo de cor em preserve_clothing), grao so na pele gerada com teto max_grain, negativos de joia so se a foto nao tem a joia",
     "garment_pass": {
-      "enabled": true,
+      "enabled": false,
       "denoise": 0.42,
       "margin_px": 6,
       "max_color_shift": 8.0,
       "_note": "reteste 09/10: roupa colada com cara de adesivo; valores iniciais, sem benchmark"
     },
     "invented_markings": {
-      "enabled": false,
+      "enabled": true,
       "min_px": 40,
       "denoise": 0.55,
-      "_note": "DESLIGADO apos o teste de 09/10: o detector marcou pele sa como tinta (1780 px na rua sem tatuagem, 36438 px no espelho) e o passe LoRA 0,55 redesenhou o peito no espelho. So religar com detector que nao confunda sombra/pele bronzeada com tinta."
+      "_note": "religado com guarda (09/10): cor E detector de tatuagem do Florence na imagem nova; area > 1,5% da pele = medida nao confiavel (o espelho deu 14%), nada aplicado",
+      "require_florence": true,
+      "max_frac": 0.015
     },
-    "ghost_color_fix": true
+    "ghost_color_fix": true,
+    "garment_lock": {
+      "enabled": true,
+      "strength": 0.45,
+      "edge_px": 3,
+      "min_frac": 0.01,
+      "_note": "fotos do usuario 09/10: roupa da foto com forca baixa na reconstrucao (Differential Diffusion) - mesmo modelo/cor/renda, ajustada ao corpo. Substitui a colagem por pixels (clothing_preservation) e o passe de fusao."
+    }
   }
 }

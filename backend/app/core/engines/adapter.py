@@ -44,6 +44,9 @@ class InpaintRequest:
     cfg: float | None = None
     work_side: int = 1024  # lado maior do recorte durante a passada (hi-res: 1536)
     strength: float = 1.0  # opacidade da colagem dentro da mascara
+    # forca de redesenho POR PIXEL (0-1) dentro da mascara (Differential Diffusion). None = a mascara toda com o denoise.
+    # V3.1 (09/10): roupa da foto com forca baixa = mesmo modelo/cor/renda, ajustada ao corpo, sem borda de colagem.
+    strength_map: np.ndarray | None = None
 
 
 @dataclass

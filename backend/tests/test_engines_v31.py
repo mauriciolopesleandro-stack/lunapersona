@@ -113,30 +113,53 @@ def test_boundary_restores_exact_textured_background_outside_the_new_person():
     assert h["pior"] is not None and h["pior"] < 3
 
 
-async def test_v31_engine_runs_new_segmentation_clothing_preservation_and_boundary():
+async def _run31(cfg):
     img = wide_tattoo_photo()[0]
     store = Store(img)
     ad = FakeAdapter(store)
     from app.core.engines.replacement_v3 import PersonaReplacementV3
 
     eng = PersonaReplacementV3(reader=Reader(), segmenter=SegV3(), analyzer=Analyzer(
-        {"foto": 0.1, "v3_full": 0.8, "final": 0.8}, 0.1), store=store, adapter=ad, config=CFG31, price_per_hour=0.57,
+        {"foto": 0.1, "v3_full": 0.8, "final": 0.8}, 0.1), store=store, adapter=ad, config=cfg, price_per_hour=0.57,
         provider="comfyui")
     out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, replacement_version="v3.1",
                             keep_intermediates=True, debug=True))
+    return out, ad, eng
+
+
+async def test_v31_engine_default_locks_the_photo_garment_in_the_reconstruction():
+    """Fotos do usuario (09/10): lingerie redesenhada pelo texto / roupa colada com borda. Padrao agora: a roupa da foto
+    entra na passada de reconstrucao com forca baixa (Differential Diffusion), sem colagem por pixels."""
+    out, ad, eng = await _run31(CFG31)
     passes = [p["pass"] for p in out.telemetry.passes]
-    assert "clothing_preservation" in passes
+    full = next(c for c in ad.calls if c.stage == "full_reconstruction")
+    assert full.strength_map is not None
+    inside = full.mask > 0.5
+    assert full.strength_map[inside].min() <= 0.46 and full.strength_map[inside].max() == 1.0  # roupa baixa, pele cheia
+    assert out.telemetry.passes[0]["params"]["garment_lock"]["strength"] == 0.45
+    assert "clothing_preservation" not in passes and "clothing_harmonize" not in passes
     assert len(eng.segmenter.protect) >= 2  # foto original + imagem reconstruida
     assert "necklace" in (eng.segmenter.protect[0] or "")
-    for k in ("person_new", "clothes_new", "skin_validated", "boundary_alpha", "diff_map", "clothing_preserved"):
+    for k in ("person_new", "clothes_new", "skin_validated", "boundary_alpha", "diff_map"):
         assert k in out.intermediates, k
     assert "multiescala" in out.measures["boundary"] or out.measures["boundary"].get("status") == "UNKNOWN"
     assert out.telemetry.attributes["v31_segmentation"]["clothes_new"]["status"] == "aceita"
-    # producao 09/10: passe que funde a roupa (no lugar da emenda fina), fantasma corrigido, tinta inventada medida
-    assert "clothing_harmonize" in passes and "clothing_seam" not in passes
     assert "ghost_color_fix" in out.telemetry.attributes
-    # tinta inventada: desligada apos o teste de 09/10 (detector confundiu pele com tinta)
-    assert "invented_markings" not in out.telemetry.attributes and "invented_ink" not in passes
+    inv = out.telemetry.attributes["invented_markings"]
+    assert inv["px"] <= inv["px_cor"]  # so conta tinta que o detector de tatuagem tambem marca
+
+
+async def test_v31_pixel_preservation_path_still_runs_when_configured():
+    import copy
+
+    cfg = copy.deepcopy(dict(CFG31))
+    cfg["v31"] = {**cfg["v31"], "clothing_preservation": True, "garment_pass": {**cfg["v31"]["garment_pass"], "enabled": True},
+                  "garment_lock": {"enabled": False}}
+    out, ad, eng = await _run31(cfg)
+    passes = [p["pass"] for p in out.telemetry.passes]
+    assert "clothing_preservation" in passes and "clothing_harmonize" in passes and "clothing_seam" not in passes
+    assert "clothing_preserved" in out.intermediates
+    assert next(c for c in ad.calls if c.stage == "full_reconstruction").strength_map is None
 
 
 def test_grounding_boxes_need_evidence_glasses_and_held_objects():

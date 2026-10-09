@@ -23,7 +23,9 @@ from app.providers.comfyui.session import ComfySession, output_name
 from app.workflow_manager.manager import WorkflowNotFoundError
 
 WORKFLOW = "sdxl-inpaint-control"
-NODES = ("DWPreprocessor", "DepthAnythingV2Preprocessor", "SetUnionControlNetType", "ControlNetApplyAdvanced")
+WORKFLOW_DD = "sdxl-inpaint-control-dd"  # forca por pixel (Differential Diffusion)
+NODES = ("DWPreprocessor", "DepthAnythingV2Preprocessor", "SetUnionControlNetType", "ControlNetApplyAdvanced",
+         "DifferentialDiffusion")
 
 
 def work_dims(w: int, h: int, side: int) -> tuple[int, int]:
@@ -47,10 +49,11 @@ class SDXLComfyAdapter(ModelAdapter):
 
     async def load(self) -> list[str]:
         problems: list[str] = []
-        try:
-            self.session.workflows.get_workflow(WORKFLOW)
-        except WorkflowNotFoundError:
-            problems.append(f"workflow {WORKFLOW} nao encontrado")
+        for wf in (WORKFLOW, WORKFLOW_DD):
+            try:
+                self.session.workflows.get_workflow(wf)
+            except WorkflowNotFoundError:
+                problems.append(f"workflow {wf} nao encontrado")
         try:
             info = await self.session.client.get_object_info()
         except ComfyUIError as exc:
@@ -101,7 +104,8 @@ class SDXLComfyAdapter(ModelAdapter):
         ww, wh = work_dims(crop["w"], crop["h"], req.work_side)
         s = self.model.sampling
         values = {
-            "IMAGE": req.image, "STRUCTURE": req.controls.structure or req.image, "MASK": await self._upload_mask(req.mask, crop),
+            "IMAGE": req.image, "STRUCTURE": req.controls.structure or req.image,
+            "MASK": await self._upload_mask(req.mask if req.strength_map is None else req.mask * req.strength_map, crop),
             "CKPT": self.model.file, "PROMPT": req.prompt, "NEGATIVE": req.negative, "SEED": req.seed, "DENOISE": req.denoise,
             "LORA_NAME": self.lora.file, "LORA_STRENGTH": self.lora_strength if req.identity.use_lora else 0.0,
             "STEPS": req.steps or s.get("steps", 30), "CFG": req.cfg or s.get("cfg", 5.0),
@@ -111,12 +115,20 @@ class SDXLComfyAdapter(ModelAdapter):
             "CROP_X": crop["x"], "CROP_Y": crop["y"], "CROP_W": crop["w"], "CROP_H": crop["h"], "WORK_W": ww, "WORK_H": wh,
             "FILENAME_PREFIX": f"luna_v2_{req.stage}",
         }
+        wf = WORKFLOW
+        if req.strength_map is not None:
+            wf = WORKFLOW_DD
+            values["COMPOSITE_MASK"] = await self._upload_mask(req.mask, crop)  # onde o resultado entra (a regiao toda)
         self.session.mark(self.model.id)
-        prompt_id, out, seconds = await self.session.run(WORKFLOW, values)
+        prompt_id, out, seconds = await self.session.run(wf, values)
         params = {k: values[k] for k in ("CKPT", "DENOISE", "STEPS", "CFG", "LORA_STRENGTH", "POSE_STRENGTH", "DEPTH_STRENGTH",
                                          "CN_END", "WORK_W", "WORK_H", "SEED")}
+        if req.strength_map is not None:
+            inside = req.mask > 0.5
+            params["strength_map"] = {"min": round(float(req.strength_map[inside].min()), 2) if inside.any() else None,
+                                      "low_frac": round(float((req.strength_map[inside] < 0.99).mean()), 3) if inside.any() else 0}
         return AdapterResult(output_name(out), round(seconds, 2), await self.session.gpu(),
-                             {"workflow": WORKFLOW, "prompt_id": prompt_id, "crop": crop, **params})
+                             {"workflow": wf, "prompt_id": prompt_id, "crop": crop, **params})
 
     async def _identity_refine(self, req: InpaintRequest) -> AdapterResult:
         """Rosto com referencia facial (InstantID): recorte da mascara, LoRA na forca fixa."""

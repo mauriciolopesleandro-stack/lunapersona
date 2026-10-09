@@ -232,10 +232,28 @@ class PersonaReplacementV3(ReplacementEngine):
         denoise = float(plan.extra.get("full_denoise", fr.get("denoise", 0.85)))
         ctrl = ControlSpec(pose_strength=plan.pose_strength, depth_strength=plan.depth_strength if plan.depth else 0.0,
                            end_percent=plan.control_end, structure=clean_loc)
+        # V3.1 (fotos do usuario, 09/10): a roupa redesenhada pelo texto perdia o modelo (lingerie de coracoes virou sutia
+        # de renda comum) e a colada por pixels ficava com borda de adesivo. Agora a roupa DA FOTO entra na mesma passada
+        # com forca baixa (Differential Diffusion): mantem modelo, cor e renda e se ajusta ao corpo sem emenda.
+        gl = (self.cfg.get("v31") or {}).get("garment_lock") or {}
+        smap, gl_info = None, {}
+        if gl.get("enabled"):
+            garment = (m.clothing > 0.5) & (region > 0.5)
+            if scene.accessory is not None:
+                garment &= ~(scene.accessory > 0.5)
+            garment = erode(garment.astype(np.float32), 1) > 0.5
+            frac = float(garment.sum()) / max(1.0, float((m.person > 0.5).sum()))
+            gl_info = {"garment_frac_of_person": round(frac, 3), "source": "florence" if scene.clothes_ok else "cor (nao pele)"}
+            if frac >= float(gl.get("min_frac", 0.01)):
+                low = float(gl.get("strength", 0.45))
+                ramp = np.clip(feather(garment.astype(np.float32), int(gl.get("edge_px", 3))), 0, 1)
+                smap = (1.0 - (1.0 - low) * ramp).astype(np.float32)
+                gl_info["strength"] = low
         px, loc, _ = await self._pass("full_reconstruction", {"pixels": orig, "image": clean_loc}, soft, prompt, neg, denoise,
                                       req.seed + 301, plan, tel, controls=ctrl, identity=IdentitySpec(use_lora=True),
-                                      accessory=paste, work_side=int(fr.get("work_side", plan.work_side)))
-        tel.passes[-1]["params"].update(prompt=prompt[:400], region_area=round(float((region > 0.5).mean()), 4))
+                                      accessory=paste, work_side=int(fr.get("work_side", plan.work_side)), strength_map=smap)
+        tel.passes[-1]["params"].update(prompt=prompt[:400], region_area=round(float((region > 0.5).mean()), 4),
+                                        garment_lock=gl_info)
         px = restore_background(px, orig, m.person, region,
                                 tol=int(plan.extra.get("background_tolerance", fr.get("background_tolerance", 28))))
         loc = await self.store.save(px, "v3_full")
@@ -438,9 +456,20 @@ class PersonaReplacementV3(ReplacementEngine):
             from app.core.engines.v31_integration import invented_ink
 
             ink_n = invented_ink(cur["pixels"], skin_n, scene.face_full, self.cfg["tattoo"], float(face.bbox[3] - face.bbox[1]))
+            raw_px = int((ink_n > 0.5).sum())
+            # teste de 09/10: so a cor marcou pele sa (1780 px na rua, 36438 no espelho) e o passe redesenhou o peito.
+            # Agora tem de concordar com o detector de tatuagem do Florence na imagem NOVA, e area grande demais e
+            # tratada como erro de medida (nada e feito, fica registrado).
+            flo = getattr(seg_new, "tattoos", None) if seg_new is not None else None
+            if im_cfg.get("require_florence", True):
+                ink_n = ink_n * (dilate((flo > 0.5).astype(np.float32), 3) > 0.5) if flo is not None else np.zeros_like(ink_n)
             n_ink = int((ink_n > 0.5).sum())
-            tel.attributes["invented_markings"] = {"px": n_ink, "min_px": int(im_cfg.get("min_px", 40))}
-            if n_ink >= int(im_cfg.get("min_px", 40)):
+            frac_ink = n_ink / max(1.0, float((skin_n > 0.5).sum()))
+            tel.attributes["invented_markings"] = {"px_cor": raw_px, "px": n_ink, "frac_da_pele": round(frac_ink, 4),
+                                                   "min_px": int(im_cfg.get("min_px", 40))}
+            if frac_ink > float(im_cfg.get("max_frac", 0.015)):
+                tel.attributes["invented_markings"]["status"] = "area grande demais: medida nao confiavel, nada aplicado"
+            elif n_ink >= int(im_cfg.get("min_px", 40)):
                 zone = dilate_round(ink_n, 2)
                 known = ((skin_n > 0.5) & ~(zone > 0.5)).astype(np.float32)
                 pre, _ = structure_preserving_fill(cur["pixels"], zone, known, line_radius=max(2, int(min(h, w) * 0.004)))
