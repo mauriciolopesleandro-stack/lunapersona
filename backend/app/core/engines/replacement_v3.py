@@ -290,12 +290,23 @@ class PersonaReplacementV3(ReplacementEngine):
                 from PIL import Image as _Img
                 q = np.asarray(_Img.fromarray(q).resize((w, h), _Img.LANCZOS))
             x1, y1, x2, y2 = face.bbox
-            inner = np.zeros((h, w), np.float32)
-            fw = x2 - x1
-            inner[max(0, int(y1)):int(y2) + 1, max(0, int(x1 + fw * 0.12)):int(x2 - fw * 0.12) + 1] = 1  # sem orelhas
-            core = ((scene.face_full > 0.5) * inner).astype(np.float32)
-            reg = np.clip(feather(core, 4), 0, 1) * (core > 0.02)  # borda suave so para DENTRO
-            q = (q.astype(np.float32) * reg[..., None] + cur["pixels"].astype(np.float32) * (1 - reg[..., None]) + 0.5).astype(np.uint8)
+            fw, fh = x2 - x1, y2 - y1
+            # foto da lingerie (09/10): o retangulo com borda de 4 px e o tom/maquiagem do Qwen deixaram o rosto "colado
+            # por cima" da cabeca (borda na testa, mancha do lado). Agora: elipse do miolo, borda larga e o tom do Qwen
+            # puxado para o da cabeca em volta (so baixa frequencia).
+            from app.core.persona_replacement.transfer import local_mean
+
+            inner = ellipse(h, w, (x1 + x2) / 2, (y1 + y2) / 2 + fh * 0.04, fw * 0.36, fh * 0.46)
+            core = ((scene.face_full > 0.5) * (inner > 0.5)).astype(np.float32)
+            rad = max(4, int(fw * 0.1))
+            ring = (dilate(core, rad) > 0.5) & ~(core > 0.5) & (scene.face_full > 0.5)
+            qf, cf = q.astype(np.float32), cur["pixels"].astype(np.float32)
+            if ring.sum() > 30:
+                near = (dilate(core, 2) > 0.5) & ~(erode(core, 2) > 0.5)
+                field = local_mean(cf - qf, near, rad)
+                qf = qf + field * (core > 0.02)[..., None]
+            reg = np.clip(feather(core, rad), 0, 1) * (core > 0.02)  # borda larga, so para DENTRO
+            q = (qf * reg[..., None] + cf * (1 - reg[..., None]) + 0.5).clip(0, 255).astype(np.uint8)
             if paste is not None:
                 q = paste(q)
             ql = await self.store.save(q, "face_lock")

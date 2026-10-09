@@ -147,6 +147,8 @@ async def test_v31_engine_default_locks_the_photo_garment_in_the_reconstruction(
     assert "ghost_color_fix" in out.telemetry.attributes
     inv = out.telemetry.attributes["invented_markings"]
     assert inv["px"] <= inv["px_cor"]  # so conta tinta que o detector de tatuagem tambem marca
+    # foto da lingerie (09/10): Qwen trouxe maquiagem e rosto "colado" - fora do padrao da V3.1
+    assert CFG31["identity_refinement"]["qwen_allowed"] is False and "face_lock" not in passes
 
 
 async def test_v31_pixel_preservation_path_still_runs_when_configured():

@@ -223,9 +223,10 @@
   "identity_refinement": {
     "provider": "adaptive",
     "instantid_below": 0.72,
-    "qwen_allowed": true,
+    "qwen_allowed": false,
     "qwen_below": 0.65,
-    "_note": "InstantID leve no rosto so se a identidade < 0,72; Qwen (so o miolo do rosto, sem orelhas) so se continuar < 0,65 e so fica se subir"
+    "_note": "InstantID leve no rosto so se a identidade < 0,72; Qwen (so o miolo do rosto, sem orelhas) so se continuar < 0,65 e so fica se subir",
+    "_note_0910": "Qwen DESLIGADO no padrao (09/10, foto da lingerie): trouxe maquiagem pesada e o rosto ficou com cara de colado (borda na testa). So InstantID leve. A colagem do Qwen ficou mais suave (elipse, borda larga, tom) para quando for pedido."
   },
   "full_reconstruction": {
     "mode": "full_reconstruction",

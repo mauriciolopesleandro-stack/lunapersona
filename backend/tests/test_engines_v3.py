@@ -185,9 +185,21 @@ async def test_v3_rebuilds_the_whole_person_in_one_pass():
     assert (out.pixels[0:4, 0:4] == orig[0:4, 0:4]).all()  # cena intocada
 
 
+class FakeLockDetail(FakeLock):
+    """Qwen falso que muda TOM e DETALHE (a colagem iguala o tom ao da cabeca - 09/10 -, o detalhe fica)."""
+
+    async def lock_face(self, image, master, seed, guidance=None):
+        out = await super().lock_face(image, master, seed, guidance)
+        px = self.store.images[out.image.locator].astype(int)
+        yy, xx = np.indices(px.shape[:2])
+        px += (((yy // 2 + xx // 2) % 2) * 24 - 12)[..., None]
+        self.store.images[out.image.locator] = np.clip(px, 0, 255).astype(np.uint8)
+        return out
+
+
 async def test_identity_refinement_is_adaptive_instantid_then_face_only_qwen():
     eng, ad, store = engine3({"foto": 0.1, "v3_full": 0.5, "face_refine": 0.6, "face_lock": 0.8, "final": 0.8})
-    eng.face_lock = FakeLock(store)
+    eng.face_lock = FakeLockDetail(store)
     out = await eng.run(req(advanced={"max_retries": 0}, persona_sheet=LUNA, replacement_version="v3", keep_intermediates=True))
     stages = [c.stage for c in ad.calls]
     assert stages == ["full_reconstruction", "face_refine"]
