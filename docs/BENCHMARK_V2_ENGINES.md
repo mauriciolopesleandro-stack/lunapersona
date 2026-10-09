@@ -415,3 +415,17 @@ Por quê:
 - **A legenda detalhada do Florence por peça INVENTA detalhes.** No espelho escreveu "drawstring waistband" (o short não tem cordão). Na porta escreveu "button-down front" e "cinched with a thin strap", e esses botões foram parar no top. O texto longo ainda diluiu a identidade. **Desligado** (`garment_details: false`).
 - **Celular:** a camada só cobriu 1.455 de ~15.000 pixels da caixa, porque o celular bege foi lido como pele. Agora objeto seguro = **caixa inteira**, e só perto de um pulso do DWPose. Foi um travesseiro que virou "bolsa".
 - **Conclusão:** texto não segura detalhe de roupa. Para manter a roupa idêntica com o corpo da Luna, falta condicionamento **visual** da roupa: pixels da roupa original onde a forma coincide + passe leve de integração, ou um adaptador de imagem para roupa.
+
+### V3, 3ª rodada: braço na cabeça e rua bege (2026-10-09)
+
+Fotos enviadas pelo usuário. Pod `lpfimwvl6lk3vp`, sondagem + teste ~US$ 0,24. O Gate não reprovou o espelho (WARN) e reprovou a rua por borda.
+
+| Foto | Identidade | No olho |
+|---|---|---|
+| espelho, braço na cabeça | 0,68 | **muito melhor que a V2 de 08/10** (lá o top branco tinha virado preto e o braço tinha sido inventado): top branco de renda mantido, rosto e cabelo da Luna, piercing do nariz removido. Defeitos: manchas marrons no braço levantado, **pulseiras douradas inventadas** no outro braço, colar trocado por coração, **busto aumentado** |
+| rua, conjunto bege | 0,75 | **o melhor da V3 até agora**: rosto e corpo da Luna, top tomara-que-caia e calça pantalona mantidos, relógio e anéis no lugar. Defeito: **manchas mais claras na calça** |
+
+Causas, corrigidas em 08ca8be (offline):
+
+- **Texto da roupa** (frases da legenda do Florence): entraram junto "accentuates her large breasts and cleavage" (corpo da pessoa ORIGINAL), "gold heart-shaped necklace" e "gold bracelet on her left wrist" (joias descritas errado, redesenhadas no braço errado) e o cenário. Agora só entram as orações de roupa: "a white, lace-trimmed top", "a strapless beige crop top and wide-legged pants".
+- **Manchas na calça:** com a roupa não segmentada, a calça cor de pele virou "perna", e a continuidade de pele mudou o tom dela em manchas. A continuidade agora desliga quando a roupa não foi segmentada.
