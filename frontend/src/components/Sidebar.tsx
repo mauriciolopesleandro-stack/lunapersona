@@ -9,7 +9,7 @@ interface Props {
 
 const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: "gerar", label: "Gerar", icon: "✎" },
-  { id: "v2", label: "Persona V2", icon: "◈" },
+  { id: "v2", label: "Trocar pessoa", icon: "◈" },
   { id: "historia", label: "História", icon: "❡" },
   { id: "pack", label: "Pack com Luna", icon: "▤" },
   { id: "trocar", label: "Trocar vídeo", icon: "⇄" },

@@ -6,7 +6,9 @@
   "price_per_hour_fallback": 0.57,
   "processing": {
     "default": "local",
-    "allowed": ["local"],
+    "allowed": [
+      "local"
+    ],
     "note": "Todas as engines V2 rodam no ComfyUI do proprio pod. Nenhuma imagem vai para API externa."
   },
   "uploads": {
@@ -17,13 +19,49 @@
   "retention": {
     "comfyui_input_dir": "/workspace/runpod-slim/ComfyUI/input",
     "rules": [
-      {"prefix": "repl_final_", "max_age_hours": 720},
-      {"prefix": "repl_faceswap_final_", "max_age_hours": 720},
-      {"prefix": "repl_", "max_age_hours": 24},
-      {"prefix": "v2in_", "max_age_hours": 24}
+      {
+        "prefix": "repl_final_",
+        "max_age_hours": 720
+      },
+      {
+        "prefix": "repl_faceswap_final_",
+        "max_age_hours": 720
+      },
+      {
+        "prefix": "repl_",
+        "max_age_hours": 24
+      },
+      {
+        "prefix": "v2in_",
+        "max_age_hours": 24
+      }
     ],
     "keep_intermediates_default": false,
     "max_jobs_in_memory": 30
   },
-  "telemetry_log": "logs/engines_v2_telemetry.jsonl"
+  "telemetry_log": "logs/engines_v2_telemetry.jsonl",
+  "model_provision": {
+    "enabled": true,
+    "note": "Fora do volume (quase cheio): baixados do HF oficial para o disco temporario do pod na 1a troca apos ligar.",
+    "comfyui_models_dir": "/workspace/runpod-slim/ComfyUI/models",
+    "cache_dir": "/root/v2models",
+    "files": [
+      {
+        "dest": "checkpoints/RealVisXL_V5.0_fp16.safetensors",
+        "url": "https://huggingface.co/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors"
+      },
+      {
+        "dest": "controlnet/controlnet-union-sdxl-1.0-promax.safetensors",
+        "url": "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors"
+      },
+      {
+        "dest": "instantid/instantid_ip-adapter.bin",
+        "url": "https://huggingface.co/InstantX/InstantID/resolve/main/ip-adapter.bin"
+      },
+      {
+        "dest": "controlnet/instantid_controlnet.safetensors",
+        "url": "https://huggingface.co/InstantX/InstantID/resolve/main/ControlNetModel/diffusion_pytorch_model.safetensors"
+      }
+    ]
+  }
 }

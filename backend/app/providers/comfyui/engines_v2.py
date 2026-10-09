@@ -13,6 +13,7 @@ from app.core.engines.models import ModelInfo, ModelRegistry
 from app.core.engines.replacement import ReplacementEngine
 from app.core.generation.v2_config import load_v2_config
 from app.providers.comfyui.face import QwenFaceAdapter
+from app.providers.comfyui.model_provision import ProvisionError, ensure_models
 from app.providers.comfyui.region_pass import ComfyRegionPassAdapter
 from app.providers.comfyui.replacement import ComfyImageStore, ComfySegmenter
 from app.providers.comfyui.sdxl_engine import LustifyAdapter, RealVisXLAdapter
@@ -55,6 +56,10 @@ class ComfyEngineFactory:
         cls = ADAPTERS.get(model.id)
         if cls is None:
             raise EngineSetupError(f"sem adapter para o checkpoint {model.id}")
+        try:  # modelos fora do volume: baixa do HF oficial na primeira troca depois que o pod liga
+            await ensure_models(self.cfg.get("model_provision"))
+        except ProvisionError as exc:
+            raise EngineSetupError(f"nao consegui preparar os modelos da troca: {exc}") from exc
         v2 = load_v2_config(self.config_dir / "persona_engine_v2.json")
         region = ComfyRegionPassAdapter(self.session, v2.model(model.id), v2.lora,
                                         steps=v2.pass_steps, identity_adapters=v2.identity_adapters)
