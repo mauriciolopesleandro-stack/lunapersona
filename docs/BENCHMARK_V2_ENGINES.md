@@ -499,3 +499,13 @@ Etapas em generated/v2/engines/v31_prod/reteste/ (+ telemetria.json).
   descartado sozinho, min_frac 0,02); passe `clothing_harmonize` (peca inteira + 6 px, denoise 0,42, guarda de cor 8 dE)
   no lugar da emenda fina; `ghost_color_fix` (campo de cor do fundo real no fantasma); `invented_markings` (tinta na pele
   da Persona -> entrada sem o traco + passe LoRA 0,55). Nao testado na GPU.
+
+### Teste de 267ea86 nas 3 fotos (09/10, pod 6k4qp7qi94oobk, ~US$ 0,29) - generated/v2/engines/v31_prod/teste3/
+
+Todas REJECT. Rua: top reconstruido (escala 1,13x1,47 vs original: os pedidos novos pegaram pele) e saiu marrom; calca boa,
+sem pontilhado; mancha menor na cintura. Quarto: nada colado (top 1,29x, calcinha cobertura 0) -> lingerie redesenhada;
+tatuagem da mao saiu; face_lock Qwen adaptativo (identidade 0,63) trouxe maquiagem pesada; fios loiros sobraram.
+Espelho: roupa 'full' escala 0,49 -> nada colado; **invented_ink marcou 36438 px de pele sa e o passe LoRA 0,55 redesenhou o
+peito (regressao)**; tatuagem do antebraco da original continuou. Rollback em 72cf2a7: invented_markings desligado,
+workflow de segmentacao original. Diagnostico: a preservacao por pixels so funciona quando o corpo novo tem quase o mesmo
+contorno da roupa original - nas 3 fotos o alinhamento por caixa falhou.
