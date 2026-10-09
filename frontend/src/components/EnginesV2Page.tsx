@@ -14,7 +14,7 @@ function errorText(e: unknown) {
 // Troca de pessoa: a pessoa da foto vira a persona. Tela simples de proposito - foto, Gerar, resultado.
 // Versao (V3.1), modo e modelo ficam fixos em runSimpleReplacement; toda decisao tecnica e do backend.
 export function EnginesV2Page({ personas, ensureAwake }: Props) {
-  const [personaId, setPersonaId] = useState(personas.find((p) => p.id === "luna")?.id ?? personas[0]?.id ?? "");
+  const [personaId, setPersonaId] = useState(personas.find((p) => p.id === "luna")?.id ?? personas[0]?.id ?? "luna"); // pod desligado = lista vazia: Gerar liga o pod
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
