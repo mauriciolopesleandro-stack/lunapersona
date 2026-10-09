@@ -68,10 +68,10 @@ class Cache:
     def __init__(self, inner, method):
         self.inner, self.method, self.memo = inner, method, {}
 
-    async def __call__(self, *a):
-        key = a[0] if isinstance(a[0], str) else a[0].locator
+    async def __call__(self, *a, **kw):
+        key = (a[0] if isinstance(a[0], str) else a[0].locator, tuple(sorted(kw.items())))
         if key not in self.memo:
-            self.memo[key] = await getattr(self.inner, self.method)(*a)
+            self.memo[key] = await getattr(self.inner, self.method)(*a, **kw)
         return self.memo[key]
 
 
