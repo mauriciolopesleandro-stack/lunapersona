@@ -186,22 +186,24 @@ def test_long_hair_is_found_by_color_and_texture_not_skin_and_grows_the_crop():
 
 
 def test_body_tone_moves_skin_to_the_face_tone_and_leaves_clothes():
+    """A diferenca de tom vem do rosto original x rosto da Luna no MESMO lugar (mesma luz) e vai para o corpo."""
     from app.core.head.compose import tom_do_corpo
 
-    final = np.full((300, 200, 3), (200, 200, 200), np.uint8)
+    original = np.full((300, 200, 3), (200, 200, 200), np.uint8)
     pessoa = np.zeros((300, 200), bool)
     pessoa[20:300, 50:150] = True
-    final[pessoa] = (170, 190, 235)  # corpo claro/rosado
-    final[30:90, 70:130] = (90, 130, 175)  # rosto moreno (Luna)
-    final[90:112, 85:115] = (90, 130, 175)  # pescoco da Luna (o alvo do tom)
-    final[200:260, 50:150] = (60, 60, 200)  # roupa vermelha
-    original = final.copy()
+    original[pessoa] = (175, 190, 225)  # pele clara (rosto e corpo da pessoa original)
+    original[200:260, 50:150] = (60, 60, 200)  # roupa vermelha
+    final = original.copy()
+    final[30:90, 70:130] = (90, 140, 200)  # rosto da Luna, moreno
     roupa = np.zeros((300, 200), bool)
     roupa[200:260, 50:150] = True
     cabeca = np.zeros((300, 200), bool)
-    cabeca[25:115, 65:135] = True
+    cabeca[25:95, 65:135] = True
     out, info = tom_do_corpo(final, original, (70, 30, 130, 90), pessoa, roupa, cabeca)
-    assert info["status"] == "aplicado"
+    assert info["status"] == "aplicado" and info["razao_luz"] < 1
     assert out[150, 100].astype(int).sum() < final[150, 100].astype(int).sum() - 20  # corpo mais moreno
     assert (out[230, 100] == final[230, 100]).all()  # roupa intacta
     assert (out[10, 10] == final[10, 10]).all()  # fundo intacto
+    same, info2 = tom_do_corpo(original, original, (70, 30, 130, 90), pessoa, roupa, cabeca)
+    assert np.abs(same.astype(int) - original.astype(int)).max() <= 1  # rosto igual = nada muda

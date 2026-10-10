@@ -211,38 +211,51 @@ def pele_por_cor(bgr_img: np.ndarray) -> np.ndarray:
     return (cr > 133) & (cr < 180) & (cb > 77) & (cb < 135) & (ycc[..., 0] > 40)
 
 
+def _pele_do_rosto(img: np.ndarray, face) -> np.ndarray:
+    """Pele do miolo do rosto (testa, bochechas, nariz) sem olhos e boca: faixa central da caixa."""
+    h, w = img.shape[:2]
+    x1, y1, x2, y2 = (float(v) for v in face)
+    fw, fh = x2 - x1, y2 - y1
+    m = np.zeros((h, w), bool)
+    m[int(y1 + fh * 0.12):int(y1 + fh * 0.32), int(x1 + fw * 0.25):int(x2 - fw * 0.25)] = True  # testa
+    m[int(y1 + fh * 0.45):int(y1 + fh * 0.68), int(x1 + fw * 0.12):int(x2 - fw * 0.12)] = True  # bochechas e nariz
+    return m & pele_por_cor(img)
+
+
 def tom_do_corpo(final: np.ndarray, original: np.ndarray, face, pessoa: np.ndarray, roupa: np.ndarray | None,
-                 cabeca: np.ndarray, forca: float = 0.8) -> tuple[np.ndarray, dict[str, Any]]:
-    """Corpo no tom da Luna (foto da lingerie, 10/10: rosto moreno e corpo claro/rosado). So a COR da pele visivel muda
-    (deslocamento unico em Lab, luz em parte - a sombra do corpo e real), mascara suave; roupa (detector de roupa, nao
-    a cor), cabelo e a cabeca nova ficam de fora. Alvo: bochechas do rosto novo, ja na luz da cena."""
+                 cabeca: np.ndarray, forca: float = 0.9, face_nova=None) -> tuple[np.ndarray, dict[str, Any]]:
+    """Corpo no tom da Luna (foto da lingerie, 10/10: rosto moreno e corpo branco). A diferenca de tom e medida entre o
+    rosto ORIGINAL e o rosto da Luna no MESMO lugar e na MESMA luz (o que muda e so a pele) e aplicada ao corpo:
+    luz multiplicada pela razao (sombra e brilho do corpo continuam os da foto) e cor (a, b) deslocada. 1a versao media
+    pescoco x barriga e errava por causa da luz (pescoco na sombra, barriga na luz). Roupa (detector de roupa), cabelo e
+    a cabeca nova ficam de fora; mascara suave."""
     h, w = final.shape[:2]
     x1, y1, x2, y2 = face
-    fw, fh = x2 - x1, y2 - y1
+    fw = x2 - x1
+    po, pn = _pele_do_rosto(original, face), _pele_do_rosto(final, face_nova if face_nova is not None else face)
+    info: dict[str, Any] = {}
+    if po.sum() < 40 or pn.sum() < 40:
+        return final, {"status": "rosto sem pele medivel: nada aplicado"}
+    lo_, lf = lab(original), lab(final)
+    ro, rn = np.median(lo_[po], axis=0), np.median(lf[pn], axis=0)
+    razao = float(np.clip(rn[0] / max(ro[0], 1.0), 0.7, 1.15))
+    dab = np.clip(rn[1:] - ro[1:], -12, 12)
     pele = pessoa & pele_por_cor(original) & ~(cv2.dilate(cabeca.astype(np.uint8), disco(max(3, fw * 0.05))) > 0)
     if roupa is not None:
         pele &= ~(cv2.dilate(roupa.astype(np.uint8), disco(3)) > 0)
     pele = cv2.morphologyEx(pele.astype(np.uint8), cv2.MORPH_OPEN, disco(2)) > 0
-    # alvo: PESCOCO da Luna (logo abaixo do queixo, dentro da cabeca nova) - as bochechas tem blush e puxavam o corpo
-    # para o vermelho; sem pescoco visivel, a testa
-    boch = np.zeros((h, w), bool)
-    boch[int(y2 + fh * 0.05):int(min(h, y2 + fh * 0.35)), int(x1 + fw * 0.3):int(x2 - fw * 0.3)] = True
-    boch &= pele_por_cor(final) & cabeca
-    if boch.sum() < 30:
-        boch = np.zeros((h, w), bool)
-        boch[int(y1 + fh * 0.08):int(y1 + fh * 0.25), int(x1 + fw * 0.3):int(x2 - fw * 0.3)] = True
-        boch &= pele_por_cor(final)
-    info: dict[str, Any] = {"pele_px": int(pele.sum())}
-    if boch.sum() < 30 or pele.sum() < 200:
-        return final, {**info, "status": "pele ou rosto insuficiente: nada aplicado"}
-    lf = lab(final)
-    alvo, corpo = np.median(lf[boch], axis=0), np.median(lf[pele], axis=0)
-    delta = (alvo - corpo) * np.array([0.6, 1.0, 1.0]) * forca
+    info.update(pele_px=int(pele.sum()), rosto_original_Lab=[round(float(v), 1) for v in ro],
+                rosto_luna_Lab=[round(float(v), 1) for v in rn], razao_luz=round(razao, 3),
+                delta_ab=[round(float(v), 1) for v in dab])
+    if pele.sum() < 200:
+        return final, {**info, "status": "pouca pele: nada aplicado"}
     soft = cv2.GaussianBlur(pele.astype(np.float32), (0, 0), max(2.0, fw * 0.02)) * pele
-    soft = np.clip(cv2.GaussianBlur(soft, (0, 0), 1.5), 0, 1)
-    info.update(status="aplicado", delta_Lab=[round(float(v), 1) for v in delta])
-    return bgr(lf + delta[None, None, :] * soft[..., None]), info
-
+    soft = np.clip(cv2.GaussianBlur(soft, (0, 0), 1.5), 0, 1) * forca
+    out = lf.copy()
+    out[..., 0] = lf[..., 0] * (1 + (razao - 1) * soft)
+    out[..., 1:] = lf[..., 1:] + dab[None, None, :] * soft[..., None]
+    info["status"] = "aplicado"
+    return bgr(out), info
 
 @dataclass
 class Composicao:

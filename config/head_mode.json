@@ -64,9 +64,9 @@
   "_warn_note": "escala da medida por proxies (media da semelhanca com 3 fotos do usuario) e mais baixa que a da media das 32 fotos usada na fase 0: no teste de 10/10 as mesmas trocas deram ~0,08 a menos. 0,55 aqui ~ 0,63 la.",
   "long_hair": true,
   "body_tone": {
-    "enabled": false,
-    "strength": 0.8,
-    "_note": "DESLIGADO (10/10): na foto da lingerie o alvo pescoco fica na sombra do queixo e a barriga na luz de frente (L 65 x 76) - um deslocamento unico de tom erra; precisa de alvo por regiao/luz antes de ligar"
+    "enabled": true,
+    "strength": 0.9,
+    "_note": "10/10 (pedido do usuario: corpo branco x rosto moreno): diferenca medida entre o rosto ORIGINAL e o da Luna no mesmo lugar e na mesma luz, aplicada a pele do corpo (luz por razao, cor por deslocamento); roupa protegida pelo detector de roupa. A 1a versao (pescoco x barriga) errava pela luz."
   },
   "cloth_model": {
     "path": "/root/v2models/u2net_cloth_seg.onnx",

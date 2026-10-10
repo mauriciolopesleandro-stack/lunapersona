@@ -168,7 +168,7 @@ class HeadModeService:
                 bt = self.cfg.get("body_tone", {})
                 if bt.get("enabled"):
                     final, item["body_tone"] = await asyncio.to_thread(
-                        tom_do_corpo, final, bgr_orig, box, person, roupa, comp.mascara, float(bt.get("strength", 0.8)))
+                        tom_do_corpo, final, bgr_orig, box, person, roupa, comp.mascara, float(bt.get("strength", 0.9)))
                 item["image"] = await self.store.save(cv2.cvtColor(final, cv2.COLOR_BGR2RGB), "luna_head")
             cands.append(item)
         for item in cands:
