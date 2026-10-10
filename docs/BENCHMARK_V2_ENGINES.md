@@ -517,3 +517,10 @@ volume (pod desligado antes do download). Quarto: rosto natural sem maquiagem (s
 pele) nao entrou na mascara de roupa (garment 5%) e virou um bloco bege; contorno claro nas pernas/quadril. Espelho: tatuagem
 do antebraco continuou (deteccao sem roupa nao achou) e a mao deixou de cobrir como na foto. NAO publicado no site.
 Proximo caminho proposto: troca de rosto+cabelo mantendo corpo/roupa da foto para fotos de lingerie/nu parcial.
+
+## Modo "Luna na foto" (10/10) - publicado
+
+Troca so da cabeca (Qwen 2511 + BFS V5) com referencia do banco de fotos aprovadas pelo usuario, 2 candidatas e
+composicao organica (backend/app/core/head/compose.py). POC: semelhanca com as fotos do usuario 0,66-0,75 por foto
+(melhor referencia), fora da cabeca identico. Teste da rota /api/v2/head no pod: porta/espelho/rua sem erro (~155 s por
+candidata antes da correcao de ordem; ~95 s esperado). Publicado a pedido do usuario; V3.1 segue no codigo (rollback).
