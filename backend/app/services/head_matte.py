@@ -22,18 +22,33 @@ def _session(model_path: Path):
     return _SESS[key]
 
 
+def _entrada(img: Image.Image, lado: int) -> np.ndarray:
+    im = np.asarray(img.resize((lado, lado), Image.LANCZOS)).astype(np.float32)
+    im = im / max(float(im.max()), 1e-6)
+    mean, std = np.array([0.485, 0.456, 0.406], np.float32), np.array([0.229, 0.224, 0.225], np.float32)
+    return ((im - mean) / std).transpose(2, 0, 1)[None].astype(np.float32)
+
+
 def matte_rgb(rgb: np.ndarray, model_path: Path) -> np.ndarray:
     """rgb uint8 (H, W, 3) -> mascara bool da pessoa (H, W)."""
     sess = _session(model_path)
     img = Image.fromarray(rgb).convert("RGB")
-    im = np.asarray(img.resize((320, 320), Image.LANCZOS)).astype(np.float32)
-    im = im / max(float(im.max()), 1e-6)
-    mean, std = np.array([0.485, 0.456, 0.406], np.float32), np.array([0.229, 0.224, 0.225], np.float32)
-    x = ((im - mean) / std).transpose(2, 0, 1)[None].astype(np.float32)
+    x = _entrada(img, 320)
     out = sess.run(None, {sess.get_inputs()[0].name: x})[0][:, 0, :, :]
     mi, ma = float(out.min()), float(out.max())
     pred = (out - mi) / max(ma - mi, 1e-6)
     m = Image.fromarray((np.squeeze(pred) * 255).astype(np.uint8)).resize(img.size, Image.LANCZOS)
+    return np.asarray(m) > 127
+
+
+def roupa_rgb(rgb: np.ndarray, model_path: Path) -> np.ndarray:
+    """Roupa (U2Net cloth seg do rembg: 0 fundo/pele, 1 cima, 2 baixo, 3 inteira) -> mascara bool (H, W).
+    Protege roupa COR DE PELE (calca bege da rua) do ajuste de tom do corpo."""
+    sess = _session(model_path)
+    img = Image.fromarray(rgb).convert("RGB")
+    out = sess.run(None, {sess.get_inputs()[0].name: _entrada(img, 768)})[0]
+    lab = np.argmax(out, axis=1)[0].astype(np.uint8)
+    m = Image.fromarray(((lab > 0) * 255).astype(np.uint8)).resize(img.size, Image.NEAREST)
     return np.asarray(m) > 127
 
 

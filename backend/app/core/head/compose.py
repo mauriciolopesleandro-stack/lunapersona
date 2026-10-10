@@ -162,6 +162,88 @@ def laplaciano(o: np.ndarray, c: np.ndarray, M: np.ndarray, niveis: int = 5) -> 
     return np.where(alcance[..., None], bloco, o.astype(np.uint8)), alcance
 
 
+def cabelo_comprido(orig_bgr: np.ndarray, face, pessoa: np.ndarray, limiar_textura: float = 0.8) -> np.ndarray:
+    """Cabelo da pessoa ORIGINAL na foto inteira (foto da lingerie, 10/10: cabelo loiro ate o quadril ficava fora do
+    recorte e sobrava). Cor amostrada AO LADO do rosto (acima da testa costuma ser testa/corte da foto), e textura de
+    fio: cabelo loiro tem a cor da pele clara, mas a pele e lisa (alta frequencia 0,13) e o fio nao (1,85)."""
+    h, w = orig_bgr.shape[:2]
+    x1, y1, x2, y2 = face
+    fw, fh = x2 - x1, y2 - y1
+    lo = lab(orig_bgr)
+    lado = np.zeros((h, w), bool)
+    lado[int(y1 + fh * 0.2):int(y2), int(max(0, x1 - fw * 0.45)):int(max(0, x1 - fw * 0.08))] = True
+    lado[int(y1 + fh * 0.2):int(y2), int(min(w, x2 + fw * 0.08)):int(min(w, x2 + fw * 0.45))] = True
+    lado &= pessoa
+    if lado.sum() < 50:
+        return np.zeros((h, w), bool)
+    v = lo[lado].reshape(-1, 3)
+    mu, inv = v.mean(0), np.linalg.inv(np.cov(v.T) + np.eye(3) * 4.0)
+    d = lo.reshape(-1, 3) - mu
+    md = np.sqrt(np.einsum("ij,jk,ik->i", d, inv, d)).reshape(h, w)
+    L = lo[..., 0]
+    textura = cv2.GaussianBlur(np.abs(L - cv2.GaussianBlur(L, (0, 0), 1.2)), (0, 0), 3) > limiar_textura
+    cab = (md < 3.0) & pessoa & textura
+    cab = cv2.morphologyEx(cab.astype(np.uint8), cv2.MORPH_OPEN, disco(2))
+    cab = cv2.morphologyEx(cab, cv2.MORPH_CLOSE, disco(5)) > 0
+    n, lb, _, _ = cv2.connectedComponentsWithStats(cab.astype(np.uint8), 8)
+    perto = cv2.dilate(mascara_cabeca(face, (h, w)).astype(np.uint8), disco(fw * 0.2)) > 0
+    keep = np.zeros(n, bool)
+    for i in range(1, n):
+        keep[i] = (lb == i)[perto].any()
+    return keep[lb]
+
+
+def recorte_com_cabelo(base, cabelo: np.ndarray, W: int, H: int, margem: float = 0.04):
+    """O recorte da troca (x, y, w, h) cresce ate cobrir o cabelo original inteiro (o modelo so redesenha dentro dele)."""
+    x, y, w, h = base
+    if cabelo is None or not cabelo.any():
+        return base
+    ys, xs = np.nonzero(cabelo)
+    m = int(max(W, H) * margem)
+    x1, y1 = max(0, min(x, int(xs.min()) - m)), max(0, min(y, int(ys.min()) - m))
+    x2, y2 = min(W, max(x + w, int(xs.max()) + m)), min(H, max(y + h, int(ys.max()) + m))
+    return x1, y1, x2 - x1, y2 - y1
+
+
+def pele_por_cor(bgr_img: np.ndarray) -> np.ndarray:
+    ycc = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2YCrCb)
+    cr, cb = ycc[..., 1].astype(int), ycc[..., 2].astype(int)
+    return (cr > 133) & (cr < 180) & (cb > 77) & (cb < 135) & (ycc[..., 0] > 40)
+
+
+def tom_do_corpo(final: np.ndarray, original: np.ndarray, face, pessoa: np.ndarray, roupa: np.ndarray | None,
+                 cabeca: np.ndarray, forca: float = 0.8) -> tuple[np.ndarray, dict[str, Any]]:
+    """Corpo no tom da Luna (foto da lingerie, 10/10: rosto moreno e corpo claro/rosado). So a COR da pele visivel muda
+    (deslocamento unico em Lab, luz em parte - a sombra do corpo e real), mascara suave; roupa (detector de roupa, nao
+    a cor), cabelo e a cabeca nova ficam de fora. Alvo: bochechas do rosto novo, ja na luz da cena."""
+    h, w = final.shape[:2]
+    x1, y1, x2, y2 = face
+    fw, fh = x2 - x1, y2 - y1
+    pele = pessoa & pele_por_cor(original) & ~(cv2.dilate(cabeca.astype(np.uint8), disco(max(3, fw * 0.05))) > 0)
+    if roupa is not None:
+        pele &= ~(cv2.dilate(roupa.astype(np.uint8), disco(3)) > 0)
+    pele = cv2.morphologyEx(pele.astype(np.uint8), cv2.MORPH_OPEN, disco(2)) > 0
+    # alvo: PESCOCO da Luna (logo abaixo do queixo, dentro da cabeca nova) - as bochechas tem blush e puxavam o corpo
+    # para o vermelho; sem pescoco visivel, a testa
+    boch = np.zeros((h, w), bool)
+    boch[int(y2 + fh * 0.05):int(min(h, y2 + fh * 0.35)), int(x1 + fw * 0.3):int(x2 - fw * 0.3)] = True
+    boch &= pele_por_cor(final) & cabeca
+    if boch.sum() < 30:
+        boch = np.zeros((h, w), bool)
+        boch[int(y1 + fh * 0.08):int(y1 + fh * 0.25), int(x1 + fw * 0.3):int(x2 - fw * 0.3)] = True
+        boch &= pele_por_cor(final)
+    info: dict[str, Any] = {"pele_px": int(pele.sum())}
+    if boch.sum() < 30 or pele.sum() < 200:
+        return final, {**info, "status": "pele ou rosto insuficiente: nada aplicado"}
+    lf = lab(final)
+    alvo, corpo = np.median(lf[boch], axis=0), np.median(lf[pele], axis=0)
+    delta = (alvo - corpo) * np.array([0.6, 1.0, 1.0]) * forca
+    soft = cv2.GaussianBlur(pele.astype(np.float32), (0, 0), max(2.0, fw * 0.02)) * pele
+    soft = np.clip(cv2.GaussianBlur(soft, (0, 0), 1.5), 0, 1)
+    info.update(status="aplicado", delta_Lab=[round(float(v), 1) for v in delta])
+    return bgr(lf + delta[None, None, :] * soft[..., None]), info
+
+
 @dataclass
 class Composicao:
     final: np.ndarray | None
@@ -170,7 +252,8 @@ class Composicao:
     info: dict[str, Any] = field(default_factory=dict)
 
 
-def compor(original: np.ndarray, saida: np.ndarray, recorte, alvo, outros, pessoa: np.ndarray | None) -> Composicao:
+def compor(original: np.ndarray, saida: np.ndarray, recorte, alvo, outros, pessoa: np.ndarray | None,
+           cabelo: np.ndarray | None = None) -> Composicao:
     """original/saida em BGR; saida = recorte gerado pelo modelo (qualquer tamanho com a mesma proporcao);
     recorte = (x, y, w, h) na foto; alvo = caixa do rosto trocado; outros = caixas de outros rostos;
     pessoa = mascara da pessoa na foto inteira (None = sem a etapa do cabelo original)."""
@@ -187,6 +270,10 @@ def compor(original: np.ndarray, saida: np.ndarray, recorte, alvo, outros, pesso
     cab0 = mascara_cabeca(face, (h, w))
     zona = cv2.dilate(cab0.astype(np.uint8), disco(fw * 0.9)) > 0
     zona[int(min(h, face[3] + fw * 2.2)):] = False
+    cab_c = None
+    if cabelo is not None and cabelo.any():  # cabelo comprido: a zona vai ate onde ele vai
+        cab_c = cabelo[y:y + h, x:x + w]
+        zona |= cv2.dilate(cab_c.astype(np.uint8), disco(max(3, fw * 0.12))) > 0
     alinhada, cc = alinhar(orig_c, saida_c, zona)
     info["ecc"] = round(cc, 3)
     if alinhada is None or cc < LIMIAR_ECC:
@@ -200,7 +287,10 @@ def compor(original: np.ndarray, saida: np.ndarray, recorte, alvo, outros, pesso
     for i in range(1, n):
         manter[i] = (lb == i)[perto].any()
     M = cab0 | manter[lb]
-    if pessoa is not None:
+    if cab_c is not None:
+        M |= cab_c
+        info["cabelo_comprido_px"] = int(cab_c.sum())
+    elif pessoa is not None:
         cab, ci = cabelo_original(orig_c, face, zona, pessoa[y:y + h, x:x + w], alinhada)
         M |= cab
         info.update(ci)
@@ -230,4 +320,4 @@ def compor(original: np.ndarray, saida: np.ndarray, recorte, alvo, outros, pesso
     return Composicao(final, M_t, al_t, info)
 
 
-__all__ = ["Composicao", "compor", "laplaciano", "mascara_cabeca"]
+__all__ = ["Composicao", "cabelo_comprido", "compor", "laplaciano", "mascara_cabeca", "recorte_com_cabelo", "tom_do_corpo"]

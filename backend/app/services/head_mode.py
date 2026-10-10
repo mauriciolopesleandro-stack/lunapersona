@@ -20,8 +20,8 @@ from typing import Any, Awaitable, Callable
 import cv2
 import numpy as np
 
-from app.core.head.compose import compor
-from app.services.head_matte import ensure_model, matte_rgb
+from app.core.head.compose import cabelo_comprido, compor, recorte_com_cabelo, tom_do_corpo
+from app.services.head_matte import ensure_model, matte_rgb, roupa_rgb
 from app.services.head_swap import WORKFLOW, crop_box, faces_in, model_size
 
 
@@ -71,7 +71,8 @@ def pick_target(faces: list[dict[str, Any]]):
 
 class HeadModeService:
     def __init__(self, client, workflows, store, url_for: Callable[[str], str], jobs, cfg: dict[str, Any],
-                 matte: Callable[[np.ndarray], Awaitable[np.ndarray]] | None = None) -> None:
+                 matte: Callable[[np.ndarray], Awaitable[np.ndarray]] | None = None,
+                 cloth: Callable[[np.ndarray], Awaitable[np.ndarray | None]] | None = None) -> None:
         self.client = client
         self.workflows = workflows
         self.store = store
@@ -80,6 +81,7 @@ class HeadModeService:
         self.cfg = cfg
         self._uploaded: dict[str, str] = {}
         self._matte = matte
+        self._cloth = cloth
 
     async def _person(self, rgb: np.ndarray) -> np.ndarray:
         if self._matte is not None:
@@ -87,6 +89,15 @@ class HeadModeService:
         mm = self.cfg["matte_model"]
         path = await ensure_model(Path(mm["path"]), mm["url"])
         return await asyncio.to_thread(matte_rgb, rgb, path)
+
+    async def _roupa(self, rgb: np.ndarray) -> np.ndarray | None:
+        if self._cloth is not None:
+            return await self._cloth(rgb)
+        cm = self.cfg.get("cloth_model")
+        if not cm:
+            return None
+        path = await ensure_model(Path(cm["path"]), cm["url"])
+        return await asyncio.to_thread(roupa_rgb, rgb, path)
 
     async def _ref(self, name: str) -> str:
         if name not in self._uploaded:
@@ -108,8 +119,8 @@ class HeadModeService:
                 sims.append(float(near["sim"]))
         return round(float(np.mean(sims)), 3) if sims else None
 
-    async def _swap(self, image: str, head: str, box, W: int, H: int, seed: int) -> tuple[np.ndarray, tuple[int, int, int, int]]:
-        x, y, w, h = crop_box(tuple(box), W, H)
+    async def _swap(self, image: str, head: str, crop, seed: int) -> tuple[np.ndarray, tuple[int, int, int, int]]:
+        x, y, w, h = crop
         mw, mh = model_size(w, h)
         g = self.workflows.render(WORKFLOW, {"BODY_IMAGE": image, "HEAD_IMAGE": head, "WIDTH": mw, "HEIGHT": mh,
                                              "CROP_X": x, "CROP_Y": y, "CROP_W": w, "CROP_H": h,
@@ -135,19 +146,30 @@ class HeadModeService:
         ranked = rank_bank(self.cfg["bank"], target.get("yaw"), tooth)[: int(self.cfg.get("candidates", 2))]
         person = await self._person(rgb)
         bgr_orig = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        # cabelo comprido da pessoa original (foto da lingerie, 10/10: loiro ate o quadril sobrava fora do recorte):
+        # o recorte da troca cresce ate cobri-lo e ele entra inteiro na area substituida
+        cabelo = cabelo_comprido(bgr_orig, box, person) if self.cfg.get("long_hair", True) else None
+        crop = recorte_com_cabelo(crop_box(tuple(box), W, H), cabelo, W, H)
         # 1o todas as trocas (o Qwen fica na placa), depois composicao (CPU) e por ultimo a semelhanca (LunaFaces):
         # intercalar a medida com as trocas tirava o Qwen da memoria - 155 s por candidata contra 95 s (teste de 10/10)
         raws = []
         for i, ref in enumerate(ranked):
             t = time.monotonic()
-            raw, crop = await self._swap(image, await self._ref(ref["file"]), box, W, H, int(self.cfg.get("seed", 1234)) + i)
-            raws.append((ref, raw, crop, round(time.monotonic() - t, 1)))
+            raw, used = await self._swap(image, await self._ref(ref["file"]), crop, int(self.cfg.get("seed", 1234)) + i)
+            raws.append((ref, raw, used, round(time.monotonic() - t, 1)))
+        roupa = await self._roupa(rgb) if self.cfg.get("body_tone", {}).get("enabled") else None
         cands = []
-        for ref, raw, crop, secs in raws:
-            comp = await asyncio.to_thread(compor, bgr_orig, cv2.cvtColor(raw, cv2.COLOR_RGB2BGR), crop, box, others, person)
-            item: dict[str, Any] = {"ref": ref["file"], "seconds": secs, **comp.info}
+        for ref, raw, used, secs in raws:
+            comp = await asyncio.to_thread(compor, bgr_orig, cv2.cvtColor(raw, cv2.COLOR_RGB2BGR), used, box, others, person,
+                                           cabelo)
+            item: dict[str, Any] = {"ref": ref["file"], "seconds": secs, "crop": list(used), **comp.info}
             if comp.final is not None:
-                item["image"] = await self.store.save(cv2.cvtColor(comp.final, cv2.COLOR_BGR2RGB), "luna_head")
+                final = comp.final
+                bt = self.cfg.get("body_tone", {})
+                if bt.get("enabled"):
+                    final, item["body_tone"] = await asyncio.to_thread(
+                        tom_do_corpo, final, bgr_orig, box, person, roupa, comp.mascara, float(bt.get("strength", 0.8)))
+                item["image"] = await self.store.save(cv2.cvtColor(final, cv2.COLOR_BGR2RGB), "luna_head")
             cands.append(item)
         for item in cands:
             if item.get("image"):

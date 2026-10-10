@@ -135,8 +135,11 @@ async def test_service_picks_the_candidate_most_like_luna(tmp_path, monkeypatch)
     monkeypatch.setattr(hs, "faces_in", fake_faces)
     from app.workflow_manager.manager import WorkflowManager
 
+    async def fake_cloth(px):
+        return np.zeros(px.shape[:2], bool)
+
     svc = hs.HeadModeService(client, WorkflowManager(REPO / "workflows"), store, lambda loc: f"http://img/{loc}", FakeJobs(),
-                             cfg, matte=fake_matte)
+                             cfg, matte=fake_matte, cloth=fake_cloth)
     out = await svc.run("foto.png")
     cands = out["telemetry"]["candidates"]
     assert len(cands) == 2 and client.n == 2
@@ -158,3 +161,46 @@ async def test_service_errors_without_face_or_refs(tmp_path, monkeypatch):
         await svc.run("foto.png")
     with pytest.raises(hs.HeadModeError, match="ausente"):
         await svc._ref("ref_28.png")
+
+
+def test_long_hair_is_found_by_color_and_texture_not_skin_and_grows_the_crop():
+    """Foto da lingerie (10/10): cabelo loiro ate o quadril fora do recorte; a pele clara tem a cor do cabelo."""
+    from app.core.head.compose import cabelo_comprido, recorte_com_cabelo
+
+    rng = np.random.default_rng(3)
+    img = np.full((400, 300, 3), (200, 205, 210), np.uint8)
+    pessoa = np.zeros((400, 300), bool)
+    pessoa[60:400, 90:210] = True
+    img[pessoa] = (150, 185, 225)  # pele clara (BGR), lisa
+    listras = (np.sin(np.arange(400)[:, None] * 0 + np.arange(30)[None, :] * 2.1) * 25).astype(int)
+    for x0 in (90, 180):  # cabelo dos dois lados, mesma cor media da pele, com fios
+        bloco = np.clip(np.array([150, 185, 225])[None, None, :] + listras[100:390, :, None]
+                        + rng.normal(0, 4, (290, 30, 1)), 0, 255).astype(np.uint8)
+        img[100:390, x0:x0 + 30] = bloco
+    box = (125, 60, 175, 120)
+    cab = cabelo_comprido(img, box, pessoa)
+    assert cab[300, 100] and cab[300, 195]  # cabelo comprido dos dois lados, la embaixo
+    assert not cab[300, 150]  # a pele (lisa, mesma cor) nao
+    crop = recorte_com_cabelo((90, 30, 120, 150), cab, 300, 400)
+    assert crop[1] + crop[3] >= 380  # o recorte da troca desce ate o fim do cabelo
+
+
+def test_body_tone_moves_skin_to_the_face_tone_and_leaves_clothes():
+    from app.core.head.compose import tom_do_corpo
+
+    final = np.full((300, 200, 3), (200, 200, 200), np.uint8)
+    pessoa = np.zeros((300, 200), bool)
+    pessoa[20:300, 50:150] = True
+    final[pessoa] = (170, 190, 235)  # corpo claro/rosado
+    final[30:90, 70:130] = (90, 130, 175)  # rosto moreno (Luna)
+    final[200:260, 50:150] = (60, 60, 200)  # roupa vermelha
+    original = final.copy()
+    roupa = np.zeros((300, 200), bool)
+    roupa[200:260, 50:150] = True
+    cabeca = np.zeros((300, 200), bool)
+    cabeca[25:95, 65:135] = True
+    out, info = tom_do_corpo(final, original, (70, 30, 130, 90), pessoa, roupa, cabeca)
+    assert info["status"] == "aplicado"
+    assert out[150, 100].astype(int).sum() < final[150, 100].astype(int).sum() - 20  # corpo mais moreno
+    assert (out[230, 100] == final[230, 100]).all()  # roupa intacta
+    assert (out[10, 10] == final[10, 10]).all()  # fundo intacto
