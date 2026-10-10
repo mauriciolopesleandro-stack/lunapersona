@@ -193,12 +193,13 @@ def test_body_tone_moves_skin_to_the_face_tone_and_leaves_clothes():
     pessoa[20:300, 50:150] = True
     final[pessoa] = (170, 190, 235)  # corpo claro/rosado
     final[30:90, 70:130] = (90, 130, 175)  # rosto moreno (Luna)
+    final[90:112, 85:115] = (90, 130, 175)  # pescoco da Luna (o alvo do tom)
     final[200:260, 50:150] = (60, 60, 200)  # roupa vermelha
     original = final.copy()
     roupa = np.zeros((300, 200), bool)
     roupa[200:260, 50:150] = True
     cabeca = np.zeros((300, 200), bool)
-    cabeca[25:95, 65:135] = True
+    cabeca[25:115, 65:135] = True
     out, info = tom_do_corpo(final, original, (70, 30, 130, 90), pessoa, roupa, cabeca)
     assert info["status"] == "aplicado"
     assert out[150, 100].astype(int).sum() < final[150, 100].astype(int).sum() - 20  # corpo mais moreno
