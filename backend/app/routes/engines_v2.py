@@ -125,6 +125,16 @@ async def replace(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/head", status_code=202)
+async def head(request: Request, file: UploadFile | None = File(None), image: str = Form("")):
+    """Modo "Luna na foto": troca so a cabeca (rosto + cabelo) pela da Luna; o resto da foto fica identico."""
+    _touch(request)
+    svc = _svc(request)
+    if getattr(svc, "head", None) is None:
+        raise HTTPException(status_code=503, detail="modo Luna na foto desligado (config/head_mode.json ausente)")
+    return svc.head.start(await _image(request, file, image))
+
+
 @router.post("/faceswap", status_code=202)
 async def faceswap(
     request: Request,

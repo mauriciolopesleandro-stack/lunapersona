@@ -192,12 +192,26 @@ def _engines_v2():
     ret = cfg.get("retention", {})
     input_dir = Path(ret["comfyui_input_dir"]) if ret.get("comfyui_input_dir") else None
     sweeper = RetentionSweeper(input_dir, [RetentionRule(r["prefix"], float(r["max_age_hours"])) for r in ret.get("rules", [])])
-    return EnginesV2Service(
+    svc = EnginesV2Service(
         config=cfg, registry=registry, sheets=app.state.persona_sheets,
         negative_builder=NegativePromptBuilder(engine_config["global_negative"]), factory=factory,
         upload=factory.upload, url_for=factory.url_for, jobs=JobRegistry(int(ret.get("max_jobs_in_memory", 30))),
         sweeper=sweeper, telemetry_log=settings.workflows_dir.parent / cfg.get("telemetry_log", "logs/engines_v2_telemetry.jsonl"),
     )
+    # modo "Luna na foto" (troca so da cabeca): mesmos jobs, upload e enderecos das imagens
+    svc.head = None
+    head_cfg = cfg_dir / "head_mode.json"
+    try:  # sem OpenCV/ONNX no pod o modo fica desligado, mas as outras engines seguem
+        from app.services.head_mode import HeadModeService, load_head_config
+
+        if head_cfg.exists():
+            svc.head = HeadModeService(app.state.comfyui_client, app.state.workflow_manager, factory.store, factory.url_for,
+                                       svc.jobs, load_head_config(head_cfg))
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).exception("Modo Luna na foto desligado")
+    return svc
 
 
 try:

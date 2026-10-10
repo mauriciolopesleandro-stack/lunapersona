@@ -1147,20 +1147,12 @@ export function runReplacement(body: {
   return runV2("/v2/replace", form, "a substituição");
 }
 
-// Tela simples de troca de pessoa: so a foto. Versao, modo e modelo ficam fixos aqui (sem opcoes na tela).
-export const REPLACEMENT_VERSION = "v3.1";
-
-export function runSimpleReplacement(file: File, personaId: string): Promise<EngineV2Result> {
+// Tela simples de troca de pessoa: so a foto. Modo "Luna na foto" (10/10): troca so a cabeca (rosto + cabelo) pela
+// da Luna, com referencia escolhida nas fotos aprovadas pelo usuario; roupa, corpo, maos e fundo ficam identicos.
+export function runSimpleReplacement(file: File, _personaId: string): Promise<EngineV2Result> {
   const form = new FormData();
   form.append("file", file);
-  form.append("persona_id", personaId);
-  form.append("mode", "QUALITY");
-  form.append("model", "auto");
-  form.append("seed", String(Math.floor(Math.random() * 1_000_000)));
-  form.append("advanced", JSON.stringify({ max_retries: 0 }));
-  form.append("replacement", JSON.stringify({ replacement_version: REPLACEMENT_VERSION }));
-  form.append("processing", "local");
-  return runV2("/v2/replace", form, "a troca de pessoa");
+  return runV2("/v2/head", form, "a troca de pessoa");
 }
 
 export function runFaceSwap(body: {

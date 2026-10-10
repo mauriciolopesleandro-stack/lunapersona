@@ -8,3 +8,6 @@ python-multipart==0.0.9
 # Persona Engine V1.1: medida da microtextura da pele (app/validation_backends/skin.py)
 pillow==11.0.0
 numpy==2.1.3
+# Modo "Luna na foto" (app/core/head): composicao da cabeca (OpenCV) e recorte da pessoa (U2Net ONNX, CPU)
+opencv-python-headless==4.10.0.84
+onnxruntime==1.19.2

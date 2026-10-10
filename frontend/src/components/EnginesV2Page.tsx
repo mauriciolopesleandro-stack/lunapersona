@@ -86,7 +86,7 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
     <div className="panel">
       <div className="page-header">
         <h1>Trocar pessoa</h1>
-        <p>Envie uma foto: a pessoa dela vira a persona, com a mesma pose, roupa e cenário.</p>
+        <p>Envie uma foto: a pessoa ganha o rosto e o cabelo da Luna. Roupa, corpo, pose e cenário ficam iguais aos da foto.</p>
       </div>
 
       {personas.length > 1 && (
@@ -123,15 +123,15 @@ export function EnginesV2Page({ personas, ensureAwake }: Props) {
       </button>
       {running && (
         <p className="muted small">
-          Leva alguns minutos. A primeira troca depois que o estúdio liga demora mais (prepara os modelos).
+          Leva uns 4 minutos (gera 2 versões e fica com a mais parecida com a Luna). A primeira depois que o estúdio liga demora mais.
         </p>
       )}
       {error && <p className="error small">{error}</p>}
 
       {result && (
         <div className="engine-job">
-          {result.status === "REJECT" && (
-            <p className="error small">A conferência automática reprovou esta imagem. Você pode gerar de novo.</p>
+          {result.status !== "PASS" && (
+            <p className="error small">A Luna ficou menos parecida que o normal nesta foto. Você pode gerar de novo.</p>
           )}
           <div className="v2-compare">
             {preview && <img src={preview} alt="Original" />}
