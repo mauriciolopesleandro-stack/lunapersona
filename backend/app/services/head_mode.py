@@ -135,16 +135,23 @@ class HeadModeService:
         ranked = rank_bank(self.cfg["bank"], target.get("yaw"), tooth)[: int(self.cfg.get("candidates", 2))]
         person = await self._person(rgb)
         bgr_orig = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-        cands = []
+        # 1o todas as trocas (o Qwen fica na placa), depois composicao (CPU) e por ultimo a semelhanca (LunaFaces):
+        # intercalar a medida com as trocas tirava o Qwen da memoria - 155 s por candidata contra 95 s (teste de 10/10)
+        raws = []
         for i, ref in enumerate(ranked):
             t = time.monotonic()
             raw, crop = await self._swap(image, await self._ref(ref["file"]), box, W, H, int(self.cfg.get("seed", 1234)) + i)
+            raws.append((ref, raw, crop, round(time.monotonic() - t, 1)))
+        cands = []
+        for ref, raw, crop, secs in raws:
             comp = await asyncio.to_thread(compor, bgr_orig, cv2.cvtColor(raw, cv2.COLOR_RGB2BGR), crop, box, others, person)
-            item: dict[str, Any] = {"ref": ref["file"], "seconds": round(time.monotonic() - t, 1), **comp.info}
+            item: dict[str, Any] = {"ref": ref["file"], "seconds": secs, **comp.info}
             if comp.final is not None:
-                loc = await self.store.save(cv2.cvtColor(comp.final, cv2.COLOR_BGR2RGB), "luna_head")
-                item.update(image=loc, similarity=await self._similarity(loc, box))
+                item["image"] = await self.store.save(cv2.cvtColor(comp.final, cv2.COLOR_BGR2RGB), "luna_head")
             cands.append(item)
+        for item in cands:
+            if item.get("image"):
+                item["similarity"] = await self._similarity(item["image"], box)
         ok = [c for c in cands if c.get("image")]
         if not ok:
             raise HeadModeError(f"nenhuma candidata pode ser composta: {[c.get('erro') for c in cands]}")

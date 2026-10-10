@@ -6,20 +6,60 @@
   "candidates": 2,
   "seed": 1234,
   "bank": [
-    {"file": "ref_28.png", "yaw": 0.02, "teeth": 0.0, "sim": 0.808},
-    {"file": "ref_27.png", "yaw": 0.0, "teeth": 0.004, "sim": 0.785},
-    {"file": "ref_28_1.png", "yaw": 0.15, "teeth": 0.0, "sim": 0.757},
-    {"file": "ref_27_1.png", "yaw": 0.13, "teeth": 0.0, "sim": 0.763},
-    {"file": "ref_29.png", "yaw": 0.01, "teeth": 0.076, "sim": 0.762},
-    {"file": "ref_32.png", "yaw": -0.64, "teeth": 0.0, "sim": 0.804},
-    {"file": "ref_32_esp.png", "yaw": 0.64, "teeth": 0.0, "sim": 0.804}
+    {
+      "file": "ref_28.png",
+      "yaw": 0.02,
+      "teeth": 0.0,
+      "sim": 0.808
+    },
+    {
+      "file": "ref_27.png",
+      "yaw": 0.0,
+      "teeth": 0.004,
+      "sim": 0.785
+    },
+    {
+      "file": "ref_28_1.png",
+      "yaw": 0.15,
+      "teeth": 0.0,
+      "sim": 0.757
+    },
+    {
+      "file": "ref_27_1.png",
+      "yaw": 0.13,
+      "teeth": 0.0,
+      "sim": 0.763
+    },
+    {
+      "file": "ref_29.png",
+      "yaw": 0.01,
+      "teeth": 0.076,
+      "sim": 0.762
+    },
+    {
+      "file": "ref_32.png",
+      "yaw": -0.64,
+      "teeth": 0.0,
+      "sim": 0.804
+    },
+    {
+      "file": "ref_32_esp.png",
+      "yaw": 0.64,
+      "teeth": 0.0,
+      "sim": 0.804
+    }
   ],
   "_bank_note": "yaw = giro (mesma medida do LunaFaces); teeth = fracao de dentes a mostra entre os cantos da boca; sim = semelhanca da foto com a media das 32 fotos do usuario (scripts/fase0/banco_referencias.py). Fotos com mao no rosto ou outra pessoa ficaram de fora (a mao vai junto na troca).",
-  "proxies": ["proxy_22.png", "proxy_21.png", "proxy_14.png"],
+  "proxies": [
+    "proxy_22.png",
+    "proxy_21.png",
+    "proxy_14.png"
+  ],
   "_proxies_note": "fotos do usuario mais perto da media dele (0,87 / 0,86 / 0,84): a candidata escolhida e a de maior semelhanca media com elas",
-  "warn_below": 0.65,
+  "warn_below": 0.55,
   "matte_model": {
     "path": "/root/v2models/u2net_human_seg.onnx",
     "url": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net_human_seg.onnx"
-  }
+  },
+  "_warn_note": "escala da medida por proxies (media da semelhanca com 3 fotos do usuario) e mais baixa que a da media das 32 fotos usada na fase 0: no teste de 10/10 as mesmas trocas deram ~0,08 a menos. 0,55 aqui ~ 0,63 la."
 }
