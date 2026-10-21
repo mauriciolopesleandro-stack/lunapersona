@@ -1987,3 +1987,8 @@ button.result-download {
   font-weight: 600;
   color: var(--text-muted);
 }
+
+/* Sem as pilulas do pod, os icones ficam juntos a direita (menu a esquerda). */
+.topbar-manual .topbar-menu-btn {
+  margin-right: auto;
+}

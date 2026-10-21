@@ -105,7 +105,7 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar, on
   }, [running]);
 
   return (
-    <div className="topbar">
+    <div className={GPU_ENABLED ? "topbar" : "topbar topbar-manual"}>
       <button type="button" className="icon-btn topbar-menu-btn" onClick={onOpenSidebar} aria-label="Abrir menu">
         ☰
       </button>
