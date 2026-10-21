@@ -125,3 +125,69 @@ export async function cloudAudit(): Promise<AuditRow[]> {
   const res = await fetch("/api/library?audit=1");
   return (await json<{ logs: AuditRow[] }>(res)).logs;
 }
+
+// --- Publicacoes (Fase 2, /api/posts) e fila (/api/jobs) ------------------------------------
+
+export interface PostDto {
+  id: string;
+  network: Network;
+  caption: string;
+  hashtags: string[];
+  scheduled_at: string | null;
+  status: string;
+  version: number;
+  approved_version: number | null;
+  failure_reason: string | null;
+  published_at: string | null;
+  legacy_id: string | null;
+  created_at: string;
+  updated_at: string;
+  media_ids: string[];
+  destinations: { format: string; status: string; external_url: string | null; confirmed_at: string | null; confirmed_by: string | null }[];
+  approvals: { version: number; decision: string; note: string | null; decided_at: string }[];
+  jobs: { id: string; run_at: string; status: string; attempts: number; max_attempts: number; last_error: string | null }[];
+  attempts: { channel: string; outcome: string; detail: string | null; started_at: string }[];
+}
+
+export interface WorkerStatus {
+  last_run_at: string;
+  last_result: { origem?: string; processadas?: number; falhas?: number; erro?: string | null };
+}
+
+function postsCall<T>(action: string, payload: object): Promise<T> {
+  return fetch("/api/posts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...payload }),
+  }).then((r) => json<T>(r));
+}
+
+export async function cloudPosts(): Promise<{ posts: PostDto[]; worker: WorkerStatus | null }> {
+  return json(await fetch("/api/posts"));
+}
+
+export async function cloudPostSave(payload: {
+  id?: string;
+  version?: number;
+  network: Network;
+  formats: string[];
+  media_ids: string[];
+  caption: string;
+  hashtags: string[];
+  scheduled_at: string | null;
+}): Promise<{ post: PostDto; needsApproval?: boolean }> {
+  return postsCall("save", payload);
+}
+
+export async function cloudPostAction(action: string, id: string, extra: object = {}): Promise<{ post: PostDto }> {
+  return postsCall(action, { id, ...extra });
+}
+
+export async function cloudPostImport(posts: object[]): Promise<number> {
+  if (!posts.length) return 0;
+  return (await postsCall<{ imported: number }>("import", { posts })).imported;
+}
+
+export async function cloudRunJobs(): Promise<{ processadas: number; ok: number; falhas: number; novas_tentativas: number }> {
+  return json(await fetch("/api/jobs", { method: "POST" }));
+}

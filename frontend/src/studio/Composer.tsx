@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Icon } from "./Icon";
+import { PostFlow } from "./PostFlow";
 import { Modal, NETWORKS, Thumb } from "./shared";
 import { newPostId, useStudio, type Network, type Post, type PostStatus } from "./store";
 
@@ -21,7 +22,10 @@ interface Props {
 }
 
 export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) {
-  const { items, savePost, deletePost } = useStudio();
+  const { items, savePost, deletePost, source, posts, saveCloudPost, postAction } = useStudio();
+  // No modo banco a publicacao aberta e sempre a versao atual do banco.
+  const live = initial && source === "banco" ? posts.find((p) => p.id === initial.id) ?? initial : initial;
+  const locked = Boolean(live && ["publicando", "publicado", "cancelado"].includes(live.status));
   const start = splitDate(initial?.scheduledAt ?? (defaultDate ? defaultDate.toISOString() : null));
   const [network, setNetwork] = useState<Network>(initial?.network ?? "instagram");
   const [formats, setFormats] = useState<string[]>(initial?.formats ?? ["Feed"]);
@@ -109,6 +113,44 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
     onDone?.();
   }
 
+  // Modo banco: salva o rascunho (nova versao se o conteudo mudou) e, se
+  // pedido, envia para aprovacao. Aprovar/agendar/confirmar ficam no PostFlow.
+  async function saveCloud(submit: boolean) {
+    setMessage(null);
+    if (caption.length > net.captionMax) {
+      return setMessage({ ok: false, text: `A legenda passou do limite do ${net.label} (${net.captionMax} caracteres).` });
+    }
+    if (submit) {
+      if (!chosen.length) return setMessage({ ok: false, text: "Escolha pelo menos uma imagem ou vídeo." });
+      if (!formats.length) return setMessage({ ok: false, text: "Marque pelo menos um destino." });
+    }
+    const when = date && time ? new Date(`${date}T${time}`).toISOString() : null;
+    setSaving(true);
+    try {
+      const { post, needsApproval } = await saveCloudPost({ network, formats, media, caption, hashtags, scheduledAt: when }, live);
+      if (submit && (post.status === "rascunho" || post.status === "falhou")) await postAction("submit", post.id);
+      setMessage({
+        ok: true,
+        text: submit
+          ? "Enviada para aprovação. Aprove em Publicações (ou abrindo a publicação)."
+          : needsApproval
+            ? `Salvo como versão ${post.version}: o conteúdo mudou, então precisa ser aprovado de novo.`
+            : `Salvo (versão ${post.version}).`,
+      });
+      if (!live) {
+        setMedia([]);
+        setCaption("");
+        setHashtags([]);
+        setSlide(0);
+        onDone?.();
+      }
+    } catch (e) {
+      setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function remove() {
     if (!initial || !window.confirm("Excluir esta publicação? Os arquivos continuam na pasta.")) return;
     await deletePost(initial.id);
@@ -117,6 +159,7 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
 
   return (
     <div className="st-composer">
+      <fieldset className="st-fieldset" disabled={locked}>
       <div className="st-tabs st-network-tabs">
         {(Object.keys(NETWORKS) as Network[]).map((n) => (
           <button key={n} type="button" className={network === n ? "active" : ""} onClick={() => changeNetwork(n)}>
@@ -212,9 +255,36 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
         </div>
       </div>
 
-      {message && <p className={message.ok ? "st-ok" : "st-error"}>{message.text}</p>}
-      <p className="st-hint">Por enquanto o estúdio não publica sozinho: no horário, você publica no app da rede. As integrações oficiais vêm depois.</p>
+      </fieldset>
 
+      {message && <p className={message.ok ? "st-ok" : "st-error"}>{message.text}</p>}
+      <p className="st-hint">
+        {source === "banco"
+          ? "Toda publicação passa por aprovação. No horário, o estúdio avisa no Telegram; você publica pelo app da rede e confirma aqui."
+          : "Por enquanto o estúdio não publica sozinho: no horário, você publica no app da rede. As integrações oficiais vêm depois."}
+      </p>
+
+      {source === "banco" ? (
+        <>
+          {live && ["aprovado", "agendado"].includes(live.status) && (
+            <p className="st-warn">Esta publicação já foi aprovada. Mudar mídia, legenda, hashtags ou destinos cria uma nova versão, que precisa ser aprovada de novo (mudar só o horário não).</p>
+          )}
+          {!locked && (
+            <div className="st-composer-actions">
+              <button type="button" className="st-btn" onClick={() => saveCloud(false)} disabled={saving}>
+                {live ? "Salvar alterações" : "Salvar rascunho"}
+              </button>
+              {(!live || live.status === "rascunho" || live.status === "falhou") && (
+                <button type="button" className="st-btn st-btn-primary" onClick={() => saveCloud(true)} disabled={saving}>
+                  <Icon name="send" size={16} />
+                  Enviar para aprovação
+                </button>
+              )}
+            </div>
+          )}
+          {live && <PostFlow postId={live.id} onClose={() => onDone?.()} />}
+        </>
+      ) : (
       <div className="st-composer-actions">
         {initial && (
           <button type="button" className="st-btn st-btn-danger" onClick={remove} disabled={saving}>
@@ -235,6 +305,7 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
           Programar publicação
         </button>
       </div>
+      )}
 
       {picking && (
         <MediaPicker

@@ -97,6 +97,30 @@ export async function dbUpdate<T>(table: string, query: string, patch: object): 
   return rows[0] ?? null;
 }
 
+// Atualiza todas as linhas que batem no filtro (sem devolver nada).
+export async function dbUpdateWhere(table: string, query: string, patch: object): Promise<void> {
+  await call(`/rest/v1/${table}?${query}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
+}
+
+// Insere ou atualiza pela chave unica (onConflict).
+export async function dbUpsert(table: string, row: object, onConflict: string): Promise<void> {
+  await call(`/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
+    method: "POST",
+    headers: { Prefer: "return=minimal,resolution=merge-duplicates" },
+    body: JSON.stringify(row),
+  });
+}
+
+export async function dbDelete(table: string, query: string): Promise<void> {
+  if (!query) throw new Error("dbDelete sem filtro");
+  await call(`/rest/v1/${table}?${query}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+}
+
+// Funcao do banco (ex.: claim_jobs), chamada pelo PostgREST.
+export function dbRpc<T>(fn: string, args: object): Promise<T> {
+  return call<T>(`/rest/v1/rpc/${fn}`, { method: "POST", body: JSON.stringify(args) });
+}
+
 // Historico de operacoes. Nao derruba a operacao se falhar - so registra.
 export async function audit(action: string, entity: string, entityId: string | null, details: object = {}): Promise<void> {
   await dbInsert("audit_logs", { action, entity, entity_id: entityId, details }).catch((e) =>

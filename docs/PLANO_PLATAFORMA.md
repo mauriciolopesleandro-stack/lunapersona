@@ -187,3 +187,33 @@ Uma migração por fase, sempre com:
 5. Faça um novo deploy. Depois, abra o estúdio e reconecte a pasta. A importação acontece sozinha, e Configurações passa a mostrar "Banco de dados: Conectado".
 
 **Como desfazer:** retire as duas variáveis da Vercel e faça um novo deploy. O estúdio volta a usar o `luna-vox.json`, que é mantido como cópia dos dados.
+
+## 13. Fase 2 entregue: publicações com aprovação e lembretes
+
+**Como funciona**
+
+- Os estados são os do pedido: rascunho → aguardando aprovação → aprovado → agendado → publicando ("hora de publicar") → publicado. Há também falhou e cancelado.
+- **A aprovação vale para uma versão exata.** Mudar mídia, legenda, hashtags, rede ou destinos cria a versão seguinte e devolve a publicação para aprovação. Mudar só o horário não.
+  - O banco garante essa regra com uma constraint: nada fica aprovado, agendado ou publicado sem a aprovação da versão atual.
+- **No horário**, o processador da fila (`api/jobs.ts`):
+  1. passa a publicação para "Hora de publicar";
+  2. manda o aviso no Telegram, pelo bot já configurado em Meu perfil.
+- **Se o Telegram falhar:**
+  - o processador tenta de novo depois de 2, 4 e 8 minutos;
+  - na 4ª tentativa, marca a falha e mostra um alerta no painel;
+  - toda tentativa fica registrada.
+- **Instagram e TikTok são publicados à mão** (as imagens ficam no computador). Você confirma cada destino (Feed, Reels...) com o link, se quiser. **Só vira "publicado" o que você confirmar.**
+- **A fila tem trava** (`for update skip locked`) e uma chave de idempotência por publicação, versão e horário. Duas execuções nunca mandam o mesmo aviso.
+- **As publicações antigas do `luna-vox.json` são importadas uma vez.** As agendadas voltam para aprovação; as publicadas ficam marcadas como "antes da Fase 2".
+
+**Passo a passo para ligar** (depois da Fase 1 ligada):
+
+1. No SQL Editor do Supabase, rode `supabase/migrations/0002_publicacoes.sql`.
+2. Na Vercel, cadastre `JOBS_SECRET`, só para o servidor: um valor aleatório de pelo menos 32 caracteres. Depois faça um novo deploy.
+3. No Supabase, em Database → Extensions, ative `pg_cron` e `pg_net`.
+4. Em `supabase/cron/processar_fila.sql`, troque `COLE_AQUI_O_JOBS_SECRET` pelo mesmo valor e rode o arquivo no SQL Editor. O segredo fica no Vault, não no texto do agendamento.
+5. Confira em Publicações: a linha "Lembretes automáticos" deve mostrar "última execução há 0–1 min (agendador do Supabase)".
+
+**Se o plano Free não oferecer `pg_cron`/`pg_net`:** o botão "Processar agora", em Publicações, roda a fila na mão. Os lembretes não saem sozinhos com o computador desligado, e o painel avisa quando há publicação vencida sem execução da fila.
+
+**Fica para depois:** publicação automática pela API do Instagram/TikTok. As tabelas `social_accounts` e `platform_connections` (com token cifrado) já existem, mas a automação depende de as mídias ficarem num servidor e de as redes aprovarem o app.

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Calendar } from "./Calendar";
 import { Composer } from "./Composer";
+import { POST_STATUS, PostStatusBadge } from "./PostFlow";
 import { Icon } from "./Icon";
 import { cloudAudit } from "./cloud";
 import { FolderGate, Modal, NETWORKS, WhenReady, StatusBadge, Thumb, formatBytes, formatDate } from "./shared";
-import { metaProblem, useStudio, type Audience, type Campaign, type Character, type Item, type ItemStatus, type MetaPatch, type Network, type Post } from "./store";
+import { metaProblem, useStudio, type Audience, type Campaign, type Character, type Item, type ItemStatus, type MetaPatch, type Network, type Post, type PostStatus } from "./store";
 
 export interface Nav {
   openItem: (path: string) => void;
@@ -102,22 +103,43 @@ function Stat({ icon, tone, label, value, sub }: { icon: string; tone: string; l
 }
 
 export function OverviewPage({ nav }: { nav: Nav }) {
-  const { items, posts, source } = useStudio();
+  const { items, posts, source, worker, postsError } = useStudio();
   const [filter, setFilter] = useState<Filter>("todos");
   const live = items.filter((i) => i.display !== "arquivado");
   const now = Date.now();
   const today = new Date().toDateString();
-  const todayPosts = posts.filter((p) => p.status === "agendado" && p.scheduledAt && new Date(p.scheduledAt).toDateString() === today);
+  const todayPosts = posts.filter(
+    (p) => (p.status === "agendado" || p.status === "publicando") && p.scheduledAt && new Date(p.scheduledAt).toDateString() === today
+  );
   const week = now + 7 * 24 * 3600 * 1000;
   const upcoming = posts
     .filter((p) => p.status === "agendado" && p.scheduledAt && new Date(p.scheduledAt).getTime() >= now)
     .sort((a, b) => (a.scheduledAt! < b.scheduledAt! ? -1 : 1));
   const month = new Date();
   const publishedThisMonth = posts.filter((p) => {
-    if (p.status !== "publicado" || !p.scheduledAt) return false;
-    const d = new Date(p.scheduledAt);
+    const at = p.publishedAt ?? p.scheduledAt;
+    if (p.status !== "publicado" || !at) return false;
+    const d = new Date(at);
     return d.getMonth() === month.getMonth() && d.getFullYear() === month.getFullYear();
   }).length;
+  const awaiting = source === "banco" ? posts.filter((p) => p.status === "aguardando_aprovacao").length : live.filter((i) => i.display === "rascunho").length;
+
+  // Alertas operacionais (so no modo banco, onde ha fila e confirmacao).
+  const alerts: { text: string; post?: Post; action?: () => void }[] = [];
+  if (postsError) alerts.push({ text: postsError, action: () => nav.go("publicacoes") });
+  if (source === "banco") {
+    for (const p of posts) {
+      if (p.status === "publicando" && p.scheduledAt && now - new Date(p.scheduledAt).getTime() > 3600_000) {
+        alerts.push({ text: `${POST_STATUS.publicando} desde ${new Date(p.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}: confirme ou marque a falha.`, post: p });
+      }
+      if (p.status === "falhou") alerts.push({ text: `Publicação falhou: ${p.failureReason ?? "sem motivo"}`, post: p });
+      const failed = p.jobs?.find((j) => j.status === "falhou");
+      if (failed && p.status !== "publicado" && p.status !== "cancelado") alerts.push({ text: `Lembrete do Telegram não saiu: ${failed.lastError ?? ""}`, post: p });
+    }
+    const due = posts.some((p) => p.status === "agendado" && p.scheduledAt && new Date(p.scheduledAt).getTime() < now - 5 * 60_000);
+    const stale = !worker || now - new Date(worker.last_run_at).getTime() > 10 * 60_000;
+    if (due && stale) alerts.push({ text: "Há publicação agendada que já passou da hora e a automação não rodou: confira o agendador do Supabase.", action: () => nav.go("publicacoes") });
+  }
 
   return (
     <FolderGate>
@@ -133,8 +155,12 @@ export function OverviewPage({ nav }: { nav: Nav }) {
           icon="check"
           tone="green"
           label="Aguardando aprovação"
-          value={live.filter((i) => i.display === "rascunho").length}
-          sub={`${plural(live.filter((i) => i.display === "aprovado").length, "aprovado", "aprovados")}, prontos para usar`}
+          value={awaiting}
+          sub={
+            source === "banco"
+              ? `${plural(posts.filter((p) => p.status === "aprovado" || p.status === "agendado").length, "publicação aprovada", "publicações aprovadas")}`
+              : `${plural(live.filter((i) => i.display === "aprovado").length, "aprovado", "aprovados")}, prontos para usar`
+          }
         />
         <Stat
           icon="calendar"
@@ -143,8 +169,24 @@ export function OverviewPage({ nav }: { nav: Nav }) {
           value={todayPosts.length}
           sub={`${upcoming.filter((p) => new Date(p.scheduledAt!).getTime() <= week).length} nos próximos 7 dias`}
         />
-        <Stat icon="send" tone="pink" label="Publicados" value={publishedThisMonth} sub="neste mês" />
+        <Stat icon="send" tone="pink" label="Publicados" value={publishedThisMonth} sub="neste mês (confirmados)" />
       </div>
+
+      {alerts.length > 0 && (
+        <section className="st-panel st-alerts">
+          <h2>Alertas</h2>
+          <ul>
+            {alerts.map((a, i) => (
+              <li key={i}>
+                <button type="button" className="st-link" onClick={() => (a.post ? nav.openComposer({ post: a.post }) : a.action?.())}>
+                  {a.post ? `${NETWORKS[a.post.network].label} · ` : ""}
+                  {a.text}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="st-dash">
         <section className="st-panel st-dash-recent">
@@ -202,6 +244,17 @@ export function OverviewPage({ nav }: { nav: Nav }) {
               <span>Banco de dados</span>
               <em className={source === "banco" ? "on" : ""}>{source === "banco" ? "conectado" : "não configurado (dados na pasta)"}</em>
             </button>
+            {source === "banco" && (
+              <button type="button" className="st-integration" onClick={() => nav.go("publicacoes")}>
+                <Icon name="refresh" size={18} />
+                <span>Lembretes automáticos</span>
+                <em className={worker && Date.now() - new Date(worker.last_run_at).getTime() < 10 * 60_000 ? "on" : ""}>
+                  {worker
+                    ? `última execução ${new Date(worker.last_run_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`
+                    : "agendador ainda não configurado"}
+                </em>
+              </button>
+            )}
             {(["instagram", "tiktok"] as const).map((n) => (
               <button key={n} type="button" className="st-integration" onClick={() => nav.go(n)}>
                 <Icon name={NETWORKS[n].icon} size={18} />
@@ -243,7 +296,7 @@ function PostList({ posts, nav, empty }: { posts: Post[]; nav: Nav; empty: strin
             </span>
             <span className="st-post-when">
               {p.scheduledAt ? new Date(p.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "sem data"}
-              <span className={`st-badge st-badge-${p.status}`}>{p.status === "agendado" ? "Agendado" : p.status === "publicado" ? "Publicado" : "Rascunho"}</span>
+              <PostStatusBadge status={p.status} />
             </span>
           </button>
         );
@@ -568,12 +621,67 @@ export function CalendarPage({ nav }: { nav: Nav }) {
   );
 }
 
+// Abas do modo banco (fluxo com aprovacao) e do modo pasta (simples).
+const CLOUD_TABS: { id: string; label: string; statuses: PostStatus[] }[] = [
+  { id: "aprovar", label: "Aguardando aprovação", statuses: ["aguardando_aprovacao"] },
+  { id: "agenda", label: "Aprovadas e agendadas", statuses: ["aprovado", "agendado"] },
+  { id: "confirmar", label: "Para confirmar", statuses: ["publicando"] },
+  { id: "publicadas", label: "Publicadas", statuses: ["publicado"] },
+  { id: "rascunhos", label: "Rascunhos", statuses: ["rascunho"] },
+  { id: "problemas", label: "Falhas e canceladas", statuses: ["falhou", "cancelado"] },
+];
+const FOLDER_TABS: typeof CLOUD_TABS = [
+  { id: "agenda", label: "Agendadas", statuses: ["agendado"] },
+  { id: "rascunhos", label: "Rascunhos", statuses: ["rascunho"] },
+  { id: "publicadas", label: "Publicadas", statuses: ["publicado"] },
+];
+
+function WorkerPanel() {
+  const { worker, runJobs } = useStudio();
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const minutes = worker ? Math.round((Date.now() - new Date(worker.last_run_at).getTime()) / 60000) : null;
+  return (
+    <div className="st-worker">
+      <span>
+        <b>Lembretes automáticos:</b>{" "}
+        {worker
+          ? `última execução ${minutes! < 1 ? "agora há pouco" : `há ${minutes} min`} (${worker.last_result.origem === "cron" ? "agendador do Supabase" : "botão do painel"})${worker.last_result.erro ? ` · erro: ${worker.last_result.erro}` : ""}`
+          : "nunca executou. Configure o agendador do Supabase (docs/PLANO_PLATAFORMA.md) ou use o botão."}
+        {note && <em> · {note}</em>}
+      </span>
+      <button
+        type="button"
+        className="st-btn st-btn-small"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const r = await runJobs();
+            setNote(`${r.processadas} tarefa(s): ${r.ok} ok, ${r.novas_tentativas} para tentar de novo, ${r.falhas} com falha`);
+          } catch (e) {
+            setNote(e instanceof Error ? e.message : String(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <Icon name="refresh" size={14} />
+        Processar agora
+      </button>
+    </div>
+  );
+}
+
 export function PublicationsPage({ nav }: { nav: Nav }) {
-  const { posts } = useStudio();
-  const [tab, setTab] = useState<"agendado" | "rascunho" | "publicado">("agendado");
+  const { posts, source, postsError } = useStudio();
+  const tabs = source === "banco" ? CLOUD_TABS : FOLDER_TABS;
+  const [tabId, setTabId] = useState(tabs[0].id);
+  const tab = tabs.find((t) => t.id === tabId) ?? tabs[0];
+  const newestFirst = tab.id === "publicadas" || tab.id === "problemas";
   const list = posts
-    .filter((p) => p.status === tab)
-    .sort((a, b) => ((a.scheduledAt ?? "") < (b.scheduledAt ?? "") ? (tab === "publicado" ? 1 : -1) : tab === "publicado" ? -1 : 1));
+    .filter((p) => tab.statuses.includes(p.status))
+    .sort((a, b) => ((a.scheduledAt ?? a.createdAt) < (b.scheduledAt ?? b.createdAt) ? (newestFirst ? 1 : -1) : newestFirst ? -1 : 1));
   return (
     <div>
       <div className="st-page-head">
@@ -587,10 +695,12 @@ export function PublicationsPage({ nav }: { nav: Nav }) {
       </div>
       <FolderGate>
         <section className="st-panel">
+          {postsError && <p className="st-warn">{postsError}</p>}
+          {source === "banco" && !postsError && <WorkerPanel />}
           <div className="st-tabs">
-            {(["agendado", "rascunho", "publicado"] as const).map((s) => (
-              <button key={s} type="button" className={tab === s ? "active" : ""} onClick={() => setTab(s)}>
-                {s === "agendado" ? "Agendadas" : s === "rascunho" ? "Rascunhos" : "Publicadas"} ({posts.filter((p) => p.status === s).length})
+            {tabs.map((t) => (
+              <button key={t.id} type="button" className={tab.id === t.id ? "active" : ""} onClick={() => setTabId(t.id)}>
+                {t.label} ({posts.filter((p) => t.statuses.includes(p.status)).length})
               </button>
             ))}
           </div>
