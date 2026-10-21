@@ -7,5 +7,5 @@ import { isAuthenticated } from "./_auth.js";
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   res.setHeader("Content-Type", "application/json");
   res.statusCode = 200;
-  res.end(JSON.stringify({ authenticated: isAuthenticated(req) }));
+  res.end(JSON.stringify({ authenticated: await isAuthenticated(req) }));
 }

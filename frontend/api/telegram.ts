@@ -33,7 +33,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.statusCode = status;
     res.end(JSON.stringify(body));
   };
-  if (!isAuthenticated(req)) return reply(401, { detail: "Sessao expirada. Entre de novo." });
+  if (!(await isAuthenticated(req))) return reply(401, { detail: "Sessao expirada. Entre de novo." });
 
   const status = async () => {
     const config = await telegramConfig();

@@ -60,6 +60,19 @@ export async function logout(): Promise<void> {
   await fetch("/api/logout", { method: "POST" });
 }
 
+// Derruba as sessoes de todos os aparelhos (inclusive esta).
+export async function logoutEverywhere(): Promise<void> {
+  const res = await fetch("/api/logout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ all: true }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail ?? `Erro HTTP ${res.status}`);
+  }
+}
+
 export interface Profile {
   email: string;
   canChangePassword: boolean;

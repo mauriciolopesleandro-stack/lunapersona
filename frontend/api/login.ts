@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { buildSetCookie, safeEqual } from "./_auth.js";
 import { checkPassword } from "./_password.js";
+import { blockedFor, clearFailures, recordFailure, tooManyAttemptsMessage } from "./_ratelimit.js";
 
 // POST /api/login { username, password, remember }
 // Conta unica (sem multiplos usuarios): e-mail em APP_LOGIN_EMAIL e senha
@@ -37,6 +38,24 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
+  const unavailable = (e: unknown) => {
+    res.statusCode = 503;
+    res.end(JSON.stringify({ detail: `Nao foi possivel conferir a senha agora (${e instanceof Error ? e.message : e}).` }));
+  };
+
+  // Limite de tentativas por IP (_ratelimit.ts), conferido antes da senha.
+  try {
+    const wait = await blockedFor(req);
+    if (wait > 0) {
+      res.setHeader("Retry-After", String(wait));
+      res.statusCode = 429;
+      res.end(JSON.stringify({ detail: tooManyAttemptsMessage(wait) }));
+      return;
+    }
+  } catch (e) {
+    return unavailable(e);
+  }
+
   const username = typeof parsed.username === "string" ? parsed.username.trim().toLowerCase() : "";
   const password = typeof parsed.password === "string" ? parsed.password : "";
   const emailOk = username.length > 0 && safeEqual(username, expectedEmail.trim().toLowerCase());
@@ -44,18 +63,24 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   try {
     passwordOk = await checkPassword(password);
   } catch (e) {
-    res.statusCode = 503;
-    res.end(JSON.stringify({ detail: `Nao foi possivel conferir a senha agora (${e instanceof Error ? e.message : e}).` }));
-    return;
+    return unavailable(e);
   }
 
   if (!emailOk || !passwordOk) {
+    await recordFailure(req).catch((e) => console.error("Nao deu para contar a tentativa errada:", e));
     res.statusCode = 401;
     res.end(JSON.stringify({ detail: "E-mail ou senha incorretos." }));
     return;
   }
 
-  res.setHeader("Set-Cookie", buildSetCookie(Boolean(parsed.remember)));
+  let cookie: string;
+  try {
+    await clearFailures(req);
+    cookie = await buildSetCookie(Boolean(parsed.remember));
+  } catch (e) {
+    return unavailable(e);
+  }
+  res.setHeader("Set-Cookie", cookie);
   res.statusCode = 200;
   res.end(JSON.stringify({ ok: true }));
 }

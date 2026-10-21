@@ -49,3 +49,19 @@ export async function storeSetIfAbsent(key: string, value: string, ttlSeconds: n
 export async function storeDelete(key: string): Promise<void> {
   await command(["DEL", key]);
 }
+
+export async function storeIncr(key: string): Promise<number> {
+  return Number(await command(["INCR", key]));
+}
+
+// Soma 1 e, na primeira vez, poe a validade - numa operacao so (script Lua),
+// para o contador nunca ficar sem validade se a funcao cair no meio.
+export async function storeIncrWithTtl(key: string, ttlSeconds: number): Promise<number> {
+  const script = "local n = redis.call('INCR', KEYS[1]) if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end return n";
+  return Number(await command(["EVAL", script, "1", key, String(ttlSeconds)]));
+}
+
+// Segundos que faltam para a chave expirar (-2 = nao existe, -1 = sem validade).
+export async function storeTtl(key: string): Promise<number> {
+  return Number(await command(["TTL", key]));
+}

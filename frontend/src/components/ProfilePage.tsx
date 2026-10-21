@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Profile } from "../api/client";
-import { changePassword, getProfile } from "../api/client";
+import { changePassword, getProfile, logoutEverywhere } from "../api/client";
 import { TelegramSettings } from "./TelegramSettings";
 
 interface Props {
@@ -17,6 +17,8 @@ export function ProfilePage({ onLogout }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   useEffect(() => {
     getProfile()
@@ -55,6 +57,19 @@ export function ProfilePage({ onLogout }: Props) {
     }
   }
 
+  async function handleLogoutEverywhere() {
+    if (!window.confirm("Sair da conta em todos os aparelhos, inclusive neste?")) return;
+    setClosing(true);
+    setCloseError(null);
+    try {
+      await logoutEverywhere();
+      onLogout();
+    } catch (e) {
+      setCloseError(e instanceof Error ? e.message : String(e));
+      setClosing(false);
+    }
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -80,7 +95,8 @@ export function ProfilePage({ onLogout }: Props) {
       <form className="panel settings-section profile-password" onSubmit={handleSubmit}>
         <h2>Trocar senha</h2>
         <p className="muted small">
-          Depois de trocar, a senha antiga para de funcionar. Esta sessão continua aberta.
+          Depois de trocar, a senha antiga para de funcionar e os outros aparelhos saem da conta. Esta sessão continua
+          aberta.
         </p>
 
         {profile && !canChange && (
@@ -128,12 +144,28 @@ export function ProfilePage({ onLogout }: Props) {
 
         {problem && <p className="error small">{problem}</p>}
         {error && <p className="error small">{error}</p>}
-        {saved && <p className="profile-success">Senha trocada. Use a nova senha no próximo login.</p>}
+        {saved && (
+          <p className="profile-success">
+            Senha trocada. Os outros aparelhos saíram da conta; use a nova senha no próximo login.
+          </p>
+        )}
 
         <button type="submit" className="primary" disabled={!ready}>
           {saving ? "Salvando..." : "Salvar nova senha"}
         </button>
       </form>
+
+      <div className="panel settings-section profile-sessions">
+        <h2>Sessões</h2>
+        <p className="muted small">
+          Encerra o acesso em todos os aparelhos e navegadores, inclusive este. Use se perdeu um aparelho ou deixou a
+          conta aberta em outro lugar.
+        </p>
+        {closeError && <p className="error small">{closeError}</p>}
+        <button type="button" onClick={handleLogoutEverywhere} disabled={!canChange || closing}>
+          {closing ? "Encerrando..." : "Sair de todos os aparelhos"}
+        </button>
+      </div>
 
       <TelegramSettings />
     </div>

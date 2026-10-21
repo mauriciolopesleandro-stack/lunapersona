@@ -8,7 +8,7 @@ import { storeConfigured } from "./_store.js";
 // estiver conectado ao projeto na Vercel.
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   res.setHeader("Content-Type", "application/json");
-  if (!isAuthenticated(req)) {
+  if (!(await isAuthenticated(req))) {
     res.statusCode = 401;
     res.end(JSON.stringify({ detail: "Sessao expirada. Entre de novo." }));
     return;

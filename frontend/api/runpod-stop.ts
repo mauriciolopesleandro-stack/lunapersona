@@ -14,7 +14,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.end(JSON.stringify({ error: "Use POST." }));
     return;
   }
-  if (!isAuthenticated(req)) {
+  if (!(await isAuthenticated(req))) {
     res.statusCode = 401;
     res.end(JSON.stringify({ error: "Sessao expirada. Entre de novo." }));
     return;

@@ -31,7 +31,7 @@ async function backendIsReady(apiBase: string): Promise<boolean> {
 // So consulta a API da RunPod e o /health do backend - custo zero de GPU.
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   res.setHeader("Content-Type", "application/json");
-  if (!isAuthenticated(req)) {
+  if (!(await isAuthenticated(req))) {
     res.statusCode = 401;
     res.end(JSON.stringify({ error: "Sessao expirada. Entre de novo." }));
     return;

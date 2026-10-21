@@ -1422,7 +1422,8 @@ label.checkbox-row input {
   white-space: nowrap;
 }
 
-.profile-password {
+.profile-password,
+.profile-sessions {
   max-width: 560px;
 }
 
