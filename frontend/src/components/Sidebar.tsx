@@ -1,4 +1,6 @@
-export type Tab = "gerar" | "v2" | "historia" | "pack" |"trocar" | "conteudo" | "voz" | "personas" | "historico" | "galeria" | "configuracoes" | "perfil";
+import { GPU_ENABLED } from "../lib/studioMode";
+
+export type Tab = "inicio" | "gerar" | "v2" | "historia" | "pack" |"trocar" | "conteudo" | "voz" | "personas" | "historico" | "galeria" | "configuracoes" | "perfil";
 
 interface Props {
   tab: Tab;
@@ -22,19 +24,25 @@ const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: "perfil", label: "Meu perfil", icon: "◉" },
 ];
 
+// Modo manual: so o que funciona sem o pod (ver lib/studioMode.ts).
+const MANUAL_NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
+  { id: "inicio", label: "Visão geral", icon: "◇" },
+  { id: "perfil", label: "Meu perfil", icon: "◉" },
+];
+
 export function Sidebar({ tab, onTabChange, open, onClose }: Props) {
   return (
     <aside className={open ? "sidebar open" : "sidebar"}>
       <div className="sidebar-brand">
         <div className="sidebar-brand-mark" aria-hidden="true" />
         <div>
-          <div className="sidebar-brand-name">Luna AI Studio</div>
-          <div className="sidebar-brand-tag">Imagens que contam histórias</div>
+          <div className="sidebar-brand-name">{GPU_ENABLED ? "Luna AI Studio" : "Luna Vox Studio"}</div>
+          <div className="sidebar-brand-tag">{GPU_ENABLED ? "Imagens que contam histórias" : "Conteúdo, agenda e vendas"}</div>
         </div>
       </div>
 
       <nav className="sidebar-nav">
-        {NAV_ITEMS.map((item) => (
+        {(GPU_ENABLED ? NAV_ITEMS : MANUAL_NAV_ITEMS).map((item) => (
           <button
             key={item.id}
             type="button"
@@ -54,10 +62,12 @@ export function Sidebar({ tab, onTabChange, open, onClose }: Props) {
 
       <div className="sidebar-spacer" />
 
-      <div className="sidebar-footer-card">
-        <strong>Custo real de GPU</strong>
-        Cada geração usa o pod RunPod ligado. O saldo no topo é o saldo real da conta — acompanhe antes de gerar muito.
-      </div>
+      {GPU_ENABLED && (
+        <div className="sidebar-footer-card">
+          <strong>Custo real de GPU</strong>
+          Cada geração usa o pod RunPod ligado. O saldo no topo é o saldo real da conta — acompanhe antes de gerar muito.
+        </div>
+      )}
     </aside>
   );
 }

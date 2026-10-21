@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getPodStatus, login, wakePod } from "../api/client";
+import { GPU_ENABLED } from "../lib/studioMode";
 import "./login.css";
 
 // Elenco mostrado na tela de login. So a Luna existe de verdade hoje - as
@@ -185,7 +186,10 @@ export function LoginPage({ onReady }: Props) {
     setLoginError(null);
     try {
       await login(username, password, remember);
-      await startStudio();
+      // No modo manual o login so entra: ligar a GPU aqui custava um pod
+      // pago a cada login.
+      if (GPU_ENABLED) await startStudio();
+      else onReady();
     } catch (e) {
       setLoginError(e instanceof Error ? e.message : String(e));
     } finally {

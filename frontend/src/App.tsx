@@ -35,6 +35,8 @@ import { TopBar } from "./components/TopBar";
 import { addHistoryEntry } from "./lib/history";
 import { loadPack, rehostPack, savePack, type PackItem } from "./lib/pack";
 import { getSettings } from "./lib/settings";
+import { GPU_ENABLED } from "./lib/studioMode";
+import { OverviewPage } from "./components/OverviewPage";
 
 const WAKE_POLL_INTERVAL_MS = 5_000;
 // Pod novo: baixar a imagem, sincronizar o volume e subir Ollama + backend.
@@ -117,7 +119,7 @@ function loadTheme(): "dark" | "light" {
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
-  const [tab, setTab] = useState<Tab>("gerar");
+  const [tab, setTab] = useState<Tab>(GPU_ENABLED ? "gerar" : "inicio");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">(loadTheme);
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -212,8 +214,10 @@ export default function App() {
     });
   }
 
+  // Modelos, workflows e personas vem do backend do pod; no modo manual nao
+  // ha pod para consultar.
   useEffect(() => {
-    loadConfig();
+    if (GPU_ENABLED) loadConfig();
   }, []);
 
   async function executeGenerate(
@@ -354,7 +358,8 @@ export default function App() {
             </p>
           )}
 
-          {tab === "gerar" && (
+          {tab === "inicio" && <OverviewPage />}
+          {GPU_ENABLED && tab === "gerar" && (
             <div className="generate-grid">
               <GeneratePanel
                 personas={personas}
@@ -390,7 +395,7 @@ export default function App() {
             </div>
           )}
 
-          {tab === "personas" && (
+          {GPU_ENABLED && tab === "personas" && (
             <PersonasView
               models={models}
               workflows={workflows}
@@ -399,11 +404,11 @@ export default function App() {
               ensureAwake={() => ensurePodAwake(setPodMessage)}
             />
           )}
-          {tab === "v2" && <EnginesV2Page personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
-          {tab === "historia" && <StoryPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
-          {tab === "pack" && <PackSwapPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
-          {tab === "trocar" && <SwapPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
-          {tab === "conteudo" && (
+          {GPU_ENABLED && tab === "v2" && <EnginesV2Page personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
+          {GPU_ENABLED && tab === "historia" && <StoryPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
+          {GPU_ENABLED && tab === "pack" && <PackSwapPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
+          {GPU_ENABLED && tab === "trocar" && <SwapPage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
+          {GPU_ENABLED && tab === "conteudo" && (
             <ContentPage
               personas={personas}
               ensureAwake={() => ensurePodAwake(setPodMessage)}
@@ -414,10 +419,10 @@ export default function App() {
               }}
             />
           )}
-          {tab === "voz" && <VoicePage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
-          {tab === "historico" && <HistoryPage />}
-          {tab === "galeria" && <GalleryPage />}
-          {tab === "configuracoes" && <SettingsPage models={models} workflows={workflows} health={health} />}
+          {GPU_ENABLED && tab === "voz" && <VoicePage personas={personas} ensureAwake={() => ensurePodAwake(setPodMessage)} />}
+          {GPU_ENABLED && tab === "historico" && <HistoryPage />}
+          {GPU_ENABLED && tab === "galeria" && <GalleryPage />}
+          {GPU_ENABLED && tab === "configuracoes" && <SettingsPage models={models} workflows={workflows} health={health} />}
           {tab === "perfil" && <ProfilePage onLogout={handleLogout} />}
         </div>
       </div>
