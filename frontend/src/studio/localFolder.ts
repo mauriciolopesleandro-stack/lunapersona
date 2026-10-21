@@ -134,6 +134,14 @@ export async function scanMedia(root: DirHandle): Promise<FoundFile[]> {
   return out;
 }
 
+// Impressao digital do arquivo (acha repetidos e reconhece o arquivo no
+// banco). Arquivo muito grande pula: ler tudo na memoria pesa.
+export async function fileSha256(file: File): Promise<string | null> {
+  if (file.size > 200 * 1024 * 1024 || !crypto?.subtle) return null;
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 // Copia um arquivo escolhido para conteudos/AAAA-MM/, sem sobrescrever
 // nada: se o nome ja existe, ganha " (2)", " (3)"...
 export async function copyIntoFolder(root: DirHandle, file: File): Promise<string> {

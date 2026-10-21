@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ProfilePage } from "../components/ProfilePage";
 import { Composer } from "./Composer";
 import { Icon } from "./Icon";
-import { CalendarPage, ContentsPage, ItemDetails, OverviewPage, PublicationsPage, SettingsPage, type Nav } from "./pages";
+import { CalendarPage, CharactersPage, ContentsPage, ItemDetails, OverviewPage, PublicationsPage, SettingsPage, type Nav } from "./pages";
 import { ComingSoon, Modal, formatBytes } from "./shared";
 import { StudioProvider, useStudio, type Post } from "./store";
 import "./studio.css";
@@ -34,7 +34,6 @@ const SOON: Record<string, string> = {
   vendas: "Packs e conteúdos vendidos avulsos pelo bot.",
   audiencia: "Seguidores e alcance, vindos das integrações oficiais.",
   financeiro: "Receitas e custos do mês, a partir das vendas registradas.",
-  personagens: "Fichas das personagens (Luna e as próximas), com fotos de referência e tom de voz.",
 };
 
 interface Props {
@@ -193,6 +192,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           {page === "calendario" && <CalendarPage nav={nav} />}
           {page === "publicacoes" && <PublicationsPage nav={nav} />}
           {page === "configuracoes" && <SettingsPage />}
+          {page === "personagens" && <CharactersPage />}
           {page === "perfil" && <ProfilePage onLogout={onLogout} />}
           {SOON[page] && current && <ComingSoon title={current.label} icon={current.icon} text={SOON[page]} />}
         </main>

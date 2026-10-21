@@ -62,6 +62,14 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
       if (!chosen.length) return setMessage({ ok: false, text: "Escolha pelo menos uma imagem ou vídeo." });
       if (!date || !time) return setMessage({ ok: false, text: "Escolha o dia e a hora." });
       if (!formats.length) return setMessage({ ok: false, text: "Marque pelo menos um destino." });
+      for (const it of chosen) {
+        if (it.rating === "adulto" && network !== "telegram") {
+          return setMessage({ ok: false, text: `“${it.title}” é conteúdo adulto: só pode ir para o Telegram.` });
+        }
+        if (it.destinations?.length && !it.destinations.includes(network)) {
+          return setMessage({ ok: false, text: `“${it.title}” não está liberado para ${net.label} (veja os destinos no conteúdo).` });
+        }
+      }
     }
     if (caption.length > net.captionMax) {
       return setMessage({ ok: false, text: `A legenda passou do limite do ${net.label} (${net.captionMax} caracteres).` });

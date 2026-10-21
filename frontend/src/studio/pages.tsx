@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Calendar } from "./Calendar";
 import { Composer } from "./Composer";
 import { Icon } from "./Icon";
-import { FolderGate, NETWORKS, WhenReady, StatusBadge, Thumb, formatBytes, formatDate } from "./shared";
-import { useStudio, type Item, type ItemStatus, type Post } from "./store";
+import { cloudAudit } from "./cloud";
+import { FolderGate, Modal, NETWORKS, WhenReady, StatusBadge, Thumb, formatBytes, formatDate } from "./shared";
+import { metaProblem, useStudio, type Audience, type Campaign, type Character, type Item, type ItemStatus, type MetaPatch, type Network, type Post } from "./store";
 
 export interface Nav {
   openItem: (path: string) => void;
@@ -24,16 +25,27 @@ const FILTER_LABEL: Record<Filter, string> = {
   arquivados: "Arquivados",
 };
 
-function applyFilter(items: Item[], filter: Filter, query = "") {
+interface Extra {
+  characterId?: string;
+  campaignId?: string;
+  audience?: string;
+}
+
+function applyFilter(items: Item[], filter: Filter, query = "", extra: Extra = {}) {
   const q = query.trim().toLowerCase();
   return items.filter((i) => {
+    if (extra.characterId && i.characterId !== extra.characterId) return false;
+    if (extra.campaignId && i.campaignId !== extra.campaignId) return false;
+    if (extra.audience && (i.audience ?? "promocional") !== extra.audience) return false;
     if (filter === "arquivados" ? i.display !== "arquivado" : i.display === "arquivado") return false;
     if (filter === "imagens" && i.kind !== "image") return false;
     if (filter === "videos" && i.kind !== "video") return false;
     if (filter === "aprovados" && i.display !== "aprovado") return false;
     if (filter === "rascunhos" && i.display !== "rascunho") return false;
     if (filter === "agendados" && i.display !== "agendado") return false;
-    return !q || i.title.toLowerCase().includes(q) || i.path.toLowerCase().includes(q);
+    if (!q) return true;
+    const hay = [i.title, i.path, i.description, i.caption, i.category, ...(i.hashtags ?? [])].join(" ").toLowerCase();
+    return hay.includes(q);
   });
 }
 
@@ -58,7 +70,11 @@ function ContentCard({ item, onOpen }: { item: Item; onOpen: () => void }) {
       </div>
       <div className="st-card-meta">
         <span>{formatDate(item.addedAt)}</span>
-        <StatusBadge status={item.display} />
+        <span className="st-card-flags">
+          {item.rating === "adulto" && <span className="st-flag st-flag-adult" title="Conteúdo adulto: só Telegram">+18</span>}
+          {item.audience === "assinantes" && <span className="st-flag" title="Exclusivo para assinantes">VIP</span>}
+          <StatusBadge status={item.display} />
+        </span>
       </div>
     </div>
   );
@@ -86,10 +102,12 @@ function Stat({ icon, tone, label, value, sub }: { icon: string; tone: string; l
 }
 
 export function OverviewPage({ nav }: { nav: Nav }) {
-  const { items, posts } = useStudio();
+  const { items, posts, source } = useStudio();
   const [filter, setFilter] = useState<Filter>("todos");
   const live = items.filter((i) => i.display !== "arquivado");
   const now = Date.now();
+  const today = new Date().toDateString();
+  const todayPosts = posts.filter((p) => p.status === "agendado" && p.scheduledAt && new Date(p.scheduledAt).toDateString() === today);
   const week = now + 7 * 24 * 3600 * 1000;
   const upcoming = posts
     .filter((p) => p.status === "agendado" && p.scheduledAt && new Date(p.scheduledAt).getTime() >= now)
@@ -111,12 +129,18 @@ export function OverviewPage({ nav }: { nav: Nav }) {
           value={live.length}
           sub={`${plural(live.filter((i) => i.kind === "image").length, "imagem", "imagens")} · ${plural(live.filter((i) => i.kind === "video").length, "vídeo", "vídeos")}`}
         />
-        <Stat icon="check" tone="green" label="Aprovados" value={live.filter((i) => i.display === "aprovado").length} sub="prontos para publicar" />
+        <Stat
+          icon="check"
+          tone="green"
+          label="Aguardando aprovação"
+          value={live.filter((i) => i.display === "rascunho").length}
+          sub={`${plural(live.filter((i) => i.display === "aprovado").length, "aprovado", "aprovados")}, prontos para usar`}
+        />
         <Stat
           icon="calendar"
           tone="blue"
-          label="Agendados"
-          value={upcoming.length}
+          label="Publicações hoje"
+          value={todayPosts.length}
           sub={`${upcoming.filter((p) => new Date(p.scheduledAt!).getTime() <= week).length} nos próximos 7 dias`}
         />
         <Stat icon="send" tone="pink" label="Publicados" value={publishedThisMonth} sub="neste mês" />
@@ -171,14 +195,25 @@ export function OverviewPage({ nav }: { nav: Nav }) {
             </button>
           </div>
           <PostList posts={upcoming.slice(0, 5)} nav={nav} empty="Nada agendado. Use o calendário ou o Preparar Publicação." />
+          <h3 className="st-subhead">Conexões</h3>
           <div className="st-integrations">
-            {(["instagram", "tiktok", "telegram"] as const).map((n) => (
+            <button type="button" className="st-integration" onClick={() => nav.go("configuracoes")}>
+              <Icon name="folder" size={18} />
+              <span>Banco de dados</span>
+              <em className={source === "banco" ? "on" : ""}>{source === "banco" ? "conectado" : "não configurado (dados na pasta)"}</em>
+            </button>
+            {(["instagram", "tiktok"] as const).map((n) => (
               <button key={n} type="button" className="st-integration" onClick={() => nav.go(n)}>
                 <Icon name={NETWORKS[n].icon} size={18} />
                 <span>{NETWORKS[n].label}</span>
-                <em>integração em breve</em>
+                <em>não conectado · publicação manual</em>
               </button>
             ))}
+            <button type="button" className="st-integration" onClick={() => nav.go("telegram")}>
+              <Icon name="telegram" size={18} />
+              <span>Bot do Telegram</span>
+              <em>não configurado (Fase 3)</em>
+            </button>
           </div>
         </section>
       </div>
@@ -220,11 +255,12 @@ function PostList({ posts, nav, empty }: { posts: Post[]; nav: Nav; empty: strin
 // --- Conteudos ---------------------------------------------------------------------
 
 export function ContentsPage({ nav, query }: { nav: Nav; query: string }) {
-  const { items, addFiles, refresh } = useStudio();
+  const { items, addFiles, refresh, characters, campaigns } = useStudio();
   const [filter, setFilter] = useState<Filter>("todos");
+  const [extra, setExtra] = useState<Extra>({});
   const [dragging, setDragging] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const list = applyFilter(items, filter, query);
+  const list = applyFilter(items, filter, query, extra);
 
   async function drop(files: File[]) {
     const { added, skipped } = await addFiles(files);
@@ -278,6 +314,29 @@ export function ContentsPage({ nav, query }: { nav: Nav; query: string }) {
           options={["todos", "imagens", "videos", "aprovados", "rascunhos", "agendados", "arquivados"]}
           onChange={setFilter}
         />
+        <div className="st-filters">
+          <select className="st-input" value={extra.characterId ?? ""} onChange={(e) => setExtra({ ...extra, characterId: e.target.value || undefined })} aria-label="Personagem">
+            <option value="">Todas as personagens</option>
+            {characters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select className="st-input" value={extra.campaignId ?? ""} onChange={(e) => setExtra({ ...extra, campaignId: e.target.value || undefined })} aria-label="Campanha">
+            <option value="">Todas as campanhas</option>
+            {campaigns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select className="st-input" value={extra.audience ?? ""} onChange={(e) => setExtra({ ...extra, audience: e.target.value || undefined })} aria-label="Público">
+            <option value="">Promocional e assinantes</option>
+            <option value="promocional">Promocional</option>
+            <option value="assinantes">Exclusivo para assinantes</option>
+          </select>
+        </div>
         {query && <p className="st-hint">Buscando “{query}”: {list.length} resultado(s).</p>}
         {list.length === 0 ? (
           <div className="st-empty">{filter === "arquivados" ? "Nada arquivado." : "Nenhum arquivo aqui."}</div>
@@ -294,12 +353,52 @@ export function ContentsPage({ nav, query }: { nav: Nav; query: string }) {
 }
 
 export function ItemDetails({ path, nav, onClose }: { path: string; nav: Nav; onClose: () => void }) {
-  const { items, posts, updateItem } = useStudio();
+  const { items, posts, updateItem, characters, campaigns, source } = useStudio();
   const item = items.find((i) => i.path === path);
-  const [title, setTitle] = useState(item?.title ?? "");
+  const [form, setForm] = useState<MetaPatch>(() => ({
+    title: item?.title ?? "",
+    description: item?.description ?? "",
+    characterId: item?.characterId ?? null,
+    category: item?.category ?? "",
+    campaignId: item?.campaignId ?? null,
+    caption: item?.caption ?? "",
+    destinations: item?.destinations ?? [],
+    rating: item?.rating ?? "livre",
+    audience: item?.audience ?? "promocional",
+    status: item?.status ?? "rascunho",
+  }));
+  const [tags, setTags] = useState((item?.hashtags ?? []).join(" "));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   if (!item) return <div className="st-empty">Arquivo não encontrado na pasta.</div>;
   const usedIn = posts.filter((p) => p.media.includes(path));
-  const setStatus = (status: ItemStatus) => updateItem(path, { status });
+  const categories = [...new Set(items.map((i) => i.category).filter((c): c is string => Boolean(c)))].sort();
+  const set = (patch: MetaPatch) => {
+    setForm((f) => ({ ...f, ...patch }));
+    setMessage(null);
+  };
+  const toggleDestination = (n: Network) =>
+    set({ destinations: form.destinations?.includes(n) ? form.destinations.filter((d) => d !== n) : [...(form.destinations ?? []), n] });
+
+  async function save() {
+    const hashtags = tags
+      .split(/[\s,]+/)
+      .map((t) => t.replace(/^#+/, "").trim())
+      .filter(Boolean)
+      .map((t) => `#${t}`);
+    const patch: MetaPatch = { ...form, title: form.title?.trim(), hashtags: [...new Set(hashtags)] };
+    const problem = metaProblem({ ...patch, title: patch.title ?? "" });
+    if (problem) return setMessage({ ok: false, text: problem });
+    setSaving(true);
+    try {
+      await updateItem(path, patch);
+      setMessage({ ok: true, text: source === "banco" ? "Salvo no banco." : "Salvo na pasta." });
+    } catch (e) {
+      setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="st-details">
@@ -307,22 +406,131 @@ export function ItemDetails({ path, nav, onClose }: { path: string; nav: Nav; on
         {item.kind === "image" ? <img src={item.url} alt={item.title} /> : <video src={item.url} controls playsInline />}
       </div>
       <div className="st-details-side">
-        <label className="st-label" htmlFor="st-title">Título</label>
-        <input
-          id="st-title"
-          className="st-input"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onBlur={() => title.trim() && title !== item.title && updateItem(path, { title: title.trim() })}
-        />
-        <span className="st-label">Status</span>
+        <label className="st-label" htmlFor="st-title">Nome</label>
+        <input id="st-title" className="st-input" value={form.title ?? ""} onChange={(e) => set({ title: e.target.value })} />
+
+        <label className="st-label" htmlFor="st-desc">Descrição</label>
+        <textarea id="st-desc" className="st-input st-area" rows={2} value={form.description ?? ""} onChange={(e) => set({ description: e.target.value })} />
+
+        <div className="st-form-grid">
+          <div>
+            <label className="st-label" htmlFor="st-char">Personagem</label>
+            <select id="st-char" className="st-input" value={form.characterId ?? ""} onChange={(e) => set({ characterId: e.target.value || null })}>
+              <option value="">Nenhuma</option>
+              {characters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="st-label" htmlFor="st-camp">Campanha</label>
+            <select id="st-camp" className="st-input" value={form.campaignId ?? ""} onChange={(e) => set({ campaignId: e.target.value || null })}>
+              <option value="">Nenhuma</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="st-label" htmlFor="st-cat">Categoria</label>
+            <input
+              id="st-cat"
+              className="st-input"
+              list="st-categories"
+              value={form.category ?? ""}
+              onChange={(e) => set({ category: e.target.value })}
+              placeholder="ex.: ensaio, bastidores"
+            />
+            <datalist id="st-categories">
+              {categories.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <label className="st-label" htmlFor="st-aud">Público</label>
+            <select id="st-aud" className="st-input" value={form.audience} onChange={(e) => set({ audience: e.target.value as Audience })}>
+              <option value="promocional">Promocional (divulgação)</option>
+              <option value="assinantes">Exclusivo para assinantes</option>
+            </select>
+          </div>
+        </div>
+
+        <span className="st-label">Classificação</span>
         <div className="st-seg">
-          {(["rascunho", "aprovado", "arquivado"] as const).map((s) => (
-            <button key={s} type="button" className={item.status === s ? "active" : ""} onClick={() => setStatus(s)}>
-              {s === "rascunho" ? "Rascunho" : s === "aprovado" ? "Aprovado" : "Arquivado"}
+          {(["livre", "sensivel", "adulto"] as const).map((r) => (
+            <button
+              key={r}
+              type="button"
+              className={form.rating === r ? "active" : ""}
+              onClick={() =>
+                set(r === "adulto" ? { rating: r, destinations: (form.destinations ?? []).filter((d) => d === "telegram") } : { rating: r })
+              }
+            >
+              {r === "livre" ? "Livre" : r === "sensivel" ? "Sensível" : "Adulto (+18)"}
             </button>
           ))}
         </div>
+
+        <span className="st-label">Destinos permitidos</span>
+        <div className="st-row st-row-tight">
+          {(Object.keys(NETWORKS) as Network[]).map((n) => {
+            const blocked = form.rating === "adulto" && n !== "telegram";
+            return (
+              <label key={n} className="st-check" title={blocked ? "Instagram e TikTok proíbem conteúdo adulto" : undefined}>
+                <input type="checkbox" checked={form.destinations?.includes(n) ?? false} disabled={blocked} onChange={() => toggleDestination(n)} />
+                {NETWORKS[n].label}
+              </label>
+            );
+          })}
+        </div>
+
+        <label className="st-label" htmlFor="st-cap">Legenda sugerida</label>
+        <textarea id="st-cap" className="st-input st-area" rows={3} value={form.caption ?? ""} onChange={(e) => set({ caption: e.target.value })} />
+        <label className="st-label" htmlFor="st-tags">Hashtags</label>
+        <input
+          id="st-tags"
+          className="st-input"
+          value={tags}
+          onChange={(e) => {
+            setTags(e.target.value);
+            setMessage(null);
+          }}
+          placeholder="#lunavox #lifestyle"
+        />
+
+        <span className="st-label">Status</span>
+        <div className="st-seg">
+          {(["rascunho", "aprovado", "arquivado"] as const).map((st) => (
+            <button key={st} type="button" className={form.status === st ? "active" : ""} onClick={() => set({ status: st as ItemStatus })}>
+              {st === "rascunho" ? "Rascunho" : st === "aprovado" ? "Aprovado" : "Arquivado"}
+            </button>
+          ))}
+        </div>
+
+        {message && <p className={message.ok ? "st-ok" : "st-error"}>{message.text}</p>}
+        <div className="st-composer-actions">
+          <button
+            type="button"
+            className="st-btn"
+            onClick={() => {
+              onClose();
+              nav.openComposer({ media: [path] });
+            }}
+            disabled={item.status === "arquivado"}
+          >
+            <Icon name="send" size={16} />
+            Usar em publicação
+          </button>
+          <button type="button" className="st-btn st-btn-primary" onClick={save} disabled={saving}>
+            {saving ? "Salvando..." : "Salvar alterações"}
+          </button>
+        </div>
+
         <dl className="st-facts">
           <dt>Arquivo</dt>
           <dd>conteudos/{item.path}</dd>
@@ -330,21 +538,13 @@ export function ItemDetails({ path, nav, onClose }: { path: string; nav: Nav; on
           <dd>{formatBytes(item.size)}</dd>
           <dt>Adicionado</dt>
           <dd>{formatDate(item.addedAt)}</dd>
-          <dt>Publicações</dt>
-          <dd>{usedIn.length ? usedIn.map((p) => `${NETWORKS[p.network].label} (${p.status})`).join(", ") : "nenhuma"}</dd>
+          <dt>Uso</dt>
+          <dd>
+            {usedIn.length
+              ? usedIn.map((p) => `${NETWORKS[p.network].label} ${p.scheduledAt ? formatDate(p.scheduledAt) : ""} (${p.status})`).join(" · ")
+              : "ainda não usado"}
+          </dd>
         </dl>
-        <button
-          type="button"
-          className="st-btn st-btn-primary"
-          onClick={() => {
-            onClose();
-            nav.openComposer({ media: [path] });
-          }}
-          disabled={item.status === "arquivado"}
-        >
-          <Icon name="send" size={16} />
-          Usar em publicação
-        </button>
         <p className="st-hint">Arquivar só esconde: o arquivo continua na pasta. Para apagar de vez, apague pelo Explorer.</p>
       </div>
     </div>
@@ -401,25 +601,247 @@ export function PublicationsPage({ nav }: { nav: Nav }) {
   );
 }
 
+// --- Personagens ----------------------------------------------------------------------
+
+export function CharactersPage() {
+  const { characters, items, saveCharacter, state } = useStudio();
+  const [editing, setEditing] = useState<(Omit<Character, "id"> & { id?: string }) | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    if (!editing) return;
+    try {
+      await saveCharacter(editing);
+      setEditing(null);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <div>
+      <div className="st-page-head">
+        <div>
+          <h1>Personagens</h1>
+          <p>Cada conteúdo pode ser ligado a uma personagem.</p>
+        </div>
+        <WhenReady>
+          <button type="button" className="st-btn st-btn-primary" onClick={() => setEditing({ name: "", description: "", active: true })}>
+            <Icon name="plus" size={16} />
+            Nova personagem
+          </button>
+        </WhenReady>
+      </div>
+      <FolderGate>
+        <div className="st-list">
+          {characters.map((c) => (
+            <div key={c.id} className="st-panel st-list-row">
+              <div>
+                <b>{c.name}</b> {!c.active && <span className="st-badge st-badge-arquivado">inativa</span>}
+                <p>{c.description || "Sem descrição"}</p>
+              </div>
+              <span className="st-list-count">{plural(items.filter((i) => i.characterId === c.id).length, "conteúdo", "conteúdos")}</span>
+              <button type="button" className="st-btn st-btn-small" onClick={() => setEditing({ ...c, description: c.description ?? "" })}>
+                Editar
+              </button>
+            </div>
+          ))}
+        </div>
+      </FolderGate>
+      {editing && state === "ready" && (
+        <Modal title={editing.id ? "Editar personagem" : "Nova personagem"} onClose={() => setEditing(null)}>
+          <label className="st-label" htmlFor="ch-name">Nome</label>
+          <input id="ch-name" className="st-input st-full" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+          <label className="st-label" htmlFor="ch-desc">Descrição</label>
+          <textarea
+            id="ch-desc"
+            className="st-input st-area"
+            rows={3}
+            value={editing.description ?? ""}
+            onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+          />
+          <label className="st-check st-mt">
+            <input type="checkbox" checked={editing.active} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} />
+            Ativa
+          </label>
+          {error && <p className="st-error">{error}</p>}
+          <div className="st-composer-actions">
+            <button type="button" className="st-btn" onClick={() => setEditing(null)}>
+              Cancelar
+            </button>
+            <button type="button" className="st-btn st-btn-primary" onClick={save}>
+              Salvar
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 // --- Configuracoes -------------------------------------------------------------------
 
+const CAMPAIGN_STATUS: Record<Campaign["status"], string> = { ativa: "Ativa", pausada: "Pausada", encerrada: "Encerrada" };
+
+function CampaignsPanel() {
+  const { campaigns, items, saveCampaign } = useStudio();
+  const [editing, setEditing] = useState<(Omit<Campaign, "id"> & { id?: string }) | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    if (!editing) return;
+    try {
+      await saveCampaign({ ...editing, startsOn: editing.startsOn || null, endsOn: editing.endsOn || null });
+      setEditing(null);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <section className="st-panel st-settings">
+      <div className="st-panel-head">
+        <h2>Campanhas</h2>
+        <button
+          type="button"
+          className="st-btn st-btn-small"
+          onClick={() => setEditing({ name: "", description: "", startsOn: null, endsOn: null, status: "ativa" })}
+        >
+          <Icon name="plus" size={14} />
+          Nova campanha
+        </button>
+      </div>
+      {campaigns.length === 0 ? (
+        <div className="st-empty st-empty-small">Nenhuma campanha ainda.</div>
+      ) : (
+        <div className="st-list">
+          {campaigns.map((c) => (
+            <div key={c.id} className="st-list-row st-list-row-flat">
+              <div>
+                <b>{c.name}</b> <span className="st-badge st-badge-rascunho">{CAMPAIGN_STATUS[c.status]}</span>
+                <p>
+                  {c.startsOn ? formatDate(`${c.startsOn}T12:00:00`) : "sem início"} → {c.endsOn ? formatDate(`${c.endsOn}T12:00:00`) : "sem fim"}
+                  {c.description ? ` · ${c.description}` : ""}
+                </p>
+              </div>
+              <span className="st-list-count">{plural(items.filter((i) => i.campaignId === c.id).length, "conteúdo", "conteúdos")}</span>
+              <button type="button" className="st-btn st-btn-small" onClick={() => setEditing({ ...c, description: c.description ?? "" })}>
+                Editar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {editing && (
+        <Modal title={editing.id ? "Editar campanha" : "Nova campanha"} onClose={() => setEditing(null)}>
+          <label className="st-label" htmlFor="cp-name">Nome</label>
+          <input id="cp-name" className="st-input st-full" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+          <label className="st-label" htmlFor="cp-desc">Descrição</label>
+          <textarea
+            id="cp-desc"
+            className="st-input st-area"
+            rows={2}
+            value={editing.description ?? ""}
+            onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+          />
+          <div className="st-form-grid">
+            <div>
+              <label className="st-label" htmlFor="cp-start">Início</label>
+              <input id="cp-start" type="date" className="st-input" value={editing.startsOn ?? ""} onChange={(e) => setEditing({ ...editing, startsOn: e.target.value })} />
+            </div>
+            <div>
+              <label className="st-label" htmlFor="cp-end">Fim</label>
+              <input id="cp-end" type="date" className="st-input" value={editing.endsOn ?? ""} onChange={(e) => setEditing({ ...editing, endsOn: e.target.value })} />
+            </div>
+          </div>
+          <span className="st-label">Status</span>
+          <div className="st-seg">
+            {(["ativa", "pausada", "encerrada"] as const).map((st) => (
+              <button key={st} type="button" className={editing.status === st ? "active" : ""} onClick={() => setEditing({ ...editing, status: st })}>
+                {CAMPAIGN_STATUS[st]}
+              </button>
+            ))}
+          </div>
+          {error && <p className="st-error">{error}</p>}
+          <div className="st-composer-actions">
+            <button type="button" className="st-btn" onClick={() => setEditing(null)}>
+              Cancelar
+            </button>
+            <button type="button" className="st-btn st-btn-primary" onClick={save}>
+              Salvar
+            </button>
+          </div>
+        </Modal>
+      )}
+    </section>
+  );
+}
+
+function HistoryPanel() {
+  const { source, log } = useStudio();
+  const [rows, setRows] = useState<{ at: string; text: string }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (source === "pasta") {
+      setRows(
+        [...log]
+          .reverse()
+          .slice(0, 100)
+          .map((l) => ({ at: l.at, text: `${l.action} · ${l.detail}` }))
+      );
+      return;
+    }
+    cloudAudit()
+      .then((logs) =>
+        setRows(
+          logs.map((l) => ({
+            at: l.at,
+            text: `${l.action} · ${l.entity}${l.details && Object.keys(l.details).length ? ` · ${JSON.stringify(l.details)}` : ""}`,
+          }))
+        )
+      )
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, [source, log]);
+
+  return (
+    <section className="st-panel st-settings">
+      <h2>Histórico de operações</h2>
+      {error && <p className="st-error">{error}</p>}
+      {rows && rows.length === 0 && <div className="st-empty st-empty-small">Nenhuma operação registrada.</div>}
+      {rows && rows.length > 0 && (
+        <ul className="st-history">
+          {rows.map((r, i) => (
+            <li key={i}>
+              <time>{new Date(r.at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</time>
+              <span>{r.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function SettingsPage() {
-  const { state, folderName, items, posts, totalBytes, connect, forget, refresh } = useStudio();
+  const { state, source, folderName, items, posts, totalBytes, connect, forget, refresh } = useStudio();
   return (
     <div>
       <div className="st-page-head">
         <h1>Configurações</h1>
       </div>
       <section className="st-panel st-settings">
-        <h2>Pasta do estúdio</h2>
+        <h2>Pasta do estúdio (arquivos)</h2>
         {state === "ready" ? (
           <>
             <p>
               Conectada: <b>{folderName}</b> · {items.length} arquivo(s), {formatBytes(totalBytes)} · {posts.length} publicação(ões)
             </p>
             <p className="st-hint">
-              Faça backup copiando a pasta inteira (inclui conteudos/ e luna-vox.json). O estúdio também guarda
-              luna-vox.backup.json com a versão anterior dos dados a cada visita.
+              As imagens e os vídeos ficam só nesta pasta, no seu computador. Faça backup copiando a pasta inteira (inclui
+              conteudos/ e luna-vox.json, que também guarda uma cópia dos dados).
             </p>
             <div className="st-head-actions">
               <button type="button" className="st-btn" onClick={refresh}>
@@ -439,6 +861,29 @@ export function SettingsPage() {
           <FolderGate>{null}</FolderGate>
         )}
       </section>
+
+      <section className="st-panel st-settings">
+        <h2>Banco de dados (dados e histórico)</h2>
+        {source === "banco" ? (
+          <p>
+            <span className="st-badge st-badge-aprovado">Conectado</span> Supabase. Nomes, status, personagens, campanhas e o
+            histórico ficam no banco; os arquivos continuam na pasta.
+          </p>
+        ) : (
+          <p>
+            <span className="st-badge st-badge-rascunho">Não configurado</span> Os dados ficam no luna-vox.json da pasta. Ao
+            ligar o Supabase na Vercel (SUPABASE_URL e SUPABASE_SECRET_KEY), o estúdio leva esses dados para o banco
+            sozinho na próxima vez que abrir a pasta.
+          </p>
+        )}
+      </section>
+
+      {state === "ready" && (
+        <>
+          <CampaignsPanel />
+          <HistoryPanel />
+        </>
+      )}
     </div>
   );
 }

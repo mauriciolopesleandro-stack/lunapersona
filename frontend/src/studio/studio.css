@@ -1227,9 +1227,18 @@
 
 .st-integrations {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 14px;
+}
+
+.st-subhead {
+  margin: 18px 0 10px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.st-integration em.on {
+  color: var(--st-green);
 }
 
 .st-integration {
@@ -1464,4 +1473,150 @@
 
 .st-shell .st-row .st-input {
   width: auto;
+}
+
+/* ---------- Fase 1: formulario do conteudo, filtros, listas ---------- */
+
+.st-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -4px 0 14px;
+}
+
+.st-shell .st-filters .st-input {
+  width: auto;
+  min-width: 180px;
+}
+
+.st-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 12px;
+}
+
+.st-shell .st-form-grid .st-input,
+.st-shell .st-full {
+  width: 100%;
+}
+
+.st-area {
+  width: 100%;
+  height: auto;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.st-row-tight {
+  margin-top: 0;
+}
+
+.st-mt {
+  margin-top: 14px !important;
+}
+
+.st-card-meta {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.st-card-flags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.st-flag {
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.st-flag-adult {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.st-details-side .st-composer-actions .st-btn {
+  width: auto;
+  margin-top: 0;
+}
+
+.st-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.st-list-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.st-list-row > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.st-list-row p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.st-list-row-flat {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.st-list-count {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.st-settings + .st-settings {
+  margin-top: 14px;
+}
+
+.st-history {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  max-height: 360px;
+  overflow-y: auto;
+  font-size: 13px;
+}
+
+.st-history li {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.st-history time {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.st-history span {
+  min-width: 0;
+  word-break: break-word;
+}
+
+@media (max-width: 560px) {
+  .st-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .st-list-row {
+    flex-wrap: wrap;
+  }
 }
