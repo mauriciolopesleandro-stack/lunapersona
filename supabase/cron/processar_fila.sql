@@ -24,7 +24,7 @@ begin
       'COLE_AQUI_O_JOBS_SECRET'
     );
   else
-    perform vault.create_secret('COLE_AQUI_O_JOBS_SECRET', 'luna_jobs_secret', 'Luna Vox: chave do /api/jobs');
+    perform vault.create_secret('COLE_AQUI_O_JOBS_SECRET', 'luna_jobs_secret', 'Luna Vox: chave do processador da fila');
   end if;
 end;
 $$;
@@ -37,7 +37,7 @@ select cron.schedule(
   '* * * * *',
   $$
   select net.http_post(
-    url := 'https://luna-ai-studio-frontend.vercel.app/api/jobs',
+    url := 'https://luna-ai-studio-frontend.vercel.app/api/studio?r=jobs',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'luna_jobs_secret')

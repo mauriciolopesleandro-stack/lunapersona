@@ -1,4 +1,4 @@
-// Chamadas ao banco (Supabase) pela funcao /api/library da Vercel. O navegador
+// Chamadas ao banco (Supabase) pela funcao /api/studio da Vercel. O navegador
 // nunca fala direto com o Supabase nem ve a chave dele.
 import type { Audience, ItemStatus, MetaPatch, Network, Rating } from "./store";
 
@@ -51,7 +51,7 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 function post<T>(action: string, payload: object): Promise<T> {
-  return fetch("/api/library", {
+  return fetch("/api/studio?r=library", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, ...payload }),
@@ -60,7 +60,7 @@ function post<T>(action: string, payload: object): Promise<T> {
 
 // null = banco ainda nao configurado (o estudio segue no modo pasta).
 export async function cloudLoad(): Promise<{ media: MediaRow[]; characters: CharacterRow[]; campaigns: CampaignRow[] } | null> {
-  const res = await fetch("/api/library");
+  const res = await fetch("/api/studio?r=library");
   if (res.status === 501) return null;
   return json(res);
 }
@@ -122,11 +122,11 @@ export async function cloudSaveCampaign(c: {
 }
 
 export async function cloudAudit(): Promise<AuditRow[]> {
-  const res = await fetch("/api/library?audit=1");
+  const res = await fetch("/api/studio?r=library&audit=1");
   return (await json<{ logs: AuditRow[] }>(res)).logs;
 }
 
-// --- Publicacoes (Fase 2, /api/posts) e fila (/api/jobs) ------------------------------------
+// --- Publicacoes (Fase 2, r=posts) e fila (r=jobs) ------------------------------------
 
 export interface PostDto {
   id: string;
@@ -155,7 +155,7 @@ export interface WorkerStatus {
 }
 
 function postsCall<T>(action: string, payload: object): Promise<T> {
-  return fetch("/api/posts", {
+  return fetch("/api/studio?r=posts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, ...payload }),
@@ -163,7 +163,7 @@ function postsCall<T>(action: string, payload: object): Promise<T> {
 }
 
 export async function cloudPosts(): Promise<{ posts: PostDto[]; worker: WorkerStatus | null }> {
-  return json(await fetch("/api/posts"));
+  return json(await fetch("/api/studio?r=posts"));
 }
 
 export async function cloudPostSave(payload: {
@@ -189,5 +189,5 @@ export async function cloudPostImport(posts: object[]): Promise<number> {
 }
 
 export async function cloudRunJobs(): Promise<{ processadas: number; ok: number; falhas: number; novas_tentativas: number }> {
-  return json(await fetch("/api/jobs", { method: "POST" }));
+  return json(await fetch("/api/studio?r=jobs", { method: "POST" }));
 }

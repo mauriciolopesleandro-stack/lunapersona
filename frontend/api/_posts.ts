@@ -1,4 +1,4 @@
-// Regras das publicacoes (Fase 2), usadas por api/posts.ts e api/jobs.ts.
+// Regras das publicacoes (Fase 2), usadas por api/_posts_api.ts e api/_jobs.ts.
 import { createHash } from "crypto";
 import { dbInsertIgnoringDuplicates, dbSelect, dbUpdateWhere } from "./_supabase.js";
 

@@ -62,3 +62,9 @@ jobs:
       # As funcoes da Vercel (api/) ficam fora do tsconfig do app; a Vercel
       # compila sem checar tipos, entao a checagem e aqui.
       - run: npx tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext --skipLibCheck --types node api/*.ts
+      # Plano Hobby da Vercel: no maximo 12 funcoes por deploy (cada api/*.ts sem "_" e uma)
+      - name: Limite de funcoes da Vercel
+        run: |
+          n=$(ls api/*.ts | grep -v '/_' | wc -l)
+          echo "funcoes: $n"
+          test "$n" -le 12

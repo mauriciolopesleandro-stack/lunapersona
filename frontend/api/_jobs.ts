@@ -4,7 +4,7 @@ import { NETWORK_RULES, type PostRow } from "./_posts.js";
 import { dbInsert, dbRpc, dbSelect, dbUpdate, dbUpsert, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
 
-// /api/jobs - processa a fila (scheduled_jobs). Chamado:
+// /api/studio?r=jobs - processa a fila (scheduled_jobs). Chamado:
 //  - a cada minuto pelo Supabase Cron (POST com "Authorization: Bearer <JOBS_SECRET>"),
 //    para funcionar com o computador desligado;
 //  - ou pelo botao "Processar agora" do painel (com a sessao do administrador).

@@ -195,7 +195,7 @@ Uma migração por fase, sempre com:
 - Os estados são os do pedido: rascunho → aguardando aprovação → aprovado → agendado → publicando ("hora de publicar") → publicado. Há também falhou e cancelado.
 - **A aprovação vale para uma versão exata.** Mudar mídia, legenda, hashtags, rede ou destinos cria a versão seguinte e devolve a publicação para aprovação. Mudar só o horário não.
   - O banco garante essa regra com uma constraint: nada fica aprovado, agendado ou publicado sem a aprovação da versão atual.
-- **No horário**, o processador da fila (`api/jobs.ts`):
+- **No horário**, o processador da fila (`/api/studio?r=jobs`):
   1. passa a publicação para "Hora de publicar";
   2. manda o aviso no Telegram, pelo bot já configurado em Meu perfil.
 - **Se o Telegram falhar:**

@@ -22,7 +22,7 @@ import {
   supabaseConfigured,
 } from "./_supabase.js";
 
-// /api/posts - Fase 2: publicacoes com versao e aprovacao obrigatoria.
+// /api/studio?r=posts - Fase 2: publicacoes com versao e aprovacao obrigatoria.
 // Instagram/TikTok sao publicados a mao (as imagens ficam no computador): o
 // sistema avisa no horario (api/jobs.ts) e o administrador confirma cada
 // destino. Nada vira "publicado" sem essa confirmacao.
