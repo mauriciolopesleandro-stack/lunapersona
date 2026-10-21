@@ -31,7 +31,7 @@ function localInput(iso: string | null | undefined) {
 // Fluxo de uma publicacao no modo banco: aprovacao da versao, agendamento,
 // lembrete, confirmacao destino a destino, falha e cancelamento.
 export function PostFlow({ postId, onClose }: { postId: string; onClose: () => void }) {
-  const { posts, postAction } = useStudio();
+  const { posts, postAction, approveAutomatic } = useStudio();
   const post = posts.find((p) => p.id === postId);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -67,7 +67,35 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
     );
   }
 
-  const canConfirm = ["aprovado", "agendado", "publicando"].includes(post.status);
+  const automatic = post.publishMode === "api";
+  // automatico: quem confirma e a API do Instagram, nao o administrador
+  const canConfirm = !automatic && ["aprovado", "agendado", "publicando"].includes(post.status);
+
+  async function approve() {
+    if (!automatic) {
+      return run("approve", { version: post!.version }, post!.scheduledAt ? `Aprovada e agendada para ${fmt(post!.scheduledAt)}.` : "Aprovada.");
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      await approveAutomatic(post!, (text) => setMessage({ ok: true, text }));
+      setMessage({ ok: true, text: post!.scheduledAt ? `Aprovada: publica sozinha em ${fmt(post!.scheduledAt)}.` : "Aprovada. Escolha o horário para publicar." });
+    } catch (e) {
+      setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyCaption() {
+    const text = [post!.caption, post!.hashtags.join(" ")].filter(Boolean).join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setMessage({ ok: true, text: "Legenda e hashtags copiadas." });
+    } catch {
+      setMessage({ ok: false, text: "O navegador não deixou copiar. Selecione o texto da legenda acima." });
+    }
+  }
 
   return (
     <div className="st-flow">
@@ -78,6 +106,7 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
           {post.approvedVersion ? (post.approvedVersion === post.version ? " · aprovada" : ` · aprovada a v${post.approvedVersion} (mudou depois)`) : " · sem aprovação"}
         </span>
         <span>{NETWORKS[post.network].label} · {post.formats.join(", ") || "sem destino"}</span>
+        <span className={automatic ? "st-badge st-post-agendado" : "st-badge st-post-rascunho"}>{automatic ? "Automática" : "Manual"}</span>
       </div>
 
       {post.status === "aguardando_aprovacao" && (
@@ -91,12 +120,10 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
               type="button"
               className="st-btn st-btn-primary"
               disabled={busy}
-              onClick={() =>
-                run("approve", { version: post.version }, post.scheduledAt ? `Aprovada e agendada para ${fmt(post.scheduledAt)}.` : "Aprovada.")
-              }
+              onClick={approve}
             >
               <Icon name="check" size={16} />
-              Aprovar versão {post.version}
+              {automatic ? "Enviar mídias e aprovar" : "Aprovar"} versão {post.version}
               {post.scheduledAt ? " e agendar" : ""}
             </button>
             <button
@@ -118,7 +145,10 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
         <div className="st-flow-box">
           {post.status === "agendado" ? (
             <p>
-              Agendada para <b>{fmt(post.scheduledAt)}</b>. No horário, o estúdio avisa no Telegram para você publicar.
+              Agendada para <b>{fmt(post.scheduledAt)}</b>.{" "}
+              {automatic
+                ? "No horário, o estúdio publica sozinho no Instagram e te avisa no Telegram."
+                : "No horário, o estúdio avisa no Telegram para você publicar."}
               {job && ` Lembrete: ${job.status === "pendente" ? "na fila" : "enviando"}${job.attempts ? ` (tentativa ${job.attempts} de ${job.maxAttempts})` : ""}.`}
               {job?.lastError && <span className="st-error"> Último erro: {job.lastError}</span>}
             </p>
@@ -170,6 +200,9 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
             </div>
           ))}
           <div className="st-head-actions">
+            <button type="button" className="st-btn" onClick={copyCaption}>
+              Copiar legenda e hashtags
+            </button>
             <button type="button" className="st-btn st-btn-primary" disabled={busy} onClick={confirmPublished}>
               <Icon name="check" size={16} />
               Confirmar publicação
@@ -192,6 +225,12 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
         </div>
       )}
 
+      {automatic && post.status === "publicando" && (
+        <div className="st-flow-box st-flow-alert">
+          <p>Publicando no Instagram... (vídeos podem levar alguns minutos para processar).</p>
+        </div>
+      )}
+
       {post.status === "publicado" && (
         <div className="st-flow-box">
           <p>Publicada em {fmt(post.publishedAt)}.</p>
@@ -202,7 +241,8 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
                 <li key={d.format}>
                   <time>{fmt(d.confirmedAt)}</time>
                   <span>
-                    {d.format} · {d.confirmedBy === "importado" ? "marcado antes da Fase 2" : "confirmado por você"}
+                    {d.format} ·{" "}
+                    {d.confirmedBy === "importado" ? "marcado antes da Fase 2" : d.confirmedBy === "api" ? "publicado pela API do Instagram" : "confirmado por você"}
                     {d.url && (
                       <>
                         {" · "}

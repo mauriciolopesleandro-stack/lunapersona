@@ -217,3 +217,42 @@ Uma migração por fase, sempre com:
 **Se o plano Free não oferecer `pg_cron`/`pg_net`:** o botão "Processar agora", em Publicações, roda a fila na mão. Os lembretes não saem sozinhos com o computador desligado, e o painel avisa quando há publicação vencida sem execução da fila.
 
 **Fica para depois:** publicação automática pela API do Instagram/TikTok. As tabelas `social_accounts` e `platform_connections` (com token cifrado) já existem, mas a automação depende de as mídias ficarem num servidor e de as redes aprovarem o app.
+
+## 14. Publicação automática no Instagram (21/10/2026)
+
+**Decisão do usuário:** as mídias de posts **aprovados** para publicação automática no Instagram podem ter uma cópia temporária num armazenamento privado. Essas mídias vão ficar públicas no Instagram de qualquer jeito. A cópia é apagada assim que o Instagram publica (ou quando o post é cancelado, falha ou muda de versão). Todo o resto continua só no computador.
+
+**Como funciona**
+
+- **Requisitos (fonte oficial: developers.facebook.com/docs/instagram-platform):**
+  - API oficial com Instagram Login, versão v26.0;
+  - conta profissional;
+  - só a própria conta, então o Standard Access basta: **sem App Review e sem verificação de empresa**.
+- **No compositor:** "Publicar automaticamente" aparece só para o Instagram. Trocar entre manual e automático cria uma nova versão, que precisa de nova aprovação.
+- **Ao aprovar** ("Enviar mídias e aprovar"):
+  - o navegador converte fotos para JPEG (exigência da API) e envia a cópia da **versão exata** em revisão, direto para o bucket privado `publicar-temp`;
+  - o servidor só aprova se todas as cópias chegaram.
+- **No horário**, o processador:
+  - cria o contêiner de cada destino: Feed (foto, vídeo ou carrossel de até 20), Reels (1 vídeo) ou Stories (1 mídia), com um link assinado que vence;
+  - espera o vídeo processar sem gastar tentativa;
+  - publica e guarda o link do post;
+  - apaga as cópias e avisa no Telegram.
+- **Uma nova tentativa nunca publica duas vezes.** O identificador do contêiner fica guardado, e a nova tentativa consulta o status dele antes de publicar.
+- **Erros:**
+  - falha temporária: tenta de novo em 2, 4, 8 e 16 minutos, até 6 tentativas;
+  - token inválido: falha na hora;
+  - nos dois casos, quando falha de vez, avisa no Telegram para publicar à mão.
+- **Token:**
+  - o usuário gera o token no painel da Meta e cola no estúdio; ele vale 60 dias;
+  - o estúdio guarda o token cifrado (AES-256-GCM, chave `TOKEN_ENCRYPTION_KEY`) e o renova sozinho toda semana;
+  - o token nunca volta para o navegador.
+- **TikTok:** continua manual. Sem a auditoria do TikTok, a API só publica em modo privado, e as regras deles pedem a confirmação de quem posta em cada post. Para facilitar, o post manual tem o botão "Copiar legenda e hashtags".
+
+**Passo a passo para ligar** (com o banco e a fila da Fase 2 já ligados):
+
+1. Rodar `supabase/migrations/0003_instagram_automatico.sql` no SQL Editor do Supabase.
+2. Na Vercel, cadastrar `TOKEN_ENCRYPTION_KEY`, só para o servidor: 32 ou mais caracteres aleatórios. Fazer um novo deploy.
+3. No Meta for Developers:
+   - criar um app com o caso de uso de Instagram;
+   - em "API do Instagram com login do Instagram" → "Gerar tokens de acesso", adicionar a conta e gerar o token.
+4. No estúdio, abrir a página **Instagram** e colar o token.

@@ -135,6 +135,7 @@ export interface PostDto {
   hashtags: string[];
   scheduled_at: string | null;
   status: string;
+  publish_mode: "manual" | "api";
   version: number;
   approved_version: number | null;
   failure_reason: string | null;
@@ -175,6 +176,7 @@ export async function cloudPostSave(payload: {
   caption: string;
   hashtags: string[];
   scheduled_at: string | null;
+  publish_mode: "manual" | "api";
 }): Promise<{ post: PostDto; needsApproval?: boolean }> {
   return postsCall("save", payload);
 }
@@ -190,4 +192,47 @@ export async function cloudPostImport(posts: object[]): Promise<number> {
 
 export async function cloudRunJobs(): Promise<{ processadas: number; ok: number; falhas: number; novas_tentativas: number }> {
   return json(await fetch("/api/studio?r=jobs", { method: "POST" }));
+}
+
+// --- Instagram (publicacao automatica) ---------------------------------------------------
+
+export interface InstagramStatus {
+  encryption: boolean;
+  connected: boolean;
+  status: string;
+  username: string | null;
+  expiresAt: string | null;
+  refreshedAt: string | null;
+  lastError: string | null;
+}
+
+export async function cloudInstagram(): Promise<InstagramStatus> {
+  return json(await fetch("/api/studio?r=instagram"));
+}
+
+export async function cloudInstagramAction(action: "connect" | "disconnect", token?: string): Promise<InstagramStatus> {
+  return json(
+    await fetch("/api/studio?r=instagram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, token }),
+    })
+  );
+}
+
+export async function cloudUploadUrls(
+  id: string,
+  version: number,
+  items: { position: number; mime_type: string; size_bytes: number }[]
+): Promise<{ position: number; url: string }[]> {
+  return (await postsCall<{ uploads: { position: number; url: string }[] }>("upload-urls", { id, version, items })).uploads;
+}
+
+// Mesmo formato do uploadToSignedUrl do supabase-js (PUT multipart).
+export async function putSignedUpload(url: string, file: Blob): Promise<void> {
+  const form = new FormData();
+  form.append("cacheControl", "3600");
+  form.append("", file);
+  const res = await fetch(url, { method: "PUT", headers: { "x-upsert": "true" }, body: form });
+  if (!res.ok) throw new Error(`O armazenamento recusou o envio (HTTP ${res.status}).`);
 }

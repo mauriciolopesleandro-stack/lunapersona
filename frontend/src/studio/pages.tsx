@@ -103,7 +103,7 @@ function Stat({ icon, tone, label, value, sub }: { icon: string; tone: string; l
 }
 
 export function OverviewPage({ nav }: { nav: Nav }) {
-  const { items, posts, source, worker, postsError } = useStudio();
+  const { items, posts, source, worker, postsError, instagram } = useStudio();
   const [filter, setFilter] = useState<Filter>("todos");
   const live = items.filter((i) => i.display !== "arquivado");
   const now = Date.now();
@@ -255,13 +255,18 @@ export function OverviewPage({ nav }: { nav: Nav }) {
                 </em>
               </button>
             )}
-            {(["instagram", "tiktok"] as const).map((n) => (
-              <button key={n} type="button" className="st-integration" onClick={() => nav.go(n)}>
-                <Icon name={NETWORKS[n].icon} size={18} />
-                <span>{NETWORKS[n].label}</span>
-                <em>não conectado · publicação manual</em>
-              </button>
-            ))}
+            <button type="button" className="st-integration" onClick={() => nav.go("instagram")}>
+              <Icon name="instagram" size={18} />
+              <span>Instagram</span>
+              <em className={instagram?.connected ? "on" : ""}>
+                {instagram?.connected ? `@${instagram.username} · publicação automática` : "não conectado · publicação manual"}
+              </em>
+            </button>
+            <button type="button" className="st-integration" onClick={() => nav.go("tiktok")}>
+              <Icon name="tiktok" size={18} />
+              <span>TikTok</span>
+              <em>publicação manual (API exige auditoria)</em>
+            </button>
             <button type="button" className="st-integration" onClick={() => nav.go("telegram")}>
               <Icon name="telegram" size={18} />
               <span>Bot do Telegram</span>

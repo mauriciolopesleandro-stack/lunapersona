@@ -121,6 +121,43 @@ export function dbRpc<T>(fn: string, args: object): Promise<T> {
   return call<T>(`/rest/v1/rpc/${fn}`, { method: "POST", body: JSON.stringify(args) });
 }
 
+// --- Storage (so para as copias temporarias dos posts automaticos) ---------------
+
+function objectPath(bucket: string, path: string): string {
+  return `${encodeURIComponent(bucket)}/${path.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+// Link para o navegador enviar o arquivo direto ao Storage (vale 2 horas).
+export async function storageUploadUrl(bucket: string, path: string): Promise<string> {
+  const data = await call<{ url: string }>(`/storage/v1/object/upload/sign/${objectPath(bucket, path)}`, { method: "POST", body: "{}" });
+  return `${credentials()!.url}/storage/v1${data.url}`;
+}
+
+// Link de leitura com validade curta (o Instagram baixa por ele).
+export async function storageReadUrl(bucket: string, path: string, expiresIn: number): Promise<string> {
+  const data = await call<{ signedURL: string }>(`/storage/v1/object/sign/${objectPath(bucket, path)}`, {
+    method: "POST",
+    body: JSON.stringify({ expiresIn }),
+  });
+  return `${credentials()!.url}/storage/v1${data.signedURL}`;
+}
+
+// null = o arquivo nao existe.
+export async function storageObjectSize(bucket: string, path: string): Promise<number | null> {
+  try {
+    const info = await call<{ size?: number; metadata?: { size?: number } }>(`/storage/v1/object/info/${objectPath(bucket, path)}`);
+    return info?.size ?? info?.metadata?.size ?? 0;
+  } catch (e) {
+    if (e instanceof Error && /respondeu (400|404)/.test(e.message)) return null;
+    throw e;
+  }
+}
+
+export async function storageRemove(bucket: string, paths: string[]): Promise<void> {
+  if (!paths.length) return;
+  await call(`/storage/v1/object/${encodeURIComponent(bucket)}`, { method: "DELETE", body: JSON.stringify({ prefixes: paths }) });
+}
+
 // Historico de operacoes. Nao derruba a operacao se falhar - so registra.
 export async function audit(action: string, entity: string, entityId: string | null, details: object = {}): Promise<void> {
   await dbInsert("audit_logs", { action, entity, entity_id: entityId, details }).catch((e) =>

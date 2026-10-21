@@ -1,8 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
+import { igConnection } from "./_instagram.js";
 import {
   NETWORK_RULES,
+  UPLOAD_BUCKET,
   cancelJobs,
+  cleanupUploads,
   contentHash,
   mediaProblem,
   scheduleReminder,
@@ -19,6 +22,8 @@ import {
   dbSelectAll,
   dbUpdate,
   dbUpdateWhere,
+  storageObjectSize,
+  storageUploadUrl,
   supabaseConfigured,
 } from "./_supabase.js";
 
@@ -38,6 +43,9 @@ import {
 //   fail { id, reason }              nao deu para publicar
 //   cancel { id }
 //   import { posts: [...] }          publicacoes antigas do luna-vox.json
+//   upload-urls { id, version, items: [{ position, mime_type, size_bytes }] }
+//                                    modo automatico: links para o navegador enviar a copia
+//                                    temporaria das midias da versao em revisao
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NETWORKS: Network[] = ["instagram", "tiktok", "telegram"];
@@ -61,6 +69,7 @@ interface DestinationRow {
 }
 
 interface PostInput {
+  mode: "manual" | "api";
   network: Network;
   formats: string[];
   mediaIds: string[];
@@ -95,7 +104,9 @@ function parseInput(body: Record<string, unknown>): PostInput {
     ? [...new Set(body.hashtags.map((t) => `#${String(t).replace(/^#+/, "").replace(/\s+/g, "")}`).filter((t) => t.length > 1))]
     : [];
   if (hashtags.length > rules.hashtagMax) throw new Problem(400, `${rules.label}: no máximo ${rules.hashtagMax} hashtags.`);
-  return { network, formats, mediaIds, caption, hashtags, scheduledAt: when(body.scheduled_at) };
+  const mode = body.publish_mode === "api" ? "api" : "manual";
+  if (mode === "api" && network !== "instagram") throw new Problem(400, "Publicação automática só existe para o Instagram por enquanto.");
+  return { mode, network, formats, mediaIds, caption, hashtags, scheduledAt: when(body.scheduled_at) };
 }
 
 async function getPost(id: string): Promise<PostRow> {
@@ -146,6 +157,31 @@ async function replaceMedia(postId: string, mediaIds: string[]) {
       mediaIds.map((media_id, position) => ({ post_id: postId, media_id, position })),
       "post_id,position"
     );
+  }
+}
+
+// Regras do Instagram para a publicacao automatica, destino a destino.
+function problemWithInstagramFormats(formats: string[], mimes: string[]) {
+  const videos = mimes.filter((m) => m.startsWith("video/")).length;
+  if (formats.includes("Reels") && (mimes.length !== 1 || videos !== 1)) throw new Problem(400, "Reels automático precisa de exatamente 1 vídeo.");
+  if (formats.includes("Stories") && mimes.length !== 1) throw new Problem(400, "Stories automático precisa de exatamente 1 mídia.");
+  if (formats.includes("Feed") && (mimes.length < 1 || mimes.length > 20)) throw new Problem(400, "Feed: de 1 a 20 mídias.");
+}
+
+// Modo automatico: so aprova quando todas as copias da versao chegaram ao Storage.
+async function checkUploads(post: PostRow) {
+  const conn = await igConnection().catch(() => null);
+  if (!conn) throw new Problem(400, "Conecte a conta do Instagram (Configurações) antes de aprovar uma publicação automática.");
+  const mediaCount = (await postMediaIds(post.id)).length;
+  const rows = await dbSelect<{ id: string; storage_path: string }>(
+    "post_uploads",
+    `select=id,storage_path&post_id=eq.${post.id}&post_version=eq.${post.version}&deleted_at=is.null`
+  );
+  if (rows.length !== mediaCount) throw new Problem(400, "As mídias ainda não foram enviadas para a publicação automática.");
+  for (const r of rows) {
+    const size = await storageObjectSize(UPLOAD_BUCKET, r.storage_path);
+    if (size === null) throw new Problem(400, "Uma das mídias não chegou ao armazenamento. Tente aprovar de novo.");
+    await dbUpdateWhere("post_uploads", `id=eq.${r.id}`, { uploaded_at: new Date().toISOString(), size_bytes: size || undefined });
   }
 }
 
@@ -208,8 +244,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const input = parseInput(body);
       const problem = await mediaProblem(input.network, input.mediaIds);
       if (problem) throw new Problem(400, problem);
-      const hash = contentHash(input);
-      const fields = { network: input.network, caption: input.caption, hashtags: input.hashtags, scheduled_at: input.scheduledAt };
+      const hash = contentHash({ ...input, mode: input.mode });
+      const fields = {
+        network: input.network,
+        caption: input.caption,
+        hashtags: input.hashtags,
+        scheduled_at: input.scheduledAt,
+        publish_mode: input.mode,
+      };
 
       if (!body.id) {
         const post = await dbInsert<PostRow>("posts", { ...fields, content_hash: hash });
@@ -241,6 +283,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         await syncDestinations(post.id, input.formats);
       }
       if (changed || saved.scheduled_at !== post.scheduled_at || saved.status !== "agendado") await cancelJobs(post.id);
+      // copias temporarias da versao antiga nao servem mais
+      if (changed) await cleanupUploads(post.id);
       if (saved.status === "agendado") await scheduleReminder(saved);
       await audit("editar", "posts", post.id, { version: saved.version, nova_aprovacao: changed && post.status !== "rascunho" });
       return reply(200, { post: saved, needsApproval: changed && ["aguardando_aprovacao", "aprovado", "agendado"].includes(post.status) });
@@ -253,7 +297,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         const legacy = typeof item.legacy_id === "string" ? item.legacy_id.slice(0, 100) : null;
         if (!legacy) continue;
         const input = parseInput(item);
-        const hash = contentHash(input);
+        const hash = contentHash({ ...input, mode: input.mode });
         const published = item.status === "publicado";
         const status: PostStatus = published ? "publicado" : item.status === "agendado" ? "aguardando_aprovacao" : "rascunho";
         const [post] = await dbInsertIgnoringDuplicates<PostRow>(
@@ -302,6 +346,34 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       return reply(200, { post: saved });
     }
 
+    if (body.action === "upload-urls") {
+      requireStatus(post, ["aguardando_aprovacao"], "preparar o envio de");
+      if (post.publish_mode !== "api") throw new Problem(400, "Esta publicação é manual.");
+      if (body.version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}).`);
+      const mediaIds = await postMediaIds(post.id);
+      const formats = (await destinations(post.id)).filter((d) => d.status !== "cancelado").map((d) => d.format);
+      const items = Array.isArray(body.items) ? (body.items as Record<string, unknown>[]) : [];
+      if (items.length !== mediaIds.length) throw new Problem(400, "Envie todas as mídias da publicação.");
+      const kinds = items.map((it) => String(it.mime_type));
+      problemWithInstagramFormats(formats, kinds);
+      const urls: { position: number; url: string }[] = [];
+      for (const it of items) {
+        const position = Number(it.position);
+        const mime = String(it.mime_type);
+        const size = Number(it.size_bytes);
+        if (!Number.isInteger(position) || position < 0 || position >= mediaIds.length) throw new Problem(400, "Posição de mídia inválida.");
+        if (!["image/jpeg", "video/mp4", "video/quicktime"].includes(mime)) throw new Problem(400, "O Instagram aceita foto JPEG e vídeo MP4/MOV.");
+        if (!Number.isFinite(size) || size <= 0 || size > 50 * 1024 * 1024) throw new Problem(400, "Cada arquivo pode ter no máximo 50 MB (limite do plano grátis).");
+        const ext = mime === "image/jpeg" ? "jpg" : mime === "video/mp4" ? "mp4" : "mov";
+        const path = `${post.id}/v${post.version}/${position}.${ext}`;
+        const [existing] = await dbSelect<{ id: string }>("post_uploads", `select=id&post_id=eq.${post.id}&post_version=eq.${post.version}&position=eq.${position}`);
+        if (existing) await dbUpdateWhere("post_uploads", `id=eq.${existing.id}`, { storage_path: path, mime_type: mime, size_bytes: size, uploaded_at: null, deleted_at: null });
+        else await dbInsert("post_uploads", { post_id: post.id, post_version: post.version, position, storage_path: path, mime_type: mime, size_bytes: size });
+        urls.push({ position, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
+      }
+      return reply(200, { uploads: urls });
+    }
+
     if (body.action === "approve" || body.action === "reject") {
       requireStatus(post, ["aguardando_aprovacao"], body.action === "approve" ? "aprovar" : "reprovar");
       if (body.version !== post.version) {
@@ -315,6 +387,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         return reply(200, { post: saved });
       }
       await readyToApprove(post);
+      if (post.publish_mode === "api") await checkUploads(post);
       await dbInsert("approvals", { post_id: post.id, version: post.version, content_hash: post.content_hash, decision: "aprovado" });
       const saved = await guardedUpdate(post, {
         status: post.scheduled_at ? "agendado" : "aprovado",
@@ -366,6 +439,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       await dbInsert("publishing_attempts", { post_id: post.id, channel: "manual", outcome: "ok", detail: `confirmado: ${confirmed.join(", ")}` });
       if (done) {
         await cancelJobs(post.id);
+        await cleanupUploads(post.id);
         for (const media_id of await postMediaIds(post.id)) {
           await dbInsert("media_usage", { media_id, channel: post.network, context: "post", reference: post.id });
         }
@@ -379,6 +453,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim().slice(0, 500) : "Não foi possível publicar.";
       const saved = await guardedUpdate(post, { status: "falhou", failure_reason: reason });
       await cancelJobs(post.id);
+      await cleanupUploads(post.id);
       await dbInsert("publishing_attempts", { post_id: post.id, channel: "manual", outcome: "erro", detail: reason });
       await audit("falhou", "posts", post.id, { reason });
       return reply(200, { post: saved });
@@ -388,6 +463,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       requireStatus(post, ["rascunho", "aguardando_aprovacao", "aprovado", "agendado", "publicando", "falhou"], "cancelar");
       const saved = await guardedUpdate(post, { status: "cancelado", cancelled_at: now });
       await cancelJobs(post.id);
+      await cleanupUploads(post.id);
       await dbUpdateWhere("post_destinations", `post_id=eq.${post.id}&status=eq.pendente`, { status: "cancelado" });
       await audit("cancelar", "posts", post.id, {});
       return reply(200, { post: saved });

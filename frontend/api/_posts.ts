@@ -1,6 +1,8 @@
 // Regras das publicacoes (Fase 2), usadas por api/_posts_api.ts e api/_jobs.ts.
 import { createHash } from "crypto";
-import { dbInsertIgnoringDuplicates, dbSelect, dbUpdateWhere } from "./_supabase.js";
+import { dbInsertIgnoringDuplicates, dbSelect, dbUpdateWhere, storageRemove } from "./_supabase.js";
+
+export const UPLOAD_BUCKET = "publicar-temp";
 
 export type Network = "instagram" | "tiktok" | "telegram";
 export type PostStatus =
@@ -53,8 +55,12 @@ export const NETWORK_RULES: Record<Network, { label: string; formats: string[]; 
 // Impressao digital do que a aprovacao cobre: rede, destinos, midias (na
 // ordem), legenda e hashtags. Mudou qualquer um -> nova versao, nova aprovacao.
 // O horario fica de fora: remarcar nao muda o conteudo aprovado.
-export function contentHash(p: { network: string; formats: string[]; mediaIds: string[]; caption: string; hashtags: string[] }): string {
-  const canonical = JSON.stringify([p.network, [...p.formats].sort(), p.mediaIds, p.caption, p.hashtags]);
+// O modo automatico entra na conta (trocar de manual para automatico pede nova
+// aprovacao); posts manuais mantem a impressao de antes.
+export function contentHash(p: { network: string; formats: string[]; mediaIds: string[]; caption: string; hashtags: string[]; mode?: string }): string {
+  const parts: unknown[] = [p.network, [...p.formats].sort(), p.mediaIds, p.caption, p.hashtags];
+  if (p.mode === "api") parts.push("api");
+  const canonical = JSON.stringify(parts);
   return createHash("sha256").update(canonical).digest("hex");
 }
 
@@ -80,24 +86,41 @@ export async function mediaProblem(network: Network, mediaIds: string[]): Promis
   return null;
 }
 
-// Lembrete no horario. A chave junta publicacao, versao e horario: agendar de
-// novo a mesma coisa nunca cria tarefa repetida.
-export async function scheduleReminder(post: Pick<PostRow, "id" | "version" | "scheduled_at">): Promise<void> {
+// Tarefa no horario: publicar sozinho (modo automatico) ou lembrar (manual).
+// A chave junta tipo, publicacao, versao e horario: agendar de novo a mesma
+// coisa nunca cria tarefa repetida.
+export async function scheduleReminder(post: Pick<PostRow, "id" | "version" | "scheduled_at" | "publish_mode">): Promise<void> {
   if (!post.scheduled_at) return;
   const runAt = new Date(post.scheduled_at).toISOString();
+  const kind = post.publish_mode === "api" ? "publicar_instagram" : "lembrete_publicacao";
   await dbInsertIgnoringDuplicates(
     "scheduled_jobs",
     [
       {
-        kind: "lembrete_publicacao",
+        kind,
         post_id: post.id,
         post_version: post.version,
         run_at: runAt,
-        idempotency_key: `lembrete:${post.id}:v${post.version}:${runAt}`,
+        idempotency_key: `${kind === "publicar_instagram" ? "publicar" : "lembrete"}:${post.id}:v${post.version}:${runAt}`,
+        ...(kind === "publicar_instagram" ? { max_attempts: 6 } : {}),
       },
     ],
     "idempotency_key"
   );
+}
+
+// Apaga as copias temporarias (do bucket e marca no banco). keepVersion: a
+// versao aprovada que ainda vai ser publicada.
+export async function cleanupUploads(postId: string, keepVersion?: number): Promise<number> {
+  const rows = await dbSelect<{ id: string; storage_path: string; post_version: number }>(
+    "post_uploads",
+    `select=id,storage_path,post_version&post_id=eq.${postId}&deleted_at=is.null`
+  );
+  const gone = rows.filter((r) => r.post_version !== keepVersion);
+  if (!gone.length) return 0;
+  await storageRemove(UPLOAD_BUCKET, gone.map((r) => r.storage_path));
+  await dbUpdateWhere("post_uploads", `id=in.(${gone.map((r) => r.id).join(",")})`, { deleted_at: new Date().toISOString() });
+  return gone.length;
 }
 
 export async function cancelJobs(postId: string): Promise<void> {

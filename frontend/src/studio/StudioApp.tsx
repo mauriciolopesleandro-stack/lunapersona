@@ -4,6 +4,7 @@ import { Composer } from "./Composer";
 import { Icon } from "./Icon";
 import { CalendarPage, CharactersPage, ContentsPage, ItemDetails, OverviewPage, PublicationsPage, SettingsPage, type Nav } from "./pages";
 import { ComingSoon, Modal, formatBytes } from "./shared";
+import { InstagramPage, TikTokPage } from "./social";
 import { StudioProvider, useStudio, type Post } from "./store";
 import "./studio.css";
 
@@ -26,8 +27,6 @@ const NAV: { id: string; label: string; icon: string }[] = [
 
 // Modulos que dependem de integracoes oficiais ou de dados que ainda nao existem.
 const SOON: Record<string, string> = {
-  instagram: "Publicação e métricas pela API oficial da Meta (conta profissional). Até lá, agende aqui e publique pelo app do Instagram.",
-  tiktok: "Publicação e métricas pela API oficial do TikTok. Até lá, agende aqui e publique pelo app do TikTok.",
   telegram: "Bot para entregar conteúdo, assinaturas e vendas. O bot de avisos que já existe (Meu perfil) pode ser a base.",
   monetizacao: "Resumo de assinaturas e vendas avulsas, quando o bot do Telegram estiver vendendo.",
   assinaturas: "Planos e assinantes do canal pago no Telegram.",
@@ -193,6 +192,8 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           {page === "publicacoes" && <PublicationsPage nav={nav} />}
           {page === "configuracoes" && <SettingsPage />}
           {page === "personagens" && <CharactersPage />}
+          {page === "instagram" && <InstagramPage />}
+          {page === "tiktok" && <TikTokPage />}
           {page === "perfil" && <ProfilePage onLogout={onLogout} />}
           {SOON[page] && current && <ComingSoon title={current.label} icon={current.icon} text={SOON[page]} />}
         </main>

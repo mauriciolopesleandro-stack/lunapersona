@@ -1812,3 +1812,26 @@
   color: var(--text) !important;
   text-align: left;
 }
+
+/* ---------- Instagram automatico ---------- */
+
+.st-steps {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.st-steps b {
+  color: var(--text);
+}
+
+.st-shell .st-token-input {
+  flex: 1;
+  min-width: 240px;
+  width: auto;
+}
+
+.st-inline-hint {
+  margin: 0;
+}

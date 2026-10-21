@@ -13,7 +13,10 @@ import {
   writeData,
   type DirHandle,
 } from "./localFolder";
+import { prepareForInstagram } from "./mediaPrep";
 import {
+  cloudInstagram,
+  cloudInstagramAction,
   cloudLoad,
   cloudPostAction,
   cloudPostImport,
@@ -24,7 +27,10 @@ import {
   cloudSaveCampaign,
   cloudSaveCharacter,
   cloudUpdateMedia,
+  cloudUploadUrls,
   cloudUsage,
+  putSignedUpload,
+  type InstagramStatus,
   type MediaRow,
   type PostDto,
   type WorkerStatus,
@@ -94,6 +100,7 @@ export interface Post {
   createdAt: string;
   updatedAt: string;
   // so no modo banco
+  publishMode?: "manual" | "api";
   version?: number;
   approvedVersion?: number | null;
   failureReason?: string | null;
@@ -105,6 +112,7 @@ export interface Post {
 }
 
 export interface PostInput {
+  publishMode?: "manual" | "api";
   network: Network;
   formats: string[];
   media: string[];
@@ -129,6 +137,7 @@ function fromDto(d: PostDto, pathOf: Map<string, string>): Post {
     status: d.status as PostStatus,
     createdAt: d.created_at,
     updatedAt: d.updated_at,
+    publishMode: d.publish_mode,
     version: d.version,
     approvedVersion: d.approved_version,
     failureReason: d.failure_reason,
@@ -251,6 +260,10 @@ interface Studio {
   worker: WorkerStatus | null;
   postsError: string | null;
   reloadPosts: () => Promise<void>;
+  instagram: InstagramStatus | null;
+  instagramAction: (action: "connect" | "disconnect", token?: string) => Promise<void>;
+  // modo automatico: envia a copia temporaria das midias da versao e aprova
+  approveAutomatic: (post: Post, onStep?: (text: string) => void) => Promise<void>;
   saveCloudPost: (input: PostInput, current?: Post | null) => Promise<{ post: Post; needsApproval: boolean }>;
   postAction: (action: PostAction, id: string, extra?: object) => Promise<Post>;
   runJobs: () => Promise<{ processadas: number; ok: number; falhas: number; novas_tentativas: number }>;
@@ -280,6 +293,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [remotePosts, setRemotePosts] = useState<Post[] | null>(null);
   const [worker, setWorker] = useState<WorkerStatus | null>(null);
   const [postsError, setPostsError] = useState<string | null>(null);
+  const [instagram, setInstagram] = useState<InstagramStatus | null>(null);
   const writeChain = useRef<Promise<void>>(Promise.resolve());
   // Libera as pre-visualizacoes so ao sair (trocar de pasta ja libera em load/forget).
   const filesRef = useRef(files);
@@ -381,6 +395,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           postsProblem = `Publicações indisponíveis no banco (${e instanceof Error ? e.message : e}). Confira se a migração 0002_publicacoes.sql foi rodada no Supabase.`;
         }
         setPostsError(postsProblem);
+        setInstagram(await cloudInstagram().catch(() => null));
         const imported = new Set(remote.posts.map((p) => p.legacy_id).filter(Boolean));
         const legacy = next.posts
           .filter((p) => !imported.has(p.id))
@@ -671,6 +686,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         caption: input.caption,
         hashtags: input.hashtags,
         scheduled_at: input.scheduledAt,
+        publish_mode: input.publishMode ?? "manual",
       });
       await reloadPosts();
       return { post: fromDto({ ...res.post, media_ids: ids, destinations: [], approvals: [], jobs: [], attempts: [] }, pathOfId()), needsApproval: Boolean(res.needsApproval) };
@@ -685,6 +701,34 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       return fromDto({ ...res.post, media_ids: [], destinations: [], approvals: [], jobs: [], attempts: [] }, pathOfId());
     },
     [reloadPosts, pathOfId]
+  );
+
+  const instagramAction = useCallback(async (action: "connect" | "disconnect", token?: string) => {
+    setInstagram(await cloudInstagramAction(action, token));
+  }, []);
+
+  const approveAutomatic = useCallback(
+    async (post: Post, onStep?: (text: string) => void) => {
+      if (!post.version) throw new Error("Publicação sem versão.");
+      const files = post.media.map((path) => filesRef.current.find((f) => f.path === path)?.file);
+      if (files.some((f) => !f)) throw new Error("Uma das mídias não está na pasta deste computador. Abra a pasta do estúdio e tente de novo.");
+      onStep?.("Preparando as mídias para o Instagram...");
+      const prepared = [];
+      for (const file of files) prepared.push(await prepareForInstagram(file!));
+      const urls = await cloudUploadUrls(
+        post.id,
+        post.version,
+        prepared.map((p, position) => ({ position, mime_type: p.mime, size_bytes: p.blob.size }))
+      );
+      for (const [i, u] of urls.entries()) {
+        onStep?.(`Enviando mídia ${i + 1} de ${urls.length}...`);
+        await putSignedUpload(u.url, prepared[u.position].blob);
+      }
+      onStep?.("Aprovando...");
+      await cloudPostAction("approve", post.id, { version: post.version });
+      await reloadPosts();
+    },
+    [reloadPosts]
   );
 
   const runJobs = useCallback(async () => {
@@ -747,6 +791,9 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     worker,
     postsError,
     reloadPosts,
+    instagram,
+    instagramAction,
+    approveAutomatic,
     saveCloudPost,
     postAction,
     runJobs,

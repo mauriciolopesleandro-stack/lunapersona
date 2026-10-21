@@ -22,7 +22,7 @@ interface Props {
 }
 
 export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) {
-  const { items, savePost, deletePost, source, posts, saveCloudPost, postAction } = useStudio();
+  const { items, savePost, deletePost, source, posts, saveCloudPost, postAction, instagram } = useStudio();
   // No modo banco a publicacao aberta e sempre a versao atual do banco.
   const live = initial && source === "banco" ? posts.find((p) => p.id === initial.id) ?? initial : initial;
   const locked = Boolean(live && ["publicando", "publicado", "cancelado"].includes(live.status));
@@ -39,6 +39,7 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
   const [picking, setPicking] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [auto, setAuto] = useState(initial?.publishMode === "api");
 
   const byPath = useMemo(() => new Map(items.map((i) => [i.path, i])), [items]);
   const chosen = media.map((p) => byPath.get(p)).filter((i): i is NonNullable<typeof i> => Boolean(i));
@@ -127,7 +128,8 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
     const when = date && time ? new Date(`${date}T${time}`).toISOString() : null;
     setSaving(true);
     try {
-      const { post, needsApproval } = await saveCloudPost({ network, formats, media, caption, hashtags, scheduledAt: when }, live);
+      const publishMode = network === "instagram" && auto ? "api" : "manual";
+      const { post, needsApproval } = await saveCloudPost({ network, formats, media, caption, hashtags, scheduledAt: when, publishMode }, live);
       if (submit && (post.status === "rascunho" || post.status === "falhou")) await postAction("submit", post.id);
       setMessage({
         ok: true,
@@ -246,6 +248,20 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
               </label>
             ))}
           </div>
+
+          {source === "banco" && network === "instagram" && (
+            <div className="st-row">
+              <label className="st-check" title="Publica sozinho pela API oficial do Instagram no horário agendado">
+                <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+                Publicar automaticamente
+              </label>
+              <span className="st-hint st-inline-hint">
+                {instagram?.connected
+                  ? `pela conta @${instagram.username}. Ao aprovar, uma cópia temporária das mídias sobe e é apagada depois de publicar.`
+                  : "conecte o Instagram na página Instagram para poder aprovar."}
+              </span>
+            </div>
+          )}
 
           <div className="st-row">
             <label className="st-label" htmlFor="st-date">Quando</label>
