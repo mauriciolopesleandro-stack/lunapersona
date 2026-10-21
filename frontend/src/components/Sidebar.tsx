@@ -1,6 +1,6 @@
 import { GPU_ENABLED } from "../lib/studioMode";
 
-export type Tab = "inicio" | "gerar" | "v2" | "historia" | "pack" |"trocar" | "conteudo" | "voz" | "personas" | "historico" | "galeria" | "configuracoes" | "perfil";
+export type Tab = "inicio" | "biblioteca" | "gerar" | "v2" | "historia" | "pack" |"trocar" | "conteudo" | "voz" | "personas" | "historico" | "galeria" | "configuracoes" | "perfil";
 
 interface Props {
   tab: Tab;
@@ -27,6 +27,7 @@ const NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
 // Modo manual: so o que funciona sem o pod (ver lib/studioMode.ts).
 const MANUAL_NAV_ITEMS: { id: Tab; label: string; icon: string }[] = [
   { id: "inicio", label: "Visão geral", icon: "◇" },
+  { id: "biblioteca", label: "Conteúdos", icon: "▦" },
   { id: "perfil", label: "Meu perfil", icon: "◉" },
 ];
 

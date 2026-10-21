@@ -117,6 +117,120 @@ export async function telegramAction(
   return body;
 }
 
+// Biblioteca de conteudo (api/media.ts). O arquivo vai do navegador direto
+// para o Storage do Supabase por uma URL assinada; a Vercel so cria a URL e
+// registra no banco (o corpo das funcoes da Vercel e pequeno demais p/ video).
+export interface MediaItem {
+  id: string;
+  created_at: string;
+  kind: "image" | "video";
+  status: "uploading" | "ready" | "archived";
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+  title: string | null;
+  notes: string | null;
+  url: string | null;
+}
+
+export interface MediaList {
+  configured: boolean;
+  maxBytes: number;
+  items: MediaItem[];
+  more: boolean;
+}
+
+export class MediaNotConfigured extends Error {}
+
+async function mediaJson<T>(res: Response): Promise<T> {
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 501 && body.configured === false) throw new MediaNotConfigured(body.detail);
+  if (!res.ok) throw new Error(body.detail ?? `Erro HTTP ${res.status}`);
+  return body;
+}
+
+export async function listMedia(filter: {
+  status?: "ready" | "archived";
+  kind?: "image" | "video";
+  before?: string;
+}): Promise<MediaList> {
+  const params = new URLSearchParams();
+  if (filter.status) params.set("status", filter.status);
+  if (filter.kind) params.set("kind", filter.kind);
+  if (filter.before) params.set("before", filter.before);
+  return mediaJson(await fetch(`/api/media?${params}`));
+}
+
+export async function mediaAction(
+  action: "archive" | "restore" | "update",
+  id: string,
+  extra: Record<string, unknown> = {}
+): Promise<{ item: MediaItem }> {
+  return mediaJson(
+    await fetch("/api/media", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, id, ...extra }),
+    })
+  );
+}
+
+// Impressao digital do arquivo, para avisar quando o mesmo arquivo ja esta
+// na biblioteca. Arquivo muito grande pula (ler tudo na memoria pesa).
+async function fileSha256(file: File): Promise<string | undefined> {
+  if (file.size > 200 * 1024 * 1024 || !crypto?.subtle) return undefined;
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function putWithProgress(url: string, file: File, onProgress: (fraction: number) => void): Promise<void> {
+  // Mesmo formato do uploadToSignedUrl do supabase-js (PUT multipart).
+  const form = new FormData();
+  form.append("cacheControl", "3600");
+  form.append("", file);
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("x-upsert", "false");
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300
+        ? resolve()
+        : reject(new Error(`O armazenamento recusou o envio (HTTP ${xhr.status}).`));
+    xhr.onerror = () => reject(new Error("A conexão caiu durante o envio."));
+    xhr.send(form);
+  });
+}
+
+export async function uploadMedia(
+  file: File,
+  onProgress: (fraction: number) => void,
+  allowDuplicate = false
+): Promise<MediaItem> {
+  const sha256 = await fileSha256(file);
+  const start = await fetch("/api/media", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "upload-url", name: file.name, type: file.type, size: file.size, sha256, allowDuplicate }),
+  });
+  if (start.status === 409) {
+    const body = await start.json().catch(() => ({}));
+    if (body.duplicate) throw new MediaDuplicate(body.detail);
+  }
+  const { id, uploadUrl } = await mediaJson<{ id: string; uploadUrl: string }>(start);
+  await putWithProgress(uploadUrl, file, onProgress);
+  const { item } = await mediaJson<{ item: MediaItem }>(
+    await fetch("/api/media", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "confirm", id }),
+    })
+  );
+  return item;
+}
+
+export class MediaDuplicate extends Error {}
+
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   const res = await fetch("/api/change-password", {
     method: "POST",

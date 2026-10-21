@@ -1,14 +1,18 @@
-// Visao geral do modo manual. Por enquanto so apresenta o que vem nas
-// proximas fases; os numeros entram quando houver biblioteca (Fase 2).
-const NEXT_MODULES: { title: string; text: string }[] = [
-  { title: "Conteúdos", text: "Biblioteca de imagens e vídeos enviados, guardados em armazenamento privado." },
+// Visao geral do modo manual: o que ja funciona e o que vem nas proximas
+// fases. Os numeros entram quando houver dados para resumir.
+const MODULES: { title: string; text: string; ready?: boolean }[] = [
+  { title: "Conteúdos", text: "Biblioteca de imagens e vídeos enviados, guardados em armazenamento privado.", ready: true },
   { title: "Calendário", text: "Agenda editorial com aprovação manual antes de publicar." },
   { title: "Publicações", text: "Instagram e TikTok pelas integrações oficiais." },
   { title: "Telegram", text: "Bot para conteúdo digital, assinaturas e vendas." },
   { title: "Relatórios", text: "Histórico de operações, audiência e financeiro." },
 ];
 
-export function OverviewPage() {
+interface Props {
+  onOpenLibrary: () => void;
+}
+
+export function OverviewPage({ onOpenLibrary }: Props) {
   return (
     <div>
       <div className="page-header">
@@ -17,11 +21,18 @@ export function OverviewPage() {
       </div>
 
       <div className="overview-grid">
-        {NEXT_MODULES.map((m) => (
+        {MODULES.map((m) => (
           <div key={m.title} className="panel overview-card">
-            <span className="overview-soon">Em breve</span>
+            <span className={m.ready ? "overview-soon overview-ready" : "overview-soon"}>
+              {m.ready ? "Disponível" : "Em breve"}
+            </span>
             <h2>{m.title}</h2>
             <p>{m.text}</p>
+            {m.ready && (
+              <button type="button" className="small overview-open" onClick={onOpenLibrary}>
+                Abrir
+              </button>
+            )}
           </div>
         ))}
       </div>

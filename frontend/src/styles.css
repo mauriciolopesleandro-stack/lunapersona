@@ -1988,7 +1988,189 @@ button.result-download {
   color: var(--text-muted);
 }
 
+.overview-ready {
+  border-color: var(--accent-1);
+  color: var(--text);
+}
+
+.overview-open {
+  margin-top: 14px;
+}
+
 /* Sem as pilulas do pod, os icones ficam juntos a direita (menu a esquerda). */
 .topbar-manual .topbar-menu-btn {
   margin-right: auto;
+}
+
+/* ---------- Conteúdos (biblioteca, modo manual) ---------- */
+
+.library-help {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.library-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 16px;
+  margin-bottom: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  text-align: center;
+}
+
+.library-drop.dragging {
+  border-color: var(--accent-1);
+  background: var(--bg-panel-2);
+}
+
+.library-drop p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.library-limit,
+.library-loading {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.library-uploads {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.library-upload {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  box-sizing: border-box;
+}
+
+.library-upload-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.library-upload-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-upload-state {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.library-progress {
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: var(--bg-panel-2);
+  overflow: hidden;
+}
+
+.library-progress div {
+  height: 100%;
+  background: var(--accent-gradient);
+  transition: width 0.2s;
+}
+
+.library-upload-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.library-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.library-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  background: var(--bg-panel-2);
+}
+
+.library-thumb img,
+.library-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.library-kind {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.library-card-body {
+  padding: 10px 12px 12px;
+}
+
+.library-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-card-meta {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.library-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.library-more {
+  display: block;
+  margin: 18px auto 0;
+}
+
+@media (max-width: 520px) {
+  .library-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
 }

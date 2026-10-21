@@ -37,6 +37,7 @@ import { loadPack, rehostPack, savePack, type PackItem } from "./lib/pack";
 import { getSettings } from "./lib/settings";
 import { GPU_ENABLED } from "./lib/studioMode";
 import { OverviewPage } from "./components/OverviewPage";
+import { LibraryPage } from "./components/LibraryPage";
 
 const WAKE_POLL_INTERVAL_MS = 5_000;
 // Pod novo: baixar a imagem, sincronizar o volume e subir Ollama + backend.
@@ -358,7 +359,8 @@ export default function App() {
             </p>
           )}
 
-          {tab === "inicio" && <OverviewPage />}
+          {tab === "inicio" && <OverviewPage onOpenLibrary={() => setTab("biblioteca")} />}
+          {tab === "biblioteca" && <LibraryPage />}
           {GPU_ENABLED && tab === "gerar" && (
             <div className="generate-grid">
               <GeneratePanel
