@@ -92,7 +92,20 @@ export function FolderGate({ children, compact }: { children: ReactNode; compact
   return (
     <div className={`st-panel st-gate${compact ? " st-gate-compact" : ""}`}>
       <Icon name="folder" size={28} />
-      {state === "needs-permission" ? (
+      {state === "error" && folderName ? (
+        <>
+          <h2>Não consegui abrir o estúdio</h2>
+          <p>A pasta “{folderName}” está conectada, mas algo falhou ao carregar (veja abaixo). Nenhum arquivo foi alterado.</p>
+          <div className="st-head-actions">
+            <button type="button" className="st-btn st-btn-primary" onClick={reconnect}>
+              Tentar de novo
+            </button>
+            <button type="button" className="st-btn" onClick={connect}>
+              Escolher outra pasta
+            </button>
+          </div>
+        </>
+      ) : state === "needs-permission" ? (
         <>
           <h2>Reconectar a pasta “{folderName}”</h2>
           <p>Por segurança, o navegador pede sua permissão de novo a cada visita.</p>
@@ -104,7 +117,7 @@ export function FolderGate({ children, compact }: { children: ReactNode; compact
         <>
           <h2>Escolha a pasta do estúdio</h2>
           <p>
-            Imagens, vídeos e agendamentos ficam guardados nela, no seu computador. Nada é enviado para a internet. Dentro
+            As imagens e os vídeos ficam só nesta pasta, no seu computador; eles não são enviados para a internet. Dentro
             dela o estúdio cria a pasta <b>conteudos</b> e o arquivo <b>luna-vox.json</b>.
           </p>
           <button type="button" className="st-btn st-btn-primary" onClick={connect}>
