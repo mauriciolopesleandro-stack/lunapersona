@@ -1962,33 +1962,3 @@ button.result-download {
   color: #e05555;
 }
 
-/* ---------- Visao geral (modo manual) ---------- */
-
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
-}
-
-.overview-card p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-
-.overview-soon {
-  display: inline-block;
-  margin-bottom: 10px;
-  padding: 2px 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-/* Sem as pilulas do pod, os icones ficam juntos a direita (menu a esquerda). */
-.topbar-manual .topbar-menu-btn {
-  margin-right: auto;
-}

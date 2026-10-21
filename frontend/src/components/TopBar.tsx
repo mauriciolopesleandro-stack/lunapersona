@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { getHealth, getPodStatus, stopPodRequest, type PodStatus } from "../api/client";
-import { GPU_ENABLED } from "../lib/studioMode";
 
 const POLL_INTERVAL_MS = 15_000;
 const BACKEND_POLL_INTERVAL_MS = 8_000;
@@ -52,8 +51,6 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar, on
   }
 
   useEffect(() => {
-    // Modo manual: nao consulta o RunPod (nem status, nem saldo).
-    if (!GPU_ENABLED) return;
     let cancelled = false;
 
     async function poll() {
@@ -105,12 +102,12 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar, on
   }, [running]);
 
   return (
-    <div className={GPU_ENABLED ? "topbar" : "topbar topbar-manual"}>
+    <div className="topbar">
       <button type="button" className="icon-btn topbar-menu-btn" onClick={onOpenSidebar} aria-label="Abrir menu">
         ☰
       </button>
 
-      {!GPU_ENABLED ? null : running ? (
+      {running ? (
         <>
           <span className="pill pill-online">
             <span className="pill-dot" />
@@ -152,12 +149,10 @@ export function TopBar({ onWake, waking, theme, onToggleTheme, onOpenSidebar, on
         </button>
       )}
 
-      {GPU_ENABLED && (
-        <span className="pill pill-credits" title="Saldo real da conta RunPod">
-          <span className="topbar-label-full">Créditos: </span>
-          {status && !error ? formatUSD(status.balance) : "..."}
-        </span>
-      )}
+      <span className="pill pill-credits" title="Saldo real da conta RunPod">
+        <span className="topbar-label-full">Créditos: </span>
+        {status && !error ? formatUSD(status.balance) : "..."}
+      </span>
 
       <button
         type="button"
