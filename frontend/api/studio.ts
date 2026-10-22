@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import instagram from "./_instagram_api.js";
 import jobs from "./_jobs.js";
 import library from "./_library.js";
+import music from "./_music.js";
 import posts from "./_posts_api.js";
 
 // /api/studio?r=<rota> - uma funcao so para as rotas do estudio novo. O plano
@@ -12,7 +13,8 @@ import posts from "./_posts_api.js";
 //   r=posts    publicacoes com aprovacao (Fase 2)
 //   r=jobs     processador da fila (Supabase Cron ou botao do painel)
 //   r=instagram conexao da conta do Instagram (publicacao automatica)
-const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram };
+//   r=music    musicas em alta no Brasil (Apple Music, fontes oficiais)
+const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music };
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   const route = new URL(req.url ?? "/", "http://local").searchParams.get("r") ?? "";
