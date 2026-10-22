@@ -154,7 +154,7 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
             <p>
               Agendada para <b>{fmt(post.scheduledAt)}</b>.{" "}
               {tiktokDraft
-                ? "No horário, o estúdio envia o vídeo como rascunho para o TikTok e te avisa no Telegram."
+                ? "No horário, o estúdio envia o rascunho para o TikTok e te avisa no Telegram."
                 : automatic
                 ? "No horário, o estúdio publica sozinho no Instagram e te avisa no Telegram."
                 : "No horário, o estúdio avisa no Telegram para você publicar."}

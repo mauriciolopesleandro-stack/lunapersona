@@ -11,7 +11,8 @@ import {
   type IgConnection,
 } from "./_instagram.js";
 import { NETWORK_RULES, UPLOAD_BUCKET, cleanupUploads, type PostRow } from "./_posts.js";
-import { TikTokError, publishStatus, tiktokAccessToken, uploadDraft } from "./_tiktok.js";
+import { TikTokError, publishStatus, tiktokAccessToken, uploadDraft, uploadPhotoDraft } from "./_tiktok.js";
+import { tiktokMediaUrl } from "./_tiktok_media.js";
 import { dbInsert, dbRpc, dbSelect, dbUpdate, dbUpdateWhere, dbUpsert, storageReadUrl, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
 
@@ -33,8 +34,9 @@ import { sendNotice, telegramConfig } from "./_telegram.js";
 // tentativa. Terminou: apaga as copias e avisa no Telegram. Falhou de vez:
 // marca "falhou" e avisa para publicar a mao.
 //
-// Tarefa "enviar_tiktok" (rascunho automatico): no horario envia o video
-// (copia temporaria da versao aprovada) para a caixa de entrada do TikTok e
+// Tarefa "enviar_tiktok" (rascunho automatico): no horario envia o video (ou
+// as fotos, que o TikTok baixa por link assinado no endereco verificado do
+// site) da copia temporaria da versao aprovada para a caixa de entrada e
 // guarda o publish_id no destino. Depois consulta o status: chegou na caixa de
 // entrada -> apaga a copia e avisa; o criador poe a musica e publica no app;
 // so quando o TikTok responde PUBLISH_COMPLETE o destino vira "publicado".
@@ -138,7 +140,7 @@ async function retryOrFail(job: JobRow, post: PostRow, error: string, retryable:
   await cleanupUploads(post.id);
   await notify(
     tiktok
-      ? `⚠️ Não consegui enviar o vídeo para o TikTok: ${error}\n\nPublique à mão pelo app e marque no estúdio.`
+      ? `⚠️ Não consegui enviar o rascunho para o TikTok: ${error}\n\nPublique à mão pelo app e marque no estúdio.`
       : `⚠️ Não consegui publicar no Instagram: ${error}\n\nPublique à mão pelo app e marque no estúdio.`
   );
   return "falhou";
@@ -261,7 +263,7 @@ async function checkAgain(job: JobRow, minutes: number, detail?: string): Promis
 
 const TIKTOK_WAIT_HOURS = 72;
 
-async function runTiktok(job: JobRow): Promise<Outcome> {
+async function runTiktok(job: JobRow, baseUrl: string): Promise<Outcome> {
   const [post] = await dbSelect<PostRow>("posts", `select=*&id=eq.${job.post_id}`);
   const current = post && post.version === job.post_version && (post.status === "agendado" || post.status === "publicando") && post.publish_mode === "api";
   if (!current) {
@@ -287,6 +289,23 @@ async function runTiktok(job: JobRow): Promise<Outcome> {
   if (!token) return retryOrFail(job, post, "o TikTok não está conectado (ou a conexão expirou)", false);
 
   try {
+    if (!dest.external_id && dest.format === "Foto") {
+      const photos = await dbSelect<UploadRow>(
+        "post_uploads",
+        `select=position,storage_path,mime_type&post_id=eq.${post.id}&post_version=eq.${post.version}&deleted_at=is.null&order=position.asc`
+      );
+      if (!photos.length) return retryOrFail(job, post, "as fotos desta versão não estão no armazenamento temporário", false);
+      if (!baseUrl.startsWith("https://")) return retryOrFail(job, post, "endereço do site desconhecido para o TikTok baixar as fotos", false);
+      if (post.status === "agendado") {
+        await dbUpdate("posts", `id=eq.${post.id}&status=eq.agendado&version=eq.${post.version}`, { status: "publicando" });
+      }
+      // o TikTok tem 1 h para baixar; o link vale 2 h
+      const urls = photos.map((u) => tiktokMediaUrl(baseUrl, u.storage_path, 2 * 3600));
+      const caption = [post.caption, post.hashtags.join(" ")].filter(Boolean).join("\n\n");
+      const publishId = await uploadPhotoDraft(token, urls, caption);
+      await dbUpdateWhere("post_destinations", `id=eq.${dest.id}`, { external_id: publishId, last_error: null });
+      return checkAgain(job, 1, "vídeo enviado ao TikTok");
+    }
     if (!dest.external_id) {
       const [upload] = await dbSelect<UploadRow>(
         "post_uploads",
@@ -315,18 +334,18 @@ async function runTiktok(job: JobRow): Promise<Outcome> {
         await dbInsert("media_usage", { media_id: m.media_id, channel: "tiktok", context: "post", reference: post.id });
       }
       await cleanupUploads(post.id);
-      await notify("✅ O TikTok confirmou: o vídeo foi publicado.");
+      await notify("✅ O TikTok confirmou: o post foi publicado.");
       return "ok";
     }
     if (st.status === "FAILED") {
       // o video nao chegou: limpa o publish_id para a proxima tentativa enviar de novo
       await dbUpdateWhere("post_destinations", `id=eq.${dest.id}`, { external_id: null, last_error: `TikTok: ${st.fail_reason ?? "falhou"}` });
-      return retryOrFail(job, post, `o TikTok recusou o vídeo (${st.fail_reason ?? "sem motivo"})`, st.fail_reason === "internal");
+      return retryOrFail(job, post, `o TikTok recusou o conteúdo (${st.fail_reason ?? "sem motivo"})`, st.fail_reason === "internal");
     }
     if (st.status === "SEND_TO_USER_INBOX") {
       // primeira vez que chegou: apaga a copia e avisa para por a musica e publicar
       if ((await cleanupUploads(post.id)) > 0) {
-        await notify("📥 O vídeo chegou nas notificações do TikTok. Abra o app, coloque a música em alta e publique. O estúdio marca como publicado sozinho quando o TikTok confirmar.");
+        await notify("📥 O rascunho chegou nas notificações do TikTok. Abra o app, coloque a música em alta e publique. O estúdio marca como publicado sozinho quando o TikTok confirmar.");
       }
       const since = new Date(post.scheduled_at ?? job.run_at).getTime();
       if (Date.now() - since > TIKTOK_WAIT_HOURS * 3600_000) {
@@ -386,7 +405,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           : job.kind === "publicar_instagram"
             ? await runInstagram(job)
             : job.kind === "enviar_tiktok"
-              ? await runTiktok(job)
+              ? await runTiktok(job, url)
               : "obsoleta";
       if (outcome === "ok") result.ok++;
       else if (outcome === "obsoleta") result.obsoletas++;

@@ -264,9 +264,9 @@ Uma migração por fase, sempre com:
   - o acesso vale 24 h e é renovado sozinho antes de cada envio;
   - a conexão (refresh token) vale 365 dias.
   O botão Desconectar apaga os tokens.
-- **Regras:**
-  - automático só com 1 vídeo MP4 ou MOV no destino "Vídeo";
-  - foto continua manual, porque o TikTok exige domínio verificado para receber fotos pela API;
+- **Regras** (fotos adicionadas em 22/10: o TikTok baixa cada foto por um link assinado de 2 h no próprio site, `/api/studio?r=tiktok-media`, que é o endereço verificado no app; até 35 fotos JPEG de no máximo 4 MB, com a legenda junto):
+  - automático com 1 vídeo MP4 ou MOV no destino "Vídeo", ou de 1 a 35 fotos no destino "Foto";
+  - o site precisa estar verificado no app do TikTok (URL prefix, arquivo `tiktok....txt` em `frontend/public`);
   - Telegram não tem modo automático.
 - **Fila** (tarefa `enviar_tiktok`):
   1. Envia o vídeo num pedaço só (até 64 MB; o bucket aceita até 50 MB) e guarda o `publish_id` no destino.
