@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
 import { igConnection } from "./_instagram.js";
 import { tiktokConnectionRow } from "./_tiktok.js";
+import { TIKTOK_PHOTO_MAX_BYTES } from "./_tiktok_media.js";
 import {
   NETWORK_RULES,
   UPLOAD_BUCKET,
@@ -162,13 +163,13 @@ async function replaceMedia(postId: string, mediaIds: string[]) {
 }
 
 // Regras da publicacao automatica, destino a destino. TikTok: rascunho de
-// 1 video (foto pela API exige dominio verificado - fica para depois).
+// 1 video (destino Video) ou de 1 a 35 fotos (destino Foto).
 function problemWithAutoFormats(network: string, formats: string[], mimes: string[]) {
   const videos = mimes.filter((m) => m.startsWith("video/")).length;
   if (network === "tiktok") {
-    if (formats.length !== 1 || formats[0] !== "Vídeo" || mimes.length !== 1 || videos !== 1) {
-      throw new Problem(400, "TikTok automático: 1 vídeo (MP4 ou MOV), destino Vídeo.");
-    }
+    const video = formats.length === 1 && formats[0] === "Vídeo" && mimes.length === 1 && videos === 1;
+    const photos = formats.length === 1 && formats[0] === "Foto" && mimes.length >= 1 && mimes.length <= 35 && videos === 0;
+    if (!video && !photos) throw new Problem(400, "TikTok automático: 1 vídeo no destino Vídeo, ou de 1 a 35 fotos no destino Foto (um destino só).");
     return;
   }
   if (formats.includes("Reels") && (mimes.length !== 1 || videos !== 1)) throw new Problem(400, "Reels automático precisa de exatamente 1 vídeo.");
@@ -377,6 +378,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         if (!Number.isInteger(position) || position < 0 || position >= mediaIds.length) throw new Problem(400, "Posição de mídia inválida.");
         if (!["image/jpeg", "video/mp4", "video/quicktime"].includes(mime)) throw new Problem(400, "O Instagram aceita foto JPEG e vídeo MP4/MOV.");
         if (!Number.isFinite(size) || size <= 0 || size > 50 * 1024 * 1024) throw new Problem(400, "Cada arquivo pode ter no máximo 50 MB (limite do plano grátis).");
+        if (post.network === "tiktok" && mime === "image/jpeg" && size > TIKTOK_PHOTO_MAX_BYTES) throw new Problem(400, "Cada foto para o TikTok pode ter no máximo 4 MB.");
         const ext = mime === "image/jpeg" ? "jpg" : mime === "video/mp4" ? "mp4" : "mov";
         const path = `${post.id}/v${post.version}/${position}.${ext}`;
         const [existing] = await dbSelect<{ id: string }>("post_uploads", `select=id&post_id=eq.${post.id}&post_version=eq.${post.version}&position=eq.${position}`);

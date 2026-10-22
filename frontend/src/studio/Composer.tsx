@@ -257,7 +257,7 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
               </label>
               <span className="st-hint st-inline-hint">
                 {tiktok?.connected
-                  ? `para ${tiktok.name ?? "a sua conta"}: 1 vídeo, destino Vídeo. No horário ele chega nas notificações do TikTok; você põe a música e publica.`
+                  ? `para ${tiktok.name ?? "a sua conta"}: 1 vídeo (destino Vídeo) ou até 35 fotos (destino Foto). No horário chega nas notificações do TikTok; você põe a música e publica.`
                   : "conecte o TikTok na página TikTok para poder aprovar."}
               </span>
             </div>

@@ -123,6 +123,22 @@ export async function uploadDraft(token: string, video: Uint8Array, mime: string
   return init.publish_id;
 }
 
+// Fotos (ate 35) como rascunho: o TikTok baixa cada foto pelo link (PULL_FROM_URL),
+// que precisa estar no endereco verificado do app. A legenda vai junto.
+export async function uploadPhotoDraft(token: string, photoUrls: string[], description: string): Promise<string> {
+  if (!photoUrls.length || photoUrls.length > 35) throw new TikTokError("De 1 a 35 fotos.", false);
+  const data = await api<{ publish_id: string }>("/v2/post/publish/content/init/", token, {
+    method: "POST",
+    body: JSON.stringify({
+      post_info: { description: description.slice(0, 4000) },
+      source_info: { source: "PULL_FROM_URL", photo_images: photoUrls, photo_cover_index: 0 },
+      post_mode: "MEDIA_UPLOAD",
+      media_type: "PHOTO",
+    }),
+  });
+  return data.publish_id;
+}
+
 export interface PublishStatus {
   status: "PROCESSING_UPLOAD" | "PROCESSING_DOWNLOAD" | "SEND_TO_USER_INBOX" | "PUBLISH_COMPLETE" | "FAILED" | string;
   fail_reason?: string;

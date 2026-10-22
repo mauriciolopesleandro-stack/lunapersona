@@ -242,16 +242,19 @@ export function TikTokPage() {
         <h2>Como funciona</h2>
         <ol className="st-steps">
           <li>
-            Prepare a publicação (rede TikTok, destino <b>Vídeo</b>, 1 vídeo MP4 ou MOV) e marque “Enviar rascunho automático”.
+            Prepare a publicação (rede TikTok): destino <b>Vídeo</b> com 1 vídeo MP4 ou MOV, ou destino <b>Foto</b> com até 35 fotos. Marque
+            “Enviar rascunho automático”.
           </li>
-          <li>Ao aprovar, uma cópia temporária do vídeo sobe para um armazenamento privado.</li>
-          <li>No horário, o estúdio envia o vídeo para o TikTok e apaga a cópia. O TikTok avisa no app (notificações).</li>
-          <li>Abra o rascunho, coloque a música (veja Músicas em alta), cole a legenda e publique.</li>
+          <li>Ao aprovar, uma cópia temporária sobe para um armazenamento privado (fotos viram JPEG).</li>
+          <li>
+            No horário, o estúdio envia para o TikTok (as fotos o TikTok baixa por um link do site que vence) e apaga a cópia. O TikTok avisa no
+            app (notificações).
+          </li>
+          <li>Abra o rascunho, coloque a música (veja Músicas em alta) e publique. Nas fotos a legenda já vai junto; no vídeo, cole a legenda.</li>
           <li>Quando o TikTok confirmar a publicação, o estúdio marca como publicado. Se não confirmar, dá para marcar à mão.</li>
         </ol>
         <p className="st-hint">
-          Sem envio automático, continua valendo o modo manual: lembrete no Telegram no horário e “Copiar legenda e hashtags”. Fotos ainda vão só no
-          modo manual (o TikTok exige domínio verificado para receber fotos pela API).
+          Sem envio automático, continua valendo o modo manual: lembrete no Telegram no horário e “Copiar legenda e hashtags”.
         </p>
       </section>
 

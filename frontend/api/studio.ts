@@ -5,6 +5,7 @@ import library from "./_library.js";
 import music from "./_music.js";
 import posts from "./_posts_api.js";
 import tiktok, { tiktokCallback } from "./_tiktok_api.js";
+import tiktokMedia from "./_tiktok_media.js";
 
 // /api/studio?r=<rota> - uma funcao so para as rotas do estudio novo. O plano
 // Hobby da Vercel aceita no maximo 12 funcoes por deploy (projeto sem
@@ -17,7 +18,8 @@ import tiktok, { tiktokCallback } from "./_tiktok_api.js";
 //   r=music    musicas em alta no Brasil (Apple Music, fontes oficiais)
 //   r=tiktok   conexao do TikTok (rascunho automatico); a volta do OAuth chega
 //              em /api/tiktok/callback, reescrito pelo vercel.json
-const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music, tiktok, "tiktok-callback": tiktokCallback };
+//   r=tiktok-media foto temporaria para o TikTok baixar (link assinado)
+const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music, tiktok, "tiktok-callback": tiktokCallback, "tiktok-media": tiktokMedia };
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "/", "http://local");
