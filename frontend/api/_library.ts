@@ -2,12 +2,12 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
 import { audit, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbSelectAll, dbUpdate, supabaseConfigured } from "./_supabase.js";
 
-// /api/library - Fase 1: biblioteca de conteudo, personagens, campanhas e
+// /api/studio?r=library - Fase 1: biblioteca de conteudo, personagens, campanhas e
 // historico de operacoes, no Supabase. Os arquivos continuam no computador;
 // aqui so os dados (local_path aponta para o arquivo na pasta conteudos/).
 //
 // GET                    -> { media, characters, campaigns }
-// GET ?audit=1           -> ultimas operacoes
+// GET &audit=1           -> ultimas operacoes
 // POST { action }:
 //   register { files: [...] }           cadastra arquivos novos da pasta (ignora os ja cadastrados)
 //   update-media { id, patch }          edita dados de um conteudo (nunca apaga)

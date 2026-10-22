@@ -13,11 +13,42 @@ import {
   writeData,
   type DirHandle,
 } from "./localFolder";
-import { cloudLoad, cloudRegister, cloudSaveCampaign, cloudSaveCharacter, cloudUpdateMedia, cloudUsage, type MediaRow } from "./cloud";
+import { prepareForInstagram } from "./mediaPrep";
+import {
+  cloudInstagram,
+  cloudInstagramAction,
+  cloudLoad,
+  cloudPostAction,
+  cloudPostImport,
+  cloudPostSave,
+  cloudPosts,
+  cloudRegister,
+  cloudRunJobs,
+  cloudSaveCampaign,
+  cloudSaveCharacter,
+  cloudUpdateMedia,
+  cloudUploadUrls,
+  cloudUsage,
+  putSignedUpload,
+  type InstagramStatus,
+  type MediaRow,
+  type PostDto,
+  type WorkerStatus,
+} from "./cloud";
 
 export type ItemStatus = "rascunho" | "aprovado" | "arquivado";
 export type Network = "instagram" | "tiktok" | "telegram";
-export type PostStatus = "rascunho" | "agendado" | "publicado";
+// Modo pasta usa so rascunho/agendado/publicado. Modo banco (Fase 2) usa o
+// fluxo completo, com aprovacao obrigatoria da versao.
+export type PostStatus =
+  | "rascunho"
+  | "aguardando_aprovacao"
+  | "aprovado"
+  | "agendado"
+  | "publicando"
+  | "publicado"
+  | "falhou"
+  | "cancelado";
 export type Rating = "livre" | "sensivel" | "adulto";
 export type Audience = "promocional" | "assinantes";
 
@@ -68,6 +99,60 @@ export interface Post {
   status: PostStatus;
   createdAt: string;
   updatedAt: string;
+  // so no modo banco
+  publishMode?: "manual" | "api";
+  version?: number;
+  approvedVersion?: number | null;
+  failureReason?: string | null;
+  publishedAt?: string | null;
+  destinations?: { format: string; status: string; url: string | null; confirmedAt: string | null; confirmedBy: string | null }[];
+  approvals?: { version: number; decision: string; note: string | null; at: string }[];
+  jobs?: { runAt: string; status: string; attempts: number; maxAttempts: number; lastError: string | null }[];
+  attempts?: { channel: string; outcome: string; detail: string | null; at: string }[];
+}
+
+export interface PostInput {
+  publishMode?: "manual" | "api";
+  network: Network;
+  formats: string[];
+  media: string[];
+  caption: string;
+  hashtags: string[];
+  scheduledAt: string | null;
+}
+
+export type PostAction = "submit" | "approve" | "reject" | "schedule" | "confirm" | "fail" | "cancel";
+
+function fromDto(d: PostDto, pathOf: Map<string, string>): Post {
+  const formats = d.destinations.filter((x) => x.status !== "cancelado").map((x) => x.format);
+  return {
+    id: d.id,
+    network: d.network,
+    formats,
+    // midia que nao esta na pasta deste computador aparece como "#id"
+    media: d.media_ids.map((id) => pathOf.get(id) ?? `#${id}`),
+    caption: d.caption,
+    hashtags: d.hashtags,
+    scheduledAt: d.scheduled_at,
+    status: d.status as PostStatus,
+    createdAt: d.created_at,
+    updatedAt: d.updated_at,
+    publishMode: d.publish_mode,
+    version: d.version,
+    approvedVersion: d.approved_version,
+    failureReason: d.failure_reason,
+    publishedAt: d.published_at,
+    destinations: d.destinations.map((x) => ({
+      format: x.format,
+      status: x.status,
+      url: x.external_url,
+      confirmedAt: x.confirmed_at,
+      confirmedBy: x.confirmed_by,
+    })),
+    approvals: d.approvals.map((a) => ({ version: a.version, decision: a.decision, note: a.note, at: a.decided_at })),
+    jobs: d.jobs.map((j) => ({ runAt: j.run_at, status: j.status, attempts: j.attempts, maxAttempts: j.max_attempts, lastError: j.last_error })),
+    attempts: d.attempts.map((a) => ({ channel: a.channel, outcome: a.outcome, detail: a.detail, at: a.started_at })),
+  };
 }
 
 export interface LogEntry {
@@ -171,6 +256,17 @@ interface Studio {
   deletePost: (id: string) => Promise<void>;
   saveCharacter: (c: Omit<Character, "id"> & { id?: string }) => Promise<void>;
   saveCampaign: (c: Omit<Campaign, "id"> & { id?: string }) => Promise<void>;
+  // Fase 2 (modo banco)
+  worker: WorkerStatus | null;
+  postsError: string | null;
+  reloadPosts: () => Promise<void>;
+  instagram: InstagramStatus | null;
+  instagramAction: (action: "connect" | "disconnect", token?: string) => Promise<void>;
+  // modo automatico: envia a copia temporaria das midias da versao e aprova
+  approveAutomatic: (post: Post, onStep?: (text: string) => void) => Promise<void>;
+  saveCloudPost: (input: PostInput, current?: Post | null) => Promise<{ post: Post; needsApproval: boolean }>;
+  postAction: (action: PostAction, id: string, extra?: object) => Promise<Post>;
+  runJobs: () => Promise<{ processadas: number; ok: number; falhas: number; novas_tentativas: number }>;
 }
 
 const StudioContext = createContext<Studio | null>(null);
@@ -194,6 +290,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<{ path: string; file: File; url: string }[]>([]);
   const dataRef = useRef<StudioData>(EMPTY);
   const sourceRef = useRef<DataSource>("pasta");
+  const [remotePosts, setRemotePosts] = useState<Post[] | null>(null);
+  const [worker, setWorker] = useState<WorkerStatus | null>(null);
+  const [postsError, setPostsError] = useState<string | null>(null);
+  const [instagram, setInstagram] = useState<InstagramStatus | null>(null);
   const writeChain = useRef<Promise<void>>(Promise.resolve());
   // Libera as pre-visualizacoes so ao sair (trocar de pasta ja libera em load/forget).
   const filesRef = useRef(files);
@@ -283,9 +383,39 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           endsOn: c.ends_on,
           status: c.status,
         }));
+        // Publicacoes antigas do json entram no banco uma vez (legacy_id).
+        const pathOf = new Map(Object.entries(items).map(([path, meta]) => [meta.id!, path]));
+        // Publicacoes falhando (ex.: migracao 0002 ainda nao rodada) nao
+        // derrubam o resto do estudio: a biblioteca segue funcionando.
+        let remote: Awaited<ReturnType<typeof cloudPosts>> = { posts: [], worker: null };
+        let postsProblem: string | null = null;
+        try {
+          remote = await cloudPosts();
+        } catch (e) {
+          postsProblem = `Publicações indisponíveis no banco (${e instanceof Error ? e.message : e}). Confira se a migração 0002_publicacoes.sql foi rodada no Supabase.`;
+        }
+        setPostsError(postsProblem);
+        setInstagram(await cloudInstagram().catch(() => null));
+        const imported = new Set(remote.posts.map((p) => p.legacy_id).filter(Boolean));
+        const legacy = next.posts
+          .filter((p) => !imported.has(p.id))
+          .map((p) => ({
+            legacy_id: p.id,
+            network: p.network,
+            formats: p.formats,
+            media_ids: p.media.map((m) => items[m]?.id).filter(Boolean),
+            caption: p.caption,
+            hashtags: p.hashtags,
+            scheduled_at: p.scheduledAt,
+            status: p.status,
+          }));
+        if (!postsProblem && legacy.length && (await cloudPostImport(legacy))) remote = await cloudPosts();
+        setRemotePosts(remote.posts.map((d) => fromDto(d, pathOf)));
+        setWorker(remote.worker);
         sourceRef.current = "banco";
         setSource("banco");
       } else {
+        setRemotePosts(null);
         // Modo pasta: arquivo novo (salvo direto pelo Explorer) entra como rascunho.
         for (const f of found) {
           if (!next.items[f.path]) {
@@ -530,12 +660,92 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     [commit]
   );
 
+  const pathOfId = useCallback(
+    () => new Map(Object.entries(dataRef.current.items).map(([path, meta]) => [meta.id ?? "", path])),
+    []
+  );
+
+  const reloadPosts = useCallback(async () => {
+    if (sourceRef.current !== "banco") return;
+    const remote = await cloudPosts();
+    setRemotePosts(remote.posts.map((d) => fromDto(d, pathOfId())));
+    setWorker(remote.worker);
+    setPostsError(null);
+  }, [pathOfId]);
+
+  const saveCloudPost = useCallback(
+    async (input: PostInput, current?: Post | null) => {
+      const ids = input.media.map((m) => dataRef.current.items[m]?.id ?? (m.startsWith("#") ? m.slice(1) : ""));
+      if (ids.some((id) => !id)) throw new Error("Uma das mídias ainda não está no banco. Clique em Atualizar em Conteúdos.");
+      const res = await cloudPostSave({
+        id: current?.id,
+        version: current?.version,
+        network: input.network,
+        formats: input.formats,
+        media_ids: ids,
+        caption: input.caption,
+        hashtags: input.hashtags,
+        scheduled_at: input.scheduledAt,
+        publish_mode: input.publishMode ?? "manual",
+      });
+      await reloadPosts();
+      return { post: fromDto({ ...res.post, media_ids: ids, destinations: [], approvals: [], jobs: [], attempts: [] }, pathOfId()), needsApproval: Boolean(res.needsApproval) };
+    },
+    [reloadPosts, pathOfId]
+  );
+
+  const postAction = useCallback(
+    async (action: PostAction, id: string, extra: object = {}) => {
+      const res = await cloudPostAction(action, id, extra);
+      await reloadPosts();
+      return fromDto({ ...res.post, media_ids: [], destinations: [], approvals: [], jobs: [], attempts: [] }, pathOfId());
+    },
+    [reloadPosts, pathOfId]
+  );
+
+  const instagramAction = useCallback(async (action: "connect" | "disconnect", token?: string) => {
+    setInstagram(await cloudInstagramAction(action, token));
+  }, []);
+
+  const approveAutomatic = useCallback(
+    async (post: Post, onStep?: (text: string) => void) => {
+      if (!post.version) throw new Error("Publicação sem versão.");
+      const files = post.media.map((path) => filesRef.current.find((f) => f.path === path)?.file);
+      if (files.some((f) => !f)) throw new Error("Uma das mídias não está na pasta deste computador. Abra a pasta do estúdio e tente de novo.");
+      onStep?.("Preparando as mídias para o Instagram...");
+      const prepared = [];
+      for (const file of files) prepared.push(await prepareForInstagram(file!));
+      const urls = await cloudUploadUrls(
+        post.id,
+        post.version,
+        prepared.map((p, position) => ({ position, mime_type: p.mime, size_bytes: p.blob.size }))
+      );
+      for (const [i, u] of urls.entries()) {
+        onStep?.(`Enviando mídia ${i + 1} de ${urls.length}...`);
+        await putSignedUpload(u.url, prepared[u.position].blob);
+      }
+      onStep?.("Aprovando...");
+      await cloudPostAction("approve", post.id, { version: post.version });
+      await reloadPosts();
+    },
+    [reloadPosts]
+  );
+
+  const runJobs = useCallback(async () => {
+    const result = await cloudRunJobs();
+    await reloadPosts();
+    return result;
+  }, [reloadPosts]);
+
+  const posts = remotePosts ?? data.posts;
+
   const items = useMemo<Item[]>(() => {
-    const usage = new Map<string, PostStatus>();
-    for (const p of data.posts) {
+    const usage = new Map<string, "agendado" | "publicado">();
+    for (const p of posts) {
       for (const m of p.media) {
         const cur = usage.get(m);
-        if (p.status === "publicado" || (p.status === "agendado" && cur !== "publicado")) usage.set(m, p.status);
+        if (p.status === "publicado") usage.set(m, "publicado");
+        else if ((p.status === "agendado" || p.status === "publicando") && cur !== "publicado") usage.set(m, "agendado");
       }
     }
     return files
@@ -555,7 +765,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         };
       })
       .sort((a, b) => (a.addedAt < b.addedAt ? 1 : -1));
-  }, [files, data]);
+  }, [files, data, posts]);
 
   const value: Studio = {
     state,
@@ -563,7 +773,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     error,
     folderName: root?.name ?? null,
     items,
-    posts: data.posts,
+    posts,
     characters: data.characters,
     campaigns: data.campaigns,
     log: data.log,
@@ -578,6 +788,15 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     deletePost,
     saveCharacter,
     saveCampaign,
+    worker,
+    postsError,
+    reloadPosts,
+    instagram,
+    instagramAction,
+    approveAutomatic,
+    saveCloudPost,
+    postAction,
+    runJobs,
   };
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;
 }

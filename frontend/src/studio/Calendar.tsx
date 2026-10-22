@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Icon } from "./Icon";
+import { POST_STATUS } from "./PostFlow";
 import { NETWORKS } from "./shared";
 import { useStudio, type Post } from "./store";
 
@@ -34,7 +35,7 @@ function hhmm(iso: string) {
 
 function PostChip({ post, onOpen, mini }: { post: Post; onOpen: (p: Post) => void; mini?: boolean }) {
   const net = NETWORKS[post.network];
-  const status = post.status === "publicado" ? " (publicado)" : post.status === "rascunho" ? " (rascunho)" : "";
+  const status = post.status === "agendado" ? "" : ` (${POST_STATUS[post.status].toLowerCase()})`;
   return (
     <button
       type="button"
@@ -61,7 +62,7 @@ export function Calendar({ onOpenPost, onNew }: Props) {
   const [mode, setMode] = useState<"semana" | "mes">("semana");
   const [anchor, setAnchor] = useState(() => new Date());
   const today = new Date();
-  const dated = posts.filter((p) => p.scheduledAt).sort((a, b) => (a.scheduledAt! < b.scheduledAt! ? -1 : 1));
+  const dated = posts.filter((p) => p.scheduledAt && p.status !== "cancelado").sort((a, b) => (a.scheduledAt! < b.scheduledAt! ? -1 : 1));
   const on = (day: Date) => dated.filter((p) => sameDay(new Date(p.scheduledAt!), day));
 
   function move(step: number) {
