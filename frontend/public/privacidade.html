@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Política de Privacidade · Luna Vox Studio</title>
+<style>
+  :root { --bg: #ffffff; --text: #1d1d1f; --muted: #5f6368; --line: #e3e3e6; --accent: #7b4dff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111114; --text: #ececf1; --muted: #a0a0ab; --line: #2a2a31; --accent: #a98bff; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 32px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+  p, li { color: var(--text); }
+  .muted { color: var(--muted); font-size: 14px; }
+  a { color: var(--accent); }
+  section[lang="en"] { margin-top: 48px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Política de Privacidade</h1>
+  <p class="muted">Luna Vox Studio · atualizada em 22/10/2026</p>
+
+  <p>O Luna Vox Studio é uma ferramenta particular de gestão de conteúdo, usada apenas pelo seu administrador para agendar e enviar o próprio conteúdo às próprias contas no Instagram e no TikTok. Não é aberta ao público e não tem cadastro de outros usuários.</p>
+
+  <h2>Dados que acessamos</h2>
+  <ul>
+    <li><b>TikTok:</b> o identificador da conta (open_id) e o nome de exibição (permissão <code>user.info.basic</code>), e a permissão de enviar vídeos como rascunho para a caixa de entrada da própria conta (<code>video.upload</code>).</li>
+    <li><b>Instagram:</b> o nome de usuário e o identificador da conta profissional do administrador, e a permissão de publicar conteúdo nela.</li>
+    <li>Os tokens de acesso dessas contas, guardados cifrados (AES-256-GCM) no banco de dados e usados só pelo servidor.</li>
+  </ul>
+
+  <h2>Como usamos</h2>
+  <ul>
+    <li>Somente para enviar, no horário agendado, o conteúdo que o administrador aprovou, e para consultar se o envio terminou.</li>
+    <li>Os vídeos e imagens ficam no computador do administrador. Para o envio, uma cópia temporária do conteúdo aprovado vai para um armazenamento privado e é apagada assim que o envio termina.</li>
+    <li>Não lemos mensagens, seguidores ou dados de outras pessoas, não vendemos nem compartilhamos dados com terceiros e não usamos os dados para publicidade.</li>
+  </ul>
+
+  <h2>Por quanto tempo guardamos</h2>
+  <p>Os tokens ficam guardados enquanto a conta estiver conectada. Ao desconectar no estúdio, eles são apagados. O histórico de publicações (data, rede, status) fica guardado para controle do próprio administrador.</p>
+
+  <h2>Como revogar o acesso</h2>
+  <ul>
+    <li>No estúdio: página TikTok ou Instagram → Desconectar.</li>
+    <li>No TikTok: Configurações e privacidade → Segurança → Apps e serviços → remover o Luna Vox Studio.</li>
+    <li>No Instagram: Configurações → Apps e sites → remover o app.</li>
+  </ul>
+
+  <h2>Contato</h2>
+  <p>Pelo perfil <a href="https://www.instagram.com/lunavoxlopes/">@lunavoxlopes</a> no Instagram.</p>
+
+  <section lang="en">
+    <h2>Privacy Policy (English summary)</h2>
+    <p>Luna Vox Studio is a private content-management tool used only by its owner to schedule and send the owner's own content to the owner's own Instagram and TikTok accounts. It is not open to the public.</p>
+    <p>We access only the TikTok open_id and display name (<code>user.info.basic</code>) and the permission to upload videos as drafts to the owner's own inbox (<code>video.upload</code>). Access tokens are stored encrypted and used only server-side. Media stays on the owner's computer; a temporary private copy of approved content is deleted right after sending. We do not sell, share or use data for advertising. Access can be revoked at any time by disconnecting in the studio or removing the app in TikTok's settings (Security → Apps and services). Contact: <a href="https://www.instagram.com/lunavoxlopes/">@lunavoxlopes</a> on Instagram.</p>
+  </section>
+</main>
+</body>
+</html>

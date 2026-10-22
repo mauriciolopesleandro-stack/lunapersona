@@ -22,7 +22,7 @@ interface Props {
 }
 
 export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) {
-  const { items, savePost, deletePost, source, posts, saveCloudPost, postAction, instagram } = useStudio();
+  const { items, savePost, deletePost, source, posts, saveCloudPost, postAction, instagram, tiktok } = useStudio();
   // No modo banco a publicacao aberta e sempre a versao atual do banco.
   const live = initial && source === "banco" ? posts.find((p) => p.id === initial.id) ?? initial : initial;
   const locked = Boolean(live && ["publicando", "publicado", "cancelado"].includes(live.status));
@@ -128,7 +128,7 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
     const when = date && time ? new Date(`${date}T${time}`).toISOString() : null;
     setSaving(true);
     try {
-      const publishMode = network === "instagram" && auto ? "api" : "manual";
+      const publishMode = network !== "telegram" && auto ? "api" : "manual";
       const { post, needsApproval } = await saveCloudPost({ network, formats, media, caption, hashtags, scheduledAt: when, publishMode }, live);
       if (submit && (post.status === "rascunho" || post.status === "falhou")) await postAction("submit", post.id);
       setMessage({
@@ -248,6 +248,20 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
               </label>
             ))}
           </div>
+
+          {source === "banco" && network === "tiktok" && (
+            <div className="st-row">
+              <label className="st-check" title="No horário, envia o vídeo como rascunho para o app do TikTok">
+                <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+                Enviar rascunho automático
+              </label>
+              <span className="st-hint st-inline-hint">
+                {tiktok?.connected
+                  ? `para ${tiktok.name ?? "a sua conta"}: 1 vídeo, destino Vídeo. No horário ele chega nas notificações do TikTok; você põe a música e publica.`
+                  : "conecte o TikTok na página TikTok para poder aprovar."}
+              </span>
+            </div>
+          )}
 
           {source === "banco" && network === "instagram" && (
             <div className="st-row">

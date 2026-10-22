@@ -220,6 +220,34 @@ export async function cloudInstagramAction(action: "connect" | "disconnect", tok
   );
 }
 
+// --- TikTok (rascunho automatico) -------------------------------------------------------
+
+export interface TikTokStatus {
+  appConfigured: boolean;
+  encryption: boolean;
+  redirectUri: string;
+  connected: boolean;
+  status: string;
+  name: string | null;
+  refreshedAt: string | null;
+  validUntil: string | null;
+  lastError: string | null;
+}
+
+export async function cloudTiktok(): Promise<TikTokStatus> {
+  return json(await fetch("/api/studio?r=tiktok"));
+}
+
+export async function cloudTiktokDisconnect(): Promise<void> {
+  await json(
+    await fetch("/api/studio?r=tiktok", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "disconnect" }),
+    })
+  );
+}
+
 export async function cloudUploadUrls(
   id: string,
   version: number,

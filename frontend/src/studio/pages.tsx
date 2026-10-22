@@ -103,7 +103,7 @@ function Stat({ icon, tone, label, value, sub }: { icon: string; tone: string; l
 }
 
 export function OverviewPage({ nav }: { nav: Nav }) {
-  const { items, posts, source, worker, postsError, instagram } = useStudio();
+  const { items, posts, source, worker, postsError, instagram, tiktok } = useStudio();
   const [filter, setFilter] = useState<Filter>("todos");
   const live = items.filter((i) => i.display !== "arquivado");
   const now = Date.now();
@@ -265,7 +265,9 @@ export function OverviewPage({ nav }: { nav: Nav }) {
             <button type="button" className="st-integration" onClick={() => nav.go("tiktok")}>
               <Icon name="tiktok" size={18} />
               <span>TikTok</span>
-              <em>publicação manual (API exige auditoria)</em>
+              <em className={tiktok?.connected ? "on" : ""}>
+                {tiktok?.connected ? `${tiktok.name ?? "conectado"} · rascunho automático` : "não conectado · publicação manual"}
+              </em>
             </button>
             <button type="button" className="st-integration" onClick={() => nav.go("telegram")}>
               <Icon name="telegram" size={18} />

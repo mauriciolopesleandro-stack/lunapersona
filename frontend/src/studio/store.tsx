@@ -17,6 +17,8 @@ import { prepareForInstagram } from "./mediaPrep";
 import {
   cloudInstagram,
   cloudInstagramAction,
+  cloudTiktok,
+  cloudTiktokDisconnect,
   cloudLoad,
   cloudPostAction,
   cloudPostImport,
@@ -31,6 +33,7 @@ import {
   cloudUsage,
   putSignedUpload,
   type InstagramStatus,
+  type TikTokStatus,
   type MediaRow,
   type PostDto,
   type WorkerStatus,
@@ -262,6 +265,9 @@ interface Studio {
   reloadPosts: () => Promise<void>;
   instagram: InstagramStatus | null;
   instagramAction: (action: "connect" | "disconnect", token?: string) => Promise<void>;
+  tiktok: TikTokStatus | null;
+  reloadTiktok: () => Promise<void>;
+  disconnectTiktok: () => Promise<void>;
   // modo automatico: envia a copia temporaria das midias da versao e aprova
   approveAutomatic: (post: Post, onStep?: (text: string) => void) => Promise<void>;
   saveCloudPost: (input: PostInput, current?: Post | null) => Promise<{ post: Post; needsApproval: boolean }>;
@@ -294,6 +300,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [worker, setWorker] = useState<WorkerStatus | null>(null);
   const [postsError, setPostsError] = useState<string | null>(null);
   const [instagram, setInstagram] = useState<InstagramStatus | null>(null);
+  const [tiktok, setTiktok] = useState<TikTokStatus | null>(null);
   const writeChain = useRef<Promise<void>>(Promise.resolve());
   // Libera as pre-visualizacoes so ao sair (trocar de pasta ja libera em load/forget).
   const filesRef = useRef(files);
@@ -396,6 +403,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         }
         setPostsError(postsProblem);
         setInstagram(await cloudInstagram().catch(() => null));
+        setTiktok(await cloudTiktok().catch(() => null));
         const imported = new Set(remote.posts.map((p) => p.legacy_id).filter(Boolean));
         const legacy = next.posts
           .filter((p) => !imported.has(p.id))
@@ -707,12 +715,21 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setInstagram(await cloudInstagramAction(action, token));
   }, []);
 
+  const reloadTiktok = useCallback(async () => {
+    setTiktok(await cloudTiktok().catch(() => null));
+  }, []);
+
+  const disconnectTiktok = useCallback(async () => {
+    await cloudTiktokDisconnect();
+    setTiktok(await cloudTiktok().catch(() => null));
+  }, []);
+
   const approveAutomatic = useCallback(
     async (post: Post, onStep?: (text: string) => void) => {
       if (!post.version) throw new Error("Publicação sem versão.");
       const files = post.media.map((path) => filesRef.current.find((f) => f.path === path)?.file);
       if (files.some((f) => !f)) throw new Error("Uma das mídias não está na pasta deste computador. Abra a pasta do estúdio e tente de novo.");
-      onStep?.("Preparando as mídias para o Instagram...");
+      onStep?.(post.network === "tiktok" ? "Preparando o vídeo para o TikTok..." : "Preparando as mídias para o Instagram...");
       const prepared = [];
       for (const file of files) prepared.push(await prepareForInstagram(file!));
       const urls = await cloudUploadUrls(
@@ -793,6 +810,9 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     reloadPosts,
     instagram,
     instagramAction,
+    tiktok,
+    reloadTiktok,
+    disconnectTiktok,
     approveAutomatic,
     saveCloudPost,
     postAction,

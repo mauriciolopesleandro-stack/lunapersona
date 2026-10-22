@@ -246,7 +246,7 @@ Uma migração por fase, sempre com:
   - o usuário gera o token no painel da Meta e cola no estúdio; ele vale 60 dias;
   - o estúdio guarda o token cifrado (AES-256-GCM, chave `TOKEN_ENCRYPTION_KEY`) e o renova sozinho toda semana;
   - o token nunca volta para o navegador.
-- **TikTok:** continua manual. Sem a auditoria do TikTok, a API só publica em modo privado, e as regras deles pedem a confirmação de quem posta em cada post. Para facilitar, o post manual tem o botão "Copiar legenda e hashtags".
+- **TikTok:** ver a seção 15 (rascunho automático). O post manual continua com o botão "Copiar legenda e hashtags".
 
 **Passo a passo para ligar** (com o banco e a fila da Fase 2 já ligados):
 
@@ -256,3 +256,35 @@ Uma migração por fase, sempre com:
    - criar um app com o caso de uso de Instagram;
    - em "API do Instagram com login do Instagram" → "Gerar tokens de acesso", adicionar a conta e gerar o token.
 4. No estúdio, abrir a página **Instagram** e colar o token.
+
+## 15. Rascunho automático no TikTok (22/10/2026)
+
+- **Como funciona:** o estúdio usa a Content Posting API oficial, no modo **upload** (escopo `video.upload`). No horário, o vídeo aprovado vai para a caixa de entrada do app do TikTok. O criador recebe a notificação, coloca a música em alta e publica no app. Esse modo não depende da auditoria do TikTok, que só é exigida para publicar direto.
+- **Conexão:** botão "Conectar TikTok" (OAuth do Login Kit). O `state` vai num cookie HttpOnly que vale 10 minutos. Os tokens ficam cifrados (`TOKEN_ENCRYPTION_KEY`):
+  - o acesso vale 24 h e é renovado sozinho antes de cada envio;
+  - a conexão (refresh token) vale 365 dias.
+  O botão Desconectar apaga os tokens.
+- **Regras:**
+  - automático só com 1 vídeo MP4 ou MOV no destino "Vídeo";
+  - foto continua manual, porque o TikTok exige domínio verificado para receber fotos pela API;
+  - Telegram não tem modo automático.
+- **Fila** (tarefa `enviar_tiktok`):
+  1. Envia o vídeo num pedaço só (até 64 MB; o bucket aceita até 50 MB) e guarda o `publish_id` no destino.
+  2. Consulta o status a cada 1 minuto enquanto o TikTok processa, sem gastar tentativa.
+  3. Quando o vídeo chega na caixa de entrada, apaga a cópia, avisa uma vez no Telegram e passa a consultar a cada 15 minutos, por até 72 horas.
+  4. **Só marca publicado quando o TikTok responde `PUBLISH_COMPLETE`.** Se o TikTok não confirmar, dá para confirmar à mão no estúdio.
+  5. Se o TikTok recusar o vídeo (`FAILED`), o post vai para "falhou" e o estúdio avisa no Telegram. Erro interno do TikTok tenta de novo.
+- **Páginas públicas para a revisão do app:** `/termos.html` e `/privacidade.html`. O contato indicado é o perfil do Instagram, e nenhum e-mail é publicado.
+
+**Passo a passo para ligar:**
+
+1. Rodar `supabase/migrations/0004_tiktok_rascunho.sql` no SQL Editor do Supabase.
+2. Em developers.tiktok.com (o próprio usuário entra e aceita os termos):
+   - criar o app e adicionar os produtos Login Kit e Content Posting API (`video.upload`);
+   - cadastrar o Redirect URI `https://luna-ai-studio-frontend.vercel.app/api/tiktok/callback`;
+   - informar os Termos (`/termos.html`) e a Privacidade (`/privacidade.html`);
+   - enviar para revisão.
+3. Na Vercel, cadastrar `TIKTOK_CLIENT_KEY` e `TIKTOK_CLIENT_SECRET`, só para o servidor. Fazer um novo deploy.
+4. No estúdio, abrir a página **TikTok** e clicar em "Conectar TikTok".
+
+Rollback: desligar o modo automático nos posts (ou desconectar) faz tudo voltar ao modo manual com lembrete. A migração 0004 só amplia duas listas de valores permitidos.

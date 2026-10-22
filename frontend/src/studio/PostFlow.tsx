@@ -68,8 +68,11 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
   }
 
   const automatic = post.publishMode === "api";
-  // automatico: quem confirma e a API do Instagram, nao o administrador
-  const canConfirm = !automatic && ["aprovado", "agendado", "publicando"].includes(post.status);
+  // TikTok automatico = rascunho: quem publica e voce, no app do TikTok
+  const tiktokDraft = automatic && post.network === "tiktok";
+  // automatico: quem confirma e a API, nao o administrador (no TikTok fica a
+  // confirmacao manual como reserva, caso o TikTok nao avise)
+  const canConfirm = (!automatic && ["aprovado", "agendado", "publicando"].includes(post.status)) || (tiktokDraft && post.status === "publicando");
 
   async function approve() {
     if (!automatic) {
@@ -79,7 +82,11 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
     setMessage(null);
     try {
       await approveAutomatic(post!, (text) => setMessage({ ok: true, text }));
-      setMessage({ ok: true, text: post!.scheduledAt ? `Aprovada: publica sozinha em ${fmt(post!.scheduledAt)}.` : "Aprovada. Escolha o horário para publicar." });
+      setMessage({ ok: true, text: post!.scheduledAt
+          ? tiktokDraft
+            ? `Aprovada: o rascunho vai para o TikTok em ${fmt(post!.scheduledAt)}.`
+            : `Aprovada: publica sozinha em ${fmt(post!.scheduledAt)}.`
+          : "Aprovada. Escolha o horário para publicar." });
     } catch (e) {
       setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -146,7 +153,9 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
           {post.status === "agendado" ? (
             <p>
               Agendada para <b>{fmt(post.scheduledAt)}</b>.{" "}
-              {automatic
+              {tiktokDraft
+                ? "No horário, o estúdio envia o vídeo como rascunho para o TikTok e te avisa no Telegram."
+                : automatic
                 ? "No horário, o estúdio publica sozinho no Instagram e te avisa no Telegram."
                 : "No horário, o estúdio avisa no Telegram para você publicar."}
               {job && ` Lembrete: ${job.status === "pendente" ? "na fila" : "enviando"}${job.attempts ? ` (tentativa ${job.attempts} de ${job.maxAttempts})` : ""}.`}
@@ -177,9 +186,15 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
       {canConfirm && pending.length > 0 && (
         <div className={`st-flow-box${post.status === "publicando" ? " st-flow-alert" : ""}`}>
           <p>
-            {post.status === "publicando" ? <b>Chegou a hora. </b> : null}
-            Publique pelo app do {NETWORKS[post.network].label} e confirme aqui cada destino. O estúdio só marca como publicado o que você
-            confirmar.
+            {tiktokDraft ? (
+              <>Se você já publicou o rascunho e o TikTok ainda não avisou o estúdio, pode confirmar aqui.</>
+            ) : (
+              <>
+                {post.status === "publicando" ? <b>Chegou a hora. </b> : null}
+                Publique pelo app do {NETWORKS[post.network].label} e confirme aqui cada destino. O estúdio só marca como publicado o que você
+                confirmar.
+              </>
+            )}
           </p>
           {pending.map((d) => (
             <div key={d.format} className="st-row st-confirm-row">
@@ -227,7 +242,14 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
 
       {automatic && post.status === "publicando" && (
         <div className="st-flow-box st-flow-alert">
-          <p>Publicando no Instagram... (vídeos podem levar alguns minutos para processar).</p>
+          {tiktokDraft ? (
+            <p>
+              Rascunho enviado para o TikTok. Abra as notificações do app do TikTok, coloque a música e publique; o estúdio marca como publicado
+              sozinho quando o TikTok confirmar.
+            </p>
+          ) : (
+            <p>Publicando no Instagram... (vídeos podem levar alguns minutos para processar).</p>
+          )}
         </div>
       )}
 
@@ -242,7 +264,7 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
                   <time>{fmt(d.confirmedAt)}</time>
                   <span>
                     {d.format} ·{" "}
-                    {d.confirmedBy === "importado" ? "marcado antes da Fase 2" : d.confirmedBy === "api" ? "publicado pela API do Instagram" : "confirmado por você"}
+                    {d.confirmedBy === "importado" ? "marcado antes da Fase 2" : d.confirmedBy === "api" ? `confirmado pela API do ${NETWORKS[post.network].label}` : "confirmado por você"}
                     {d.url && (
                       <>
                         {" · "}
