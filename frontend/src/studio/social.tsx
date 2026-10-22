@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { InstagramStatus } from "./cloud";
 import { Icon } from "./Icon";
 import { useStudio } from "./store";
 
@@ -9,10 +10,25 @@ function fmt(iso: string | null) {
 // Instagram: publicacao automatica pela API oficial (conta profissional do
 // proprio administrador; Standard Access, sem revisao da Meta).
 export function InstagramPage() {
-  const { source, instagram, instagramAction } = useStudio();
+  const { instagram: fromStore, instagramAction } = useStudio();
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // A conexao do Instagram fica no servidor: nao depende da pasta do
+  // computador estar aberta (o store so carrega o estado depois da pasta).
+  const [fromServer, setFromServer] = useState<InstagramStatus | null>(null);
+  const [state, setState] = useState<"carregando" | "sem-banco" | "pronto" | "erro">("carregando");
+  useEffect(() => {
+    fetch("/api/studio?r=instagram")
+      .then(async (r) => {
+        if (r.status === 501) return setState("sem-banco");
+        if (!r.ok) return setState("erro");
+        setFromServer(await r.json());
+        setState("pronto");
+      })
+      .catch(() => setState("erro"));
+  }, []);
+  const instagram = fromStore ?? fromServer;
 
   async function act(action: "connect" | "disconnect") {
     setBusy(true);
@@ -39,8 +55,12 @@ export function InstagramPage() {
 
       <section className="st-panel st-settings">
         <h2>Conexão</h2>
-        {source !== "banco" ? (
+        {state === "carregando" && !instagram ? (
+          <p>Carregando...</p>
+        ) : state === "sem-banco" ? (
           <p>Primeiro ligue o banco de dados (Supabase): a publicação automática roda nele, mesmo com o computador desligado.</p>
+        ) : state === "erro" && !instagram ? (
+          <p className="st-error">Não consegui consultar a conexão do Instagram. Recarregue a página.</p>
         ) : instagram?.connected ? (
           <>
             <p>

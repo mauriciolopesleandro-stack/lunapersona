@@ -15,8 +15,9 @@ interface Credentials {
 }
 
 function credentials(): Credentials | null {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // trim: valor colado no painel da Vercel com espaco ou quebra de linha
+  const url = process.env.SUPABASE_URL?.trim();
+  const key = (process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY)?.trim();
   if (!url || !key) return null;
   // Chave nova (sb_secret_) vai so no apikey - nao e JWT. A antiga
   // (service_role) tambem precisa ir no Authorization.
@@ -43,6 +44,16 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     body = text ? JSON.parse(text) : null;
   } catch {
     body = text;
+  }
+  if (res.status === 401 && /api key|apikey|jwt/i.test(text)) {
+    // chave errada na Vercel (ex.: token sbp_ da conta ou chave publishable)
+    const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+    const hint = key.trim().startsWith("sbp_")
+      ? "isso é um token da conta (sbp_), não a chave do projeto"
+      : key.trim().startsWith("sb_publishable_")
+        ? "isso é a Publishable key; use a Secret key"
+        : "copie de novo a Secret key (sb_secret_...) em Project Settings → API Keys";
+    throw new Error(`O Supabase recusou a chave SUPABASE_SECRET_KEY da Vercel: ${hint}. Depois de corrigir, faça um Redeploy.`);
   }
   if (!res.ok) {
     const b = body as { message?: string; error?: string; code?: string } | null;
