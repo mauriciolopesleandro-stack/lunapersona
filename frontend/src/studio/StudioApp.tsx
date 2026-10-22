@@ -5,6 +5,7 @@ import { Icon } from "./Icon";
 import { CalendarPage, CharactersPage, ContentsPage, ItemDetails, OverviewPage, PublicationsPage, SettingsPage, type Nav } from "./pages";
 import { ComingSoon, Modal, formatBytes } from "./shared";
 import { InstagramPage, TikTokPage } from "./social";
+import { MusicPage } from "./music";
 import { StudioProvider, useStudio, type Post } from "./store";
 import "./studio.css";
 
@@ -13,6 +14,7 @@ const NAV: { id: string; label: string; icon: string }[] = [
   { id: "conteudos", label: "Conteúdos", icon: "grid" },
   { id: "calendario", label: "Calendário", icon: "calendar" },
   { id: "publicacoes", label: "Publicações", icon: "send" },
+  { id: "musicas", label: "Músicas em alta", icon: "music" },
   { id: "instagram", label: "Instagram", icon: "instagram" },
   { id: "tiktok", label: "TikTok", icon: "tiktok" },
   { id: "telegram", label: "Telegram", icon: "telegram" },
@@ -194,6 +196,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           {page === "personagens" && <CharactersPage />}
           {page === "instagram" && <InstagramPage />}
           {page === "tiktok" && <TikTokPage />}
+          {page === "musicas" && <MusicPage />}
           {page === "perfil" && <ProfilePage onLogout={onLogout} />}
           {SOON[page] && current && <ComingSoon title={current.label} icon={current.icon} text={SOON[page]} />}
         </main>

@@ -1835,3 +1835,147 @@
 .st-inline-hint {
   margin: 0;
 }
+
+/* ---------- Musicas em alta ---------- */
+
+.st-music-tips {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.st-music-tips p {
+  margin: 8px 0 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.st-music-tips h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+
+.st-music-tips a.st-btn {
+  text-decoration: none;
+}
+
+.st-shell .st-filters .st-input[placeholder] {
+  min-width: 260px;
+}
+
+.st-music-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.st-music-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-panel);
+}
+
+.st-music-rank {
+  width: 26px;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.st-music-cover {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-panel-2);
+  cursor: pointer;
+}
+
+.st-music-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.st-music-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.35);
+  color: white;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.st-music-cover:hover .st-music-play,
+.st-music-cover.playing .st-music-play {
+  opacity: 1;
+}
+
+.st-music-cover.playing {
+  outline: 2px solid var(--st-violet);
+}
+
+.st-music-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.st-music-info b,
+.st-music-info span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.st-music-info span {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.st-music-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.st-music-actions a.st-btn {
+  text-decoration: none;
+}
+
+@media (max-width: 860px) {
+  .st-music-tips {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .st-music-actions a.st-btn {
+    display: none;
+  }
+  .st-shell .st-filters .st-input[placeholder] {
+    min-width: 0;
+    width: 100%;
+  }
+}
