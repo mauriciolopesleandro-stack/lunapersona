@@ -89,10 +89,11 @@ export async function mediaProblem(network: Network, mediaIds: string[]): Promis
 // Tarefa no horario: publicar sozinho (modo automatico) ou lembrar (manual).
 // A chave junta tipo, publicacao, versao e horario: agendar de novo a mesma
 // coisa nunca cria tarefa repetida.
-export async function scheduleReminder(post: Pick<PostRow, "id" | "version" | "scheduled_at" | "publish_mode">): Promise<void> {
+export async function scheduleReminder(post: Pick<PostRow, "id" | "version" | "scheduled_at" | "publish_mode" | "network">): Promise<void> {
   if (!post.scheduled_at) return;
   const runAt = new Date(post.scheduled_at).toISOString();
-  const kind = post.publish_mode === "api" ? "publicar_instagram" : "lembrete_publicacao";
+  const kind =
+    post.publish_mode !== "api" ? "lembrete_publicacao" : post.network === "tiktok" ? "enviar_tiktok" : "publicar_instagram";
   await dbInsertIgnoringDuplicates(
     "scheduled_jobs",
     [
@@ -101,8 +102,8 @@ export async function scheduleReminder(post: Pick<PostRow, "id" | "version" | "s
         post_id: post.id,
         post_version: post.version,
         run_at: runAt,
-        idempotency_key: `${kind === "publicar_instagram" ? "publicar" : "lembrete"}:${post.id}:v${post.version}:${runAt}`,
-        ...(kind === "publicar_instagram" ? { max_attempts: 6 } : {}),
+        idempotency_key: `${kind === "lembrete_publicacao" ? "lembrete" : kind === "enviar_tiktok" ? "tiktok" : "publicar"}:${post.id}:v${post.version}:${runAt}`,
+        ...(kind !== "lembrete_publicacao" ? { max_attempts: 6 } : {}),
       },
     ],
     "idempotency_key"

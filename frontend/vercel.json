@@ -6,5 +6,11 @@
     "api/runpod-wake.ts": {
       "maxDuration": 60
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/tiktok/callback",
+      "destination": "/api/studio?r=tiktok-callback"
+    }
+  ]
 }

@@ -11,6 +11,7 @@ import {
   type IgConnection,
 } from "./_instagram.js";
 import { NETWORK_RULES, UPLOAD_BUCKET, cleanupUploads, type PostRow } from "./_posts.js";
+import { TikTokError, publishStatus, tiktokAccessToken, uploadDraft } from "./_tiktok.js";
 import { dbInsert, dbRpc, dbSelect, dbUpdate, dbUpdateWhere, dbUpsert, storageReadUrl, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
 
@@ -31,6 +32,13 @@ import { sendNotice, telegramConfig } from "./_telegram.js";
 // vez de publicar de novo. Video em processamento reagenda em 1 min sem gastar
 // tentativa. Terminou: apaga as copias e avisa no Telegram. Falhou de vez:
 // marca "falhou" e avisa para publicar a mao.
+//
+// Tarefa "enviar_tiktok" (rascunho automatico): no horario envia o video
+// (copia temporaria da versao aprovada) para a caixa de entrada do TikTok e
+// guarda o publish_id no destino. Depois consulta o status: chegou na caixa de
+// entrada -> apaga a copia e avisa; o criador poe a musica e publica no app;
+// so quando o TikTok responde PUBLISH_COMPLETE o destino vira "publicado".
+// Sem resposta em 72 h para de consultar (da para confirmar a mao no estudio).
 
 type Outcome = "ok" | "obsoleta" | "nova_tentativa" | "falhou" | "aguardando";
 
@@ -117,7 +125,9 @@ async function notify(text: string) {
 }
 
 async function retryOrFail(job: JobRow, post: PostRow, error: string, retryable: boolean): Promise<Outcome> {
-  await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "instagram_api", outcome: "erro", detail: error.slice(0, 300) });
+  const tiktok = job.kind === "enviar_tiktok";
+  const channel = tiktok ? "tiktok_api" : "instagram_api";
+  await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel, outcome: "erro", detail: error.slice(0, 300) });
   if (retryable && job.attempts < job.max_attempts) {
     const retryAt = new Date(Date.now() + 2 ** job.attempts * 60_000).toISOString();
     await finish(job, { status: "pendente", run_at: retryAt, last_error: error.slice(0, 300) });
@@ -126,7 +136,11 @@ async function retryOrFail(job: JobRow, post: PostRow, error: string, retryable:
   await finish(job, { status: "falhou", finished_at: new Date().toISOString(), last_error: error.slice(0, 300) });
   await dbUpdate("posts", `id=eq.${post.id}&version=eq.${post.version}`, { status: "falhou", failure_reason: `Publicação automática falhou: ${error}`.slice(0, 500) });
   await cleanupUploads(post.id);
-  await notify(`⚠️ Não consegui publicar no Instagram: ${error}\n\nPublique à mão pelo app e marque no estúdio.`);
+  await notify(
+    tiktok
+      ? `⚠️ Não consegui enviar o vídeo para o TikTok: ${error}\n\nPublique à mão pelo app e marque no estúdio.`
+      : `⚠️ Não consegui publicar no Instagram: ${error}\n\nPublique à mão pelo app e marque no estúdio.`
+  );
   return "falhou";
 }
 
@@ -238,6 +252,106 @@ async function runInstagram(job: JobRow): Promise<Outcome> {
   return "ok";
 }
 
+// Volta a consultar depois, sem gastar tentativa.
+async function checkAgain(job: JobRow, minutes: number, detail?: string): Promise<Outcome> {
+  if (detail) await dbInsert("publishing_attempts", { post_id: job.post_id, job_id: job.id, attempt: job.attempts, channel: "tiktok_api", outcome: "ok", detail });
+  await finish(job, { status: "pendente", run_at: new Date(Date.now() + minutes * 60_000).toISOString(), attempts: job.attempts - 1, last_error: null });
+  return "aguardando";
+}
+
+const TIKTOK_WAIT_HOURS = 72;
+
+async function runTiktok(job: JobRow): Promise<Outcome> {
+  const [post] = await dbSelect<PostRow>("posts", `select=*&id=eq.${job.post_id}`);
+  const current = post && post.version === job.post_version && (post.status === "agendado" || post.status === "publicando") && post.publish_mode === "api";
+  if (!current) {
+    await finish(job, { status: "cancelado", finished_at: new Date().toISOString(), last_error: "publicação mudou ou foi cancelada" });
+    return "obsoleta";
+  }
+  const [dest] = await dbSelect<DestinationRow & { external_id: string | null }>(
+    "post_destinations",
+    `select=id,format,status,external_container_id,external_id&post_id=eq.${post.id}&status=eq.pendente&limit=1`
+  );
+  if (!dest) {
+    // confirmado a mao no estudio enquanto esperava
+    await finish(job, { status: "concluido", finished_at: new Date().toISOString(), last_error: null });
+    return "ok";
+  }
+  let token: string | null;
+  try {
+    token = await tiktokAccessToken();
+  } catch (e) {
+    const err = e instanceof TikTokError ? e : new TikTokError(e instanceof Error ? e.message : String(e), true);
+    return retryOrFail(job, post, err.message, err.retryable);
+  }
+  if (!token) return retryOrFail(job, post, "o TikTok não está conectado (ou a conexão expirou)", false);
+
+  try {
+    if (!dest.external_id) {
+      const [upload] = await dbSelect<UploadRow>(
+        "post_uploads",
+        `select=position,storage_path,mime_type&post_id=eq.${post.id}&post_version=eq.${post.version}&deleted_at=is.null&order=position.asc&limit=1`
+      );
+      if (!upload) return retryOrFail(job, post, "o vídeo desta versão não está no armazenamento temporário", false);
+      const res = await fetch(await storageReadUrl(UPLOAD_BUCKET, upload.storage_path, 3600), { signal: AbortSignal.timeout(120_000) });
+      if (!res.ok) throw new TikTokError(`não consegui ler a cópia temporária (HTTP ${res.status})`, true);
+      const video = new Uint8Array(await res.arrayBuffer());
+      if (post.status === "agendado") {
+        await dbUpdate("posts", `id=eq.${post.id}&status=eq.agendado&version=eq.${post.version}`, { status: "publicando" });
+      }
+      const publishId = await uploadDraft(token, video, upload.mime_type);
+      await dbUpdateWhere("post_destinations", `id=eq.${dest.id}`, { external_id: publishId, last_error: null });
+      return checkAgain(job, 1, "vídeo enviado ao TikTok");
+    }
+
+    const st = await publishStatus(token, dest.external_id);
+    if (st.status === "PUBLISH_COMPLETE") {
+      const now = new Date().toISOString();
+      await dbUpdateWhere("post_destinations", `id=eq.${dest.id}&status=eq.pendente`, { status: "publicado", confirmed_at: now, confirmed_by: "api" });
+      await dbUpdate("posts", `id=eq.${post.id}&version=eq.${post.version}`, { status: "publicado", published_at: now });
+      await finish(job, { status: "concluido", finished_at: now, last_error: null });
+      await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "tiktok_api", outcome: "ok", detail: "publicado no TikTok" });
+      for (const m of await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${post.id}`)) {
+        await dbInsert("media_usage", { media_id: m.media_id, channel: "tiktok", context: "post", reference: post.id });
+      }
+      await cleanupUploads(post.id);
+      await notify("✅ O TikTok confirmou: o vídeo foi publicado.");
+      return "ok";
+    }
+    if (st.status === "FAILED") {
+      // o video nao chegou: limpa o publish_id para a proxima tentativa enviar de novo
+      await dbUpdateWhere("post_destinations", `id=eq.${dest.id}`, { external_id: null, last_error: `TikTok: ${st.fail_reason ?? "falhou"}` });
+      return retryOrFail(job, post, `o TikTok recusou o vídeo (${st.fail_reason ?? "sem motivo"})`, st.fail_reason === "internal");
+    }
+    if (st.status === "SEND_TO_USER_INBOX") {
+      // primeira vez que chegou: apaga a copia e avisa para por a musica e publicar
+      if ((await cleanupUploads(post.id)) > 0) {
+        await notify("📥 O vídeo chegou nas notificações do TikTok. Abra o app, coloque a música em alta e publique. O estúdio marca como publicado sozinho quando o TikTok confirmar.");
+      }
+      const since = new Date(post.scheduled_at ?? job.run_at).getTime();
+      if (Date.now() - since > TIKTOK_WAIT_HOURS * 3600_000) {
+        await finish(job, { status: "concluido", finished_at: new Date().toISOString(), last_error: `sem confirmação do TikTok em ${TIKTOK_WAIT_HOURS} h` });
+        await notify("⏳ O TikTok não confirmou a publicação do rascunho em 72 h. Se você publicou, marque no estúdio.");
+        return "ok";
+      }
+      return checkAgain(job, 15);
+    }
+    // PROCESSING_UPLOAD / PROCESSING_DOWNLOAD (preso por mais de 2 h: envia de novo)
+    const [sent] = await dbSelect<{ started_at: string }>(
+      "publishing_attempts",
+      `select=started_at&job_id=eq.${job.id}&channel=eq.tiktok_api&detail=eq.${encodeURIComponent("vídeo enviado ao TikTok")}&order=started_at.desc&limit=1`
+    );
+    if (sent && Date.now() - new Date(sent.started_at).getTime() > 2 * 3600_000) {
+      await dbUpdateWhere("post_destinations", `id=eq.${dest.id}`, { external_id: null, last_error: "TikTok não terminou de processar" });
+      return retryOrFail(job, post, "o TikTok não terminou de processar o vídeo em 2 h", true);
+    }
+    return checkAgain(job, 1);
+  } catch (e) {
+    const err = e instanceof TikTokError ? e : new TikTokError(e instanceof Error ? e.message : String(e), true);
+    return retryOrFail(job, post, err.message, err.retryable);
+  }
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Cache-Control", "no-store");
@@ -267,7 +381,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     for (const job of jobs) {
       result.processadas++;
       const outcome: Outcome =
-        job.kind === "lembrete_publicacao" ? await runReminder(job, url) : job.kind === "publicar_instagram" ? await runInstagram(job) : "obsoleta";
+        job.kind === "lembrete_publicacao"
+          ? await runReminder(job, url)
+          : job.kind === "publicar_instagram"
+            ? await runInstagram(job)
+            : job.kind === "enviar_tiktok"
+              ? await runTiktok(job)
+              : "obsoleta";
       if (outcome === "ok") result.ok++;
       else if (outcome === "obsoleta") result.obsoletas++;
       else if (outcome === "nova_tentativa") result.novas_tentativas++;

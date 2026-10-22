@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { InstagramStatus } from "./cloud";
+import type { InstagramStatus, TikTokStatus } from "./cloud";
 import { Icon } from "./Icon";
 import { useStudio } from "./store";
 
@@ -122,33 +122,157 @@ export function InstagramPage() {
   );
 }
 
-// TikTok: sem a auditoria do TikTok a API so publica em modo privado; ate la,
-// publicacao manual com lembrete.
+// Resultado da volta do TikTok (/?tiktok=...#tiktok) em texto para o usuario.
+function connectResult(code: string): { ok: boolean; text: string } {
+  if (code === "conectado") return { ok: true, text: "TikTok conectado." };
+  if (code === "sessao-expirada") return { ok: false, text: "Sua sessão do estúdio expirou no meio do caminho. Entre de novo e conecte outra vez." };
+  if (code === "state-invalido") return { ok: false, text: "A autorização demorou mais de 10 minutos ou veio de outra aba. Tente conectar de novo." };
+  if (code === "sem-permissao-video-upload") return { ok: false, text: "O TikTok não liberou a permissão de enviar vídeos. Conecte de novo e deixe a permissão marcada." };
+  if (code === "nao-configurado") return { ok: false, text: "Faltam as chaves do app do TikTok ou a TOKEN_ENCRYPTION_KEY na Vercel." };
+  if (code.startsWith("recusado:")) return { ok: false, text: `Autorização cancelada no TikTok (${code.slice(9)}).` };
+  if (code.startsWith("erro:")) return { ok: false, text: `O TikTok respondeu com erro: ${code.slice(5)}` };
+  return { ok: false, text: `Não consegui conectar (${code}).` };
+}
+
+// TikTok: rascunho automatico pela Content Posting API (escopo video.upload).
+// No horario o video chega nas notificacoes do app do TikTok; o criador poe a
+// musica e publica. Funciona sem a auditoria do TikTok (a auditoria so e exigida
+// para publicar direto, sem passar pelo app).
 export function TikTokPage() {
+  const { tiktok: fromStore, reloadTiktok, disconnectTiktok } = useStudio();
+  const [fromServer, setFromServer] = useState<TikTokStatus | null>(null);
+  const [state, setState] = useState<"carregando" | "sem-banco" | "pronto" | "erro">("carregando");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(() => {
+    const code = new URLSearchParams(window.location.search).get("tiktok");
+    return code ? connectResult(code) : null;
+  });
+
+  async function load() {
+    try {
+      const r = await fetch("/api/studio?r=tiktok");
+      if (r.status === 501) return setState("sem-banco");
+      if (!r.ok) return setState("erro");
+      setFromServer(await r.json());
+      setState("pronto");
+    } catch {
+      setState("erro");
+    }
+  }
+
+  useEffect(() => {
+    // tira o ?tiktok= da barra de endereco (recarregar nao repete a mensagem)
+    if (window.location.search.includes("tiktok=")) window.history.replaceState(null, "", "/#tiktok");
+    load();
+    reloadTiktok();
+  }, []);
+  const tiktok = fromServer ?? fromStore;
+
+  async function disconnect() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await disconnectTiktok();
+      await load();
+      setMessage({ ok: true, text: "TikTok desconectado." });
+    } catch (e) {
+      setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const ready = tiktok?.appConfigured && tiktok.encryption;
+
   return (
     <div>
       <div className="st-page-head">
         <div>
           <h1>TikTok</h1>
-          <p>Por enquanto, publicação manual com lembrete no horário.</p>
+          <p>Rascunho automático: no horário o vídeo chega no app do TikTok; você coloca a música em alta e publica.</p>
         </div>
       </div>
+
       <section className="st-panel st-settings">
-        <h2>Como postar agora</h2>
-        <ol className="st-steps">
-          <li>Prepare a publicação (rede TikTok) e aprove.</li>
-          <li>No horário, o estúdio avisa no Telegram.</li>
-          <li>Abra a publicação, use “Copiar legenda e hashtags”, poste pelo app do TikTok e confirme no estúdio.</li>
-        </ol>
+        <h2>Conexão</h2>
+        {state === "carregando" && !tiktok ? (
+          <p>Carregando...</p>
+        ) : state === "sem-banco" ? (
+          <p>Primeiro ligue o banco de dados (Supabase): o envio automático roda nele, mesmo com o computador desligado.</p>
+        ) : state === "erro" && !tiktok ? (
+          <p className="st-error">Não consegui consultar a conexão do TikTok. Recarregue a página.</p>
+        ) : tiktok?.connected ? (
+          <>
+            <p>
+              <span className="st-badge st-badge-aprovado">Conectado</span> {tiktok.name ?? "Conta do TikTok"} · renovado em {fmt(tiktok.refreshedAt)}.
+              A conexão vale até {fmt(tiktok.validUntil)} (o estúdio renova o acesso sozinho a cada envio).
+            </p>
+            {tiktok.lastError && <p className="st-error">Último erro: {tiktok.lastError}</p>}
+            <button type="button" className="st-btn st-btn-danger" disabled={busy} onClick={disconnect}>
+              Desconectar
+            </button>
+          </>
+        ) : (
+          <>
+            <p>
+              <span className="st-badge st-badge-rascunho">{tiktok?.status === "expirado" ? "Conexão expirada" : "Não conectado"}</span> O botão abre a
+              página oficial do TikTok para você entrar e autorizar. O acesso é guardado cifrado e nunca volta para o navegador.
+            </p>
+            {tiktok && !tiktok.appConfigured && (
+              <p className="st-warn">Falta cadastrar TIKTOK_CLIENT_KEY e TIKTOK_CLIENT_SECRET na Vercel (do app criado no TikTok for Developers) e fazer um novo deploy.</p>
+            )}
+            {tiktok && !tiktok.encryption && <p className="st-warn">Falta cadastrar TOKEN_ENCRYPTION_KEY na Vercel.</p>}
+            {ready ? (
+              <a className="st-btn st-btn-primary" href="/api/studio?r=tiktok&action=connect">
+                <Icon name="tiktok" size={16} />
+                Conectar TikTok
+              </a>
+            ) : (
+              <button type="button" className="st-btn st-btn-primary" disabled>
+                <Icon name="tiktok" size={16} />
+                Conectar TikTok
+              </button>
+            )}
+          </>
+        )}
+        {message && <p className={message.ok ? "st-ok" : "st-error"}>{message.text}</p>}
       </section>
+
       <section className="st-panel st-settings">
-        <h2>Por que ainda não é automático</h2>
-        <p>
-          A API oficial do TikTok só publica em modo privado até o app passar pela auditoria deles, e as regras pedem a confirmação de quem posta em
-          cada publicação. A auditoria é feita para apps abertos ao público; para uso interno ela pode ser recusada. Quando quiser tentar, o caminho é
-          criar um app no TikTok for Developers com o produto Content Posting API e pedir a auditoria.
+        <h2>Como funciona</h2>
+        <ol className="st-steps">
+          <li>
+            Prepare a publicação (rede TikTok, destino <b>Vídeo</b>, 1 vídeo MP4 ou MOV) e marque “Enviar rascunho automático”.
+          </li>
+          <li>Ao aprovar, uma cópia temporária do vídeo sobe para um armazenamento privado.</li>
+          <li>No horário, o estúdio envia o vídeo para o TikTok e apaga a cópia. O TikTok avisa no app (notificações).</li>
+          <li>Abra o rascunho, coloque a música (veja Músicas em alta), cole a legenda e publique.</li>
+          <li>Quando o TikTok confirmar a publicação, o estúdio marca como publicado. Se não confirmar, dá para marcar à mão.</li>
+        </ol>
+        <p className="st-hint">
+          Sem envio automático, continua valendo o modo manual: lembrete no Telegram no horário e “Copiar legenda e hashtags”. Fotos ainda vão só no
+          modo manual (o TikTok exige domínio verificado para receber fotos pela API).
         </p>
       </section>
+
+      {tiktok && !tiktok.connected && (
+        <section className="st-panel st-settings">
+          <h2>Criar o app no TikTok for Developers (uma vez)</h2>
+          <ol className="st-steps">
+            <li>
+              Em <b>developers.tiktok.com</b>, entre com a conta do TikTok e crie um app (Manage apps).
+            </li>
+            <li>
+              Adicione os produtos <b>Login Kit</b> e <b>Content Posting API</b> (com a permissão <b>video.upload</b>).
+            </li>
+            <li>
+              No Login Kit, cadastre o Redirect URI: <code>{tiktok.redirectUri}</code>
+            </li>
+            <li>Preencha ícone, descrição, Termos de Uso e Política de Privacidade e envie para revisão.</li>
+            <li>Copie o Client key e o Client secret para a Vercel (TIKTOK_CLIENT_KEY e TIKTOK_CLIENT_SECRET) e faça um novo deploy.</li>
+          </ol>
+        </section>
+      )}
     </div>
   );
 }

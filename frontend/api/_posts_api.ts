@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
 import { igConnection } from "./_instagram.js";
+import { tiktokConnectionRow } from "./_tiktok.js";
 import {
   NETWORK_RULES,
   UPLOAD_BUCKET,
@@ -105,7 +106,7 @@ function parseInput(body: Record<string, unknown>): PostInput {
     : [];
   if (hashtags.length > rules.hashtagMax) throw new Problem(400, `${rules.label}: no máximo ${rules.hashtagMax} hashtags.`);
   const mode = body.publish_mode === "api" ? "api" : "manual";
-  if (mode === "api" && network !== "instagram") throw new Problem(400, "Publicação automática só existe para o Instagram por enquanto.");
+  if (mode === "api" && network === "telegram") throw new Problem(400, "Publicação automática ainda não existe para o Telegram.");
   return { mode, network, formats, mediaIds, caption, hashtags, scheduledAt: when(body.scheduled_at) };
 }
 
@@ -160,9 +161,16 @@ async function replaceMedia(postId: string, mediaIds: string[]) {
   }
 }
 
-// Regras do Instagram para a publicacao automatica, destino a destino.
-function problemWithInstagramFormats(formats: string[], mimes: string[]) {
+// Regras da publicacao automatica, destino a destino. TikTok: rascunho de
+// 1 video (foto pela API exige dominio verificado - fica para depois).
+function problemWithAutoFormats(network: string, formats: string[], mimes: string[]) {
   const videos = mimes.filter((m) => m.startsWith("video/")).length;
+  if (network === "tiktok") {
+    if (formats.length !== 1 || formats[0] !== "Vídeo" || mimes.length !== 1 || videos !== 1) {
+      throw new Problem(400, "TikTok automático: 1 vídeo (MP4 ou MOV), destino Vídeo.");
+    }
+    return;
+  }
   if (formats.includes("Reels") && (mimes.length !== 1 || videos !== 1)) throw new Problem(400, "Reels automático precisa de exatamente 1 vídeo.");
   if (formats.includes("Stories") && mimes.length !== 1) throw new Problem(400, "Stories automático precisa de exatamente 1 mídia.");
   if (formats.includes("Feed") && (mimes.length < 1 || mimes.length > 20)) throw new Problem(400, "Feed: de 1 a 20 mídias.");
@@ -170,8 +178,13 @@ function problemWithInstagramFormats(formats: string[], mimes: string[]) {
 
 // Modo automatico: so aprova quando todas as copias da versao chegaram ao Storage.
 async function checkUploads(post: PostRow) {
-  const conn = await igConnection().catch(() => null);
-  if (!conn) throw new Problem(400, "Conecte a conta do Instagram (Configurações) antes de aprovar uma publicação automática.");
+  if (post.network === "tiktok") {
+    const row = await tiktokConnectionRow().catch(() => null);
+    if (row?.status !== "conectado") throw new Problem(400, "Conecte o TikTok (página TikTok) antes de aprovar um envio automático.");
+  } else {
+    const conn = await igConnection().catch(() => null);
+    if (!conn) throw new Problem(400, "Conecte a conta do Instagram (página Instagram) antes de aprovar uma publicação automática.");
+  }
   const mediaCount = (await postMediaIds(post.id)).length;
   const rows = await dbSelect<{ id: string; storage_path: string }>(
     "post_uploads",
@@ -355,7 +368,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const items = Array.isArray(body.items) ? (body.items as Record<string, unknown>[]) : [];
       if (items.length !== mediaIds.length) throw new Problem(400, "Envie todas as mídias da publicação.");
       const kinds = items.map((it) => String(it.mime_type));
-      problemWithInstagramFormats(formats, kinds);
+      problemWithAutoFormats(post.network, formats, kinds);
       const urls: { position: number; url: string }[] = [];
       for (const it of items) {
         const position = Number(it.position);

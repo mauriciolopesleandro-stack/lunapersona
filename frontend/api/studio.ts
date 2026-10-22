@@ -4,6 +4,7 @@ import jobs from "./_jobs.js";
 import library from "./_library.js";
 import music from "./_music.js";
 import posts from "./_posts_api.js";
+import tiktok, { tiktokCallback } from "./_tiktok_api.js";
 
 // /api/studio?r=<rota> - uma funcao so para as rotas do estudio novo. O plano
 // Hobby da Vercel aceita no maximo 12 funcoes por deploy (projeto sem
@@ -14,10 +15,14 @@ import posts from "./_posts_api.js";
 //   r=jobs     processador da fila (Supabase Cron ou botao do painel)
 //   r=instagram conexao da conta do Instagram (publicacao automatica)
 //   r=music    musicas em alta no Brasil (Apple Music, fontes oficiais)
-const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music };
+//   r=tiktok   conexao do TikTok (rascunho automatico); a volta do OAuth chega
+//              em /api/tiktok/callback, reescrito pelo vercel.json
+const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music, tiktok, "tiktok-callback": tiktokCallback };
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  const route = new URL(req.url ?? "/", "http://local").searchParams.get("r") ?? "";
+  const url = new URL(req.url ?? "/", "http://local");
+  // a volta do TikTok chega pelo caminho (o TikTok nao aceita query na redirect_uri)
+  const route = url.searchParams.get("r") ?? (url.pathname.endsWith("/tiktok/callback") ? "tiktok-callback" : "");
   const run = ROUTES[route];
   if (!run) {
     res.statusCode = 404;

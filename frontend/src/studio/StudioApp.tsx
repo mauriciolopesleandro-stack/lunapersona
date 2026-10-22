@@ -53,7 +53,8 @@ export function StudioApp(props: Props) {
 
 function Shell({ theme, onToggleTheme, onLogout }: Props) {
   const studio = useStudio();
-  const [page, setPage] = useState("visao");
+  // volta do TikTok (OAuth) cai em /?tiktok=...#tiktok
+  const [page, setPage] = useState(() => (window.location.hash === "#tiktok" ? "tiktok" : "visao"));
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
   const [query, setQuery] = useState("");
