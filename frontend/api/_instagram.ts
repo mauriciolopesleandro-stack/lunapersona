@@ -10,7 +10,9 @@ const GRAPH_BASE = "https://graph.instagram.com";
 export class InstagramError extends Error {
   constructor(
     message: string,
-    public retryable: boolean
+    public retryable: boolean,
+    // midia ainda processando (9007): tentar de novo logo, sem contar tentativa
+    public notReady = false
   ) {
     super(message);
   }
@@ -27,8 +29,10 @@ async function graph<T>(url: string, init: RequestInit = {}): Promise<T> {
   if (!res.ok || body.error) {
     const err = body.error ?? {};
     // 190 = token invalido/expirado: nao adianta tentar de novo sozinho
-    const retryable = err.code !== 190 && (res.status >= 500 || res.status === 429 || Boolean(err.is_transient) || err.code === 4 || err.code === 2);
-    throw new InstagramError(`Instagram: ${err.message ?? `HTTP ${res.status}`}`, retryable);
+    // 9007 = "Media ID is not available": o conteiner ainda esta processando
+    const notReady = err.code === 9007;
+    const retryable = err.code !== 190 && (notReady || res.status >= 500 || res.status === 429 || Boolean(err.is_transient) || err.code === 4 || err.code === 2);
+    throw new InstagramError(`Instagram: ${err.message ?? `HTTP ${res.status}`}`, retryable, notReady);
   }
   return body;
 }
@@ -64,6 +68,18 @@ export async function igCreateContainer(userId: string, token: string, params: R
 export async function igContainerStatus(containerId: string, token: string): Promise<string> {
   const res = await graph<{ status_code?: string }>(`${GRAPH}/${containerId}?fields=status_code`, auth(token));
   return res.status_code ?? "IN_PROGRESS";
+}
+
+// O Instagram processa a midia depois de criar o conteiner (foto leva alguns
+// segundos, video mais). Consulta ate ficar pronto ou acabar o tempo.
+export async function igWaitReady(containerId: string, token: string, tries = 8, everyMs = 3000): Promise<string> {
+  let status = "IN_PROGRESS";
+  for (let i = 0; i < tries; i++) {
+    status = await igContainerStatus(containerId, token);
+    if (status !== "IN_PROGRESS") return status;
+    await new Promise((r) => setTimeout(r, everyMs));
+  }
+  return status;
 }
 
 export async function igPublish(userId: string, token: string, containerId: string): Promise<string> {

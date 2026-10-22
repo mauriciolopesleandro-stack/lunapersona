@@ -3,11 +3,11 @@ import { isAuthenticated, safeEqual } from "./_auth.js";
 import {
   InstagramError,
   igConnection,
-  igContainerStatus,
   igCreateContainer,
   igPermalink,
   igPublish,
   igRefreshIfDue,
+  igWaitReady,
   type IgConnection,
 } from "./_instagram.js";
 import { NETWORK_RULES, UPLOAD_BUCKET, cleanupUploads, type PostRow } from "./_posts.js";
@@ -150,6 +150,16 @@ async function createContainer(conn: IgConnection, format: string, uploads: Uplo
   return igCreateContainer(conn.userId, conn.token, { media_type: "CAROUSEL", children: children.join(","), caption });
 }
 
+// Midia ainda processando no Instagram: volta em 1 min sem gastar tentativa
+// (ate o limite de 30 voltas, para nao ficar preso para sempre).
+async function waitMore(job: JobRow, post: PostRow): Promise<Outcome> {
+  const waits = (await dbSelect<{ id: number }>("publishing_attempts", `select=id&job_id=eq.${job.id}&channel=eq.instagram_api&detail=eq.aguardando%20processamento`)).length;
+  if (waits >= 30) return retryOrFail(job, post, "o Instagram não terminou de processar a mídia em 30 minutos", true);
+  await dbInsert("publishing_attempts", { post_id: job.post_id, job_id: job.id, attempt: job.attempts, channel: "instagram_api", outcome: "ok", detail: "aguardando processamento" });
+  await finish(job, { status: "pendente", run_at: new Date(Date.now() + 60_000).toISOString(), attempts: job.attempts - 1 });
+  return "aguardando";
+}
+
 async function runInstagram(job: JobRow): Promise<Outcome> {
   const [post] = await dbSelect<PostRow>("posts", `select=*&id=eq.${job.post_id}`);
   const current = post && post.version === job.post_version && (post.status === "agendado" || post.status === "publicando") && post.publish_mode === "api";
@@ -173,7 +183,7 @@ async function runInstagram(job: JobRow): Promise<Outcome> {
     for (const d of dests) {
       let container = d.external_container_id;
       if (container) {
-        const status = await igContainerStatus(container, conn.token);
+        const status = await igWaitReady(container, conn.token, 3);
         if (status === "PUBLISHED") {
           // publicou numa tentativa anterior e caiu antes de registrar: so registra
           await dbUpdateWhere("post_destinations", `id=eq.${d.id}&status=eq.pendente`, {
@@ -187,21 +197,17 @@ async function runInstagram(job: JobRow): Promise<Outcome> {
           await dbUpdateWhere("post_destinations", `id=eq.${d.id}`, { external_container_id: null, last_error: `contêiner ${status}` });
           throw new InstagramError(`o Instagram recusou a mídia de ${d.format} (${status})`, true);
         }
-        if (status !== "FINISHED") {
-          // video ainda processando: volta em 1 min sem gastar tentativa
-          await finish(job, { status: "pendente", run_at: new Date(Date.now() + 60_000).toISOString(), attempts: job.attempts - 1 });
-          return "aguardando";
-        }
+        if (status !== "FINISHED") return waitMore(job, post);
       } else {
         container = await createContainer(conn, d.format, uploads, caption);
         await dbUpdateWhere("post_destinations", `id=eq.${d.id}`, { external_container_id: container, last_error: null });
-        if (uploads.some((u) => u.mime_type.startsWith("video/"))) {
-          const status = await igContainerStatus(container, conn.token);
-          if (status !== "FINISHED") {
-            await finish(job, { status: "pendente", run_at: new Date(Date.now() + 60_000).toISOString(), attempts: job.attempts - 1 });
-            return "aguardando";
-          }
+        // foto e video: espera o Instagram processar antes de publicar
+        const status = await igWaitReady(container, conn.token);
+        if (status === "ERROR" || status === "EXPIRED") {
+          await dbUpdateWhere("post_destinations", `id=eq.${d.id}`, { external_container_id: null, last_error: `contêiner ${status}` });
+          throw new InstagramError(`o Instagram recusou a mídia de ${d.format} (${status})`, true);
         }
+        if (status !== "FINISHED") return waitMore(job, post);
       }
       const mediaId = await igPublish(conn.userId, conn.token, container);
       const permalink = await igPermalink(mediaId, conn.token);
@@ -215,6 +221,8 @@ async function runInstagram(job: JobRow): Promise<Outcome> {
     }
   } catch (e) {
     const err = e instanceof InstagramError ? e : new InstagramError(e instanceof Error ? e.message : String(e), true);
+    // midia ainda processando: nao e falha, so volta daqui a pouco
+    if (err.notReady) return waitMore(job, post);
     return retryOrFail(job, post, err.message, err.retryable);
   }
   const published = await dbSelect<{ external_url: string | null; format: string }>("post_destinations", `select=format,external_url&post_id=eq.${post.id}&status=eq.publicado`);
