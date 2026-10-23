@@ -3,12 +3,15 @@ import { randomBytes } from "crypto";
 import { isAuthenticated, parseCookies, safeEqual } from "./_auth.js";
 import { encryptionConfigured } from "./_crypto.js";
 import { audit, supabaseConfigured } from "./_supabase.js";
-import { authorizeUrl, disconnectTiktok, exchangeCode, saveTiktok, tiktokConfigured, tiktokConnectionRow, userInfo } from "./_tiktok.js";
+import { authorizeUrl, disconnectTiktok, exchangeCode, publishStatus, saveTiktok, tiktokAccessToken, tiktokConfigured, tiktokConnectionRow, uploadPhotoDraft, userInfo } from "./_tiktok.js";
 
 // /api/studio?r=tiktok
 //   GET                     estado da conexao (sem tokens)
 //   GET  &action=connect    vai para a autorizacao do TikTok (OAuth, Login Kit)
+//   GET  &action=status&publish_id=...   status de um envio (teste)
 //   POST { action: "disconnect" }
+//   POST { action: "test-photo" }   manda a foto de teste fixa do site (/tiktok-teste.jpg,
+//                                   1080x1920) como rascunho, para isolar problemas de formato
 // /api/tiktok/callback (vercel.json reescreve para r=tiktok-callback): volta do
 // TikTok com code + state; confere o state (cookie), troca o code pelos tokens
 // e guarda cifrado. Precisa de TIKTOK_CLIENT_KEY e TIKTOK_CLIENT_SECRET.
@@ -74,6 +77,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return res.end();
   }
 
+  if (req.method === "GET" && params.get("action") === "status") {
+    const token = await tiktokAccessToken();
+    if (!token) return reply(400, { detail: "TikTok não conectado." });
+    try {
+      return reply(200, await publishStatus(token, params.get("publish_id") ?? ""));
+    } catch (e) {
+      return reply(502, { detail: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   if (req.method === "GET") {
     const row = await tiktokConnectionRow();
     return reply(200, {
@@ -93,6 +106,19 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     let raw = "";
     for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw || "{}") as { action?: string };
+    if (body.action === "test-photo") {
+      const token = await tiktokAccessToken();
+      if (!token) return reply(400, { detail: "Conecte o TikTok primeiro." });
+      const host = req.headers["x-forwarded-host"] ?? req.headers.host;
+      const photo = `https://${host}/tiktok-teste.jpg`;
+      try {
+        const publishId = await uploadPhotoDraft(token, [photo], "Teste do Luna Vox Studio");
+        await audit("tiktok_teste_foto", "tiktok", publishId, { photo });
+        return reply(200, { publish_id: publishId, photo });
+      } catch (e) {
+        return reply(502, { detail: e instanceof Error ? e.message : String(e) });
+      }
+    }
     if (body.action === "disconnect") {
       await disconnectTiktok();
       await audit("desconectar", "tiktok", null, {});

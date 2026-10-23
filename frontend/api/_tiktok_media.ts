@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { createHmac } from "crypto";
 import { safeEqual } from "./_auth.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
-import { storageReadUrl } from "./_supabase.js";
+import { audit, storageReadUrl } from "./_supabase.js";
 
 // /api/tiktok/media/<caminho-base64url>.<expira>.<assinatura>.jpg (vercel.json
 // reescreve para /api/studio?r=tiktok-media&f=...). O TikTok so baixa fotos
@@ -26,6 +26,20 @@ export function tiktokMediaUrl(baseUrl: string, path: string, ttlSeconds: number
   return `${baseUrl}/api/tiktok/media/${Buffer.from(path).toString("base64url")}.${expires}.${signature(path, expires)}.jpg`;
 }
 
+// Largura x altura de um JPEG (marcador SOF); 0 x 0 se nao achar.
+export function jpegSize(b: Uint8Array): { w: number; h: number } {
+  for (let i = 2; i + 9 < b.length; ) {
+    if (b[i] !== 0xff) break;
+    const marker = b[i + 1];
+    const len = (b[i + 2] << 8) | b[i + 3];
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return { h: (b[i + 5] << 8) | b[i + 6], w: (b[i + 7] << 8) | b[i + 8] };
+    }
+    i += 2 + len;
+  }
+  return { w: 0, h: 0 };
+}
+
 function parseFile(file: string): { path: string; expires: number; sig: string } | null {
   const m = /^([A-Za-z0-9_-]+)\.(\d+)\.([A-Za-z0-9_-]+)\.jpg$/.exec(file);
   if (!m) return null;
@@ -33,7 +47,15 @@ function parseFile(file: string): { path: string; expires: number; sig: string }
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  const fail = (status: number) => {
+  // diagnostico: cada download fica registrado (quem pediu, como e o que recebeu)
+  const seen = {
+    method: req.method,
+    ua: String(req.headers["user-agent"] ?? "").slice(0, 200),
+    range: req.headers.range ?? null,
+    accept: String(req.headers.accept ?? "").slice(0, 100),
+  };
+  const fail = async (status: number, path: string | null = null) => {
+    await audit("tiktok_media", "tiktok", path, { ...seen, status });
     res.statusCode = status;
     res.setHeader("Cache-Control", "no-store");
     res.end();
@@ -45,18 +67,19 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const { path, expires } = parsed;
   // so fotos da pasta de copias temporarias: <post>/v<versao>/<posicao>.jpg
   if (!/^[0-9a-f-]{36}\/v\d+\/\d+\.jpg$/.test(path) || !Number.isInteger(expires)) return fail(404);
-  if (expires < Date.now() / 1000) return fail(410);
+  if (expires < Date.now() / 1000) return fail(410, path);
   let valid = false;
   try {
     valid = safeEqual(parsed.sig, signature(path, expires));
   } catch {
     return fail(503);
   }
-  if (!valid) return fail(403);
+  if (!valid) return fail(403, path);
   const upstream = await fetch(await storageReadUrl(UPLOAD_BUCKET, path, 600), { signal: AbortSignal.timeout(25_000) }).catch(() => null);
-  if (!upstream?.ok) return fail(upstream?.status === 400 || upstream?.status === 404 ? 404 : 502);
+  if (!upstream?.ok) return fail(upstream?.status === 400 || upstream?.status === 404 ? 404 : 502, path);
   const bytes = Buffer.from(await upstream.arrayBuffer());
-  if (bytes.length > TIKTOK_PHOTO_MAX_BYTES) return fail(413);
+  if (bytes.length > TIKTOK_PHOTO_MAX_BYTES) return fail(413, path);
+  await audit("tiktok_media", "tiktok", path, { ...seen, status: 200, bytes: bytes.length, ...jpegSize(bytes), soi: bytes[0] === 0xff && bytes[1] === 0xd8 });
   res.statusCode = 200;
   res.setHeader("Content-Type", "image/jpeg");
   res.setHeader("Content-Length", String(bytes.length));

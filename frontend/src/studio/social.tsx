@@ -184,6 +184,25 @@ export function TikTokPage() {
 
   const ready = tiktok?.appConfigured && tiktok.encryption;
 
+  // Teste: manda uma foto fixa do site (1080x1920) e acompanha o status por 2 min.
+  const [test, setTest] = useState<string | null>(null);
+  async function testPhoto() {
+    setTest("Enviando a foto de teste...");
+    try {
+      const r = await fetch("/api/studio?r=tiktok", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "test-photo" }) });
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok) return setTest(`Erro: ${b.detail ?? r.status}`);
+      for (let i = 0; i < 24; i++) {
+        await new Promise((ok) => setTimeout(ok, 5000));
+        const s = await fetch(`/api/studio?r=tiktok&action=status&publish_id=${encodeURIComponent(b.publish_id)}`).then((x) => x.json()).catch(() => ({}));
+        setTest(`Status: ${s.status ?? s.detail ?? "?"}${s.fail_reason ? ` (${s.fail_reason})` : ""}`);
+        if (s.status && s.status !== "PROCESSING_DOWNLOAD" && s.status !== "PROCESSING_UPLOAD") return;
+      }
+    } catch (e) {
+      setTest(`Erro: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
   return (
     <div>
       <div className="st-page-head">
@@ -208,9 +227,15 @@ export function TikTokPage() {
               A conexão vale até {fmt(tiktok.validUntil)} (o estúdio renova o acesso sozinho a cada envio).
             </p>
             {tiktok.lastError && <p className="st-error">Último erro: {tiktok.lastError}</p>}
-            <button type="button" className="st-btn st-btn-danger" disabled={busy} onClick={disconnect}>
-              Desconectar
-            </button>
+            <div className="st-row">
+              <button type="button" className="st-btn" disabled={busy || (test !== null && !/^(Status: (SEND|PUBLISH|FAILED)|Erro)/.test(test))} onClick={testPhoto}>
+                Testar envio de foto
+              </button>
+              <button type="button" className="st-btn st-btn-danger" disabled={busy} onClick={disconnect}>
+                Desconectar
+              </button>
+            </div>
+            {test && <p className="st-hint">{test}</p>}
           </>
         ) : (
           <>
