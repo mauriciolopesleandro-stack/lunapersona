@@ -2,7 +2,9 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { randomBytes } from "crypto";
 import { isAuthenticated, parseCookies, safeEqual } from "./_auth.js";
 import { encryptionConfigured } from "./_crypto.js";
-import { audit, supabaseConfigured } from "./_supabase.js";
+import { audit, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
+import { UPLOAD_BUCKET } from "./_posts.js";
+import { tiktokMediaUrl } from "./_tiktok_media.js";
 import { authorizeUrl, disconnectTiktok, exchangeCode, publishStatus, saveTiktok, tiktokAccessToken, tiktokConfigured, tiktokConnectionRow, uploadPhotoDraft, userInfo } from "./_tiktok.js";
 
 // /api/studio?r=tiktok
@@ -11,7 +13,9 @@ import { authorizeUrl, disconnectTiktok, exchangeCode, publishStatus, saveTiktok
 //   GET  &action=status&publish_id=...   status de um envio (teste)
 //   POST { action: "disconnect" }
 //   POST { action: "test-photo" }   manda a foto de teste fixa do site (/tiktok-teste.jpg,
-//                                   1080x1920) como rascunho, para isolar problemas de formato
+//                                   1080x1920) como rascunho, para isolar problemas de formato;
+//                                   com via: "estudio", a mesma foto vai pelo link assinado do
+//                                   estudio (copia no armazenamento temporario)
 // /api/tiktok/callback (vercel.json reescreve para r=tiktok-callback): volta do
 // TikTok com code + state; confere o state (cookie), troca o code pelos tokens
 // e guarda cifrado. Precisa de TIKTOK_CLIENT_KEY e TIKTOK_CLIENT_SECRET.
@@ -105,13 +109,23 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (req.method === "POST") {
     let raw = "";
     for await (const chunk of req) raw += chunk;
-    const body = JSON.parse(raw || "{}") as { action?: string };
+    const body = JSON.parse(raw || "{}") as { action?: string; via?: string };
     if (body.action === "test-photo") {
       const token = await tiktokAccessToken();
       if (!token) return reply(400, { detail: "Conecte o TikTok primeiro." });
       const host = req.headers["x-forwarded-host"] ?? req.headers.host;
-      const photo = `https://${host}/tiktok-teste.jpg`;
+      let photo = `https://${host}/tiktok-teste.jpg`;
       try {
+        if ((body as { via?: string }).via === "estudio") {
+          const bytes = await fetch(photo).then((r) => r.blob());
+          const path = "00000000-0000-4000-8000-000000000000/v1/0.jpg";
+          const form = new FormData();
+          form.append("cacheControl", "3600");
+          form.append("", new Blob([bytes], { type: "image/jpeg" }), "0.jpg");
+          const up = await fetch(await storageUploadUrl(UPLOAD_BUCKET, path), { method: "PUT", headers: { "x-upsert": "true" }, body: form });
+          if (!up.ok) return reply(502, { detail: `Não consegui guardar a foto de teste (HTTP ${up.status}).` });
+          photo = tiktokMediaUrl(`https://${host}`, path, 2 * 3600);
+        }
         const publishId = await uploadPhotoDraft(token, [photo], "Teste do Luna Vox Studio");
         await audit("tiktok_teste_foto", "tiktok", publishId, { photo });
         return reply(200, { publish_id: publishId, photo });

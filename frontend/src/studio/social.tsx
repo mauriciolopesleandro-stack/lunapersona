@@ -186,10 +186,10 @@ export function TikTokPage() {
 
   // Teste: manda uma foto fixa do site (1080x1920) e acompanha o status por 2 min.
   const [test, setTest] = useState<string | null>(null);
-  async function testPhoto() {
-    setTest("Enviando a foto de teste...");
+  async function testPhoto(via: "site" | "estudio") {
+    setTest(via === "estudio" ? "Enviando a foto de teste pelo link do estúdio..." : "Enviando a foto de teste...");
     try {
-      const r = await fetch("/api/studio?r=tiktok", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "test-photo" }) });
+      const r = await fetch("/api/studio?r=tiktok", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "test-photo", via }) });
       const b = await r.json().catch(() => ({}));
       if (!r.ok) return setTest(`Erro: ${b.detail ?? r.status}`);
       for (let i = 0; i < 24; i++) {
@@ -228,8 +228,11 @@ export function TikTokPage() {
             </p>
             {tiktok.lastError && <p className="st-error">Último erro: {tiktok.lastError}</p>}
             <div className="st-row">
-              <button type="button" className="st-btn" disabled={busy || (test !== null && !/^(Status: (SEND|PUBLISH|FAILED)|Erro)/.test(test))} onClick={testPhoto}>
+              <button type="button" className="st-btn" disabled={busy || (test !== null && !/^(Status: (SEND|PUBLISH|FAILED)|Erro)/.test(test))} onClick={() => testPhoto("site")}>
                 Testar envio de foto
+              </button>
+              <button type="button" className="st-btn" disabled={busy || (test !== null && !/^(Status: (SEND|PUBLISH|FAILED)|Erro)/.test(test))} onClick={() => testPhoto("estudio")}>
+                Testar pelo link do estúdio
               </button>
               <button type="button" className="st-btn st-btn-danger" disabled={busy} onClick={disconnect}>
                 Desconectar
