@@ -13,7 +13,7 @@ import {
   writeData,
   type DirHandle,
 } from "./localFolder";
-import { prepareForInstagram } from "./mediaPrep";
+import { prepareForInstagram, prepareForTiktok } from "./mediaPrep";
 import {
   cloudInstagram,
   cloudInstagramAction,
@@ -731,7 +731,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       if (files.some((f) => !f)) throw new Error("Uma das mídias não está na pasta deste computador. Abra a pasta do estúdio e tente de novo.");
       onStep?.(post.network === "tiktok" ? "Preparando o vídeo para o TikTok..." : "Preparando as mídias para o Instagram...");
       const prepared = [];
-      for (const file of files) prepared.push(await prepareForInstagram(file!));
+      const prep = post.network === "tiktok" ? prepareForTiktok : prepareForInstagram;
+      for (const file of files) prepared.push(await prep(file!));
       const urls = await cloudUploadUrls(
         post.id,
         post.version,

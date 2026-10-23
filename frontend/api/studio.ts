@@ -18,13 +18,16 @@ import tiktokMedia from "./_tiktok_media.js";
 //   r=music    musicas em alta no Brasil (Apple Music, fontes oficiais)
 //   r=tiktok   conexao do TikTok (rascunho automatico); a volta do OAuth chega
 //              em /api/tiktok/callback, reescrito pelo vercel.json
-//   r=tiktok-media foto temporaria para o TikTok baixar (link assinado)
+//   r=tiktok-media foto temporaria para o TikTok baixar (link assinado em
+//              /api/tiktok/media/....jpg, reescrito pelo vercel.json)
 const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music, tiktok, "tiktok-callback": tiktokCallback, "tiktok-media": tiktokMedia };
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "/", "http://local");
   // a volta do TikTok chega pelo caminho (o TikTok nao aceita query na redirect_uri)
-  const route = url.searchParams.get("r") ?? (url.pathname.endsWith("/tiktok/callback") ? "tiktok-callback" : "");
+  const route =
+    url.searchParams.get("r") ??
+    (url.pathname.endsWith("/tiktok/callback") ? "tiktok-callback" : url.pathname.startsWith("/api/tiktok/media/") ? "tiktok-media" : "");
   const run = ROUTES[route];
   if (!run) {
     res.statusCode = 404;

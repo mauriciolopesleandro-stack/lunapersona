@@ -180,7 +180,10 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
       )}
 
       {failedJob && post.status !== "publicado" && post.status !== "cancelado" && (
-        <p className="st-error">O lembrete do Telegram não saiu depois de {failedJob.attempts} tentativas: {failedJob.lastError}</p>
+        <p className="st-error">
+          {automatic ? `O envio automático para o ${NETWORKS[post.network].label} falhou` : "O lembrete do Telegram não saiu"} depois de{" "}
+          {failedJob.attempts} tentativa(s): {failedJob.lastError}
+        </p>
       )}
 
       {canConfirm && pending.length > 0 && (

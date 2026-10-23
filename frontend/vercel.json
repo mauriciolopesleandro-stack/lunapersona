@@ -11,6 +11,10 @@
     {
       "source": "/api/tiktok/callback",
       "destination": "/api/studio?r=tiktok-callback"
+    },
+    {
+      "source": "/api/tiktok/media/:file",
+      "destination": "/api/studio?r=tiktok-media&f=:file"
     }
   ]
 }

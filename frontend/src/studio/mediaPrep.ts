@@ -4,15 +4,29 @@
 const MAX_SIDE = 1440;
 const MAX_BYTES = 50 * 1024 * 1024;
 
-export async function prepareForInstagram(file: File): Promise<{ blob: Blob; mime: string }> {
+export function prepareForInstagram(file: File): Promise<{ blob: Blob; mime: string }> {
+  return prepare(file, "Instagram", (w, h) => MAX_SIDE / Math.max(w, h));
+}
+
+// TikTok: foto em JPEG de no maximo 1080 x 1920 (retrato) ou 1920 x 1080
+// (paisagem) e no minimo 360 px de cada lado; video igual ao do Instagram.
+export function prepareForTiktok(file: File): Promise<{ blob: Blob; mime: string }> {
+  return prepare(file, "TikTok", (w, h) => Math.min(1080 / Math.min(w, h), 1920 / Math.max(w, h)), 360);
+}
+
+async function prepare(file: File, label: string, fit: (w: number, h: number) => number, minSide = 0): Promise<{ blob: Blob; mime: string }> {
   if (file.type.startsWith("video/")) {
     const mime = file.type === "video/quicktime" ? "video/quicktime" : "video/mp4";
-    if (!/\.(mp4|mov|m4v)$/i.test(file.name)) throw new Error(`“${file.name}”: o Instagram aceita vídeo MP4 ou MOV.`);
+    if (!/\.(mp4|mov|m4v)$/i.test(file.name)) throw new Error(`“${file.name}”: o ${label} aceita vídeo MP4 ou MOV.`);
     if (file.size > MAX_BYTES) throw new Error(`“${file.name}” tem mais de 50 MB (limite do plano grátis).`);
     return { blob: file, mime };
   }
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  if (Math.min(bitmap.width, bitmap.height) < minSide) {
+    bitmap.close();
+    throw new Error(`“${file.name}” é pequena demais para o ${label} (mínimo ${minSide} px de cada lado).`);
+  }
+  const scale = Math.min(1, fit(bitmap.width, bitmap.height));
   if (file.type === "image/jpeg" && scale === 1 && file.size <= MAX_BYTES) {
     bitmap.close();
     return { blob: file, mime: "image/jpeg" };
