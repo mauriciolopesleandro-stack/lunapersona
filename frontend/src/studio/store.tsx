@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { PostFlags } from "../../api/_flags";
 import {
   copyIntoFolder,
   fileSha256,
@@ -104,6 +105,8 @@ export interface Post {
   updatedAt: string;
   // so no modo banco
   publishMode?: "manual" | "api";
+  groupId?: string | null; // mesma publicacao em varias redes
+  flags?: PostFlags;
   version?: number;
   approvedVersion?: number | null;
   failureReason?: string | null;
@@ -116,6 +119,8 @@ export interface Post {
 
 export interface PostInput {
   publishMode?: "manual" | "api";
+  flags?: PostFlags;
+  groupId?: string | null;
   network: Network;
   formats: string[];
   media: string[];
@@ -141,6 +146,8 @@ function fromDto(d: PostDto, pathOf: Map<string, string>): Post {
     createdAt: d.created_at,
     updatedAt: d.updated_at,
     publishMode: d.publish_mode,
+    groupId: d.group_id ?? null,
+    flags: d.flags ?? {},
     version: d.version,
     approvedVersion: d.approved_version,
     failureReason: d.failure_reason,
@@ -695,6 +702,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         hashtags: input.hashtags,
         scheduled_at: input.scheduledAt,
         publish_mode: input.publishMode ?? "manual",
+        flags: input.flags ?? {},
+        ...(input.groupId ? { group_id: input.groupId } : {}),
       });
       await reloadPosts();
       return { post: fromDto({ ...res.post, media_ids: ids, destinations: [], approvals: [], jobs: [], attempts: [] }, pathOfId()), needsApproval: Boolean(res.needsApproval) };
@@ -732,7 +741,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       onStep?.(post.network === "tiktok" ? "Preparando o vídeo para o TikTok..." : "Preparando as mídias para o Instagram...");
       const prepared = [];
       const prep = post.network === "tiktok" ? prepareForTiktok : prepareForInstagram;
-      for (const file of files) prepared.push(await prep(file!));
+      for (const file of files) prepared.push(await prep(file!, post.flags?.aspect));
       const urls = await cloudUploadUrls(
         post.id,
         post.version,

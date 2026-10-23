@@ -1,5 +1,6 @@
 // Regras das publicacoes (Fase 2), usadas por api/_posts_api.ts e api/_jobs.ts.
 import { createHash } from "crypto";
+import { canonicalFlags, type PostFlags } from "./_flags.js";
 import { dbInsertIgnoringDuplicates, dbSelect, dbUpdateWhere, storageRemove } from "./_supabase.js";
 
 export const UPLOAD_BUCKET = "publicar-temp";
@@ -31,6 +32,8 @@ export interface PostRow {
   published_at: string | null;
   cancelled_at: string | null;
   legacy_id: string | null;
+  group_id: string | null; // publicacoes do mesmo post em varias redes
+  flags: PostFlags;
   created_at: string;
   updated_at: string;
 }
@@ -56,10 +59,12 @@ export const NETWORK_RULES: Record<Network, { label: string; formats: string[]; 
 // ordem), legenda e hashtags. Mudou qualquer um -> nova versao, nova aprovacao.
 // O horario fica de fora: remarcar nao muda o conteudo aprovado.
 // O modo automatico entra na conta (trocar de manual para automatico pede nova
-// aprovacao); posts manuais mantem a impressao de antes.
-export function contentHash(p: { network: string; formats: string[]; mediaIds: string[]; caption: string; hashtags: string[]; mode?: string }): string {
+// aprovacao); posts manuais mantem a impressao de antes. As flags tambem (so
+// quando ha alguma: publicacoes sem flags mantem a impressao antiga).
+export function contentHash(p: { network: string; formats: string[]; mediaIds: string[]; caption: string; hashtags: string[]; mode?: string; flags?: PostFlags }): string {
   const parts: unknown[] = [p.network, [...p.formats].sort(), p.mediaIds, p.caption, p.hashtags];
   if (p.mode === "api") parts.push("api");
+  if (p.flags && Object.keys(p.flags).length) parts.push(canonicalFlags(p.flags));
   const canonical = JSON.stringify(parts);
   return createHash("sha256").update(canonical).digest("hex");
 }

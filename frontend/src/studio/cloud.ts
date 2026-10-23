@@ -1,6 +1,7 @@
 // Chamadas ao banco (Supabase) pela funcao /api/studio da Vercel. O navegador
 // nunca fala direto com o Supabase nem ve a chave dele.
 import type { Audience, ItemStatus, MetaPatch, Network, Rating } from "./store";
+import type { PostFlags } from "../../api/_flags";
 
 export interface MediaRow {
   id: string;
@@ -141,6 +142,8 @@ export interface PostDto {
   failure_reason: string | null;
   published_at: string | null;
   legacy_id: string | null;
+  group_id?: string | null;
+  flags?: PostFlags;
   created_at: string;
   updated_at: string;
   media_ids: string[];
@@ -177,6 +180,8 @@ export async function cloudPostSave(payload: {
   hashtags: string[];
   scheduled_at: string | null;
   publish_mode: "manual" | "api";
+  flags?: PostFlags;
+  group_id?: string | null;
 }): Promise<{ post: PostDto; needsApproval?: boolean }> {
   return postsCall("save", payload);
 }
