@@ -27,7 +27,11 @@ async function prepare(file: File, label: string, fit: (w: number, h: number) =>
     throw new Error(`“${file.name}” é pequena demais para o ${label} (mínimo ${minSide} px de cada lado).`);
   }
   const scale = Math.min(1, fit(bitmap.width, bitmap.height));
-  if (file.type === "image/jpeg" && scale === 1 && file.size <= MAX_BYTES) {
+  // so manda o arquivo como esta se for JPEG de verdade (confere os bytes, nao o
+  // nome: foto salva do WhatsApp/da web pode ser WebP/AVIF com nome .jpeg)
+  const head = new Uint8Array(await file.slice(0, 3).arrayBuffer());
+  const realJpeg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+  if (realJpeg && scale === 1 && file.size <= MAX_BYTES) {
     bitmap.close();
     return { blob: file, mime: "image/jpeg" };
   }
