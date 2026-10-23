@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ProfilePage } from "../components/ProfilePage";
 import { Composer } from "./Composer";
+import { PostBuilder } from "./PostBuilder";
 import { Icon } from "./Icon";
 import { CalendarPage, CharactersPage, ContentsPage, ItemDetails, OverviewPage, PublicationsPage, SettingsPage, type Nav } from "./pages";
 import { ComingSoon, Modal, formatBytes } from "./shared";
@@ -226,12 +227,17 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
       )}
       {composer && (
         <Modal title={composer.post ? "Editar publicação" : "Nova publicação"} onClose={() => setComposer(null)} wide>
-          <Composer
-            initial={composer.post}
-            defaultDate={composer.date}
-            defaultMedia={composer.media}
-            onDone={() => setComposer(null)}
-          />
+          {/* no modo banco, publicacao nova usa o fluxo em tres passos (varias redes) */}
+          {!composer.post && studio.source === "banco" ? (
+            <PostBuilder defaultDate={composer.date} defaultMedia={composer.media} onDone={() => setComposer(null)} />
+          ) : (
+            <Composer
+              initial={composer.post}
+              defaultDate={composer.date}
+              defaultMedia={composer.media}
+              onDone={() => setComposer(null)}
+            />
+          )}
         </Modal>
       )}
     </div>

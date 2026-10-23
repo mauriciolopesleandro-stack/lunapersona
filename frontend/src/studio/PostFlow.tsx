@@ -42,6 +42,30 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
   const pending = (post.destinations ?? []).filter((d) => d.status === "pendente");
   const job = post.jobs?.find((j) => j.status === "pendente" || j.status === "executando");
   const failedJob = post.jobs?.find((j) => j.status === "falhou");
+  // mesma publicacao em outras redes (grupo) esperando aprovacao
+  const siblings = post.groupId ? posts.filter((p) => p.groupId === post.groupId && p.id !== post.id) : [];
+  const waiting = [post, ...siblings].filter((p) => p.status === "aguardando_aprovacao");
+
+  // Aprova todas as redes do grupo de uma vez (cada uma na sua versao atual).
+  async function approveGroup() {
+    setBusy(true);
+    setMessage(null);
+    const ok: string[] = [];
+    try {
+      for (const p of waiting) {
+        const label = NETWORKS[p.network].label;
+        if (p.publishMode === "api") await approveAutomatic(p, (text) => setMessage({ ok: true, text: `${label}: ${text}` }));
+        else await postAction("approve", p.id, { version: p.version });
+        ok.push(label);
+      }
+      setMessage({ ok: true, text: `Aprovada em ${ok.join(", ")}.` });
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      setMessage({ ok: false, text: ok.length ? `Aprovada em ${ok.join(", ")}; parou na próxima rede: ${err}` : err });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function run(action: PostAction, extra: object = {}, done?: string, close = false) {
     setBusy(true);
@@ -113,6 +137,7 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
           {post.approvedVersion ? (post.approvedVersion === post.version ? " · aprovada" : ` · aprovada a v${post.approvedVersion} (mudou depois)`) : " · sem aprovação"}
         </span>
         <span>{NETWORKS[post.network].label} · {post.formats.join(", ") || "sem destino"}</span>
+        {siblings.length > 0 && <span className="st-badge st-post-rascunho">também em {siblings.map((p) => NETWORKS[p.network].label).join(", ")}</span>}
         <span className={automatic ? "st-badge st-post-agendado" : "st-badge st-post-rascunho"}>{automatic ? "Automática" : "Manual"}</span>
       </div>
 
@@ -133,6 +158,12 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
               {automatic ? "Enviar mídias e aprovar" : "Aprovar"} versão {post.version}
               {post.scheduledAt ? " e agendar" : ""}
             </button>
+            {waiting.length > 1 && (
+              <button type="button" className="st-btn st-btn-primary" disabled={busy} onClick={approveGroup}>
+                <Icon name="check" size={16} />
+                Aprovar todas as redes ({waiting.map((p) => NETWORKS[p.network].label).join(", ")})
+              </button>
+            )}
             <button
               type="button"
               className="st-btn"

@@ -288,3 +288,33 @@ Uma migração por fase, sempre com:
 4. No estúdio, abrir a página **TikTok** e clicar em "Conectar TikTok".
 
 Rollback: desligar o modo automático nos posts (ou desconectar) faz tudo voltar ao modo manual com lembrete. A migração 0004 só amplia duas listas de valores permitidos.
+
+## 16. Nova publicação em três passos, em várias redes (23/10/2026)
+
+O fluxo é próprio do Luna Vox: segue o jeito do Instagram, mas sem copiar marca nem código do Instagram.
+
+**Passos:**
+1. **Selecionar:** escolher as mídias na ordem do carrossel.
+2. **Editar:**
+   - enquadramento das fotos (Original, 1:1, 4:5 ou 9:16); o recorte é feito no centro, no navegador, antes de enviar;
+   - ordem das mídias e escolha da capa.
+3. **Publicar:**
+   - legenda e hashtags;
+   - opções neutras ("flags");
+   - as redes, cada uma com os seus destinos e com o modo automático ligado ou desligado.
+
+**Grupo:** a mesma publicação vai para várias redes. Por baixo, cada rede continua sendo uma publicação própria (com a sua versão, fila e confirmação), e todas ficam ligadas pelo mesmo `group_id`. O botão **"Aprovar todas as redes"** aprova o grupo inteiro de uma vez.
+
+**Flags:** a tradução fica num módulo único, `api/_flags.ts`, que o servidor e a tela usam. Mostra, rede a rede, o que vai automático e o que fica para fazer no app:
+
+| Flag | Instagram | TikTok (fotos, automático) | TikTok (vídeo) / Telegram |
+|---|---|---|---|
+| Feito com IA | no app (a API não marca) | automático (`is_aigc`) | no app / na legenda |
+| Música sugerida | no app (a API não põe música) | no app | no app / na legenda |
+| Comentários desligados | no app, depois de publicado | no app, ao publicar | no app / grupo do canal |
+| Enquadramento | automático (recorte) | automático (recorte) | automático (recorte) |
+| Capa | primeira mídia (aviso) | automático (`photo_cover_index`) | primeira mídia (aviso) |
+
+**Regra bloqueante:** Feed do Instagram com 9:16 não salva, porque o Instagram aceita no Feed fotos de 4:5 a 1,91:1.
+
+**Banco:** migração `0005_grupos_e_flags.sql`. Ela só acrescenta `posts.group_id` e `posts.flags` (que começa vazio, `{}`); publicações antigas não mudam. Precisa rodar **antes** do merge desta parte, porque o servidor passa a gravar `flags`.

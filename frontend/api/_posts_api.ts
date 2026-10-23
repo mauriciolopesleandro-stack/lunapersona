@@ -3,6 +3,7 @@ import { isAuthenticated } from "./_auth.js";
 import { igConnection } from "./_instagram.js";
 import { tiktokConnectionRow } from "./_tiktok.js";
 import { TIKTOK_PHOTO_MAX_BYTES } from "./_tiktok_media.js";
+import { flagProblem, normalizeFlags, type PostFlags } from "./_flags.js";
 import {
   NETWORK_RULES,
   UPLOAD_BUCKET,
@@ -79,6 +80,8 @@ interface PostInput {
   caption: string;
   hashtags: string[];
   scheduledAt: string | null;
+  flags: PostFlags;
+  groupId: string | null;
 }
 
 function uuid(v: unknown, field = "Publicação"): string {
@@ -109,7 +112,11 @@ function parseInput(body: Record<string, unknown>): PostInput {
   if (hashtags.length > rules.hashtagMax) throw new Problem(400, `${rules.label}: no máximo ${rules.hashtagMax} hashtags.`);
   const mode = body.publish_mode === "api" ? "api" : "manual";
   if (mode === "api" && network === "telegram") throw new Problem(400, "Publicação automática ainda não existe para o Telegram.");
-  return { mode, network, formats, mediaIds, caption, hashtags, scheduledAt: when(body.scheduled_at) };
+  const flags = normalizeFlags(body.flags, mediaIds.length);
+  const flagIssue = flagProblem(network, formats, flags);
+  if (flagIssue) throw new Problem(400, flagIssue);
+  const groupId = body.group_id ? uuid(body.group_id, "Grupo") : null;
+  return { mode, network, formats, mediaIds, caption, hashtags, scheduledAt: when(body.scheduled_at), flags, groupId };
 }
 
 async function getPost(id: string): Promise<PostRow> {
@@ -274,6 +281,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         hashtags: input.hashtags,
         scheduled_at: input.scheduledAt,
         publish_mode: input.mode,
+        flags: input.flags,
+        ...(input.groupId ? { group_id: input.groupId } : {}),
       };
 
       if (!body.id) {

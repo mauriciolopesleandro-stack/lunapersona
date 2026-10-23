@@ -125,15 +125,22 @@ export async function uploadDraft(token: string, video: Uint8Array, mime: string
 
 // Fotos (ate 35) como rascunho: o TikTok baixa cada foto pelo link (PULL_FROM_URL),
 // que precisa estar no endereco verificado do app. A legenda vai junto.
-export async function uploadPhotoDraft(token: string, photoUrls: string[], description: string): Promise<string> {
+export async function uploadPhotoDraft(
+  token: string,
+  photoUrls: string[],
+  description: string,
+  options: { aiGenerated?: boolean; coverIndex?: number } = {}
+): Promise<string> {
   if (!photoUrls.length || photoUrls.length > 35) throw new TikTokError("De 1 a 35 fotos.", false);
+  const cover = options.coverIndex && options.coverIndex < photoUrls.length ? options.coverIndex : 0;
   const data = await api<{ publish_id: string }>("/v2/post/publish/content/init/", token, {
     method: "POST",
     body: JSON.stringify({
       post_info: { description: description.slice(0, 4000) },
-      source_info: { source: "PULL_FROM_URL", photo_images: photoUrls, photo_cover_index: 0 },
+      source_info: { source: "PULL_FROM_URL", photo_images: photoUrls, photo_cover_index: cover },
       post_mode: "MEDIA_UPLOAD",
       media_type: "PHOTO",
+      ...(options.aiGenerated ? { is_aigc: true } : {}),
     }),
   });
   return data.publish_id;

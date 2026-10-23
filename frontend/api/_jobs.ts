@@ -302,7 +302,7 @@ async function runTiktok(job: JobRow, baseUrl: string): Promise<Outcome> {
       // o TikTok tem 1 h para baixar; o link vale 2 h
       const urls = photos.map((u) => tiktokMediaUrl(baseUrl, u.storage_path, 2 * 3600));
       const caption = [post.caption, post.hashtags.join(" ")].filter(Boolean).join("\n\n");
-      const publishId = await uploadPhotoDraft(token, urls, caption);
+      const publishId = await uploadPhotoDraft(token, urls, caption, { aiGenerated: post.flags?.aiGenerated, coverIndex: post.flags?.coverIndex });
       await dbUpdateWhere("post_destinations", `id=eq.${dest.id}`, { external_id: publishId, last_error: null });
       return checkAgain(job, 1, "vídeo enviado ao TikTok");
     }
