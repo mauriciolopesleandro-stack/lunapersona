@@ -11,6 +11,7 @@ export interface PostFlags {
   commentsOff?: boolean; // desligar comentarios
   coverIndex?: number; // posicao da midia de capa (0 = primeira)
   aspect?: Aspect; // recorte das fotos (centro), feito no navegador antes de enviar
+  location?: string; // localizacao (texto)
 }
 
 export type Aspect = "1:1" | "4:5" | "9:16";
@@ -26,6 +27,7 @@ export const FLAG_LABELS: Record<keyof PostFlags, string> = {
   commentsOff: "Comentários desligados",
   coverIndex: "Capa",
   aspect: "Enquadramento",
+  location: "Localização",
 };
 
 // Le e valida o que veio do navegador; guarda so o que esta ligado (assim uma
@@ -40,6 +42,7 @@ export function normalizeFlags(raw: unknown, mediaCount: number): PostFlags {
     out.coverIndex = r.coverIndex;
   }
   if (typeof r.aspect === "string" && (ASPECTS as string[]).includes(r.aspect)) out.aspect = r.aspect as Aspect;
+  if (typeof r.location === "string" && r.location.trim()) out.location = r.location.trim().slice(0, 100);
   return out;
 }
 
@@ -84,6 +87,11 @@ export function translateFlags(network: FlagNetwork, formats: string[], mode: "m
     if (network === "instagram") add("commentsOff", "no_app", "a API não desliga comentários: desligue no menu do post depois de publicado");
     else if (network === "tiktok") add("commentsOff", "no_app", "desligue “Permitir comentários” ao publicar no app");
     else add("commentsOff", "no_app", "no Telegram, comentários dependem do grupo de discussão do canal");
+  }
+  if (flags.location) {
+    if (network === "instagram") add("location", "no_app", `adicione “${flags.location}” no app (pela API a localização exige uma permissão extra da Meta)`);
+    else if (network === "tiktok") add("location", "no_app", `adicione “${flags.location}” ao publicar no app`);
+    else add("location", "no_app", `cite “${flags.location}” na legenda se quiser`);
   }
   if (flags.aspect) {
     if (auto) add("aspect", "automatico", `as fotos são recortadas no centro em ${flags.aspect} antes de enviar`);
