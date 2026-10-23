@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ProfilePage } from "../components/ProfilePage";
 import { Composer } from "./Composer";
-import { PostBuilder } from "./PostBuilder";
+import { PostarPage, type PostarStart } from "./PostarPage";
 import { Icon } from "./Icon";
 import { CalendarPage, CharactersPage, ContentsPage, ItemDetails, OverviewPage, PublicationsPage, SettingsPage, type Nav } from "./pages";
 import { ComingSoon, Modal, formatBytes } from "./shared";
@@ -12,6 +12,7 @@ import "./studio.css";
 
 const NAV: { id: string; label: string; icon: string }[] = [
   { id: "visao", label: "Visão Geral", icon: "home" },
+  { id: "postar", label: "Postar", icon: "plus" },
   { id: "conteudos", label: "Conteúdos", icon: "grid" },
   { id: "calendario", label: "Calendário", icon: "calendar" },
   { id: "publicacoes", label: "Publicações", icon: "send" },
@@ -61,6 +62,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
   const [query, setQuery] = useState("");
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [composer, setComposer] = useState<{ post?: Post; date?: Date; media?: string[] } | null>(null);
+  const [postar, setPostar] = useState<PostarStart>({ key: 0 });
   const fileInput = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -83,7 +85,13 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
 
   const nav: Nav = {
     openItem: setOpenPath,
-    openComposer: setComposer,
+    // publicacao nova no modo banco abre a tela Postar; editar continua no modal
+    openComposer: (opts) => {
+      if (!opts.post && studio.source === "banco") {
+        setPostar({ key: Date.now(), date: opts.date, media: opts.media });
+        go("postar");
+      } else setComposer(opts);
+    },
     go,
     pickFiles: () => {
       if (studio.state === "ready") fileInput.current?.click();
@@ -191,6 +199,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
 
         <main className="st-page">
           {page === "visao" && <OverviewPage nav={nav} />}
+          {page === "postar" && <PostarPage key={postar.key} start={postar} onDone={() => go("publicacoes")} />}
           {page === "conteudos" && <ContentsPage nav={nav} query={query} />}
           {page === "calendario" && <CalendarPage nav={nav} />}
           {page === "publicacoes" && <PublicationsPage nav={nav} />}
@@ -227,17 +236,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
       )}
       {composer && (
         <Modal title={composer.post ? "Editar publicação" : "Nova publicação"} onClose={() => setComposer(null)} wide>
-          {/* no modo banco, publicacao nova usa o fluxo em tres passos (varias redes) */}
-          {!composer.post && studio.source === "banco" ? (
-            <PostBuilder defaultDate={composer.date} defaultMedia={composer.media} onDone={() => setComposer(null)} />
-          ) : (
-            <Composer
-              initial={composer.post}
-              defaultDate={composer.date}
-              defaultMedia={composer.media}
-              onDone={() => setComposer(null)}
-            />
-          )}
+          <Composer initial={composer.post} defaultDate={composer.date} defaultMedia={composer.media} onDone={() => setComposer(null)} />
         </Modal>
       )}
     </div>
