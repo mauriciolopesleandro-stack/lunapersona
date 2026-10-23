@@ -25,6 +25,7 @@ import {
   dbUpdate,
   dbUpdateWhere,
   storageObjectSize,
+  storageReadUrl,
   storageUploadUrl,
   supabaseConfigured,
 } from "./_supabase.js";
@@ -195,6 +196,14 @@ async function checkUploads(post: PostRow) {
   for (const r of rows) {
     const size = await storageObjectSize(UPLOAD_BUCKET, r.storage_path);
     if (size === null) throw new Problem(400, "Uma das mídias não chegou ao armazenamento. Tente aprovar de novo.");
+    if (r.storage_path.endsWith(".jpg")) {
+      // a foto precisa ser JPEG de verdade (Instagram e TikTok recusam o resto)
+      const res = await fetch(await storageReadUrl(UPLOAD_BUCKET, r.storage_path, 60), { headers: { Range: "bytes=0-2" } }).catch(() => null);
+      const head = res?.ok ? new Uint8Array(await res.arrayBuffer()).slice(0, 3) : null;
+      if (head && !(head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff)) {
+        throw new Problem(400, "Uma das fotos enviadas não é JPEG de verdade. Recarregue o estúdio (Ctrl + Shift + R) e aprove de novo: ele converte a foto.");
+      }
+    }
     await dbUpdateWhere("post_uploads", `id=eq.${r.id}`, { uploaded_at: new Date().toISOString(), size_bytes: size || undefined });
   }
 }
