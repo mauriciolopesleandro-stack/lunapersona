@@ -203,6 +203,10 @@ export async function cloudRunJobs(): Promise<{ processadas: number; ok: number;
 
 export interface InstagramStatus {
   encryption: boolean;
+  provider?: "instagram_login" | "facebook_login";
+  hasBackup?: boolean;
+  fbConfigured?: boolean;
+  redirectUri?: string;
   connected: boolean;
   status: string;
   username: string | null;
@@ -215,7 +219,7 @@ export async function cloudInstagram(): Promise<InstagramStatus> {
   return json(await fetch("/api/studio?r=instagram"));
 }
 
-export async function cloudInstagramAction(action: "connect" | "disconnect", token?: string): Promise<InstagramStatus> {
+export async function cloudInstagramAction(action: "connect" | "disconnect" | "restore", token?: string): Promise<InstagramStatus> {
   return json(
     await fetch("/api/studio?r=instagram", {
       method: "POST",

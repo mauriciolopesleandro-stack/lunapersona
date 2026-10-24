@@ -12,6 +12,13 @@ export interface PostFlags {
   coverIndex?: number; // posicao da midia de capa (0 = primeira)
   aspect?: Aspect; // recorte das fotos (centro), feito no navegador antes de enviar
   location?: string; // localizacao (texto)
+  igAudio?: IgAudioFlag; // musica da biblioteca do Instagram (so Reels, conexao pelo Facebook)
+}
+
+export interface IgAudioFlag {
+  id: string;
+  title: string;
+  artist: string;
 }
 
 export type Aspect = "1:1" | "4:5" | "9:16";
@@ -28,6 +35,7 @@ export const FLAG_LABELS: Record<keyof PostFlags, string> = {
   coverIndex: "Capa",
   aspect: "Enquadramento",
   location: "Localização",
+  igAudio: "Música do Instagram",
 };
 
 // Le e valida o que veio do navegador; guarda so o que esta ligado (assim uma
@@ -43,11 +51,18 @@ export function normalizeFlags(raw: unknown, mediaCount: number): PostFlags {
   }
   if (typeof r.aspect === "string" && (ASPECTS as string[]).includes(r.aspect)) out.aspect = r.aspect as Aspect;
   if (typeof r.location === "string" && r.location.trim()) out.location = r.location.trim().slice(0, 100);
+  const a = r.igAudio as Record<string, unknown> | undefined;
+  if (a && typeof a === "object" && typeof a.id === "string" && /^\d{5,30}$/.test(a.id)) {
+    out.igAudio = { id: a.id, title: String(a.title ?? "").slice(0, 120), artist: String(a.artist ?? "").slice(0, 120) };
+  }
   return out;
 }
 
 // Combinacoes que a rede recusaria (bloqueiam salvar). null = tudo certo.
 export function flagProblem(network: FlagNetwork, formats: string[], flags: PostFlags): string | null {
+  if (flags.igAudio && !(network === "instagram" && formats.length === 1 && formats[0] === "Reels")) {
+    return "A música do Instagram só vai em Reels (a API não põe música em foto, carrossel ou Stories).";
+  }
   if (network === "instagram" && formats.includes("Feed") && flags.aspect === "9:16") {
     return "O Feed do Instagram aceita fotos de 4:5 até 1,91:1: use 4:5 ou 1:1 no Feed (9:16 serve para Stories e Reels).";
   }
@@ -87,6 +102,11 @@ export function translateFlags(network: FlagNetwork, formats: string[], mode: "m
     if (network === "instagram") add("commentsOff", "no_app", "a API não desliga comentários: desligue no menu do post depois de publicado");
     else if (network === "tiktok") add("commentsOff", "no_app", "desligue “Permitir comentários” ao publicar no app");
     else add("commentsOff", "no_app", "no Telegram, comentários dependem do grupo de discussão do canal");
+  }
+  if (flags.igAudio) {
+    const name = [flags.igAudio.title, flags.igAudio.artist].filter(Boolean).join(" — ");
+    if (auto) add("igAudio", "automatico", `“${name}” da biblioteca do Instagram vai junto no Reels`);
+    else add("igAudio", "no_app", `escolha “${name}” no app ao publicar`);
   }
   if (flags.location) {
     if (network === "instagram") add("location", "no_app", `adicione “${flags.location}” no app (pela API a localização exige uma permissão extra da Meta)`);

@@ -31,13 +31,35 @@ export function InstagramPage() {
   }, []);
   const instagram = fromStore ?? fromServer;
 
-  async function act(action: "connect" | "disconnect") {
+  // volta do Login do Facebook: /?instagram=...#instagram
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("instagram");
+    if (!code) return;
+    window.history.replaceState(null, "", "/#instagram");
+    const text: Record<string, string> = {
+      conectado: "Conectado pelo Facebook: a música do Instagram está liberada nos Reels.",
+      "sessao-expirada": "Sua sessão do estúdio expirou no meio do caminho. Entre de novo e conecte outra vez.",
+      "state-invalido": "A autorização demorou mais de 10 minutos ou veio de outra aba. Tente de novo.",
+      "sem-instagram-na-pagina": "Nenhuma Página sua tem um Instagram profissional ligado. Ligue o Instagram à Página e tente de novo.",
+      "nao-configurado": "Faltam META_APP_ID, META_APP_SECRET ou META_LOGIN_CONFIG_ID na Vercel.",
+    };
+    setMessage(
+      code === "conectado"
+        ? { ok: true, text: text.conectado }
+        : { ok: false, text: text[code] ?? (code.startsWith("recusado:") ? `Autorização cancelada (${code.slice(9)}).` : `Não consegui conectar: ${code.replace(/^erro:/, "")}`) }
+    );
+  }, []);
+
+  async function act(action: "connect" | "disconnect" | "restore") {
     setBusy(true);
     setMessage(null);
     try {
       await instagramAction(action, action === "connect" ? token : undefined);
       setToken("");
-      setMessage({ ok: true, text: action === "connect" ? "Instagram conectado." : "Instagram desconectado." });
+      setMessage({
+        ok: true,
+        text: action === "connect" ? "Instagram conectado." : action === "restore" ? "Voltou para a conexão anterior (Instagram Login)." : "Instagram desconectado.",
+      });
     } catch (e) {
       setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -99,6 +121,39 @@ export function InstagramPage() {
         )}
         {message && <p className={message.ok ? "st-ok" : "st-error"}>{message.text}</p>}
       </section>
+
+      {state !== "sem-banco" && instagram && (
+        <section className="st-panel st-settings">
+          <h2>Música do Instagram nos Reels</h2>
+          {instagram.provider === "facebook_login" ? (
+            <>
+              <p>
+                <span className="st-badge st-badge-aprovado">Conectado pelo Facebook</span> No Publicar, os Reels ganham o campo “Música do Instagram”:
+                a música licenciada da biblioteca do Instagram vai junto, aplicada pelo próprio Instagram.
+              </p>
+              {instagram.hasBackup && (
+                <button type="button" className="st-btn" disabled={busy} onClick={() => act("restore")}>
+                  Voltar para a conexão anterior (sem música)
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <p>
+                A Meta só deixa pôr música por API em <b>Reels</b>, e só pela conexão do Facebook (Instagram ligado a uma Página). A conexão de hoje
+                fica guardada e dá para voltar a ela.
+              </p>
+              {instagram.fbConfigured ? (
+                <a className="st-btn st-btn-primary" href="/api/studio?r=instagram&action=fb-connect">
+                  Conectar pelo Facebook
+                </a>
+              ) : (
+                <p className="st-warn">Falta cadastrar META_APP_ID, META_APP_SECRET e META_LOGIN_CONFIG_ID na Vercel e fazer um novo deploy.</p>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
       <section className="st-panel st-settings">
         <h2>Como gerar o token (uma vez)</h2>

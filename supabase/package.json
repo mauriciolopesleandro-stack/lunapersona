@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/fundacao.test.mjs && node tests/publicacoes.test.mjs && node tests/instagram.test.mjs && node tests/tiktok.test.mjs && node tests/grupos.test.mjs"
+    "test": "node tests/fundacao.test.mjs && node tests/publicacoes.test.mjs && node tests/instagram.test.mjs && node tests/tiktok.test.mjs && node tests/grupos.test.mjs && node tests/instagram_fb.test.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.2.17"

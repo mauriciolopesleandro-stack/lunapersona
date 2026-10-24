@@ -271,7 +271,7 @@ interface Studio {
   postsError: string | null;
   reloadPosts: () => Promise<void>;
   instagram: InstagramStatus | null;
-  instagramAction: (action: "connect" | "disconnect", token?: string) => Promise<void>;
+  instagramAction: (action: "connect" | "disconnect" | "restore", token?: string) => Promise<void>;
   tiktok: TikTokStatus | null;
   reloadTiktok: () => Promise<void>;
   disconnectTiktok: () => Promise<void>;
@@ -720,7 +720,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     [reloadPosts, pathOfId]
   );
 
-  const instagramAction = useCallback(async (action: "connect" | "disconnect", token?: string) => {
+  const instagramAction = useCallback(async (action: "connect" | "disconnect" | "restore", token?: string) => {
     setInstagram(await cloudInstagramAction(action, token));
   }, []);
 

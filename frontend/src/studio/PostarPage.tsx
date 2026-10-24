@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { aspectRatio, ASPECTS, flagProblem, translateFlags, type Aspect, type PostFlags } from "../../api/_flags";
+import { aspectRatio, ASPECTS, flagProblem, translateFlags, type Aspect, type IgAudioFlag, type PostFlags } from "../../api/_flags";
 import { Icon } from "./Icon";
 import { Modal, NETWORKS, Thumb } from "./shared";
 import { useStudio, type Item, type Network, type Post } from "./store";
@@ -31,6 +31,7 @@ interface Pub {
   aspect: Aspect | "original";
   ownCaption: boolean;
   caption: string;
+  igAudio?: IgAudioFlag; // musica da biblioteca do Instagram (so Reels)
 }
 
 interface Platform {
@@ -157,6 +158,7 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
       ...(p.unit === CAROUSEL && cover > 0 && cover < chosen.length ? { coverIndex: cover } : {}),
       ...(p.aspect !== "original" ? { aspect: p.aspect } : {}),
       ...(plat.location.trim() ? { location: plat.location.trim() } : {}),
+      ...(p.slot === "ig_reels" && p.igAudio ? { igAudio: p.igAudio } : {}),
     };
   };
   const pubCaption = (p: Pub) => (p.ownCaption ? p.caption : platforms[slotOf(p.slot).network].caption);
@@ -327,7 +329,9 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
   const canGo = (s: number) => s === 1 || (s === 2 && chosen.length > 0) || (s >= 3 && chosen.length > 0 && active.length > 0);
   const primaryLabel = blockingCount ? "Corrigir pendências" : when === "agora" ? "Publicar agora" : "Agendar publicação";
 
-  const previewPubs = active.filter((p) => p.slot === previewSlot);
+  // a previa abre na primeira rede marcada (ex.: so Reels -> nao mostra o Feed vazio)
+  const shownSlot = active.some((p) => p.slot === previewSlot) ? previewSlot : active.find((p) => p.slot !== "tg")?.slot ?? previewSlot;
+  const previewPubs = active.filter((p) => p.slot === shownSlot);
   const shownPub = previewPubs.find((p) => p.key === previewKey) ?? previewPubs[0];
 
   return (
@@ -536,6 +540,13 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
                             </span>
                           </div>
                         )}
+                        {p.slot === "ig_reels" && (
+                          <IgAudioPicker
+                            value={p.igAudio}
+                            enabled={instagram?.provider === "facebook_login"}
+                            onChange={(a) => patchPub(p.key, { igAudio: a })}
+                          />
+                        )}
                         {translated.length > 0 && (
                           <ul className="st-translate">
                             {translated.map((x) => (
@@ -690,7 +701,7 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
               {SLOTS.filter((s) => s.id !== "tg").map((s) => {
                 const count = active.filter((p) => p.slot === s.id).length;
                 return (
-                  <button key={s.id} type="button" className={previewSlot === s.id ? "active" : ""} onClick={() => setPreviewSlot(s.id)}>
+                  <button key={s.id} type="button" className={shownSlot === s.id ? "active" : ""} onClick={() => setPreviewSlot(s.id)}>
                     {s.network === "instagram" ? `Instagram ${s.label}` : s.label} ({count})
                   </button>
                 );
@@ -716,11 +727,11 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
                 caption={pubCaption(shownPub)}
                 hashtags={platforms[slotOf(shownPub.slot).network].hashtags}
                 user={slotOf(shownPub.slot).network === "instagram" ? instagram?.username ?? "lunavox" : tiktok?.name ?? "lunavox"}
-                music={music}
+                music={shownPub.igAudio ? [shownPub.igAudio.title, shownPub.igAudio.artist].filter(Boolean).join(" — ") : music}
                 location={platforms[slotOf(shownPub.slot).network].location}
               />
             ) : (
-              <p className="st-empty">Nada marcado para {slotOf(previewSlot).network === "instagram" ? `o Instagram ${slotOf(previewSlot).label}` : "o TikTok"}.</p>
+              <p className="st-empty">Nada marcado para {slotOf(shownSlot).network === "instagram" ? `o Instagram ${slotOf(shownSlot).label}` : "o TikTok"}.</p>
             )}
           </section>
           <section className="st-panel">
@@ -851,6 +862,103 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
             setPicking(false);
           }}
         />
+      )}
+    </div>
+  );
+}
+
+interface IgAudioResult {
+  id: string;
+  title: string;
+  artist: string;
+  durationMs: number | null;
+  cover: string | null;
+  previewLink: string | null;
+}
+
+// Musica da biblioteca do Instagram para um Reels (Audio API da Meta, so pela
+// conexao do Facebook). Sem busca = em alta. O Instagram aplica a musica ao
+// publicar; a previa so existe no app (link "ouvir no Instagram").
+function IgAudioPicker({ value, enabled, onChange }: { value?: IgAudioFlag; enabled: boolean; onChange: (a?: IgAudioFlag) => void }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<IgAudioResult[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!enabled) {
+    return <p className="st-hint">Música do Instagram: conecte pelo Facebook (página Instagram) para escolher a música deste Reels.</p>;
+  }
+  async function search(q: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/studio?r=instagram&action=audio&q=${encodeURIComponent(q)}`);
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(b.detail ?? `Erro HTTP ${r.status}`);
+      setResults(b.audio ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="st-igaudio">
+      <span className="st-hint">Música do Instagram</span>
+      {value ? (
+        <div className="st-song">
+          <span>
+            <b>{value.title}</b>
+            <small>{value.artist}</small>
+          </span>
+          <button type="button" className="st-btn st-btn-small" onClick={() => onChange(undefined)}>
+            Trocar
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="st-row">
+            <input
+              className="st-input st-grow"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), search(query))}
+              placeholder="Buscar música ou artista"
+              aria-label="Buscar música do Instagram"
+            />
+            <button type="button" className="st-btn st-btn-small" disabled={busy} onClick={() => search(query)}>
+              Buscar
+            </button>
+            <button type="button" className="st-btn st-btn-small" disabled={busy} onClick={() => search("")}>
+              Em alta
+            </button>
+          </div>
+          {error && <p className="st-error">{error}</p>}
+          {results && results.length === 0 && <p className="st-hint">Nenhuma música liberada para essa busca.</p>}
+          {results && results.length > 0 && (
+            <ul className="st-igaudio-list">
+              {results.map((a) => (
+                <li key={a.id}>
+                  {a.cover ? <img src={a.cover} alt="" /> : <span className="st-igaudio-cover" />}
+                  <span>
+                    <b>{a.title}</b>
+                    <small>
+                      {a.artist}
+                      {a.durationMs ? ` · ${Math.floor(a.durationMs / 60000)}:${String(Math.round((a.durationMs % 60000) / 1000)).padStart(2, "0")}` : ""}
+                    </small>
+                  </span>
+                  {a.previewLink && (
+                    <a className="st-link" href={a.previewLink} target="_blank" rel="noreferrer">
+                      ouvir no Instagram
+                    </a>
+                  )}
+                  <button type="button" className="st-btn st-btn-small" onClick={() => onChange({ id: a.id, title: a.title, artist: a.artist })}>
+                    Usar
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );

@@ -13,6 +13,10 @@
       "destination": "/api/studio?r=tiktok-callback"
     },
     {
+      "source": "/api/instagram/callback",
+      "destination": "/api/studio?r=instagram-callback"
+    },
+    {
       "source": "/api/tiktok/media/:file",
       "destination": "/api/studio?r=tiktok-media&f=:file"
     }

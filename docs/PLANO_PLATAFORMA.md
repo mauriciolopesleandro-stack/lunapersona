@@ -359,3 +359,49 @@ Decisões do usuário:
 **Menu**, na ordem do fluxo: Publicar, Planejamento, Publicações, Biblioteca de mídia, Músicas e áudios, Contas conectadas (página nova, que dá acesso ao Instagram, ao TikTok e ao Telegram), Personagens e Configurações. Os módulos que ainda não existem ficam em "Em breve".
 
 **Teste** (`test_assistente.mjs`, no computador e no celular): cobre os cenários 1, 2, 3, 4, 5, 9 e 13 do prompt.
+
+## 18. Música do Instagram nos Reels (24/10/2026)
+
+A Meta só libera música pela API (Instagram Audio API) com o **Login do Facebook para Empresas**, com o Instagram ligado a uma Página do Facebook. A música vai **só em Reels**: não há API para música em foto, carrossel ou Stories.
+
+**O que foi configurado na Meta:**
+- Página do Facebook "Luna Vox", ligada a @lunavoxlopes;
+- no app "Luna Vox Studio", o login do Facebook com as 5 permissões e a configuração "Luna Studio" (ID 1788847055662416);
+- URI de retorno: `https://luna-ai-studio-frontend.vercel.app/api/instagram/callback`.
+
+**Como funciona:**
+- **Conectar.** Em Contas conectadas → Instagram → "Conectar pelo Facebook". A conexão de hoje (token colado) fica guardada como reserva, cifrada.
+- **Voltar.** O botão "Voltar para a conexão anterior (sem música)" restaura a reserva sem pedir nada de novo.
+- **Escolher a música.** No passo 2 do Publicar, cada Reels tem "Música do Instagram": buscar por nome ou artista, ou "Em alta", depois "Usar". A plataforma guarda só o código, o nome e o artista da música, sem o áudio. A prévia mostra a música.
+- **Publicar.** O Instagram aplica a música ao criar o Reels (`audio_configuration`: música 90, som do vídeo 40).
+- **Regras:**
+  - música do Instagram fora de Reels é recusada;
+  - um Reels com música não é aprovado sem a conexão pelo Facebook.
+- **Renovação.** O token do Facebook dura cerca de 60 dias e é renovado sozinho, como o do Instagram.
+
+**Arquivos:**
+- `api/_instagram.ts`: login do Facebook, busca de música e escolha do servidor (graph.instagram.com ou graph.facebook.com);
+- `api/_instagram_api.ts`: rotas fb-connect, callback, audio e restore;
+- `api/_flags.ts`: flag `igAudio`;
+- `api/_jobs.ts`: envia `audio_configuration`;
+- `src/studio/PostarPage.tsx`: componente `IgAudioPicker`;
+- `vercel.json`: reescreve `/api/instagram/callback`.
+
+**Banco:** migração `0006_instagram_facebook.sql`, só aditiva: colunas `provider`, `backup_ciphertext` e `backup_user_id` em `platform_connections`. As conexões existentes ficam como estão.
+
+**Variáveis na Vercel:** `META_APP_ID`, `META_LOGIN_CONFIG_ID`, `META_APP_SECRET`. O segredo é colado pelo usuário. A opcional `INSTAGRAM_REDIRECT_URI` só é necessária se o domínio mudar.
+
+**Para desfazer:**
+- usar "Voltar para a conexão anterior";
+- reverter o merge;
+- as colunas novas podem ficar, porque o código antigo as ignora.
+
+**Teste:** `test_igmusic.mjs`, com Facebook falso. Cobre:
+- o diálogo com app, configuração e state;
+- o token cifrado com a reserva;
+- a busca de música;
+- a tradução e a prévia;
+- o Reels criado com `audio_configuration` via graph.facebook.com;
+- a música recusada no Feed;
+- a volta para a conexão anterior;
+- o bloqueio sem a conexão pelo Facebook.
