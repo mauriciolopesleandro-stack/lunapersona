@@ -303,7 +303,7 @@ function PostList({ posts, nav, empty }: { posts: Post[]; nav: Nav; empty: strin
             </span>
             <span className="st-post-when">
               {p.scheduledAt ? new Date(p.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "sem data"}
-              <PostStatusBadge status={p.status} />
+              <PostStatusBadge status={p.status} post={p} />
             </span>
           </button>
         );
@@ -632,7 +632,7 @@ export function CalendarPage({ nav }: { nav: Nav }) {
 const CLOUD_TABS: { id: string; label: string; statuses: PostStatus[] }[] = [
   { id: "aprovar", label: "Aguardando aprovação", statuses: ["aguardando_aprovacao"] },
   { id: "agenda", label: "Aprovadas e agendadas", statuses: ["aprovado", "agendado"] },
-  { id: "confirmar", label: "Para confirmar", statuses: ["publicando"] },
+  { id: "confirmar", label: "Processando / ação manual", statuses: ["publicando"] },
   { id: "publicadas", label: "Publicadas", statuses: ["publicado"] },
   { id: "rascunhos", label: "Rascunhos", statuses: ["rascunho"] },
   { id: "problemas", label: "Falhas e canceladas", statuses: ["falhou", "cancelado"] },

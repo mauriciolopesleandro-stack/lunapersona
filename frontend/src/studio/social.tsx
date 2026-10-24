@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { InstagramStatus, TikTokStatus } from "./cloud";
 import { Icon } from "./Icon";
 import { useStudio } from "./store";
+import type { Nav } from "./pages";
 
 function fmt(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString("pt-BR") : "—";
@@ -304,6 +305,65 @@ export function TikTokPage() {
           </ol>
         </section>
       )}
+    </div>
+  );
+}
+
+// Contas conectadas: o estado de cada rede num lugar so, com o caminho para
+// conectar ou gerenciar (as paginas de cada rede continuam as mesmas).
+export function AccountsPage({ nav }: { nav: Nav }) {
+  const { instagram, tiktok, source } = useStudio();
+  const cards = [
+    {
+      id: "instagram",
+      icon: "instagram",
+      label: "Instagram",
+      ok: Boolean(instagram?.connected),
+      text: instagram?.connected ? `@${instagram.username} · publicação automática (Feed, carrossel, Reels, Stories)` : "não conectado · publicação manual com lembrete",
+      error: instagram?.lastError ?? null,
+    },
+    {
+      id: "tiktok",
+      icon: "tiktok",
+      label: "TikTok",
+      ok: Boolean(tiktok?.connected),
+      text: tiktok?.connected ? `${tiktok.name ?? "conta"} · rascunho automático (vídeo e fotos); você publica no app` : "não conectado · publicação manual com lembrete",
+      error: tiktok?.lastError ?? null,
+    },
+    { id: "telegram", icon: "telegram", label: "Telegram", ok: false, text: "lembretes no horário; bot de vendas em breve", error: null },
+  ];
+  return (
+    <div>
+      <div className="st-page-head">
+        <div>
+          <h1>Contas conectadas</h1>
+          <p>Onde o estúdio pode publicar e o que cada conexão permite.</p>
+        </div>
+      </div>
+      {source !== "banco" && <p className="st-warn">Sem banco de dados ligado as conexões não aparecem.</p>}
+      <div className="st-accounts">
+        {cards.map((c) => (
+          <section key={c.id} className={`st-panel st-target st-target-${c.id}${c.ok ? " on" : ""}`}>
+            <div className="st-target-head">
+              <Icon name={c.icon} size={20} />
+              <b>{c.label}</b>
+              {c.id !== "telegram" && <span className={c.ok ? "st-badge st-badge-aprovado" : "st-badge st-badge-rascunho"}>{c.ok ? "Conectado" : "Não conectado"}</span>}
+            </div>
+            <p className="st-hint">{c.text}</p>
+            {c.error && <p className="st-error">Último erro: {c.error}</p>}
+            <button type="button" className="st-btn st-btn-small" onClick={() => nav.go(c.id)}>
+              {c.ok ? "Gerenciar" : c.id === "telegram" ? "Ver" : "Conectar"}
+            </button>
+          </section>
+        ))}
+      </div>
+      <p className="st-hint">
+        Avisos no celular (Telegram): configure o bot em{" "}
+        <button type="button" className="st-link" onClick={() => nav.go("perfil")}>
+          Meu perfil
+        </button>
+        .
+      </p>
     </div>
   );
 }

@@ -318,3 +318,44 @@ O fluxo é próprio do Luna Vox: segue o jeito do Instagram, mas sem copiar marc
 **Regra bloqueante:** Feed do Instagram com 9:16 não salva, porque o Instagram aceita no Feed fotos de 4:5 a 1,91:1.
 
 **Banco:** migração `0005_grupos_e_flags.sql`. Ela só acrescenta `posts.group_id` e `posts.flags` (que começa vazio, `{}`); publicações antigas não mudam. Precisa rodar **antes** do merge desta parte, porque o servidor passa a gravar `flags`.
+
+## 17. Prompt mestre, Fase 1: assistente Publicar em 4 etapas (23/10/2026)
+
+Decisões do usuário:
+- manter as cores atuais;
+- uso só pelo próprio usuário (sem Supabase Auth nem várias contas por enquanto);
+- geração com IA fica para depois (depende de provedor pago).
+
+**Publicar** tem quatro etapas: Criar → Configurar → Revisar → Publicar. As configurações ficam guardadas ao voltar de uma etapa.
+
+- **Criar:** mídias da biblioteca, ordem (que vale para o carrossel), capa do carrossel e recorte padrão.
+- **Configurar:**
+  - grade **mídia × formato** (Instagram Feed, Stories e Reels, TikTok, Telegram). Cada marcação vira **uma publicação própria**, com a sua rede, o seu formato, as suas mídias, o seu recorte e, se quiser, a sua legenda. Nada vai para uma rede que não foi marcada;
+  - combinações impossíveis ficam bloqueadas na grade, com o motivo. Exemplos: Reels só com vídeo; Stories com 1 mídia; o TikTok não junta vídeo com fotos. Feed com 9:16 tem o botão "Adaptar para 4:5";
+  - painel de cada plataforma: liga e desliga, estado da conta, modo automático, legenda e hashtags próprias, e localização.
+- **Revisar:** prévias de Feed, Stories, Reels e TikTok, cada uma só com o que foi marcado para ela, na ordem e com o recorte de verdade. Os alertas aparecem num lugar só:
+  - impedem publicar: conta desconectada, incompatível, legenda acima do limite, conteúdo adulto, horário passado;
+  - só avisam: música não automática, TikTok em rascunho, publicações manuais.
+- **Publicar:**
+  - agora ou agendar, com o fuso horário à vista;
+  - resumo de cada publicação (rede, formato, mídia, legenda, como sai) e confirmação antes de enviar;
+  - cada publicação é registrada e enviada sozinha: um erro numa não impede as outras;
+  - o botão principal mostra a ação possível: "Publicar agora", "Agendar publicação" ou "Corrigir pendências".
+
+**Nomes dos status:**
+
+| Status | Quando aparece |
+|---|---|
+| Rascunho | salvo, sem enviar para aprovação |
+| Aguardando aprovação | enviado, falta aprovar |
+| Aguardando publicação | aprovado, sem horário |
+| Agendada | aprovada e com horário |
+| Processando | o Instagram está publicando sozinho |
+| Requer ação manual | é com você: modo manual, ou rascunho no app do TikTok |
+| Publicada | a rede confirmou |
+| Falhou | a rede recusou ou deu erro |
+| Cancelada | cancelada antes de sair |
+
+**Menu**, na ordem do fluxo: Publicar, Planejamento, Publicações, Biblioteca de mídia, Músicas e áudios, Contas conectadas (página nova, que dá acesso ao Instagram, ao TikTok e ao Telegram), Personagens e Configurações. Os módulos que ainda não existem ficam em "Em breve".
+
+**Teste** (`test_assistente.mjs`, no computador e no celular): cobre os cenários 1, 2, 3, 4, 5, 9 e 13 do prompt.

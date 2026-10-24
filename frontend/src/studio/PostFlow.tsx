@@ -6,16 +6,25 @@ import { useStudio, type Post, type PostAction, type PostStatus } from "./store"
 export const POST_STATUS: Record<PostStatus, string> = {
   rascunho: "Rascunho",
   aguardando_aprovacao: "Aguardando aprovação",
-  aprovado: "Aprovado",
-  agendado: "Agendado",
-  publicando: "Hora de publicar",
-  publicado: "Publicado",
+  aprovado: "Aguardando publicação",
+  agendado: "Agendada",
+  publicando: "Processando",
+  publicado: "Publicada",
   falhou: "Falhou",
-  cancelado: "Cancelado",
+  cancelado: "Cancelada",
 };
 
-export function PostStatusBadge({ status }: { status: PostStatus }) {
-  return <span className={`st-badge st-post-${status}`}>{POST_STATUS[status]}</span>;
+// "publicando" e Processando quando a API publica sozinha (Instagram
+// automatico); se depende de voce (manual, ou rascunho no app do TikTok), e
+// Requer acao manual.
+export function postStatusLabel(p: Pick<Post, "status" | "publishMode" | "network">): string {
+  if (p.status === "publicando" && !(p.publishMode === "api" && p.network === "instagram")) return "Requer ação manual";
+  return POST_STATUS[p.status];
+}
+
+export function PostStatusBadge({ status, post }: { status: PostStatus; post?: Pick<Post, "status" | "publishMode" | "network"> }) {
+  const label = post ? postStatusLabel(post) : POST_STATUS[status];
+  return <span className={`st-badge st-post-${status}${label === "Requer ação manual" ? " st-post-manual" : ""}`}>{label}</span>;
 }
 
 function fmt(iso: string | null | undefined) {
@@ -131,7 +140,7 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
   return (
     <div className="st-flow">
       <div className="st-flow-head">
-        <PostStatusBadge status={post.status} />
+        <PostStatusBadge status={post.status} post={post} />
         <span>
           Versão {post.version}
           {post.approvedVersion ? (post.approvedVersion === post.version ? " · aprovada" : ` · aprovada a v${post.approvedVersion} (mudou depois)`) : " · sem aprovação"}
