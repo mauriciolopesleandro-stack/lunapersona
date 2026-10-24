@@ -3175,3 +3175,49 @@
     white-space: normal;
   }
 }
+
+/* ---------- Musica do Instagram nos Reels ---------- */
+
+.st-igaudio {
+  display: grid;
+  gap: 6px;
+}
+
+.st-igaudio-list {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.st-igaudio-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.st-igaudio-list img,
+.st-igaudio-cover {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 6px;
+  background: var(--bg-panel-2);
+  object-fit: cover;
+}
+
+.st-igaudio-list li > span {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.st-igaudio-list small {
+  color: var(--text-muted);
+}

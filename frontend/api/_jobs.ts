@@ -10,6 +10,7 @@ import {
   igWaitReady,
   type IgConnection,
 } from "./_instagram.js";
+import type { PostFlags } from "./_flags.js";
 import { NETWORK_RULES, UPLOAD_BUCKET, cleanupUploads, type PostRow } from "./_posts.js";
 import { TikTokError, publishStatus, tiktokAccessToken, uploadDraft, uploadPhotoDraft } from "./_tiktok.js";
 import { tiktokMediaUrl } from "./_tiktok_media.js";
@@ -147,23 +148,28 @@ async function retryOrFail(job: JobRow, post: PostRow, error: string, retryable:
 }
 
 // Cria o conteiner de um destino (Feed: foto, video ou carrossel; Reels; Stories).
-async function createContainer(conn: IgConnection, format: string, uploads: UploadRow[], caption: string): Promise<string> {
+// Reels com musica da biblioteca do Instagram: audio_configuration (Audio API,
+// so pela conexao do Facebook); volume da musica 90 e do som do video 40.
+async function createContainer(conn: IgConnection, format: string, uploads: UploadRow[], caption: string, flags: PostFlags): Promise<string> {
   const urls = await Promise.all(uploads.map((u) => storageReadUrl(UPLOAD_BUCKET, u.storage_path, 6 * 3600)));
   const isVideo = (u: UploadRow) => u.mime_type.startsWith("video/");
+  const create = (params: Record<string, string>) => igCreateContainer(conn.userId, conn.token, params, conn.host);
   if (format === "Stories") {
-    return igCreateContainer(conn.userId, conn.token, { media_type: "STORIES", [isVideo(uploads[0]) ? "video_url" : "image_url"]: urls[0] });
+    return create({ media_type: "STORIES", [isVideo(uploads[0]) ? "video_url" : "image_url"]: urls[0] });
   }
   if (format === "Reels" || (uploads.length === 1 && isVideo(uploads[0]))) {
-    return igCreateContainer(conn.userId, conn.token, { media_type: "REELS", video_url: urls[0], caption });
+    const params: Record<string, string> = { media_type: "REELS", video_url: urls[0], caption };
+    if (format === "Reels" && flags.igAudio && conn.provider === "facebook_login") {
+      params.audio_configuration = JSON.stringify({ audio_id: flags.igAudio.id, audio_volume: 90, video_volume: 40 });
+    }
+    return create(params);
   }
-  if (uploads.length === 1) return igCreateContainer(conn.userId, conn.token, { image_url: urls[0], caption });
+  if (uploads.length === 1) return create({ image_url: urls[0], caption });
   const children: string[] = [];
   for (const [i, u] of uploads.entries()) {
-    children.push(
-      await igCreateContainer(conn.userId, conn.token, isVideo(u) ? { media_type: "VIDEO", video_url: urls[i], is_carousel_item: "true" } : { image_url: urls[i], is_carousel_item: "true" })
-    );
+    children.push(await create(isVideo(u) ? { media_type: "VIDEO", video_url: urls[i], is_carousel_item: "true" } : { image_url: urls[i], is_carousel_item: "true" }));
   }
-  return igCreateContainer(conn.userId, conn.token, { media_type: "CAROUSEL", children: children.join(","), caption });
+  return create({ media_type: "CAROUSEL", children: children.join(","), caption });
 }
 
 // Midia ainda processando no Instagram: volta em 1 min sem gastar tentativa
@@ -199,7 +205,7 @@ async function runInstagram(job: JobRow): Promise<Outcome> {
     for (const d of dests) {
       let container = d.external_container_id;
       if (container) {
-        const status = await igWaitReady(container, conn.token, 3);
+        const status = await igWaitReady(container, conn.token, 3, 3000, conn.host);
         if (status === "PUBLISHED") {
           // publicou numa tentativa anterior e caiu antes de registrar: so registra
           await dbUpdateWhere("post_destinations", `id=eq.${d.id}&status=eq.pendente`, {
@@ -215,18 +221,18 @@ async function runInstagram(job: JobRow): Promise<Outcome> {
         }
         if (status !== "FINISHED") return waitMore(job, post);
       } else {
-        container = await createContainer(conn, d.format, uploads, caption);
+        container = await createContainer(conn, d.format, uploads, caption, post.flags ?? {});
         await dbUpdateWhere("post_destinations", `id=eq.${d.id}`, { external_container_id: container, last_error: null });
         // foto e video: espera o Instagram processar antes de publicar
-        const status = await igWaitReady(container, conn.token);
+        const status = await igWaitReady(container, conn.token, 8, 3000, conn.host);
         if (status === "ERROR" || status === "EXPIRED") {
           await dbUpdateWhere("post_destinations", `id=eq.${d.id}`, { external_container_id: null, last_error: `contêiner ${status}` });
           throw new InstagramError(`o Instagram recusou a mídia de ${d.format} (${status})`, true);
         }
         if (status !== "FINISHED") return waitMore(job, post);
       }
-      const mediaId = await igPublish(conn.userId, conn.token, container);
-      const permalink = await igPermalink(mediaId, conn.token);
+      const mediaId = await igPublish(conn.userId, conn.token, container, conn.host);
+      const permalink = await igPermalink(mediaId, conn.token, conn.host);
       await dbUpdateWhere("post_destinations", `id=eq.${d.id}&status=eq.pendente`, {
         status: "publicado",
         external_id: mediaId,

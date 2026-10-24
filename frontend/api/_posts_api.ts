@@ -193,6 +193,9 @@ async function checkUploads(post: PostRow) {
   } else {
     const conn = await igConnection().catch(() => null);
     if (!conn) throw new Problem(400, "Conecte a conta do Instagram (página Instagram) antes de aprovar uma publicação automática.");
+    if (post.flags?.igAudio && conn.provider !== "facebook_login") {
+      throw new Problem(400, "A música do Instagram precisa da conexão pelo Facebook (página Instagram → Conectar pelo Facebook).");
+    }
   }
   const mediaCount = (await postMediaIds(post.id)).length;
   const rows = await dbSelect<{ id: string; storage_path: string }>(
