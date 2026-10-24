@@ -5,28 +5,35 @@ import { PostarPage, type PostarStart } from "./PostarPage";
 import { Icon } from "./Icon";
 import { CalendarPage, CharactersPage, ContentsPage, ItemDetails, OverviewPage, PublicationsPage, SettingsPage, type Nav } from "./pages";
 import { ComingSoon, Modal, formatBytes } from "./shared";
-import { InstagramPage, TikTokPage } from "./social";
+import { AccountsPage, InstagramPage, TikTokPage } from "./social";
 import { MusicPage } from "./music";
 import { StudioProvider, useStudio, type Post } from "./store";
 import "./studio.css";
 
+// Menu na ordem do fluxo de trabalho. Instagram, TikTok e Telegram abrem por
+// Contas conectadas; os modulos que ainda nao existem ficam em "Em breve".
 const NAV: { id: string; label: string; icon: string }[] = [
   { id: "visao", label: "Visão Geral", icon: "home" },
-  { id: "postar", label: "Postar", icon: "plus" },
-  { id: "conteudos", label: "Conteúdos", icon: "grid" },
-  { id: "calendario", label: "Calendário", icon: "calendar" },
+  { id: "postar", label: "Publicar", icon: "plus" },
+  { id: "calendario", label: "Planejamento", icon: "calendar" },
   { id: "publicacoes", label: "Publicações", icon: "send" },
-  { id: "musicas", label: "Músicas em alta", icon: "music" },
-  { id: "instagram", label: "Instagram", icon: "instagram" },
-  { id: "tiktok", label: "TikTok", icon: "tiktok" },
-  { id: "telegram", label: "Telegram", icon: "telegram" },
+  { id: "conteudos", label: "Biblioteca de mídia", icon: "grid" },
+  { id: "musicas", label: "Músicas e áudios", icon: "music" },
+  { id: "contas", label: "Contas conectadas", icon: "users" },
+  { id: "personagens", label: "Personagens", icon: "user" },
+  { id: "configuracoes", label: "Configurações", icon: "gear" },
+];
+const NAV_SOON: { id: string; label: string; icon: string }[] = [
   { id: "monetizacao", label: "Monetização", icon: "dollar" },
   { id: "assinaturas", label: "Assinaturas", icon: "subscription" },
   { id: "vendas", label: "Vendas Avulsas", icon: "bag" },
   { id: "audiencia", label: "Audiência", icon: "chart" },
   { id: "financeiro", label: "Financeiro", icon: "wallet" },
-  { id: "personagens", label: "Personagens", icon: "users" },
-  { id: "configuracoes", label: "Configurações", icon: "gear" },
+];
+const HIDDEN: { id: string; label: string; icon: string }[] = [
+  { id: "instagram", label: "Instagram", icon: "instagram" },
+  { id: "tiktok", label: "TikTok", icon: "tiktok" },
+  { id: "telegram", label: "Telegram", icon: "telegram" },
 ];
 
 // Modulos que dependem de integracoes oficiais ou de dados que ainda nao existem.
@@ -99,7 +106,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
     },
   };
 
-  const current = NAV.find((n) => n.id === page);
+  const current = [...NAV, ...NAV_SOON, ...HIDDEN].find((n) => n.id === page);
 
   return (
     <div className="st-shell">
@@ -114,6 +121,18 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
         </div>
         <nav className="st-nav">
           {NAV.map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              className={page === n.id || (n.id === "contas" && HIDDEN.some((h) => h.id === page)) ? "active" : ""}
+              onClick={() => go(n.id)}
+            >
+              <Icon name={n.icon} />
+              {n.label}
+            </button>
+          ))}
+          <span className="st-nav-group">Em breve</span>
+          {NAV_SOON.map((n) => (
             <button key={n.id} type="button" className={page === n.id ? "active" : ""} onClick={() => go(n.id)}>
               <Icon name={n.icon} />
               {n.label}
@@ -208,6 +227,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           {page === "instagram" && <InstagramPage />}
           {page === "tiktok" && <TikTokPage />}
           {page === "musicas" && <MusicPage />}
+          {page === "contas" && <AccountsPage nav={nav} />}
           {page === "perfil" && <ProfilePage onLogout={onLogout} />}
           {SOON[page] && current && <ComingSoon title={current.label} icon={current.icon} text={SOON[page]} />}
         </main>
