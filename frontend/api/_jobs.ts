@@ -268,6 +268,35 @@ async function checkAgain(job: JobRow, minutes: number, detail?: string): Promis
 }
 
 const TIKTOK_WAIT_HOURS = 72;
+// lembretes do rascunho parado na caixa de entrada do TikTok (horas depois de chegar)
+const TIKTOK_REMIND_HOURS = [3, 12, 24, 48];
+const STATUS_LOG = "TikTok respondeu: ";
+
+// Historico desta tarefa (poucas linhas: envio, respostas do TikTok, lembretes).
+function jobLog(job: JobRow) {
+  return dbSelect<{ detail: string | null; started_at: string }>("publishing_attempts", `select=detail,started_at&job_id=eq.${job.id}&order=started_at.asc`);
+}
+
+// Guarda a resposta do TikTok no historico, so quando muda (diagnostico: mostra
+// se o TikTok chega a dizer PUBLISH_COMPLETE depois que o rascunho e publicado).
+async function logTiktokStatus(job: JobRow, status: string) {
+  const last = (await jobLog(job)).filter((a) => a.detail?.startsWith(STATUS_LOG)).at(-1);
+  if (last?.detail === `${STATUS_LOG}${status}`) return;
+  await dbInsert("publishing_attempts", { post_id: job.post_id, job_id: job.id, attempt: job.attempts, channel: "tiktok_api", outcome: "ok", detail: `${STATUS_LOG}${status}` });
+}
+
+// Rascunho na caixa de entrada ha muito tempo: avisa de novo (3 h, 12 h, 24 h, 48 h).
+async function remindDraft(job: JobRow, post: PostRow) {
+  const log = await jobLog(job);
+  const arrived = log.find((a) => a.detail === `${STATUS_LOG}SEND_TO_USER_INBOX`);
+  if (!arrived) return;
+  const sent = log.filter((a) => a.detail?.startsWith("lembrete "));
+  const hours = TIKTOK_REMIND_HOURS[sent.length];
+  if (hours === undefined || Date.now() - new Date(arrived.started_at).getTime() < hours * 3600_000) return;
+  await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "tiktok_api", outcome: "ok", detail: `lembrete ${sent.length + 1}: rascunho parado há ${hours} h` });
+  const caption = post.caption.length > 60 ? `${post.caption.slice(0, 60)}…` : post.caption;
+  await notify(`⏰ O rascunho do TikTok “${caption}” está há ${hours} h esperando você. Abra o app do TikTok e publique, ou toque em “Já publiquei” no estúdio.`);
+}
 
 async function runTiktok(job: JobRow, baseUrl: string): Promise<Outcome> {
   const [post] = await dbSelect<PostRow>("posts", `select=*&id=eq.${job.post_id}`);
@@ -330,6 +359,7 @@ async function runTiktok(job: JobRow, baseUrl: string): Promise<Outcome> {
     }
 
     const st = await publishStatus(token, dest.external_id);
+    await logTiktokStatus(job, st.status);
     if (st.status === "PUBLISH_COMPLETE") {
       const now = new Date().toISOString();
       await dbUpdateWhere("post_destinations", `id=eq.${dest.id}&status=eq.pendente`, { status: "publicado", confirmed_at: now, confirmed_by: "api" });
@@ -359,6 +389,7 @@ async function runTiktok(job: JobRow, baseUrl: string): Promise<Outcome> {
         await notify("⏳ O TikTok não confirmou a publicação do rascunho em 72 h. Se você publicou, marque no estúdio.");
         return "ok";
       }
+      await remindDraft(job, post);
       return checkAgain(job, 15);
     }
     // PROCESSING_UPLOAD / PROCESSING_DOWNLOAD (preso por mais de 2 h: envia de novo)

@@ -3221,3 +3221,66 @@
 .st-igaudio-list small {
   color: var(--text-muted);
 }
+
+/* Esperando voce: o que precisa ser publicado no app (faixa no topo) */
+.st-waiting {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--st-pink);
+  border-radius: 14px;
+  background: var(--bg-panel);
+}
+
+.st-waiting > b {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14.5px;
+}
+
+.st-waiting > b svg {
+  color: var(--st-pink);
+}
+
+.st-waiting ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st-waiting li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.st-waiting li > span {
+  display: grid;
+  flex: 1;
+  min-width: 180px;
+  font-size: 13.5px;
+}
+
+.st-waiting li small {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.st-nav-count {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--st-pink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}

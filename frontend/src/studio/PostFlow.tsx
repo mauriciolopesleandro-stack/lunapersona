@@ -22,6 +22,62 @@ export function postStatusLabel(p: Pick<Post, "status" | "publishMode" | "networ
   return POST_STATUS[p.status];
 }
 
+// Depende de voce: publicar no app (manual ou rascunho do TikTok) e confirmar.
+export function needsYou(p: Pick<Post, "status" | "publishMode" | "network">): boolean {
+  return postStatusLabel(p) === "Requer ação manual";
+}
+
+// Faixa no topo de todas as telas: o que esta esperando voce publicar no app.
+// "Já publiquei" confirma todos os destinos pendentes de uma vez.
+export function WaitingForYou({ onOpen }: { onOpen: (post: Post) => void }) {
+  const { posts, source, postAction } = useStudio();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (source !== "banco") return null;
+  const waiting = posts.filter(needsYou).sort((a, b) => ((a.scheduledAt ?? "") < (b.scheduledAt ?? "") ? -1 : 1));
+  if (!waiting.length) return null;
+
+  async function done(p: Post) {
+    const pending = (p.destinations ?? []).filter((d) => d.status === "pendente");
+    setBusy(p.id);
+    setError(null);
+    try {
+      await postAction("confirm", p.id, { destinations: pending.map((d) => ({ format: d.format, url: null })) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="st-waiting" aria-label="Esperando você">
+      <b>
+        <Icon name="bell" size={16} />
+        {waiting.length === 1 ? "1 publicação esperando você" : `${waiting.length} publicações esperando você`}
+      </b>
+      <ul>
+        {waiting.map((p) => (
+          <li key={p.id}>
+            <span>
+              {NETWORKS[p.network].label} {p.formats.join(", ")} · {fmt(p.scheduledAt)}
+              <small>{p.publishMode === "api" && p.network === "tiktok" ? "rascunho no app do TikTok" : "publicar pelo app"}{p.caption ? ` · ${p.caption.slice(0, 50)}` : ""}</small>
+            </span>
+            <button type="button" className="st-btn st-btn-small" onClick={() => onOpen(p)}>
+              Abrir
+            </button>
+            <button type="button" className="st-btn st-btn-small st-btn-primary" disabled={busy === p.id} onClick={() => done(p)}>
+              <Icon name="check" size={14} />
+              Já publiquei
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error && <p className="st-error">{error}</p>}
+    </section>
+  );
+}
+
 export function PostStatusBadge({ status, post }: { status: PostStatus; post?: Pick<Post, "status" | "publishMode" | "network"> }) {
   const label = post ? postStatusLabel(post) : POST_STATUS[status];
   return <span className={`st-badge st-post-${status}${label === "Requer ação manual" ? " st-post-manual" : ""}`}>{label}</span>;
@@ -287,8 +343,8 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
         <div className="st-flow-box st-flow-alert">
           {tiktokDraft ? (
             <p>
-              Rascunho enviado para o TikTok. Abra as notificações do app do TikTok, coloque a música e publique; o estúdio marca como publicado
-              sozinho quando o TikTok confirmar.
+              Rascunho enviado para o TikTok. Abra as notificações do app do TikTok, coloque a música e publique. Se o TikTok confirmar, o
+              estúdio marca sozinho; se não, toque em “Já publiquei” (o estúdio te lembra depois de 3 h, 12 h, 24 h e 48 h).
             </p>
           ) : (
             <p>Publicando no Instagram... (vídeos podem levar alguns minutos para processar).</p>

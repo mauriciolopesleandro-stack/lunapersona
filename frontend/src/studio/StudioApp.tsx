@@ -4,6 +4,7 @@ import { Composer } from "./Composer";
 import { PostarPage, type PostarStart } from "./PostarPage";
 import { Icon } from "./Icon";
 import { CalendarPage, CharactersPage, ContentsPage, ItemDetails, OverviewPage, PublicationsPage, SettingsPage, type Nav } from "./pages";
+import { needsYou, WaitingForYou } from "./PostFlow";
 import { ComingSoon, Modal, formatBytes } from "./shared";
 import { AccountsPage, InstagramPage, TikTokPage } from "./social";
 import { MusicPage } from "./music";
@@ -107,6 +108,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
   };
 
   const current = [...NAV, ...NAV_SOON, ...HIDDEN].find((n) => n.id === page);
+  const waitingCount = studio.source === "banco" ? studio.posts.filter(needsYou).length : 0;
 
   return (
     <div className="st-shell">
@@ -129,6 +131,11 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
             >
               <Icon name={n.icon} />
               {n.label}
+              {n.id === "publicacoes" && waitingCount > 0 && (
+                <span className="st-nav-count" title="Esperando você publicar">
+                  {waitingCount}
+                </span>
+              )}
             </button>
           ))}
           <span className="st-nav-group">Em breve</span>
@@ -217,6 +224,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
         </header>
 
         <main className="st-page">
+          {page !== "perfil" && <WaitingForYou onOpen={(post) => setComposer({ post })} />}
           {page === "visao" && <OverviewPage nav={nav} />}
           {page === "postar" && <PostarPage key={postar.key} start={postar} onDone={() => go("publicacoes")} />}
           {page === "conteudos" && <ContentsPage nav={nav} query={query} />}
