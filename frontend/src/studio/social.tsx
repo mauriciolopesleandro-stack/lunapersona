@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { InstagramStatus, TikTokStatus } from "./cloud";
+import { cloudInstagram, cloudTiktok, type InstagramStatus, type TikTokStatus } from "./cloud";
 import { Icon } from "./Icon";
 import { useStudio } from "./store";
 import type { Nav } from "./pages";
@@ -377,7 +377,24 @@ export function TikTokPage() {
 // Contas conectadas: o estado de cada rede num lugar so, com o caminho para
 // conectar ou gerenciar (as paginas de cada rede continuam as mesmas).
 export function AccountsPage({ nav }: { nav: Nav }) {
-  const { instagram, tiktok, source } = useStudio();
+  const studio = useStudio();
+  // as conexoes ficam no servidor: consulta direto, para aparecerem tambem sem a
+  // pasta do estudio escolhida (no celular, por exemplo)
+  const [live, setLive] = useState<{ instagram: InstagramStatus | null; tiktok: TikTokStatus | null } | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let on = true;
+    Promise.all([cloudInstagram().catch(() => null), cloudTiktok().catch(() => null)]).then(([instagram, tiktok]) => {
+      if (!on) return;
+      setLive({ instagram, tiktok });
+      setFailed(!instagram && !tiktok);
+    });
+    return () => {
+      on = false;
+    };
+  }, []);
+  const instagram = live?.instagram ?? studio.instagram;
+  const tiktok = live?.tiktok ?? studio.tiktok;
   const cards = [
     {
       id: "instagram",
@@ -405,7 +422,7 @@ export function AccountsPage({ nav }: { nav: Nav }) {
           <p>Onde o estúdio pode publicar e o que cada conexão permite.</p>
         </div>
       </div>
-      {source !== "banco" && <p className="st-warn">Sem banco de dados ligado as conexões não aparecem.</p>}
+      {failed && studio.source !== "banco" && <p className="st-warn">Não consegui consultar as conexões no servidor. Recarregue a página.</p>}
       <div className="st-accounts">
         {cards.map((c) => (
           <section key={c.id} className={`st-panel st-target st-target-${c.id}${c.ok ? " on" : ""}`}>
