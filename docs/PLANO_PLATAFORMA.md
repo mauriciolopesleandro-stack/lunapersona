@@ -405,3 +405,30 @@ A Meta só libera música pela API (Instagram Audio API) com o **Login do Facebo
 - a música recusada no Feed;
 - a volta para a conexão anterior;
 - o bloqueio sem a conexão pelo Facebook.
+
+## 19. Não esquecer nenhuma publicação (25/10/2026)
+
+O rascunho do TikTok é publicado por você no app. Em teste real (24 e 25/10), o TikTok não avisou o estúdio depois da publicação: a consulta a cada 15 minutos nunca recebeu `PUBLISH_COMPLETE`, embora a documentação diga que deveria. Para nada ficar esquecido:
+
+- **Resposta do TikTok no histórico.** Cada mudança de status do rascunho é gravada no histórico da publicação, como "TikTok respondeu: SEND_TO_USER_INBOX". Assim dá para ver se o TikTok chega a confirmar. Quando confirma, o estúdio marca como publicado sozinho, como antes.
+- **Lembretes.** Se o rascunho continua na caixa de entrada, o estúdio avisa pelo Telegram 3 h, 12 h, 24 h e 48 h depois de ele chegar. Cada aviso sai uma vez só e fica no histórico.
+- **Faixa "Esperando você".** Aparece no topo de todas as telas sempre que há publicação em "Requer ação manual" (rascunho do TikTok ou publicação manual). Tem os botões **Abrir** e **Já publiquei**, que confirma todos os destinos pendentes e para as consultas ao TikTok. O menu Publicações mostra a mesma contagem.
+
+**Arquivos:**
+- `api/_jobs.ts`: `logTiktokStatus` e `remindDraft`;
+- `src/studio/PostFlow.tsx`: `needsYou` e `WaitingForYou`;
+- `src/studio/StudioApp.tsx`: faixa e contador no menu;
+- `Icon.tsx`: ícone de sino;
+- `studio.css`.
+
+**Banco:** nenhuma migração. O histórico usa `publishing_attempts`.
+
+**Próximo passo opcional:** ler os posts públicos da Luna pela Display API do TikTok (`video.list`) e marcar como publicado com o link. Exige ligar a permissão no app do TikTok e reconectar uma vez. Ainda não se sabe se posts de foto aparecem nessa lista.
+
+**Teste:** `test_tt.mjs` cobre:
+- a resposta gravada uma vez;
+- o lembrete de 3 h e o de 12 h, sem repetir;
+- a faixa e o contador;
+- o "Abrir";
+- o "Já publiquei", que confirma e cancela as consultas;
+- a faixa sumindo quando não há nada pendente.
