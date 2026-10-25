@@ -283,6 +283,16 @@ export function TikTokPage() {
               A conexão vale até {fmt(tiktok.validUntil)} (o estúdio renova o acesso sozinho a cada envio).
             </p>
             {tiktok.lastError && <p className="st-error">Último erro: {tiktok.lastError}</p>}
+            {tiktok.readsProfile ? (
+              <p className="st-hint">Quando você publica um rascunho no app, o estúdio acha o post no seu perfil e marca como publicado sozinho.</p>
+            ) : (
+              <p className="st-warn">
+                Reconecte o TikTok para o estúdio achar sozinho, no seu perfil, os rascunhos que você publicar (permissão nova: ler seus posts públicos).{" "}
+                <a className="st-link" href="/api/studio?r=tiktok&action=connect">
+                  Reconectar agora
+                </a>
+              </p>
+            )}
             <div className="st-row">
               <button type="button" className="st-btn" disabled={busy || (test !== null && !/^(Status: (SEND|PUBLISH|FAILED)|Erro)/.test(test))} onClick={() => testPhoto("site")}>
                 Testar envio de foto

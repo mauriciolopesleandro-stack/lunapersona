@@ -7,7 +7,9 @@ import { decrypt, encrypt } from "./_crypto.js";
 import { dbInsert, dbSelect, dbUpdate } from "./_supabase.js";
 
 const API = "https://open.tiktokapis.com";
-export const TIKTOK_SCOPES = "user.info.basic,video.upload";
+// video.list: ler os posts publicos da conta para marcar sozinho o rascunho
+// que o criador publicou no app (o TikTok nao avisa o fim do rascunho).
+export const TIKTOK_SCOPES = "user.info.basic,video.upload,video.list";
 
 export class TikTokError extends Error {
   constructor(
@@ -146,6 +148,23 @@ export async function uploadPhotoDraft(
   return data.publish_id;
 }
 
+export interface TikTokVideo {
+  id: string;
+  create_time: number; // segundos
+  title?: string;
+  video_description?: string;
+  share_url?: string;
+}
+
+// Posts publicos mais recentes da conta (Display API, escopo video.list).
+export async function recentVideos(token: string): Promise<TikTokVideo[]> {
+  const data = await api<{ videos?: TikTokVideo[] }>("/v2/video/list/?fields=id,create_time,title,video_description,share_url", token, {
+    method: "POST",
+    body: JSON.stringify({ max_count: 20 }),
+  });
+  return data.videos ?? [];
+}
+
 export interface PublishStatus {
   status: "PROCESSING_UPLOAD" | "PROCESSING_DOWNLOAD" | "SEND_TO_USER_INBOX" | "PUBLISH_COMPLETE" | "FAILED" | string;
   fail_reason?: string;
@@ -170,6 +189,7 @@ interface ConnectionRow {
   account_id: string;
   status: string;
   token_ciphertext: string | null;
+  scopes: string[] | null;
   token_expires_at: string | null;
   token_refreshed_at: string | null;
   last_error: string | null;

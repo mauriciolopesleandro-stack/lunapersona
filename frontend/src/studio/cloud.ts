@@ -238,6 +238,7 @@ export interface TikTokStatus {
   connected: boolean;
   status: string;
   name: string | null;
+  readsProfile: boolean;
   refreshedAt: string | null;
   validUntil: string | null;
   lastError: string | null;

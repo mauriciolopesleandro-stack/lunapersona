@@ -423,7 +423,16 @@ O rascunho do TikTok é publicado por você no app. Em teste real (24 e 25/10), 
 
 **Banco:** nenhuma migração. O histórico usa `publishing_attempts`.
 
-**Próximo passo opcional:** ler os posts públicos da Luna pela Display API do TikTok (`video.list`) e marcar como publicado com o link. Exige ligar a permissão no app do TikTok e reconectar uma vez. Ainda não se sabe se posts de foto aparecem nessa lista.
+**Leitura do perfil (25/10/2026):**
+- **Como funciona.** O app do TikTok (Sandbox "Luna Vox Teste") ganhou a permissão `video.list`, e o estúdio passa a pedi-la ao conectar. Enquanto o rascunho está na caixa de entrada, a cada consulta o estúdio lê os 20 posts públicos mais recentes da conta (`/v2/video/list/`). Um post confirma o rascunho quando atende às três condições:
+  - foi criado depois que o rascunho chegou;
+  - a legenda bate, comparada sem hashtags, emoji nem pontuação (primeiros 40 caracteres);
+  - ainda não confirmou outra publicação.
+- **Resultado.** O estúdio marca "Publicado" com o link do post e avisa no Telegram.
+- **Reconexão.** Conexões antigas, sem a permissão, mostram na página do TikTok o aviso "Reconectar agora".
+- **Limites:**
+  - pode ser que posts de foto não apareçam na lista. Nesse caso continuam valendo os lembretes e o "Já publiquei";
+  - legenda vazia ou muito curta não é procurada.
 
 **Teste:** `test_tt.mjs` cobre:
 - a resposta gravada uma vez;

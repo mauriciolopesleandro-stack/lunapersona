@@ -100,6 +100,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       connected: row?.status === "conectado",
       status: row?.status ?? "desconectado",
       name: row?.handle ?? null,
+      // conectado antes do video.list: reconectar libera a confirmacao pelo perfil
+      readsProfile: Boolean(row?.scopes?.includes("video.list")),
       refreshedAt: row?.token_refreshed_at ?? null,
       validUntil: row?.token_expires_at ?? null,
       lastError: row?.last_error ?? null,

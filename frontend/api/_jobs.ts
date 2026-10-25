@@ -12,7 +12,7 @@ import {
 } from "./_instagram.js";
 import type { PostFlags } from "./_flags.js";
 import { NETWORK_RULES, UPLOAD_BUCKET, cleanupUploads, type PostRow } from "./_posts.js";
-import { TikTokError, publishStatus, tiktokAccessToken, uploadDraft, uploadPhotoDraft } from "./_tiktok.js";
+import { TikTokError, publishStatus, recentVideos, tiktokAccessToken, tiktokConnectionRow, uploadDraft, uploadPhotoDraft, type TikTokVideo } from "./_tiktok.js";
 import { tiktokMediaUrl } from "./_tiktok_media.js";
 import { dbInsert, dbRpc, dbSelect, dbUpdate, dbUpdateWhere, dbUpsert, storageReadUrl, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
@@ -285,6 +285,55 @@ async function logTiktokStatus(job: JobRow, status: string) {
   await dbInsert("publishing_attempts", { post_id: job.post_id, job_id: job.id, attempt: job.attempts, channel: "tiktok_api", outcome: "ok", detail: `${STATUS_LOG}${status}` });
 }
 
+// Destino do TikTok publicado (pela API ou achado no perfil): fecha a tarefa,
+// registra o uso das midias e apaga as copias temporarias.
+async function markTiktokPublished(job: JobRow, post: PostRow, destId: string, url: string | null, detail: string) {
+  const now = new Date().toISOString();
+  await dbUpdateWhere("post_destinations", `id=eq.${destId}&status=eq.pendente`, { status: "publicado", confirmed_at: now, confirmed_by: "api", ...(url ? { external_url: url } : {}) });
+  await dbUpdate("posts", `id=eq.${post.id}&version=eq.${post.version}`, { status: "publicado", published_at: now });
+  await finish(job, { status: "concluido", finished_at: now, last_error: null });
+  await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "tiktok_api", outcome: "ok", detail });
+  for (const m of await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${post.id}`)) {
+    await dbInsert("media_usage", { media_id: m.media_id, channel: "tiktok", context: "post", reference: post.id });
+  }
+  await cleanupUploads(post.id);
+}
+
+// Texto comparavel: minusculo, sem hashtag, emoji nem pontuacao.
+function plainText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/#\S+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+// O rascunho ja virou post? Procura nos posts publicos recentes da conta um com
+// a mesma legenda, criado depois de o rascunho chegar (escopo video.list; sem
+// ele, ou se a consulta falhar, segue esperando e o "Já publiquei" resolve).
+async function findOnProfile(token: string, job: JobRow, post: PostRow): Promise<TikTokVideo | null> {
+  const key = plainText(post.caption).slice(0, 40);
+  if (key.length < 4) return null;
+  const conn = await tiktokConnectionRow();
+  if (!conn?.scopes?.includes("video.list")) return null;
+  const arrived = (await jobLog(job)).find((a) => a.detail === `${STATUS_LOG}SEND_TO_USER_INBOX`);
+  const since = new Date(arrived?.started_at ?? post.scheduled_at ?? job.run_at).getTime() - 10 * 60_000;
+  let videos: TikTokVideo[];
+  try {
+    videos = await recentVideos(token);
+  } catch {
+    return null;
+  }
+  for (const v of videos) {
+    if (v.create_time * 1000 < since) continue;
+    if (!plainText(`${v.video_description ?? ""} ${v.title ?? ""}`).includes(key)) continue;
+    // o mesmo post do TikTok nao confirma duas publicacoes do estudio
+    if (v.share_url && (await dbSelect("post_destinations", `select=id&external_url=eq.${encodeURIComponent(v.share_url)}`)).length) continue;
+    return v;
+  }
+  return null;
+}
+
 // Rascunho na caixa de entrada ha muito tempo: avisa de novo (3 h, 12 h, 24 h, 48 h).
 async function remindDraft(job: JobRow, post: PostRow) {
   const log = await jobLog(job);
@@ -361,15 +410,7 @@ async function runTiktok(job: JobRow, baseUrl: string): Promise<Outcome> {
     const st = await publishStatus(token, dest.external_id);
     await logTiktokStatus(job, st.status);
     if (st.status === "PUBLISH_COMPLETE") {
-      const now = new Date().toISOString();
-      await dbUpdateWhere("post_destinations", `id=eq.${dest.id}&status=eq.pendente`, { status: "publicado", confirmed_at: now, confirmed_by: "api" });
-      await dbUpdate("posts", `id=eq.${post.id}&version=eq.${post.version}`, { status: "publicado", published_at: now });
-      await finish(job, { status: "concluido", finished_at: now, last_error: null });
-      await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "tiktok_api", outcome: "ok", detail: "publicado no TikTok" });
-      for (const m of await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${post.id}`)) {
-        await dbInsert("media_usage", { media_id: m.media_id, channel: "tiktok", context: "post", reference: post.id });
-      }
-      await cleanupUploads(post.id);
+      await markTiktokPublished(job, post, dest.id, null, "publicado no TikTok");
       await notify("✅ O TikTok confirmou: o post foi publicado.");
       return "ok";
     }
@@ -382,6 +423,13 @@ async function runTiktok(job: JobRow, baseUrl: string): Promise<Outcome> {
       // primeira vez que chegou: apaga a copia e avisa para por a musica e publicar
       if ((await cleanupUploads(post.id)) > 0) {
         await notify("📥 O rascunho chegou nas notificações do TikTok. Abra o app, coloque a música em alta e publique. O estúdio marca como publicado sozinho quando o TikTok confirmar.");
+      }
+      // o TikTok nao avisa quando o rascunho vira post: procura no perfil
+      const found = await findOnProfile(token, job, post);
+      if (found) {
+        await markTiktokPublished(job, post, dest.id, found.share_url ?? null, `publicado no TikTok (achado no perfil: ${found.id})`);
+        await notify(`✅ Achei no seu perfil do TikTok: o post “${post.caption.slice(0, 60)}” foi publicado.${found.share_url ? ` ${found.share_url}` : ""}`);
+        return "ok";
       }
       const since = new Date(post.scheduled_at ?? job.run_at).getTime();
       if (Date.now() - since > TIKTOK_WAIT_HOURS * 3600_000) {
