@@ -58,7 +58,7 @@ export async function sendForReview(post: PostRow, formats: string[]): Promise<v
   );
   const label = NETWORK_RULES[post.network as keyof typeof NETWORK_RULES]?.label ?? post.network;
   const text = [
-    `📝 Para aprovar — ${label} ${formats.join(", ")} (versão ${post.version})`,
+    `📝 Para aprovar — ${label}${post.network === "telegram" ? " +18" : ""} ${formats.join(", ")} (versão ${post.version})`,
     `🕒 ${fmt(post.scheduled_at)}`,
     "",
     [post.caption, post.hashtags.join(" ")].filter(Boolean).join("\n\n") || "(sem legenda)",

@@ -107,7 +107,16 @@ async function runReminder(job: JobRow, url: string): Promise<"ok" | "obsoleta" 
     `Depois de publicar, confirme no estúdio${url ? `: ${url}` : "."}`,
   ].join("\n\n");
   try {
-    await sendNotice(await telegramConfig(), text);
+    // Telegram (+18): a midia aprovada no bot volta junto, pronta para postar no canal
+    const copies =
+      post.network === "telegram"
+        ? await dbSelect<{ storage_path: string; mime_type: string }>(
+            "post_uploads",
+            `select=storage_path,mime_type&post_id=eq.${post.id}&post_version=eq.${post.version}&deleted_at=is.null&order=position.asc`
+          )
+        : [];
+    if (copies.length) await sendMediaNotice(copies, text);
+    else await sendNotice(await telegramConfig(), text);
     await finish(job, { status: "concluido", finished_at: new Date().toISOString(), last_error: null });
     await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "lembrete_telegram", outcome: "ok", detail: "aviso enviado" });
     return "ok";

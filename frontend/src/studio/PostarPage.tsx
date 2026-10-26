@@ -291,7 +291,8 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
           groupId,
         });
         if (mode !== "rascunho") await postAction("submit", post.id);
-        if (mode === "telegram" && post.publishMode === "api") {
+        // analise no bot: Instagram/TikTok automaticos e Telegram (+18)
+        if (mode === "telegram" && (post.publishMode === "api" || s.network === "telegram")) {
           await sendToTelegram({ ...post, status: "aguardando_aprovacao" }, (text) => setMessage({ ok: true, text: `${label}: ${text}` }));
         }
         if (mode === "publicar") {
@@ -308,7 +309,7 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
                 ? "na fila"
                 : "agendada (ação manual no horário)"
               : mode === "telegram"
-              ? pubMode(p) === "api"
+              ? pubMode(p) === "api" || s.network === "telegram"
                 ? "no Telegram para você aprovar"
                 : "aguardando aprovação (manual: aprove no estúdio)"
               : mode === "aprovacao"

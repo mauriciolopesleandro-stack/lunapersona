@@ -519,3 +519,16 @@ O administrador aprova pelo celular. A publicação chega no Telegram dele com a
 - pedir correção com a resposta.
 
 `test_tt.mjs` confere o vídeo do rascunho indo para o Telegram.
+
+## 22. Análise +18 pelo bot e prompt simples (26/10/2026)
+
+- **O bot é a mesa de análise de todas as imagens, inclusive as +18.**
+  - Posts do Telegram (canal +18) também sobem as cópias e vão para o bot com ✅ / ❌ / ✏️ (`usesCopies`: modo automático ou rede Telegram).
+  - Aprovado, fica agendado. No horário, o lembrete manda a foto ou o vídeo aprovado de volta no bot, pronto para postar no canal.
+  - A postagem automática no canal vem depois, quando conferirmos as regras do Telegram.
+  - O +18 nunca vira publicação automática de Instagram ou TikTok: a rede Telegram não aceita o modo automático.
+- **Prompt da Naiaflow simples:**
+  - o Assistente escreve uma frase curta, "Luna + roupa + lugar + o que faz + clima", porque o clone luna já sabe a aparência dela;
+  - nunca descreve rosto ou corpo e nunca escreve "uma mulher";
+  - no máximo 5 hashtags comuns, sem inventar.
+- **Teste:** `test_tg_aprovacao.mjs` cobre o caminho +18: bot, aprovar, lembrete com a foto, e o modo automático recusado.

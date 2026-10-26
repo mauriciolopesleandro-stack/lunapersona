@@ -223,7 +223,7 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
               {automatic ? "Enviar mídias e aprovar" : "Aprovar"} versão {post.version}
               {post.scheduledAt ? " e agendar" : ""}
             </button>
-            {automatic && (
+            {(automatic || post.network === "telegram") && (
               <button
                 type="button"
                 className="st-btn"

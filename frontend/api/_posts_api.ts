@@ -187,9 +187,17 @@ function problemWithAutoFormats(network: string, formats: string[], mimes: strin
   if (formats.includes("Feed") && (mimes.length < 1 || mimes.length > 20)) throw new Problem(400, "Feed: de 1 a 20 mídias.");
 }
 
+// Copias temporarias no Storage: modo automatico (Instagram/TikTok) e Telegram
+// (+18), que passa pela analise no bot antes de postar no canal.
+function usesCopies(post: PostRow): boolean {
+  return post.publish_mode === "api" || post.network === "telegram";
+}
+
 // Modo automatico: so aprova quando todas as copias da versao chegaram ao Storage.
 async function checkUploads(post: PostRow) {
-  if (post.network === "tiktok") {
+  if (post.network === "telegram") {
+    // canal do Telegram: so as copias para a analise no bot
+  } else if (post.network === "tiktok") {
     const row = await tiktokConnectionRow().catch(() => null);
     if (row?.status !== "conectado") throw new Problem(400, "Conecte o TikTok (página TikTok) antes de aprovar um envio automático.");
   } else {
@@ -412,21 +420,21 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     if (body.action === "upload-urls") {
       requireStatus(post, ["aguardando_aprovacao"], "preparar o envio de");
-      if (post.publish_mode !== "api") throw new Problem(400, "Esta publicação é manual.");
+      if (!usesCopies(post)) throw new Problem(400, "Esta publicação é manual.");
       if (body.version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}).`);
       const mediaIds = await postMediaIds(post.id);
       const formats = (await destinations(post.id)).filter((d) => d.status !== "cancelado").map((d) => d.format);
       const items = Array.isArray(body.items) ? (body.items as Record<string, unknown>[]) : [];
       if (items.length !== mediaIds.length) throw new Problem(400, "Envie todas as mídias da publicação.");
       const kinds = items.map((it) => String(it.mime_type));
-      problemWithAutoFormats(post.network, formats, kinds);
+      if (post.network !== "telegram") problemWithAutoFormats(post.network, formats, kinds);
       const urls: { position: number; url: string }[] = [];
       for (const it of items) {
         const position = Number(it.position);
         const mime = String(it.mime_type);
         const size = Number(it.size_bytes);
         if (!Number.isInteger(position) || position < 0 || position >= mediaIds.length) throw new Problem(400, "Posição de mídia inválida.");
-        if (!["image/jpeg", "video/mp4", "video/quicktime"].includes(mime)) throw new Problem(400, "O Instagram aceita foto JPEG e vídeo MP4/MOV.");
+        if (!["image/jpeg", "video/mp4", "video/quicktime"].includes(mime)) throw new Problem(400, "Mande foto JPEG ou vídeo MP4/MOV.");
         if (!Number.isFinite(size) || size <= 0 || size > 50 * 1024 * 1024) throw new Problem(400, "Cada arquivo pode ter no máximo 50 MB (limite do plano grátis).");
         if (post.network === "tiktok" && mime === "image/jpeg" && size > TIKTOK_PHOTO_MAX_BYTES) throw new Problem(400, "Cada foto para o TikTok pode ter no máximo 4 MB.");
         const ext = mime === "image/jpeg" ? "jpg" : mime === "video/mp4" ? "mp4" : "mov";
@@ -447,7 +455,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     // manda a versao em revisao para aprovar pelo Telegram (as copias ja subiram)
     if (body.action === "telegram-review") {
       requireStatus(post, ["aguardando_aprovacao"], "mandar para aprovação");
-      if (post.publish_mode !== "api") throw new Problem(400, "Só publicações automáticas vão para aprovar no Telegram.");
+      if (!usesCopies(post)) throw new Problem(400, "Só publicações automáticas ou do Telegram vão para aprovar no bot.");
       if (body.version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}).`);
       await readyToApprove(post);
       await checkUploads(post);
