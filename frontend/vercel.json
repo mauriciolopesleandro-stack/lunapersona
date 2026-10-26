@@ -5,6 +5,9 @@
     },
     "api/runpod-wake.ts": {
       "maxDuration": 60
+    },
+    "api/studio.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [

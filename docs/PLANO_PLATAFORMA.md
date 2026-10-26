@@ -441,3 +441,40 @@ O rascunho do TikTok é publicado por você no app. Em teste real (24 e 25/10), 
 - o "Abrir";
 - o "Já publiquei", que confirma e cancela as consultas;
 - a faixa sumindo quando não há nada pendente.
+
+## 20. Assistente com IA (26/10/2026)
+
+Um chat do administrador com uma IA, dentro do Luna Studio, no menu **Assistente**. Por enquanto a IA conversa só com o administrador. A conversa com os fãs fica para depois.
+
+**Como funciona:**
+- **Uma chave só:** IA pelo **OpenRouter**, com a chave `OPENROUTER_API_KEY` na Vercel. O administrador compra os créditos (US$ 5) e define o limite de gasto na própria chave. O orçamento combinado é de até R$ 30 por mês.
+- **Dois "cérebros":**
+  - **Redes:** `OPENROUTER_MODEL`, padrão `deepseek/deepseek-v4-flash`. Cuida do plano da semana, dos prompts para a Naiaflow, das legendas de Instagram e TikTok e de ideias.
+  - **+18 Telegram:** `OPENROUTER_MODEL_ADULT`, padrão `cognitivecomputations/dolphin-mistral-24b-venice-edition`. Só para o canal privado. As conversas dos dois modos ficam separadas.
+- **O que a IA recebe:**
+  - a persona da Luna e a aparência fixa;
+  - as regras: nada explícito no Instagram e TikTok, +18 só com a Luna e nunca com pessoa real;
+  - a data de hoje;
+  - a agenda dos próximos 8 dias e as últimas 15 legendas publicadas, para não repetir.
+- **Onde fica a conversa:** neste navegador (`localStorage`). "Limpar conversa" apaga só o modo aberto.
+- **Erros:** crédito acabado (402), chave inválida (401) e falta de resposta viram mensagens claras.
+- **Tempo:** a função `api/studio.ts` passou a ter até 60 s (`vercel.json`).
+- **Custo estimado:** menos de US$ 1 por mês com uso pesado, pelos preços de 26/10/2026.
+- **Kaggle e Oracle foram descartados para +18:** as regras deles proíbem NSFW, e no Kaggle isso vale até para notebook privado.
+
+**Arquivos:**
+- `api/_assistant.ts`, a rota `r=assistant`;
+- `src/studio/assistant.tsx`;
+- o menu em `StudioApp.tsx`;
+- `studio.css`.
+
+**Teste:** `test_assistente_ia.mjs`, com o OpenRouter falso. Cobre:
+- o 401 sem login;
+- o pedido rápido;
+- a persona, as regras e a agenda no contexto;
+- o histórico;
+- a conversa salva ao recarregar;
+- o modo +18 separado, com o outro modelo;
+- o erro de crédito;
+- o "Limpar conversa";
+- o celular sem rolagem lateral.

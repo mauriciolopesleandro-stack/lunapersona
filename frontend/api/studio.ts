@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
+import assistant from "./_assistant.js";
 import instagram, { instagramCallback } from "./_instagram_api.js";
 import jobs from "./_jobs.js";
 import library from "./_library.js";
@@ -19,9 +20,10 @@ import tiktokMedia from "./_tiktok_media.js";
 //   r=music    musicas em alta no Brasil (Apple Music, fontes oficiais)
 //   r=tiktok   conexao do TikTok (rascunho automatico); a volta do OAuth chega
 //              em /api/tiktok/callback, reescrito pelo vercel.json
+//   r=assistant chat do administrador com a IA (OpenRouter) que conhece a Luna
 //   r=tiktok-media foto temporaria para o TikTok baixar (link assinado em
 //              /api/tiktok/media/....jpg, reescrito pelo vercel.json)
-const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music, tiktok, "tiktok-callback": tiktokCallback, "tiktok-media": tiktokMedia, "instagram-callback": instagramCallback };
+const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music, tiktok, "tiktok-callback": tiktokCallback, "tiktok-media": tiktokMedia, "instagram-callback": instagramCallback, assistant };
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "/", "http://local");
