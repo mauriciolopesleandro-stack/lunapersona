@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import assistant from "./_assistant.js";
 import plans from "./_plans.js";
+import worker from "./_worker.js";
 import instagram, { instagramCallback } from "./_instagram_api.js";
 import jobs from "./_jobs.js";
 import library from "./_library.js";
@@ -24,11 +25,12 @@ import telegramHook from "./_tg_review.js";
 //              em /api/tiktok/callback, reescrito pelo vercel.json
 //   r=telegram-hook botoes de aprovacao do Telegram (webhook em
 //              /api/telegram/webhook, reescrito pelo vercel.json)
+//   r=worker   automacao local do PC (Naiaflow): fila dos planos aprovados
 //   r=plans    planejamento do chat (grade + criativo da IA, aprovacao do plano)
 //   r=assistant chat do administrador com a IA (OpenRouter) que conhece a Luna
 //   r=tiktok-media foto temporaria para o TikTok baixar (link assinado em
 //              /api/tiktok/media/....jpg, reescrito pelo vercel.json)
-const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music, tiktok, "tiktok-callback": tiktokCallback, "tiktok-media": tiktokMedia, "instagram-callback": instagramCallback, assistant, plans, "telegram-hook": telegramHook };
+const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music, tiktok, "tiktok-callback": tiktokCallback, "tiktok-media": tiktokMedia, "instagram-callback": instagramCallback, assistant, plans, worker, "telegram-hook": telegramHook };
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "/", "http://local");

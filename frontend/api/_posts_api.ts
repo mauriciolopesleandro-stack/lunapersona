@@ -248,6 +248,8 @@ export async function decidePost(id: string, version: unknown, decision: "approv
   if (decision === "reject") {
     await dbInsert("approvals", { post_id: post.id, version: post.version, content_hash: post.content_hash, decision: "reprovado", note: note ? note.slice(0, 500) : null });
     const saved = await guardedUpdate(post, { status: "rascunho" });
+    // item do plano (chat) acompanha: reprovado volta para o chat refazer (parte C)
+    await dbUpdateWhere("content_plan_items", `post_id=eq.${post.id}`, { status: "reprovado", note: note ? note.slice(0, 1000) : null, updated_at: new Date().toISOString() }).catch(() => undefined);
     await audit("reprovar", "posts", post.id, { version: post.version });
     return saved;
   }
@@ -260,8 +262,84 @@ export async function decidePost(id: string, version: unknown, decision: "approv
     approved_hash: post.content_hash,
   });
   if (saved.status === "agendado") await scheduleReminder(saved);
+  await dbUpdateWhere("content_plan_items", `post_id=eq.${post.id}`, { status: "aprovado", updated_at: new Date().toISOString() }).catch(() => undefined);
   await audit("aprovar", "posts", post.id, { version: post.version, agendado: saved.status === "agendado" });
   return saved;
+}
+
+// --- operacoes reaproveitadas pela automacao local (api/_worker.ts) ----------------------
+
+export async function createDraftPost(body: Record<string, unknown>): Promise<PostRow> {
+  const input = parseInput(body);
+  const problem = await mediaProblem(input.network, input.mediaIds);
+  if (problem) throw new Problem(400, problem);
+  const hash = contentHash({ ...input, mode: input.mode });
+  const post = await dbInsert<PostRow>("posts", {
+    network: input.network,
+    caption: input.caption,
+    hashtags: input.hashtags,
+    scheduled_at: input.scheduledAt,
+    publish_mode: input.mode,
+    flags: input.flags,
+    ...(input.groupId ? { group_id: input.groupId } : {}),
+    content_hash: hash,
+  });
+  await replaceMedia(post.id, input.mediaIds);
+  await syncDestinations(post.id, input.formats);
+  await audit("criar", "posts", post.id, { network: post.network });
+  return post;
+}
+
+export async function submitPost(id: string): Promise<PostRow> {
+  const post = await getPost(uuid(id));
+  requireStatus(post, ["rascunho", "falhou"], "enviar para aprovação");
+  await readyToApprove(post);
+  const saved = await guardedUpdate(post, { status: "aguardando_aprovacao", failure_reason: null });
+  await audit("enviar_aprovacao", "posts", post.id, { version: post.version });
+  return saved;
+}
+
+export async function uploadUrlsFor(id: string, version: unknown, rawItems: unknown): Promise<{ position: number; url: string }[]> {
+  const post = await getPost(uuid(id));
+  const body = { version, items: rawItems };
+  requireStatus(post, ["aguardando_aprovacao"], "preparar o envio de");
+  if (!usesCopies(post)) throw new Problem(400, "Esta publicação é manual.");
+  if (body.version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}).`);
+  const mediaIds = await postMediaIds(post.id);
+  const formats = (await destinations(post.id)).filter((d) => d.status !== "cancelado").map((d) => d.format);
+  const items = Array.isArray(body.items) ? (body.items as Record<string, unknown>[]) : [];
+  if (items.length !== mediaIds.length) throw new Problem(400, "Envie todas as mídias da publicação.");
+  const kinds = items.map((it) => String(it.mime_type));
+  if (post.network !== "telegram") problemWithAutoFormats(post.network, formats, kinds);
+  const urls: { position: number; url: string }[] = [];
+  for (const it of items) {
+    const position = Number(it.position);
+    const mime = String(it.mime_type);
+    const size = Number(it.size_bytes);
+    if (!Number.isInteger(position) || position < 0 || position >= mediaIds.length) throw new Problem(400, "Posição de mídia inválida.");
+    if (!["image/jpeg", "video/mp4", "video/quicktime"].includes(mime)) throw new Problem(400, "Mande foto JPEG ou vídeo MP4/MOV.");
+    if (!Number.isFinite(size) || size <= 0 || size > 50 * 1024 * 1024) throw new Problem(400, "Cada arquivo pode ter no máximo 50 MB (limite do plano grátis).");
+    if (post.network === "tiktok" && mime === "image/jpeg" && size > TIKTOK_PHOTO_MAX_BYTES) throw new Problem(400, "Cada foto para o TikTok pode ter no máximo 4 MB.");
+    const ext = mime === "image/jpeg" ? "jpg" : mime === "video/mp4" ? "mp4" : "mov";
+    const path = `${post.id}/v${post.version}/${position}.${ext}`;
+    const [existing] = await dbSelect<{ id: string }>("post_uploads", `select=id&post_id=eq.${post.id}&post_version=eq.${post.version}&position=eq.${position}`);
+    if (existing) await dbUpdateWhere("post_uploads", `id=eq.${existing.id}`, { storage_path: path, mime_type: mime, size_bytes: size, uploaded_at: null, deleted_at: null });
+    else await dbInsert("post_uploads", { post_id: post.id, post_version: post.version, position, storage_path: path, mime_type: mime, size_bytes: size });
+    urls.push({ position, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
+  }
+  return urls;
+}
+
+export async function reviewOnTelegram(id: string, version: unknown): Promise<PostRow> {
+  const post = await getPost(uuid(id));
+  requireStatus(post, ["aguardando_aprovacao"], "mandar para aprovação");
+  if (!usesCopies(post)) throw new Problem(400, "Só publicações automáticas ou do Telegram vão para aprovar no bot.");
+  if (version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}).`);
+  await readyToApprove(post);
+  await checkUploads(post);
+  await sendForReview(post, (await destinations(post.id)).filter((d) => d.status !== "cancelado").map((d) => d.format));
+  await audit("enviar_telegram", "posts", post.id, { version: post.version });
+  return post;
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
@@ -325,13 +403,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         ...(input.groupId ? { group_id: input.groupId } : {}),
       };
 
-      if (!body.id) {
-        const post = await dbInsert<PostRow>("posts", { ...fields, content_hash: hash });
-        await replaceMedia(post.id, input.mediaIds);
-        await syncDestinations(post.id, input.formats);
-        await audit("criar", "posts", post.id, { network: post.network });
-        return reply(200, { post });
-      }
+      if (!body.id) return reply(200, { post: await createDraftPost(body) });
 
       const post = await getPost(uuid(body.id));
       if (body.version !== undefined && body.version !== post.version) {
@@ -410,42 +482,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     const post = await getPost(uuid(body.id));
 
-    if (body.action === "submit") {
-      requireStatus(post, ["rascunho", "falhou"], "enviar para aprovação");
-      await readyToApprove(post);
-      const saved = await guardedUpdate(post, { status: "aguardando_aprovacao", failure_reason: null });
-      await audit("enviar_aprovacao", "posts", post.id, { version: post.version });
-      return reply(200, { post: saved });
-    }
+    if (body.action === "submit") return reply(200, { post: await submitPost(post.id) });
 
-    if (body.action === "upload-urls") {
-      requireStatus(post, ["aguardando_aprovacao"], "preparar o envio de");
-      if (!usesCopies(post)) throw new Problem(400, "Esta publicação é manual.");
-      if (body.version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}).`);
-      const mediaIds = await postMediaIds(post.id);
-      const formats = (await destinations(post.id)).filter((d) => d.status !== "cancelado").map((d) => d.format);
-      const items = Array.isArray(body.items) ? (body.items as Record<string, unknown>[]) : [];
-      if (items.length !== mediaIds.length) throw new Problem(400, "Envie todas as mídias da publicação.");
-      const kinds = items.map((it) => String(it.mime_type));
-      if (post.network !== "telegram") problemWithAutoFormats(post.network, formats, kinds);
-      const urls: { position: number; url: string }[] = [];
-      for (const it of items) {
-        const position = Number(it.position);
-        const mime = String(it.mime_type);
-        const size = Number(it.size_bytes);
-        if (!Number.isInteger(position) || position < 0 || position >= mediaIds.length) throw new Problem(400, "Posição de mídia inválida.");
-        if (!["image/jpeg", "video/mp4", "video/quicktime"].includes(mime)) throw new Problem(400, "Mande foto JPEG ou vídeo MP4/MOV.");
-        if (!Number.isFinite(size) || size <= 0 || size > 50 * 1024 * 1024) throw new Problem(400, "Cada arquivo pode ter no máximo 50 MB (limite do plano grátis).");
-        if (post.network === "tiktok" && mime === "image/jpeg" && size > TIKTOK_PHOTO_MAX_BYTES) throw new Problem(400, "Cada foto para o TikTok pode ter no máximo 4 MB.");
-        const ext = mime === "image/jpeg" ? "jpg" : mime === "video/mp4" ? "mp4" : "mov";
-        const path = `${post.id}/v${post.version}/${position}.${ext}`;
-        const [existing] = await dbSelect<{ id: string }>("post_uploads", `select=id&post_id=eq.${post.id}&post_version=eq.${post.version}&position=eq.${position}`);
-        if (existing) await dbUpdateWhere("post_uploads", `id=eq.${existing.id}`, { storage_path: path, mime_type: mime, size_bytes: size, uploaded_at: null, deleted_at: null });
-        else await dbInsert("post_uploads", { post_id: post.id, post_version: post.version, position, storage_path: path, mime_type: mime, size_bytes: size });
-        urls.push({ position, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
-      }
-      return reply(200, { uploads: urls });
-    }
+    if (body.action === "upload-urls") return reply(200, { uploads: await uploadUrlsFor(post.id, body.version, body.items) });
 
     if (body.action === "approve" || body.action === "reject") {
       const note = typeof body.note === "string" ? body.note : null;
@@ -453,16 +492,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
 
     // manda a versao em revisao para aprovar pelo Telegram (as copias ja subiram)
-    if (body.action === "telegram-review") {
-      requireStatus(post, ["aguardando_aprovacao"], "mandar para aprovação");
-      if (!usesCopies(post)) throw new Problem(400, "Só publicações automáticas ou do Telegram vão para aprovar no bot.");
-      if (body.version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}).`);
-      await readyToApprove(post);
-      await checkUploads(post);
-      await sendForReview(post, (await destinations(post.id)).filter((d) => d.status !== "cancelado").map((d) => d.format));
-      await audit("enviar_telegram", "posts", post.id, { version: post.version });
-      return reply(200, { post, sent: true });
-    }
+    if (body.action === "telegram-review") return reply(200, { post: await reviewOnTelegram(post.id, body.version), sent: true });
 
     if (body.action === "schedule") {
       requireStatus(post, ["aprovado", "agendado"], "agendar");

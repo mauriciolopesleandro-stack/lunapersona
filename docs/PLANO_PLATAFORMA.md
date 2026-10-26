@@ -584,3 +584,41 @@ Aba **Planejamento** no Assistente. O chat transforma o pedido do administrador 
   - aprovar;
   - o travamento depois de aprovado;
   - o celular.
+
+## 24. Automação local da Naiaflow (parte B do fluxo, 26/10/2026)
+
+Um programa no PC do administrador, em `worker/luna_worker.py` (Python, com Playwright e Pillow), transforma os itens de foto dos planos aprovados em publicações para aprovar no Telegram.
+
+**Ciclo de cada item:**
+1. **`next`:** pega na fila o próximo item de foto (`na_fila`, que não reaproveita outro) e marca "gerando". Item preso em "gerando" há mais de 30 min volta para a fila, para o caso de o PC ter caído.
+2. **Gera na Naiaflow** pelo Playwright, que controla o Chrome do PC num perfil separado (`worker/.perfil-naiaflow`):
+   - seleciona o clone "luna", cola o pedido e clica em Gerar;
+   - espera a foto nova e baixa o original (`/public`).
+   - Se a Naiaflow tiver menos de 2 créditos, o programa para e não gasta o resto.
+3. **Salva** em `conteudos/AAAA-MM/` (o +18 em `conteudos/AAAA-MM/+18/`) como `plano-<data>-<destino>-<id>.jpg`.
+4. **`done`:** o estúdio cadastra a mídia (+18 como "adulto") e cria **uma publicação por destino** do item e dos itens que reaproveitam a foto (o TikTok do mesmo dia). Instagram e TikTok ficam no modo automático; o Telegram +18 fica manual, com lembrete. Todas vão para "aguardando aprovação".
+5. **`upload-url`, para cada destino:** o PC sobe uma cópia JPEG no formato do destino. Feed: 4:5, 1080×1350. Stories, TikTok e Telegram: 9:16, 1080×1920.
+6. **`uploaded`:** cada publicação vai para o bot do Telegram com ✅ / ❌ / ✏️, e o item fica "em_analise".
+7. **Decisão no bot:** aprovar marca o item "aprovado" e a publicação agendada. Reprovar ou pedir correção marca o item "reprovado", com a nota (a refação é a parte C).
+8. **`fail`:** volta para a fila até o limite de 2 tentativas. Passou disso, fica "falhou" e chega um aviso no Telegram.
+
+**Segurança:**
+- O PC **nunca guarda a chave do banco**. Ele usa só `/api/studio?r=worker`, com a "chave do PC", que é derivada da `TOKEN_ENCRYPTION_KEY` e de uma geração guardada no Upstash.
+- Em **Configurações → Automação do PC → Conectar este computador**, o estúdio troca a geração (a chave antiga para de valer) e baixa o `luna-worker.env`. Ninguém copia chave a mão.
+- O `.gitignore` deixa de fora do git o `.env`, o perfil do Chrome e o registro (`luna-worker.log`).
+- **Mudança em relação ao fluxograma:** não há FastAPI no PC. O programa só busca tarefas no estúdio, então nada fica exposto no computador.
+
+**Ainda não automatizado:** itens de **vídeo** (Reels) ficam na fila; a geração de vídeo pela Naiaflow vem depois.
+
+**Para usar:** baixar o `luna-worker.env` em Configurações, colocar em `worker/` e abrir **Iniciar automação.bat**. Na primeira vez, entrar na Naiaflow na janela do Chrome que abrir.
+
+**Teste:** `test_worker.mjs` roda o **programa Python de verdade** (com `--imagem-teste` no lugar da Naiaflow) contra o estúdio de teste. Cobre:
+- a fila, com 2 fotos (o TikTok reaproveita a do Feed);
+- as 3 publicações certas;
+- a pasta +18 e a classificação adulto;
+- as cópias por destino;
+- as 3 fotos no bot;
+- aprovar, que atualiza o plano;
+- a falha com limite e aviso;
+- o item preso que volta para a fila;
+- a chave errada (401).

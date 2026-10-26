@@ -1,3 +1,4 @@
+import { WorkerPcPanel } from "./workerpc";
 import { useEffect, useState } from "react";
 import { Calendar } from "./Calendar";
 import { Composer } from "./Composer";
@@ -949,6 +950,7 @@ export function SettingsPage() {
       <div className="st-page-head">
         <h1>Configurações</h1>
       </div>
+      <WorkerPcPanel />
       <section className="st-panel st-settings">
         <h2>Pasta do estúdio (arquivos)</h2>
         {state === "ready" ? (
