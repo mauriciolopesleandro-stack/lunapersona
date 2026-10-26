@@ -478,3 +478,44 @@ Um chat do administrador com uma IA, dentro do Luna Studio, no menu **Assistente
 - o erro de crédito;
 - o "Limpar conversa";
 - o celular sem rolagem lateral.
+
+## 21. Aprovação pelo Telegram (26/10/2026)
+
+O administrador aprova pelo celular. A publicação chega no Telegram dele com a foto ou o vídeo, a legenda, o horário e três botões: **✅ Aprovar**, **❌ Reprovar** e **✏️ Pedir correção**.
+
+**Como funciona:**
+- **Enviar para aprovar:** pelo botão **Aprovar pelo Telegram**, que aparece em dois lugares:
+  - no passo 4 do Publicar;
+  - na publicação que está aguardando aprovação.
+
+  O estúdio sobe as cópias temporárias (as mesmas que a aprovação usa) e o servidor manda para o Telegram (ação `telegram-review`). Só para publicações automáticas.
+- **Formato da mensagem:** com 1 mídia, foto ou vídeo com a legenda e os botões. Com várias, o álbum vai antes e os botões na mensagem seguinte.
+- **Os botões voltam pelo webhook** `/api/telegram/webhook`, reescrito para `r=telegram-hook`.
+  - O Telegram assina cada chamada com um segredo derivado do token. Chamadas sem o segredo recebem 401.
+  - Só a conversa do administrador, a salva em Meu perfil, é atendida.
+- **Mesmas regras do estúdio:** aprovar e reprovar usam a mesma função (`decidePost`), com versão exata, mídias no armazenamento e conta conectada. Aprovada com horário vira "Agendada" e entra na fila.
+- **Botão velho:** se a versão mudou ou a publicação já foi decidida, o clique vira um aviso ⚠️ e nada muda.
+- **Pedir correção:** o bot pergunta "O que precisa mudar?", com resposta obrigatória. A resposta reprova a versão com a nota "Correção pedida pelo Telegram: …", e a publicação volta para rascunho.
+- **Conectar em Meu perfil** desliga o webhook, acha a conversa (getUpdates) e liga o webhook de novo. A ação `webhook` religa os botões manualmente.
+- **Rascunho do TikTok:** quando chega no app, a foto ou o vídeo também vai para o Telegram, antes de a cópia ser apagada. Respeita a opção "mandar foto/vídeo junto".
+
+**Arquivos:**
+- `api/_tg_review.ts`;
+- `decidePost` e a ação `telegram-review` em `api/_posts_api.ts`;
+- `api/telegram.ts`;
+- `api/studio.ts`;
+- `vercel.json`;
+- `api/_jobs.ts`;
+- no estúdio: `store.tsx` (`sendToTelegram`), `PostFlow.tsx` e `PostarPage.tsx`.
+
+**Teste:** `test_tg_aprovacao.mjs`, com o Telegram simulado. Cobre:
+- o envio pelo estúdio;
+- a foto com legenda, horário e botões;
+- o segredo errado (401);
+- a conversa de outra pessoa (ignorada);
+- aprovar, que agenda, tira os botões e confirma;
+- o botão velho;
+- reprovar;
+- pedir correção com a resposta.
+
+`test_tt.mjs` confere o vídeo do rascunho indo para o Telegram.

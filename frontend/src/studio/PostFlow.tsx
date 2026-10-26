@@ -96,7 +96,7 @@ function localInput(iso: string | null | undefined) {
 // Fluxo de uma publicacao no modo banco: aprovacao da versao, agendamento,
 // lembrete, confirmacao destino a destino, falha e cancelamento.
 export function PostFlow({ postId, onClose }: { postId: string; onClose: () => void }) {
-  const { posts, postAction, approveAutomatic } = useStudio();
+  const { posts, postAction, approveAutomatic, sendToTelegram } = useStudio();
   const post = posts.find((p) => p.id === postId);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -223,6 +223,28 @@ export function PostFlow({ postId, onClose }: { postId: string; onClose: () => v
               {automatic ? "Enviar mídias e aprovar" : "Aprovar"} versão {post.version}
               {post.scheduledAt ? " e agendar" : ""}
             </button>
+            {automatic && (
+              <button
+                type="button"
+                className="st-btn"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  setMessage(null);
+                  try {
+                    await sendToTelegram(post!, (text) => setMessage({ ok: true, text }));
+                    setMessage({ ok: true, text: "Mandada para o Telegram: aprove, reprove ou peça correção pelos botões no celular." });
+                  } catch (e) {
+                    setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                <Icon name="telegram" size={16} />
+                Aprovar pelo Telegram
+              </button>
+            )}
             {waiting.length > 1 && (
               <button type="button" className="st-btn st-btn-primary" disabled={busy} onClick={approveGroup}>
                 <Icon name="check" size={16} />

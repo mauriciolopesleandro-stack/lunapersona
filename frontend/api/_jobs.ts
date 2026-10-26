@@ -14,6 +14,7 @@ import type { PostFlags } from "./_flags.js";
 import { NETWORK_RULES, UPLOAD_BUCKET, cleanupUploads, type PostRow } from "./_posts.js";
 import { TikTokError, publishStatus, recentVideos, tiktokAccessToken, tiktokConnectionRow, uploadDraft, uploadPhotoDraft, type TikTokVideo } from "./_tiktok.js";
 import { tiktokMediaUrl } from "./_tiktok_media.js";
+import { sendMediaNotice } from "./_tg_review.js";
 import { dbInsert, dbRpc, dbSelect, dbUpdate, dbUpdateWhere, dbUpsert, storageReadUrl, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
 
@@ -420,9 +421,17 @@ async function runTiktok(job: JobRow, baseUrl: string): Promise<Outcome> {
       return retryOrFail(job, post, `o TikTok recusou o conteúdo (${st.fail_reason ?? "sem motivo"})`, st.fail_reason === "internal");
     }
     if (st.status === "SEND_TO_USER_INBOX") {
-      // primeira vez que chegou: apaga a copia e avisa para por a musica e publicar
-      if ((await cleanupUploads(post.id)) > 0) {
-        await notify("📥 O rascunho chegou nas notificações do TikTok. Abra o app, coloque a música em alta e publique. O estúdio marca como publicado sozinho quando o TikTok confirmar.");
+      // primeira vez que chegou: manda as midias no Telegram (para ver o que
+      // publicar), apaga a copia e avisa para por a musica e publicar
+      const copies = await dbSelect<{ storage_path: string; mime_type: string }>(
+        "post_uploads",
+        `select=storage_path,mime_type&post_id=eq.${post.id}&deleted_at=is.null&order=position.asc`
+      );
+      if (copies.length) {
+        const caption = post.caption.length > 80 ? `${post.caption.slice(0, 80)}…` : post.caption;
+        const text = `📥 O rascunho chegou nas notificações do TikTok${caption ? `: “${caption}”` : ""}. Abra o app, coloque a música em alta e publique. O estúdio marca como publicado sozinho quando achar o post no seu perfil.`;
+        await sendMediaNotice(copies, text).catch(() => notify(text));
+        await cleanupUploads(post.id);
       }
       // o TikTok nao avisa quando o rascunho vira post: procura no perfil
       const found = await findOnProfile(token, job, post);

@@ -4,6 +4,7 @@ import { igConnection } from "./_instagram.js";
 import { tiktokConnectionRow } from "./_tiktok.js";
 import { TIKTOK_PHOTO_MAX_BYTES } from "./_tiktok_media.js";
 import { flagProblem, normalizeFlags, type PostFlags } from "./_flags.js";
+import { sendForReview } from "./_tg_review.js";
 import {
   NETWORK_RULES,
   UPLOAD_BUCKET,
@@ -47,6 +48,7 @@ import {
 //   fail { id, reason }              nao deu para publicar
 //   cancel { id }
 //   import { posts: [...] }          publicacoes antigas do luna-vox.json
+//   telegram-review { id, version }  manda a versao para aprovar pelo Telegram (botoes)
 //   upload-urls { id, version, items: [{ position, mime_type, size_bytes }] }
 //                                    modo automatico: links para o navegador enviar a copia
 //                                    temporaria das midias da versao em revisao
@@ -54,7 +56,7 @@ import {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NETWORKS: Network[] = ["instagram", "tiktok", "telegram"];
 
-class Problem extends Error {
+export class Problem extends Error {
   constructor(
     public status: number,
     message: string
@@ -225,6 +227,33 @@ async function readyToApprove(post: PostRow) {
   if (!dests.length) throw new Problem(400, "Marque pelo menos um destino.");
   const problem = await mediaProblem(post.network, mediaIds);
   if (problem) throw new Problem(400, problem);
+}
+
+// Aprovar ou reprovar exatamente a versao revisada. Usado pelo estudio e pelos
+// botoes do Telegram (api/_tg_review.ts), com as mesmas regras.
+export async function decidePost(id: string, version: unknown, decision: "approve" | "reject", note?: string | null): Promise<PostRow> {
+  const post = await getPost(uuid(id));
+  requireStatus(post, ["aguardando_aprovacao"], decision === "approve" ? "aprovar" : "reprovar");
+  if (version !== post.version) {
+    throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}). Revise de novo antes de decidir.`);
+  }
+  if (decision === "reject") {
+    await dbInsert("approvals", { post_id: post.id, version: post.version, content_hash: post.content_hash, decision: "reprovado", note: note ? note.slice(0, 500) : null });
+    const saved = await guardedUpdate(post, { status: "rascunho" });
+    await audit("reprovar", "posts", post.id, { version: post.version });
+    return saved;
+  }
+  await readyToApprove(post);
+  if (post.publish_mode === "api") await checkUploads(post);
+  await dbInsert("approvals", { post_id: post.id, version: post.version, content_hash: post.content_hash, decision: "aprovado" });
+  const saved = await guardedUpdate(post, {
+    status: post.scheduled_at ? "agendado" : "aprovado",
+    approved_version: post.version,
+    approved_hash: post.content_hash,
+  });
+  if (saved.status === "agendado") await scheduleReminder(saved);
+  await audit("aprovar", "posts", post.id, { version: post.version, agendado: saved.status === "agendado" });
+  return saved;
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
@@ -411,28 +440,20 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
 
     if (body.action === "approve" || body.action === "reject") {
-      requireStatus(post, ["aguardando_aprovacao"], body.action === "approve" ? "aprovar" : "reprovar");
-      if (body.version !== post.version) {
-        throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}). Revise de novo antes de decidir.`);
-      }
-      if (body.action === "reject") {
-        const note = typeof body.note === "string" ? body.note.slice(0, 500) : null;
-        await dbInsert("approvals", { post_id: post.id, version: post.version, content_hash: post.content_hash, decision: "reprovado", note });
-        const saved = await guardedUpdate(post, { status: "rascunho" });
-        await audit("reprovar", "posts", post.id, { version: post.version });
-        return reply(200, { post: saved });
-      }
+      const note = typeof body.note === "string" ? body.note : null;
+      return reply(200, { post: await decidePost(post.id, body.version, body.action, note) });
+    }
+
+    // manda a versao em revisao para aprovar pelo Telegram (as copias ja subiram)
+    if (body.action === "telegram-review") {
+      requireStatus(post, ["aguardando_aprovacao"], "mandar para aprovação");
+      if (post.publish_mode !== "api") throw new Problem(400, "Só publicações automáticas vão para aprovar no Telegram.");
+      if (body.version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}).`);
       await readyToApprove(post);
-      if (post.publish_mode === "api") await checkUploads(post);
-      await dbInsert("approvals", { post_id: post.id, version: post.version, content_hash: post.content_hash, decision: "aprovado" });
-      const saved = await guardedUpdate(post, {
-        status: post.scheduled_at ? "agendado" : "aprovado",
-        approved_version: post.version,
-        approved_hash: post.content_hash,
-      });
-      if (saved.status === "agendado") await scheduleReminder(saved);
-      await audit("aprovar", "posts", post.id, { version: post.version, agendado: saved.status === "agendado" });
-      return reply(200, { post: saved });
+      await checkUploads(post);
+      await sendForReview(post, (await destinations(post.id)).filter((d) => d.status !== "cancelado").map((d) => d.format));
+      await audit("enviar_telegram", "posts", post.id, { version: post.version });
+      return reply(200, { post, sent: true });
     }
 
     if (body.action === "schedule") {
