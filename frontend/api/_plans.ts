@@ -18,6 +18,8 @@ import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpda
 //   remove-item { id }
 //   approve { plan_id }         -> itens vao para a fila (na_fila)
 //   cancel { plan_id }          -> itens que ainda nao foram gerados sao cancelados
+//   quick { slot, prompt, caption?, hashtags?, scheduled_at } -> foto avulsa da
+//                               Conversa: plano de 1 item ja na fila do robo
 
 const TZ_OFFSET = "-03:00"; // horario de Brasilia (sem horario de verao desde 2019)
 const MAX_DAYS = 92; // trimestre
@@ -255,6 +257,41 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       await audit("planejar", "content_plans", plan.id, { itens: slots.length });
       const items = await itemsOf(plan.id);
       return reply(200, { plan: { ...plan, items, estimate: credits(items), pending: items.filter((i) => !i.source_item_id).length } });
+    }
+
+    // Foto avulsa pedida na Conversa do Assistente: um plano de 1 item, ja
+    // aprovado, direto na fila do robo do PC (gera, cria a publicacao e manda
+    // para a analise no Telegram, igual aos itens de um plano).
+    if (body.action === "quick") {
+      const key = String(body.slot ?? "") as SlotKey;
+      const slot = SLOTS[key];
+      if (!slot || slot.kind !== "image") throw new Problem(400, "Escolha o destino da foto.");
+      const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 2000) : "";
+      if (!prompt) throw new Problem(400, "Escreva o pedido da foto.");
+      const when = typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
+      if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
+      const stamp = new Date().toISOString();
+      const plan = await dbInsert<PlanRow>("content_plans", {
+        title: `Foto avulsa do chat (${slot.label})`,
+        request: { source: "chat", slot: key },
+        status: "aprovado",
+        approved_at: stamp,
+      });
+      const item = await dbInsert<ItemRow>("content_plan_items", {
+        plan_id: plan.id,
+        position: 0,
+        scheduled_at: new Date(when).toISOString(),
+        network: slot.network,
+        format: slot.format,
+        kind: "image",
+        adult: slot.adult,
+        prompt,
+        caption: typeof body.caption === "string" ? body.caption.slice(0, 4000) : "",
+        hashtags: cleanTags(body.hashtags),
+        status: "na_fila",
+      });
+      await audit("foto_avulsa", "content_plan_items", item.id, { destino: key });
+      return reply(200, { item, estimate: credits([item]) });
     }
 
     // acoes de item chegam com o id do item; as de plano, com plan_id

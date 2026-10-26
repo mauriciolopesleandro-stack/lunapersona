@@ -622,3 +622,21 @@ Um programa no PC do administrador, em `worker/luna_worker.py` (Python, com Play
 - a falha com limite e aviso;
 - o item preso que volta para a fila;
 - a chave errada (401).
+
+## 25. Conversa com uma IA só e "Gerar esta foto" (26/10/2026)
+
+**Uma IA só na Conversa:** a aba Conversa do Assistente não tem mais a escolha "Redes / +18 Telegram". É uma conversa só, sempre com o modelo sem restrição (`OPENROUTER_MODEL_ADULT`). O prompt de sistema (`CHAT_NOTE` em `api/_assistant.ts`) avisa que conteúdo explícito só vale para o canal +18 do Telegram e que Instagram e TikTok seguem as regras das redes. O **Planejamento** continua escolhendo a IA por destino.
+
+**Gerar esta foto:** quando o administrador pede uma foto na Conversa, a IA termina a resposta com as linhas `PROMPT:`, `LEGENDA:`, `HASHTAGS:` e `DESTINO:`. O estúdio lê essas linhas (`src/studio/quickPhoto.tsx`) e mostra o botão **Gerar esta foto** embaixo da resposta.
+
+Ao clicar, abre um formulário para ajustar:
+- o destino (Feed, Stories, TikTok ou +18 Telegram);
+- o horário de publicação (padrão: daqui a 2 h);
+- o pedido, a legenda e as hashtags.
+
+Ao confirmar, `POST /api/studio?r=plans` com `action: "quick"` cria um plano "Foto avulsa do chat", já aprovado, com 1 item direto em `na_fila`. A partir daí é o mesmo caminho dos planos:
+1. o robô do PC gera a foto na Naiaflow (1 crédito);
+2. cria a publicação;
+3. manda para aprovar no Telegram.
+
+Só fotos: vídeo continua fora da automação.

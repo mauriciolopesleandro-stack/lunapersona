@@ -50,7 +50,13 @@ export const ADULT_NOTE = `Modo +18 (canal privado do Telegram, assinantes adult
 // A aba Conversa usa so a IA sem restricao (pedido do administrador): um chat
 // so, para qualquer assunto. O destino de cada texto continua decidindo o
 // que pode ir em cada rede.
-export const CHAT_NOTE = `Conversa livre com o administrador, sem restrição de assunto. Você pode falar de tudo e escrever conteúdo adulto e sensual explícito sobre a Luna (fictícia e adulta) quando for para o canal privado +18 do Telegram. Quando o pedido for para Instagram ou TikTok, siga as regras dessas redes (nada explícito). Se não estiver claro para onde vai, pergunte. Proibido sempre: menores ou aparência infantil, pessoas reais, violência sexual ou falta de consentimento.`;
+export const CHAT_NOTE = `Conversa livre com o administrador, sem restrição de assunto. Você pode falar de tudo e escrever conteúdo adulto e sensual explícito sobre a Luna (fictícia e adulta) quando for para o canal privado +18 do Telegram. Quando o pedido for para Instagram ou TikTok, siga as regras dessas redes (nada explícito). Se não estiver claro para onde vai, pergunte. Proibido sempre: menores ou aparência infantil, pessoas reais, violência sexual ou falta de consentimento.
+Quando o administrador pedir para gerar, criar ou fazer uma foto, termine a resposta com estas linhas, exatamente com estes rótulos (o estúdio lê essas linhas e mostra o botão "Gerar esta foto"):
+PROMPT: <o pedido para a Naiaflow, no formato simples de sempre>
+LEGENDA: <a legenda do post>
+HASHTAGS: <até 5 hashtags>
+DESTINO: <Feed, Stories, TikTok ou +18 Telegram>
+Se ele pedir várias fotos, repita o bloco para cada uma.`;
 
 interface PostRow {
   network: string;

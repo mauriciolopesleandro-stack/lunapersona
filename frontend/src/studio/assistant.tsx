@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
+import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
 
 // Assistente: chat do administrador com a IA que conhece a Luna (OpenRouter,
 // pelo servidor). Uma conversa so, sempre com a IA sem restricao (pedido do
@@ -180,6 +181,8 @@ export function AssistantPage() {
                   {copied === i ? "Copiado" : "Copiar"}
                 </button>
               )}
+              {m.role === "assistant" &&
+                parsePhotoBlocks(m.content).map((b, j) => <QuickPhoto key={`${i}-${j}`} block={b} />)}
             </div>
           ))}
           {busy && <div className="st-msg st-msg-assistant st-msg-wait">Pensando…</div>}

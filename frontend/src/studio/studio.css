@@ -3450,3 +3450,13 @@
 .st-plan-actions {
   gap: 14px;
 }
+
+/* "Gerar esta foto" na Conversa do Assistente */
+.st-quick-photo {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
