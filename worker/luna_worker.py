@@ -163,7 +163,9 @@ class Naiaflow:
                     return
             except Exception:
                 pass
-            if not warned:
+            # So avisa depois de um tempo: logo de cara a pagina ainda esta
+            # carregando e o aviso saia mesmo com a sessao salva.
+            if not warned and time.time() > deadline - 15 * 60 + 20:
                 # O Google recusa login com conta Google num Chrome controlado
                 # por automacao ("Esse navegador ou app pode nao ser seguro").
                 log(
