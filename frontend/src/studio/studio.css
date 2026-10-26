@@ -3371,3 +3371,82 @@
   resize: vertical;
   min-height: 48px;
 }
+
+/* Planejamento (aba do Assistente) */
+.st-plan-form,
+.st-plan-view {
+  display: grid;
+  gap: 12px;
+}
+
+.st-plan-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.st-plan-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.st-plan-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.st-plan-head h2,
+.st-plan-day h3 {
+  margin: 0;
+}
+
+.st-plan-day {
+  display: grid;
+  gap: 8px;
+}
+
+.st-plan-day h3 {
+  font-size: 14px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.st-plan-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-panel-2);
+}
+
+.st-plan-item.adult {
+  border-color: var(--st-pink);
+}
+
+.st-plan-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.st-plan-prompt,
+.st-plan-caption {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.st-plan-edit {
+  display: grid;
+  gap: 6px;
+}
+
+.st-plan-actions {
+  gap: 14px;
+}

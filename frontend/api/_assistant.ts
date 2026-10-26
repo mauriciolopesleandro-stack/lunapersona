@@ -16,7 +16,7 @@ const DEFAULT_ADULT_MODEL = "cognitivecomputations/dolphin-mistral-24b-venice-ed
 const MAX_MESSAGES = 24;
 const MAX_CHARS = 8000;
 
-type Mode = "normal" | "adulto";
+export type Mode = "normal" | "adulto";
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -26,13 +26,13 @@ export function assistantConfigured(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY?.trim());
 }
 
-function modelFor(mode: Mode): string {
+export function modelFor(mode: Mode): string {
   return mode === "adulto"
     ? process.env.OPENROUTER_MODEL_ADULT?.trim() || DEFAULT_ADULT_MODEL
     : process.env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL;
 }
 
-const PERSONA = `Você é o Assistente do Luna Studio e trabalha só para o administrador (o criador da Luna Vox).
+export const PERSONA = `Você é o Assistente do Luna Studio e trabalha só para o administrador (o criador da Luna Vox).
 A Luna Vox (@lunavoxlopes) é uma influenciadora virtual brasileira criada com IA: adulta, alegre, carinhosa, confiante e um pouco provocante, com vida em cenários reais do Brasil (praia, cidade, casa, academia, viagens, futebol, festas).
 Aparência fixa (use nos prompts de imagem): rosto oval, olhos castanho-escuros, sobrancelhas grossas e retas, lábios bem cheios, cabelo muito longo castanho-escuro com reflexos acobreados, liso a levemente ondulado, pele morena bronzeada, corpo magro e curvilíneo (cintura fina, barriga definida, quadril arredondado), gargantilha preta e corrente fina com pingente oval preto, sem tatuagens.
 Como ajudar:
@@ -45,7 +45,7 @@ Regras que nunca mudam:
 - Conteúdo +18 só existe para o canal privado do Telegram, só com a Luna (personagem fictícia e adulta), nunca com pessoa real, nunca com aparência de menor de idade.
 - Se perguntarem se a Luna é real: ela é virtual, criada com IA.`;
 
-const ADULT_NOTE = `Modo +18 (canal privado do Telegram, assinantes adultos verificados): pode escrever conteúdo adulto e sensual explícito sobre a Luna, que é fictícia e adulta. Proibido: menores ou aparência infantil, pessoas reais, violência sexual ou falta de consentimento.`;
+export const ADULT_NOTE = `Modo +18 (canal privado do Telegram, assinantes adultos verificados): pode escrever conteúdo adulto e sensual explícito sobre a Luna, que é fictícia e adulta. Proibido: menores ou aparência infantil, pessoas reais, violência sexual ou falta de consentimento.`;
 
 interface PostRow {
   network: string;
@@ -81,6 +81,60 @@ async function context(): Promise<string> {
 }
 
 class BadRequest extends Error {}
+
+export class AiError extends Error {
+  constructor(
+    public status: number,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+// Uma chamada ao OpenRouter (chat completions). json: pede um objeto JSON.
+export async function askAi(
+  mode: Mode,
+  messages: { role: "system" | "user" | "assistant"; content: string }[],
+  opts: { json?: boolean; maxTokens?: number; timeoutMs?: number } = {}
+): Promise<{ text: string; model: string; usage: unknown }> {
+  if (!assistantConfigured()) throw new AiError(400, "Falta cadastrar OPENROUTER_API_KEY na Vercel.");
+  const model = modelFor(mode);
+  let res: Response;
+  try {
+    res = await fetch(API, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY!.trim()}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://luna-ai-studio-frontend.vercel.app",
+        "X-Title": "Luna Studio",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.8,
+        max_tokens: opts.maxTokens ?? 1500,
+        ...(opts.json ? { response_format: { type: "json_object" } } : {}),
+      }),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 55_000),
+    });
+  } catch (e) {
+    throw new AiError(504, `A IA não respondeu a tempo (${e instanceof Error ? e.message : e}). Tente de novo.`);
+  }
+  const data = (await res.json().catch(() => ({}))) as {
+    choices?: { message?: { content?: string } }[];
+    usage?: unknown;
+    error?: { message?: string };
+  };
+  if (!res.ok || data.error) {
+    const msg = data.error?.message ?? `HTTP ${res.status}`;
+    const hint = res.status === 402 ? " (créditos do OpenRouter acabaram ou o limite da chave foi atingido)" : res.status === 401 ? " (chave do OpenRouter inválida)" : "";
+    throw new AiError(502, `OpenRouter: ${msg}${hint}`);
+  }
+  const text = data.choices?.[0]?.message?.content?.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  if (!text) throw new AiError(502, "A IA respondeu vazio. Tente de novo.");
+  return { text, model, usage: data.usage ?? null };
+}
 
 function cleanMessages(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw) || !raw.length) throw new BadRequest("Escreva uma mensagem.");
@@ -124,36 +178,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return reply(400, { detail: e instanceof Error ? e.message : String(e) });
   }
   const mode: Mode = body.mode === "adulto" ? "adulto" : "normal";
-  const model = modelFor(mode);
   const system = [PERSONA, mode === "adulto" ? ADULT_NOTE : "", await context()].filter(Boolean).join("\n\n");
 
-  let res2: Response;
   try {
-    res2 = await fetch(API, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY!.trim()}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://luna-ai-studio-frontend.vercel.app",
-        "X-Title": "Luna Studio",
-      },
-      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, ...messages], temperature: 0.8, max_tokens: 1500 }),
-      signal: AbortSignal.timeout(55_000),
-    });
+    const out = await askAi(mode, [{ role: "system", content: system }, ...messages]);
+    return reply(200, { reply: out.text, model: out.model, mode, usage: out.usage });
   } catch (e) {
-    return reply(504, { detail: `A IA não respondeu a tempo (${e instanceof Error ? e.message : e}). Tente de novo.` });
+    if (e instanceof AiError) return reply(e.status, { detail: e.message });
+    throw e;
   }
-  const data = (await res2.json().catch(() => ({}))) as {
-    choices?: { message?: { content?: string } }[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
-    error?: { message?: string; code?: number | string };
-  };
-  if (!res2.ok || data.error) {
-    const msg = data.error?.message ?? `HTTP ${res2.status}`;
-    const hint = res2.status === 402 ? " (créditos do OpenRouter acabaram ou o limite da chave foi atingido)" : res2.status === 401 ? " (chave do OpenRouter inválida)" : "";
-    return reply(502, { detail: `OpenRouter: ${msg}${hint}` });
-  }
-  const text = data.choices?.[0]?.message?.content?.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
-  if (!text) return reply(502, { detail: "A IA respondeu vazio. Tente de novo." });
-  return reply(200, { reply: text, model, mode, usage: data.usage ?? null });
 }

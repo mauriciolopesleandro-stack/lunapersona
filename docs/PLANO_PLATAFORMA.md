@@ -532,3 +532,55 @@ O administrador aprova pelo celular. A publicação chega no Telegram dele com a
   - nunca descreve rosto ou corpo e nunca escreve "uma mulher";
   - no máximo 5 hashtags comuns, sem inventar.
 - **Teste:** `test_tg_aprovacao.mjs` cobre o caminho +18: bot, aprovar, lembrete com a foto, e o modo automático recusado.
+
+## 23. Planejamento pelo chat (parte A do fluxo, 26/10/2026)
+
+Aba **Planejamento** no Assistente. O chat transforma o pedido do administrador num plano. A geração das imagens (parte B) e a refação (parte C) vêm depois.
+
+**Como funciona:**
+1. **Formulário:**
+   - período, até 92 dias (um trimestre);
+   - quantas publicações por dia em cada destino: Instagram Feed, Stories, Reels (vídeo), TikTok e Telegram +18;
+   - tema opcional;
+   - "TikTok usa a mesma foto do Feed do dia".
+2. **A grade é do estúdio, não da IA:** dias × quantidades, nos horários padrão de Brasília. Feed às 12:00 e 19:00; Stories às 09:00, 13:00 e 17:00; TikTok às 20:00; Telegram +18 às 22:00; etc.
+3. **A IA escreve o criativo de cada item, 20 por vez** (ação `fill`; a tela repete até acabar), para caber no tempo da função:
+   - prompt simples para a Naiaflow;
+   - legenda;
+   - até 5 hashtags.
+
+   Os itens das redes usam o modelo normal. Os +18 usam o modelo sem censura, com as regras do modo +18. Hashtags estranhas são filtradas.
+4. **TikTok que reaproveita** aponta para o Feed do mesmo dia (`source_item_id`). Copia o prompt e a legenda e **não gasta crédito**. Editar o Feed atualiza o TikTok.
+5. **Revisar:** dá para editar o prompt e a legenda, tirar um item e ver a estimativa: fotos e vídeos a gerar, e créditos da Naiaflow (foto 1, vídeo ~6).
+6. **Aprovar o plano:**
+   - os itens vão para `na_fila`, a fila da automação local (parte B);
+   - depois de aprovado, o plano não muda mais;
+   - "Descartar" cancela o que ainda não foi gerado.
+
+**Banco:** migração `0007_planejamento.sql`, só aditiva:
+- tabelas `content_plans` e `content_plan_items`;
+- trava no banco que impede item +18 fora do Telegram.
+
+**Arquivos:**
+- `api/_plans.ts`, a rota `r=plans`;
+- `askAi` reaproveitável em `api/_assistant.ts`;
+- `src/studio/plans.tsx`;
+- a aba em `assistant.tsx`;
+- `studio.css`.
+
+**Testes:**
+- `supabase/tests/planejamento.test.mjs`;
+- `test_planejamento.mjs`, que cobre:
+  - as regras da grade;
+  - os 10 itens;
+  - os horários;
+  - o reaproveitamento do TikTok;
+  - +18 só no Telegram e pela IA sem censura;
+  - uma chamada por IA;
+  - as hashtags limpas;
+  - a estimativa;
+  - editar;
+  - tirar item;
+  - aprovar;
+  - o travamento depois de aprovado;
+  - o celular.

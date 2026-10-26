@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
+import { PlanPanel } from "./plans";
 
 // Assistente: chat do administrador com a IA que conhece a Luna (OpenRouter,
 // pelo servidor). Duas conversas separadas: redes (Instagram/TikTok) e +18
@@ -44,6 +45,13 @@ function save(chats: Record<Mode, Message[]>) {
 }
 
 export function AssistantPage() {
+  const [tab, setTab] = useState<"conversa" | "plano">(() => {
+    try {
+      return localStorage.getItem("luna-assistente-aba") === "plano" ? "plano" : "conversa";
+    } catch {
+      return "conversa";
+    }
+  });
   const [status, setStatus] = useState<Status | null>(null);
   const [mode, setMode] = useState<Mode>("normal");
   const [chats, setChats] = useState<Record<Mode, Message[]>>(load);
@@ -119,6 +127,32 @@ export function AssistantPage() {
       {status && !status.configured && (
         <p className="st-warn">Falta cadastrar a chave do OpenRouter (OPENROUTER_API_KEY) na Vercel e fazer um novo deploy.</p>
       )}
+      <div className="st-tabs" role="tablist" aria-label="Assistente">
+        {(
+          [
+            ["conversa", "Conversa"],
+            ["plano", "Planejamento"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={tab === id ? "active" : ""}
+            onClick={() => {
+              setTab(id);
+              try {
+                localStorage.setItem("luna-assistente-aba", id);
+              } catch {
+                // sem armazenamento: so nao lembra a aba
+              }
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "plano" && <PlanPanel />}
+      {tab === "conversa" && (
       <section className="st-panel st-chat">
         <div className="st-chat-head">
           <div className="st-seg" role="tablist" aria-label="Conversa">
@@ -189,6 +223,7 @@ export function AssistantPage() {
           </button>
         </form>
       </section>
+      )}
     </div>
   );
 }
