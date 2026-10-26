@@ -52,3 +52,9 @@ Thumbs.db
 # Fotos de treino da Luna (ficam no OneDrive e no volume do pod, fora do git)
 personas/luna/lora_qwen_novas/*.png
 personas/luna/lora_qwen_novas/colagens/
+
+# automacao local: chave do PC, perfil do Chrome e registro
+worker/luna-worker.env
+worker/.perfil-naiaflow/
+worker/luna-worker.log
+worker/__pycache__/
