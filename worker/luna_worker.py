@@ -155,14 +155,24 @@ class Naiaflow:
         deadline = time.time() + 15 * 60
         warned = False
         while time.time() < deadline:
-            if "/generations" in self.page.url and self.page.locator("text=Modo imagem").count():
-                return
+            # durante o login a pagina troca de endereco (e a aba pode ser outra): so tenta de novo
+            try:
+                if self.page.is_closed():
+                    self.page = self.ctx.pages[-1] if self.ctx.pages else self.ctx.new_page()
+                if "/generations" in self.page.url and self.page.locator("text=Modo imagem").count():
+                    return
+            except Exception:
+                pass
             if not warned:
-                log("Entre na sua conta da Naiaflow na janela do Chrome que abriu (só na primeira vez).")
+                # O Google recusa login com conta Google num Chrome controlado
+                # por automacao ("Esse navegador ou app pode nao ser seguro").
+                log(
+                    "A Naiaflow nao esta logada. Feche esta janela e abra 'Entrar na Naiaflow.bat' "
+                    "(Chrome normal, mesmo perfil): entre com a conta Google, feche o Chrome e "
+                    "abra 'Iniciar automacao.bat' de novo."
+                )
                 warned = True
             time.sleep(3)
-            if "/generations" not in self.page.url and "login" not in self.page.url and "auth" not in self.page.url:
-                self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
         raise RuntimeError("Nao consegui abrir a Naiaflow (login nao concluido em 15 minutos).")
 
     def credits(self) -> int | None:
@@ -203,8 +213,11 @@ class Naiaflow:
         deadline = time.time() + GENERATION_TIMEOUT_S
         while time.time() < deadline:
             time.sleep(5)
-            head = self.page.locator("body").inner_text()[:300]
-            new = self._job_images() - before
+            try:
+                head = self.page.locator("body").inner_text()[:300]
+                new = self._job_images() - before
+            except Exception:  # a pagina recarregou: confere de novo no proximo ciclo
+                continue
             if new and "Gerando" not in head and "Enviando" not in head:
                 src = sorted(new)[0]
                 return src.rsplit("/", 1)[0] + "/public"
