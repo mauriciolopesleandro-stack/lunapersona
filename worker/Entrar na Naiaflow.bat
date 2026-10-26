@@ -19,6 +19,12 @@ if not exist "%CHROME%" (
     exit /b 1
 )
 
+rem O Chrome do robo as vezes continua aberto depois que o robo fecha; ai o
+rem Chrome abaixo so abriria uma aba DENTRO dele (ainda em modo automacao, e
+rem o Google bloquearia de novo). Fecha qualquer Chrome com este perfil antes.
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*perfil-naiaflow*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }"
+timeout /t 2 /nobreak >nul
+
 echo.
 echo 1. Na janela do Chrome que vai abrir, entre na Naiaflow com a sua conta Google.
 echo 2. Quando aparecer a tela de geracao da Naiaflow, FECHE essa janela do Chrome.
