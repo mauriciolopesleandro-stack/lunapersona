@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import io
 import os
+import re
 import sys
 import time
 from datetime import datetime
@@ -189,6 +190,32 @@ class Naiaflow:
         srcs = self.page.eval_on_selector_all("img", "els => els.map(e => e.currentSrc || e.src)")
         return {s for s in srcs if "cdn.naiaflow.com/job-" in s}
 
+    def _dismiss_overlays(self) -> None:
+        """Avisos fixos da Naiaflow (cookies, boas-vindas, novidades) ficam por
+        cima do composer e bloqueiam os cliques ("subtree intercepts pointer
+        events"). Prefere recusar/fechar; se nao achar botao, esconde o aviso."""
+        try:
+            banners = self.page.locator("div.fixed.bottom-6")
+            for i in range(banners.count()):
+                banner = banners.nth(i)
+                if not banner.is_visible():
+                    continue
+                button = banner.get_by_role("button").filter(
+                    has_text=re.compile(r"recus|rejeit|essenc|necess|fechar|entendi|agora n|depois|ok|aceit", re.I)
+                )
+                if button.count():
+                    # recusar/so essenciais antes de aceitar
+                    order = ["recus", "rejeit", "essenc", "necess", "fechar", "entendi", "agora n", "depois", "ok", "aceit"]
+                    texts = [button.nth(j).inner_text().lower() for j in range(button.count())]
+                    best = min(range(len(texts)), key=lambda j: next((k for k, w in enumerate(order) if w in texts[j]), len(order)))
+                    button.nth(best).click(timeout=3000)
+                    log(f'Fechei um aviso da Naiaflow ("{texts[best].strip()[:30]}").')
+                else:
+                    banner.evaluate("el => el.style.display = 'none'")
+                    log("Escondi um aviso da Naiaflow que estava por cima dos botoes.")
+        except Exception as exc:
+            log(f"Nao consegui fechar um aviso da Naiaflow: {exc}")
+
     def _ensure_clone(self) -> None:
         composer = self.page.locator("text=Adicionar")
         chip = self.page.get_by_role("button", name=CLONE, exact=True)
@@ -203,6 +230,8 @@ class Naiaflow:
     def generate(self, prompt: str) -> str:
         self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
         self.page.wait_for_selector("text=Modo imagem", timeout=60000)
+        self.page.wait_for_timeout(1500)  # os avisos aparecem logo depois de carregar
+        self._dismiss_overlays()
         self._ensure_clone()
         before = self._job_images()
         box = self.page.get_by_placeholder("Digite seu prompt", exact=False).first
