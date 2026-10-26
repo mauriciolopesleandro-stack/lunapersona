@@ -12,7 +12,7 @@ import { useStudio, type Item, type Network, type Post } from "./store";
 // traduzidas por rede (api/_flags.ts). O envio usa a fila que ja existe.
 
 type Slot = "ig_feed" | "ig_stories" | "ig_reels" | "tt" | "tg";
-type Mode = "rascunho" | "aprovacao" | "publicar";
+type Mode = "rascunho" | "aprovacao" | "telegram" | "publicar";
 
 const SLOTS: { id: Slot; network: Network; label: string; hint: string }[] = [
   { id: "ig_feed", network: "instagram", label: "Feed", hint: "foto, vídeo ou carrossel" },
@@ -97,7 +97,7 @@ export interface PostarStart {
 }
 
 export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () => void }) {
-  const { items, saveCloudPost, postAction, approveAutomatic, instagram, tiktok, state, source } = useStudio();
+  const { items, saveCloudPost, postAction, approveAutomatic, sendToTelegram, instagram, tiktok, state, source } = useStudio();
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [media, setMedia] = useState<string[]>(start.media ?? []);
   const [slide, setSlide] = useState(0);
@@ -291,12 +291,30 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
           groupId,
         });
         if (mode !== "rascunho") await postAction("submit", post.id);
+        if (mode === "telegram" && post.publishMode === "api") {
+          await sendToTelegram({ ...post, status: "aguardando_aprovacao" }, (text) => setMessage({ ok: true, text: `${label}: ${text}` }));
+        }
         if (mode === "publicar") {
           const ready: Post = { ...post, status: "aguardando_aprovacao" };
           if (ready.publishMode === "api") await approveAutomatic(ready, (text) => setMessage({ ok: true, text: `${label}: ${text}` }));
           else await postAction("approve", post.id, { version: post.version });
         }
-        out.push({ key: p.key, ok: true, text: mode === "publicar" ? (pubMode(p) === "api" ? "na fila" : "agendada (ação manual no horário)") : mode === "aprovacao" ? "aguardando aprovação" : "rascunho salvo" });
+        out.push({
+          key: p.key,
+          ok: true,
+          text:
+            mode === "publicar"
+              ? pubMode(p) === "api"
+                ? "na fila"
+                : "agendada (ação manual no horário)"
+              : mode === "telegram"
+              ? pubMode(p) === "api"
+                ? "no Telegram para você aprovar"
+                : "aguardando aprovação (manual: aprove no estúdio)"
+              : mode === "aprovacao"
+              ? "aguardando aprovação"
+              : "rascunho salvo",
+        });
       } catch (e) {
         out.push({ key: p.key, ok: false, text: e instanceof Error ? e.message : String(e) });
       }
@@ -312,7 +330,9 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
             text:
               mode === "publicar"
                 ? `${out.length} publicação(ões) aprovada(s). ${when === "agora" ? "O envio sai no próximo minuto" : "No horário o estúdio envia"}; acompanhe em Publicações.`
-                : mode === "aprovacao"
+                : mode === "telegram"
+                  ? `${out.length} publicação(ões) mandada(s) para você aprovar no Telegram.`
+                  : mode === "aprovacao"
                   ? `${out.length} publicação(ões) enviada(s) para aprovação.`
                   : `${out.length} rascunho(s) salvo(s).`,
           }
@@ -840,6 +860,10 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
             </button>
             <button type="button" className="st-btn" onClick={() => finish("aprovacao")} disabled={busy || blockingCount > 0}>
               Enviar para aprovação
+            </button>
+            <button type="button" className="st-btn" onClick={() => finish("telegram")} disabled={busy || blockingCount > 0}>
+              <Icon name="telegram" size={16} />
+              Aprovar pelo Telegram
             </button>
             <button type="button" className="st-btn st-btn-primary" onClick={() => (blockingCount ? setStep(3) : finish("publicar"))} disabled={busy}>
               <Icon name={blockingCount ? "close" : "send"} size={16} />

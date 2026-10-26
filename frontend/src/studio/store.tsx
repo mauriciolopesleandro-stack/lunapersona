@@ -277,6 +277,7 @@ interface Studio {
   disconnectTiktok: () => Promise<void>;
   // modo automatico: envia a copia temporaria das midias da versao e aprova
   approveAutomatic: (post: Post, onStep?: (text: string) => void) => Promise<void>;
+  sendToTelegram: (post: Post, onStep?: (text: string) => void) => Promise<void>;
   saveCloudPost: (input: PostInput, current?: Post | null) => Promise<{ post: Post; needsApproval: boolean }>;
   postAction: (action: PostAction, id: string, extra?: object) => Promise<Post>;
   runJobs: () => Promise<{ processadas: number; ok: number; falhas: number; novas_tentativas: number }>;
@@ -733,8 +734,9 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     setTiktok(await cloudTiktok().catch(() => null));
   }, []);
 
-  const approveAutomatic = useCallback(
-    async (post: Post, onStep?: (text: string) => void) => {
+  // Copias temporarias da versao em revisao (JPEG/MP4 no formato da rede) para
+  // o Storage: precisam estar la para aprovar no estudio ou pelo Telegram.
+  const uploadCopies = useCallback(async (post: Post, onStep?: (text: string) => void) => {
       if (!post.version) throw new Error("Publicação sem versão.");
       const files = post.media.map((path) => filesRef.current.find((f) => f.path === path)?.file);
       if (files.some((f) => !f)) throw new Error("Uma das mídias não está na pasta deste computador. Abra a pasta do estúdio e tente de novo.");
@@ -751,11 +753,28 @@ export function StudioProvider({ children }: { children: ReactNode }) {
         onStep?.(`Enviando mídia ${i + 1} de ${urls.length}...`);
         await putSignedUpload(u.url, prepared[u.position].blob);
       }
+  }, []);
+
+  const approveAutomatic = useCallback(
+    async (post: Post, onStep?: (text: string) => void) => {
+      await uploadCopies(post, onStep);
       onStep?.("Aprovando...");
       await cloudPostAction("approve", post.id, { version: post.version });
       await reloadPosts();
     },
-    [reloadPosts]
+    [reloadPosts, uploadCopies]
+  );
+
+  // Aprovar pelo celular: sobe as copias e manda a versao para o Telegram, com
+  // os botoes Aprovar / Reprovar / Pedir correcao.
+  const sendToTelegram = useCallback(
+    async (post: Post, onStep?: (text: string) => void) => {
+      await uploadCopies(post, onStep);
+      onStep?.("Mandando para o Telegram...");
+      await cloudPostAction("telegram-review", post.id, { version: post.version });
+      await reloadPosts();
+    },
+    [reloadPosts, uploadCopies]
   );
 
   const runJobs = useCallback(async () => {
@@ -824,6 +843,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     reloadTiktok,
     disconnectTiktok,
     approveAutomatic,
+    sendToTelegram,
     saveCloudPost,
     postAction,
     runJobs,

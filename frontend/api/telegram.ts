@@ -11,6 +11,7 @@ import {
   telegram,
   telegramConfig,
 } from "./_telegram.js";
+import { registerWebhook } from "./_tg_review.js";
 
 interface BotInfo {
   username?: string;
@@ -25,8 +26,15 @@ interface Update {
 //   token { token }  - confere com o Telegram (getMe) e guarda
 //   connect          - acha a conversa de quem mandou /start para o bot
 //   media { value }  - mandar a foto/video junto ou so o texto
+//   webhook          - (re)liga os botoes de aprovacao (Telegram chama /api/telegram/webhook)
 //   test             - manda uma mensagem de teste
 //   forget           - apaga token e conversa
+function siteUrl(req: IncomingMessage): string {
+  const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "");
+  const proto = String(req.headers["x-forwarded-proto"] ?? "https").split(",")[0];
+  return `${proto}://${host}`;
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   res.setHeader("Content-Type", "application/json");
   const reply = (status: number, body: object) => {
@@ -82,6 +90,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     } else if (body.action === "connect") {
       const config = await telegramConfig();
       if (!config.token) return reply(400, { detail: "Cole o token do bot primeiro." });
+      // com o webhook ligado o Telegram nao entrega getUpdates: desliga, acha a conversa e liga de novo
+      await telegram(config.token, "deleteWebhook").catch(() => undefined);
       const updates = await telegram<Update[]>(config.token, "getUpdates", { limit: 100 });
       const chat = updates
         .map((u) => u.message?.chat)
@@ -91,10 +101,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         return reply(400, { detail: "Ainda nao recebi sua mensagem: abra o bot no Telegram, toque em Começar e tente de novo." });
       }
       await saveChat(String(chat.id));
+      await registerWebhook(config.token, siteUrl(req));
       await sendNotice(
         { ...config, chatId: String(chat.id) },
         "Pronto! Vou te avisar aqui quando as fotos e os vídeos do estúdio ficarem prontos."
       );
+    } else if (body.action === "webhook") {
+      const config = await telegramConfig();
+      if (!config.token) return reply(400, { detail: "Cole o token do bot primeiro." });
+      await registerWebhook(config.token, siteUrl(req));
     } else if (body.action === "media") {
       await saveMedia(body.value === true);
     } else if (body.action === "test") {

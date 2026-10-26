@@ -12,6 +12,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/telegram/webhook",
+      "destination": "/api/studio?r=telegram-hook"
+    },
+    {
       "source": "/api/tiktok/callback",
       "destination": "/api/studio?r=tiktok-callback"
     },
