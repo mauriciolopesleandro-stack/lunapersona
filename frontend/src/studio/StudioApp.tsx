@@ -8,6 +8,7 @@ import { needsYou, WaitingForYou } from "./PostFlow";
 import { ComingSoon, Modal, formatBytes } from "./shared";
 import { AccountsPage, InstagramPage, TikTokPage } from "./social";
 import { MusicPage } from "./music";
+import { AssistantPage } from "./assistant";
 import { StudioProvider, useStudio, type Post } from "./store";
 import "./studio.css";
 
@@ -16,6 +17,7 @@ import "./studio.css";
 const NAV: { id: string; label: string; icon: string }[] = [
   { id: "visao", label: "Visão Geral", icon: "home" },
   { id: "postar", label: "Publicar", icon: "plus" },
+  { id: "assistente", label: "Assistente", icon: "comment" },
   { id: "calendario", label: "Planejamento", icon: "calendar" },
   { id: "publicacoes", label: "Publicações", icon: "send" },
   { id: "conteudos", label: "Biblioteca de mídia", icon: "grid" },
@@ -235,6 +237,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           {page === "instagram" && <InstagramPage />}
           {page === "tiktok" && <TikTokPage />}
           {page === "musicas" && <MusicPage />}
+          {page === "assistente" && <AssistantPage />}
           {page === "contas" && <AccountsPage nav={nav} />}
           {page === "perfil" && <ProfilePage onLogout={onLogout} />}
           {SOON[page] && current && <ComingSoon title={current.label} icon={current.icon} text={SOON[page]} />}

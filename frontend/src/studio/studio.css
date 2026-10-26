@@ -3284,3 +3284,90 @@
   font-weight: 700;
   text-align: center;
 }
+
+/* Assistente (chat com a IA) */
+.st-chat {
+  display: grid;
+  gap: 12px;
+}
+
+.st-chat-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.st-chat-head .st-btn {
+  margin-left: auto;
+}
+
+.st-chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 240px;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+
+.st-chat-quick {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.st-chat-quick .st-btn {
+  text-align: left;
+  white-space: normal;
+  height: auto;
+  padding: 8px 12px;
+}
+
+.st-msg {
+  max-width: min(780px, 92%);
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.st-msg p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.st-msg-user {
+  align-self: flex-end;
+  background: var(--st-violet-soft);
+}
+
+.st-msg-assistant {
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+}
+
+.st-msg-assistant .st-link {
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.st-msg-wait {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.st-chat-input {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.st-chat-input textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 48px;
+}
