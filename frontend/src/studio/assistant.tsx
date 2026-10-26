@@ -3,10 +3,10 @@ import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 
 // Assistente: chat do administrador com a IA que conhece a Luna (OpenRouter,
-// pelo servidor). Duas conversas separadas: redes (Instagram/TikTok) e +18
-// (so Telegram). A conversa fica guardada neste navegador.
+// pelo servidor). Uma conversa so, sempre com a IA sem restricao (pedido do
+// administrador); o que vai para Instagram/TikTok continua seguindo as regras
+// das redes. A conversa fica guardada neste navegador.
 
-type Mode = "normal" | "adulto";
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -17,28 +17,31 @@ interface Status {
   adultModel: string;
 }
 
-const STORE_KEY = "luna-assistente-v1";
-const QUICK: Record<Mode, string[]> = {
-  normal: [
-    "Planeje a semana da Luna de segunda a quinta: 2 posts no Feed, 3 Stories e 1 TikTok por dia, com horário, tema, prompt para a Naiaflow e legenda.",
-    "Me dê 5 ideias de fotos para amanhã, em cenários reais do Brasil.",
-    "Escreva 3 opções de legenda e 5 hashtags para uma foto da Luna na praia ao pôr do sol.",
-  ],
-  adulto: ["Planeje os posts do canal +18 do Telegram de segunda a quinta (1 por dia), com prompt para a Naiaflow e texto do post."],
-};
+const STORE_KEY = "luna-assistente-v2";
+// Antes havia duas conversas (redes e +18); a primeira abertura aproveita a
+// que tiver mensagens.
+const OLD_STORE_KEY = "luna-assistente-v1";
+const QUICK = [
+  "Planeje a semana da Luna de segunda a quinta: 2 posts no Feed, 3 Stories e 1 TikTok por dia, com horário, tema, prompt para a Naiaflow e legenda.",
+  "Planeje os posts do canal +18 do Telegram de segunda a quinta (1 por dia), com prompt para a Naiaflow e texto do post.",
+  "Me dê 5 ideias de fotos para amanhã, em cenários reais do Brasil.",
+];
 
-function load(): Record<Mode, Message[]> {
+function load(): Message[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE_KEY) ?? "{}");
-    return { normal: Array.isArray(raw.normal) ? raw.normal : [], adulto: Array.isArray(raw.adulto) ? raw.adulto : [] };
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) ?? "null");
+    if (Array.isArray(saved)) return saved;
+    const old = JSON.parse(localStorage.getItem(OLD_STORE_KEY) ?? "{}");
+    if (Array.isArray(old.adulto) && old.adulto.length > 0) return old.adulto;
+    return Array.isArray(old.normal) ? old.normal : [];
   } catch {
-    return { normal: [], adulto: [] };
+    return [];
   }
 }
 
-function save(chats: Record<Mode, Message[]>) {
+function save(messages: Message[]) {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(chats));
+    localStorage.setItem(STORE_KEY, JSON.stringify(messages));
   } catch {
     // navegador sem armazenamento: a conversa vale so ate fechar a pagina
   }
@@ -53,14 +56,12 @@ export function AssistantPage() {
     }
   });
   const [status, setStatus] = useState<Status | null>(null);
-  const [mode, setMode] = useState<Mode>("normal");
-  const [chats, setChats] = useState<Record<Mode, Message[]>>(load);
+  const [messages, setMessages] = useState<Message[]>(load);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const messages = chats[mode];
 
   useEffect(() => {
     fetch("/api/studio?r=assistant")
@@ -75,11 +76,8 @@ export function AssistantPage() {
   }, [messages.length, busy]);
 
   function update(next: Message[]) {
-    setChats((c) => {
-      const all = { ...c, [mode]: next };
-      save(all);
-      return all;
-    });
+    setMessages(next);
+    save(next);
   }
 
   async function send(content: string) {
@@ -94,7 +92,7 @@ export function AssistantPage() {
       const r = await fetch("/api/studio?r=assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, messages: next }),
+        body: JSON.stringify({ messages: next }),
       });
       const b = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(b.detail ?? `Erro HTTP ${r.status}`);
@@ -155,27 +153,19 @@ export function AssistantPage() {
       {tab === "conversa" && (
       <section className="st-panel st-chat">
         <div className="st-chat-head">
-          <div className="st-seg" role="tablist" aria-label="Conversa">
-            <button type="button" className={mode === "normal" ? "active" : ""} onClick={() => setMode("normal")}>
-              Redes (Instagram e TikTok)
-            </button>
-            <button type="button" className={mode === "adulto" ? "active" : ""} onClick={() => setMode("adulto")}>
-              +18 Telegram
-            </button>
-          </div>
-          {status?.configured && <small className="st-hint">IA: {mode === "adulto" ? status.adultModel : status.model}</small>}
+          {status?.configured && <small className="st-hint">IA sem restrição: {status.adultModel}</small>}
           {messages.length > 0 && (
             <button type="button" className="st-btn st-btn-small" disabled={busy} onClick={() => window.confirm("Apagar esta conversa?") && update([])}>
               Limpar conversa
             </button>
           )}
         </div>
-        {mode === "adulto" && <p className="st-hint">Só para o canal privado do Telegram. Nada daqui vai para Instagram ou TikTok.</p>}
+        <p className="st-hint">Fala de tudo, sem restrição. Conteúdo explícito só vale para o canal +18 do Telegram; para Instagram e TikTok a IA segue as regras das redes.</p>
         <div className="st-chat-list">
           {messages.length === 0 && (
             <div className="st-chat-quick">
               <span className="st-hint">Comece com um destes pedidos ou escreva o seu:</span>
-              {QUICK[mode].map((q) => (
+              {QUICK.map((q) => (
                 <button key={q} type="button" className="st-btn st-btn-small" disabled={busy || !status?.configured} onClick={() => send(q)}>
                   {q}
                 </button>

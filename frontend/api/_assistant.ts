@@ -5,9 +5,9 @@ import { dbSelect, supabaseConfigured } from "./_supabase.js";
 // /api/studio?r=assistant - o Assistente do Luna Studio: um chat so do
 // administrador com uma IA (OpenRouter) que conhece a Luna, as regras e a
 // agenda. Dois "cerebros":
-//   normal (OPENROUTER_MODEL): plano da semana, prompts para a Naiaflow,
-//          legendas de Instagram e TikTok, ideias e conversa
-//   adulto (OPENROUTER_MODEL_ADULT): so texto +18 para o canal do Telegram
+//   normal (OPENROUTER_MODEL): textos de Instagram e TikTok no Planejamento
+//   adulto (OPENROUTER_MODEL_ADULT): sem restricao - a aba Conversa inteira
+//          e o texto +18 do canal do Telegram no Planejamento
 // A chave (OPENROUTER_API_KEY) fica so no servidor; a conversa fica no navegador.
 
 const API = "https://openrouter.ai/api/v1/chat/completions";
@@ -46,6 +46,11 @@ Regras que nunca mudam:
 - Se perguntarem se a Luna é real: ela é virtual, criada com IA.`;
 
 export const ADULT_NOTE = `Modo +18 (canal privado do Telegram, assinantes adultos verificados): pode escrever conteúdo adulto e sensual explícito sobre a Luna, que é fictícia e adulta. Proibido: menores ou aparência infantil, pessoas reais, violência sexual ou falta de consentimento.`;
+
+// A aba Conversa usa so a IA sem restricao (pedido do administrador): um chat
+// so, para qualquer assunto. O destino de cada texto continua decidindo o
+// que pode ir em cada rede.
+export const CHAT_NOTE = `Conversa livre com o administrador, sem restrição de assunto. Você pode falar de tudo e escrever conteúdo adulto e sensual explícito sobre a Luna (fictícia e adulta) quando for para o canal privado +18 do Telegram. Quando o pedido for para Instagram ou TikTok, siga as regras dessas redes (nada explícito). Se não estiver claro para onde vai, pergunte. Proibido sempre: menores ou aparência infantil, pessoas reais, violência sexual ou falta de consentimento.`;
 
 interface PostRow {
   network: string;
@@ -177,8 +182,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   } catch (e) {
     return reply(400, { detail: e instanceof Error ? e.message : String(e) });
   }
-  const mode: Mode = body.mode === "adulto" ? "adulto" : "normal";
-  const system = [PERSONA, mode === "adulto" ? ADULT_NOTE : "", await context()].filter(Boolean).join("\n\n");
+  // A Conversa e sempre com a IA sem restricao (o campo mode do pedido e
+  // ignorado); o Planejamento continua escolhendo a IA por destino.
+  const mode: Mode = "adulto";
+  const system = [PERSONA, CHAT_NOTE, await context()].join("\n\n");
 
   try {
     const out = await askAi(mode, [{ role: "system", content: system }, ...messages]);
