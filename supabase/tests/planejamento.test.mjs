@@ -45,5 +45,12 @@ const [feed] = (await db.query(`select id from content_plan_items where position
 await expect("TikTok reaproveita a foto do Feed", `insert into content_plan_items (plan_id, position, scheduled_at, network, format, source_item_id) values ('${plan.id}', 4, ${when}, 'tiktok', 'Foto', '${feed.id}')`, true);
 await expect("apagar o plano apaga os itens", `delete from content_plans where id = '${plan.id}'`, true);
 report("itens apagados junto", (await db.query(`select count(*)::int as n from content_plan_items`)).rows[0].n === 0);
+
+// Foto avulsa da Conversa do Assistente (action "quick"): plano ja aprovado
+// com 1 item direto na fila do robo.
+const [quick] = (await db.query(`insert into content_plans (title, request, status, approved_at) values ('Foto avulsa do chat (Instagram Feed)', '{"source":"chat","slot":"feed"}', 'aprovado', now()) returning id`)).rows;
+await expect("foto avulsa entra direto na fila", `insert into content_plan_items (plan_id, position, scheduled_at, network, format, kind, adult, prompt, caption, hashtags, status) values ('${quick.id}', 0, ${when}, 'instagram', 'Feed', 'image', false, 'Luna na praia ao por do sol', 'Fim de tarde', '{#praia}', 'na_fila')`, true);
+await expect("foto avulsa +18 vai para o Telegram", `insert into content_plan_items (plan_id, position, scheduled_at, network, format, kind, adult, prompt, status) values ('${quick.id}', 1, ${when}, 'telegram', 'Canal', 'image', true, 'Luna no quarto', 'na_fila')`, true);
+report("fila do robo enxerga as fotos avulsas", (await db.query(`select count(*)::int as n from content_plan_items where status = 'na_fila' and kind = 'image' and source_item_id is null`)).rows[0].n === 2);
 console.log(fails ? `${fails} FALHA(S)` : "TUDO OK");
 process.exit(fails ? 1 : 0);
