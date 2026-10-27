@@ -89,7 +89,6 @@ export function SalesPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [picking, setPicking] = useState<Product | null>(null);
   const [pixToken, setPixToken] = useState("");
-  const [pixEnv, setPixEnv] = useState<"producao" | "sandbox">("producao");
 
   useEffect(() => {
     call()
@@ -260,15 +259,11 @@ export function SalesPage() {
                   autoComplete="off"
                   aria-label="Token da API da PushinPay"
                 />
-                <select className="st-input" value={pixEnv} onChange={(e) => setPixEnv(e.target.value as "producao" | "sandbox")} aria-label="Ambiente">
-                  <option value="producao">Pagamentos de verdade</option>
-                  <option value="sandbox">Teste (sandbox)</option>
-                </select>
                 <button
                   type="button"
                   className="st-btn st-btn-primary"
                   disabled={!pixToken.trim() || busy !== null}
-                  onClick={async () => (await run("pix", { action: "pix", token: pixToken.trim(), env: pixEnv }, "Pix ligado.")) && setPixToken("")}
+                  onClick={async () => (await run("pix", { action: "pix", token: pixToken.trim(), env: "producao" }, "Pix ligado.")) && setPixToken("")}
                 >
                   {busy === "pix" ? "Salvando..." : "Ligar o Pix"}
                 </button>
