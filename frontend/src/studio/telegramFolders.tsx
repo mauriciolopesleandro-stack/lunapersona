@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { putSignedUpload } from "./cloud";
 import { Icon } from "./Icon";
 import { call, prepare, type Product, type Status } from "./sales";
-import { Thumb } from "./shared";
+import { Modal, Thumb } from "./shared";
 import { useStudio, type Item } from "./store";
 
-// Telegram (pastas): tres pastas no PC, dentro de conteudos/vendas/, que o
-// administrador enche ou esvazia a mao. "Atualizar" deixa o Telegram igual as
-// pastas:
-//   ensaio/     -> conteudo do pacote Ensaio (entra o que e novo, sai o que saiu)
+// Telegram: tres pastas no PC, dentro de conteudos/vendas/, controladas daqui
+// do estudio (ou a mao, pelo Explorer):
+//   ensaio/     -> conteudo do pacote Ensaio
 //   album-vip/  -> conteudo do pacote Album VIP sem censura
 //   vip/        -> postado no canal VIP; tirou da pasta, o post sai do canal
-// Antes de aplicar, a pagina mostra o que vai entrar e o que vai sair.
+// "Adicionar" copia o arquivo (do computador ou da biblioteca) para a pasta e
+// ja atualiza o Telegram; o "x" tira do pacote/canal e move o arquivo para
+// vendas/_removidos (nada e apagado). "Atualizar" aplica o que mudou a mao.
 
 interface Folder {
   key: "ensaio" | "album" | "vip";
@@ -25,6 +26,8 @@ const FOLDERS: Folder[] = [
   { key: "album", label: "Álbum VIP sem censura", dir: "vendas/album-vip/", slug: "album-vip" },
   { key: "vip", label: "VIP (canal)", dir: "vendas/vip/" },
 ];
+const REMOVED_DIR = "vendas/_removidos";
+const ACCEPT = "image/jpeg,image/png,image/webp,video/mp4";
 
 interface Plan {
   folder: Folder;
@@ -61,12 +64,20 @@ function plansFor(status: Status, items: Item[]): Plan[] {
   });
 }
 
+const nextTick = () => new Promise((r) => setTimeout(r, 0));
+
 export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
-  const { items, refresh, state } = useStudio();
+  const { items, refresh, state, addFiles, moveItem } = useStudio();
   const [status, setStatus] = useState<Status | null>(null);
   const [step, setStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [picking, setPicking] = useState<Folder | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const target = useRef<Folder | null>(null);
+  // os itens mudam depois de copiar arquivos; o "Atualizar" logo em seguida le daqui
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   useEffect(() => {
     call()
@@ -76,58 +87,16 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
 
   const plans = useMemo(() => (status ? plansFor(status, items) : []), [status, items]);
   const pending = plans.reduce((n, p) => n + p.add.length + p.remove.length, 0);
-  const blocked = (p: Plan) =>
-    p.folder.key === "vip" ? (!status?.channel ? "Conecte o canal +18 em Meu perfil → Canal +18." : null) : !status?.adminStarted ? "Abra o bot de vendas e toque em Começar." : null;
+  const blocked = (f: Folder) =>
+    f.key === "vip" ? (!status?.channel ? "Conecte o canal +18 em Meu perfil → Canal +18." : null) : !status?.adminStarted ? "Abra o bot de vendas e toque em Começar." : null;
+  const busy = step !== null;
 
-  async function reread() {
+  async function run(work: () => Promise<string | void>) {
     setError(null);
     setNotice(null);
-    setStep("Lendo as pastas...");
     try {
-      await refresh();
-      setStatus(await call());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setStep(null);
-    }
-  }
-
-  async function apply() {
-    setError(null);
-    setNotice(null);
-    const warnings: string[] = [];
-    let done = 0;
-    try {
-      for (const plan of plans) {
-        if (blocked(plan) || (!plan.add.length && !plan.remove.length)) continue;
-        for (const r of plan.remove) {
-          setStep(`${plan.folder.label}: tirando ${r.label}...`);
-          const res =
-            plan.folder.key === "vip"
-              ? await call({ action: "vip-unpost", media_id: r.media_id })
-              : await call({ action: "media-remove", product_id: plan.product!.id, media_id: r.media_id });
-          if (res.warning) warnings.push(res.warning);
-          done++;
-        }
-        for (const [i, item] of plan.add.entries()) {
-          setStep(`${plan.folder.label}: ${plan.folder.key === "vip" ? "postando" : "guardando"} ${i + 1} de ${plan.add.length}...`);
-          const { blob, mime } = await prepare(item);
-          const up =
-            plan.folder.key === "vip"
-              ? await call({ action: "vip-url", mime_type: mime, size_bytes: blob.size })
-              : await call({ action: "media-url", product_id: plan.product!.id, mime_type: mime, size_bytes: blob.size });
-          await putSignedUpload(up.url!, blob);
-          await call(
-            plan.folder.key === "vip"
-              ? { action: "vip-post", media_id: item.id, path: up.path }
-              : { action: "media-add", product_id: plan.product!.id, media_id: item.id, path: up.path }
-          );
-          done++;
-        }
-      }
-      setStatus(await call());
-      setNotice(`Pronto: ${done} mudança(s) aplicada(s).${warnings.length ? ` ${[...new Set(warnings)].join(" ")}` : ""}`);
+      const done = await work();
+      if (done) setNotice(done);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStatus(await call().catch(() => status));
@@ -136,14 +105,82 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
     }
   }
 
+  // aplica o que mudou nas pastas (todas, ou so uma)
+  async function applyNow(only?: Folder["key"]): Promise<string> {
+    let current = await call();
+    const warnings: string[] = [];
+    let done = 0;
+    for (const plan of plansFor(current, itemsRef.current)) {
+      if ((only && plan.folder.key !== only) || blocked(plan.folder) || (!plan.add.length && !plan.remove.length)) continue;
+      for (const r of plan.remove) {
+        setStep(`${plan.folder.label}: tirando ${r.label}...`);
+        const res =
+          plan.folder.key === "vip"
+            ? await call({ action: "vip-unpost", media_id: r.media_id })
+            : await call({ action: "media-remove", product_id: plan.product!.id, media_id: r.media_id });
+        if (res.warning) warnings.push(res.warning);
+        done++;
+      }
+      for (const [i, item] of plan.add.entries()) {
+        setStep(`${plan.folder.label}: ${plan.folder.key === "vip" ? "postando" : "guardando"} ${i + 1} de ${plan.add.length}...`);
+        const { blob, mime } = await prepare(item);
+        const up =
+          plan.folder.key === "vip"
+            ? await call({ action: "vip-url", mime_type: mime, size_bytes: blob.size })
+            : await call({ action: "media-url", product_id: plan.product!.id, mime_type: mime, size_bytes: blob.size });
+        await putSignedUpload(up.url!, blob);
+        await call(
+          plan.folder.key === "vip"
+            ? { action: "vip-post", media_id: item.id, path: up.path }
+            : { action: "media-add", product_id: plan.product!.id, media_id: item.id, path: up.path }
+        );
+        done++;
+      }
+    }
+    current = await call();
+    setStatus(current);
+    return `Pronto: ${done} mudança(s) aplicada(s).${warnings.length ? ` ${[...new Set(warnings)].join(" ")}` : ""}`;
+  }
+
+  async function addTo(folder: Folder, files: File[]) {
+    await run(async () => {
+      setStep(`${folder.label}: copiando ${files.length} arquivo(s) para a pasta...`);
+      const { added, skipped } = await addFiles(files, folder.dir.replace(/\/$/, ""));
+      await nextTick();
+      const done = added && !blocked(folder) ? await applyNow(folder.key) : "";
+      return [added ? `${added} arquivo(s) na pasta de ${folder.label}.` : "", done, skipped.length ? `Ignorados (tipo não aceito): ${skipped.join(", ")}` : ""]
+        .filter(Boolean)
+        .join(" ");
+    });
+  }
+
+  async function takeOut(folder: Folder, item: Item) {
+    const name = item.path.split("/").pop();
+    const where = folder.key === "vip" ? "Apagar o post do canal" : `Tirar do pacote ${folder.label}`;
+    if (!window.confirm(`${where}: ${name}?\n\nO arquivo não é apagado: vai para a pasta conteudos\\vendas\\_removidos.`)) return;
+    await run(async () => {
+      setStep(`${folder.label}: tirando ${name}...`);
+      const plan = plans.find((p) => p.folder.key === folder.key)!;
+      let warning: string | null | undefined = null;
+      if (folder.key === "vip") {
+        if (status?.vipPosts.some((p) => p.media_id === item.id)) warning = (await call({ action: "vip-unpost", media_id: item.id })).warning;
+      } else if (plan.product?.media.some((m) => m.media_id === item.id)) {
+        await call({ action: "media-remove", product_id: plan.product.id, media_id: item.id });
+      }
+      await moveItem(item.path, REMOVED_DIR);
+      setStatus(await call());
+      return `${name} saiu de ${folder.label} (guardado em vendas\\_removidos).${warning ? ` ${warning}` : ""}`;
+    });
+  }
+
   return (
     <div className="st-sales">
       <div className="st-page-head">
         <div>
-          <h1>Telegram (pastas)</h1>
+          <h1>Telegram</h1>
           <p>
-            Coloque ou tire arquivos destas pastas do seu PC (dentro de <code>conteudos\vendas\</code>) e clique em <b>Atualizar</b>: os pacotes e o canal VIP
-            ficam iguais às pastas. Preços e nomes em{" "}
+            O conteúdo dos pacotes e do canal VIP. Adicione ou tire por aqui; as pastas ficam no seu PC em <code>conteudos\vendas\</code> (atalho “Luna Vox -
+            Pastas do Telegram” na Área de Trabalho). Preços e nomes em{" "}
             <button type="button" className="st-link" onClick={onSales}>
               Vendas
             </button>
@@ -156,14 +193,38 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
       {state !== "ready" && <p className="st-warn">Abra a pasta do estúdio (luna persona) neste navegador para o estúdio enxergar as pastas.</p>}
       {!status && !error && <div className="st-empty">Carregando...</div>}
 
+      <input
+        ref={fileInput}
+        type="file"
+        multiple
+        hidden
+        accept={ACCEPT}
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          e.target.value = "";
+          if (files.length && target.current) addTo(target.current, files);
+        }}
+      />
+
       {status && (
         <>
           <div className="st-row">
-            <button type="button" className="st-btn" disabled={step !== null} onClick={reread}>
+            <button
+              type="button"
+              className="st-btn"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  setStep("Lendo as pastas...");
+                  await refresh();
+                  setStatus(await call());
+                })
+              }
+            >
               <Icon name="refresh" size={14} />
               Ler as pastas de novo
             </button>
-            <button type="button" className="st-btn st-btn-primary" disabled={step !== null || pending === 0} onClick={apply}>
+            <button type="button" className="st-btn st-btn-primary" disabled={busy || pending === 0} onClick={() => run(() => applyNow())}>
               {pending ? `Atualizar (${pending} mudança${pending > 1 ? "s" : ""})` : "Tudo atualizado"}
             </button>
             {step && <span className="st-hint">{step}</span>}
@@ -171,7 +232,7 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
 
           <div className="st-sales-products">
             {plans.map((plan) => {
-              const why = blocked(plan);
+              const why = blocked(plan.folder);
               return (
                 <section key={plan.folder.key} className="st-panel st-sales-product">
                   <div className="st-sales-product-head">
@@ -193,6 +254,15 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
                         <div key={item.path} className={plan.add.includes(item) ? "st-pick st-folder-new" : "st-pick"} title={item.path}>
                           <Thumb item={item} />
                           {plan.add.includes(item) && <span className="st-folder-badge">{plan.folder.key === "vip" ? "vai postar" : "vai entrar"}</span>}
+                          <button
+                            type="button"
+                            className="st-icon-btn st-sales-remove"
+                            aria-label={`Tirar ${item.title}`}
+                            disabled={busy}
+                            onClick={() => takeOut(plan.folder, item)}
+                          >
+                            <Icon name="close" size={14} />
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -202,12 +272,86 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
                       {plan.folder.key === "vip" ? "Vai apagar do canal" : "Vai sair do pacote"}: {plan.remove.map((r) => r.label).join(", ")}
                     </p>
                   )}
+                  <div className="st-row st-row-tight">
+                    <button
+                      type="button"
+                      className="st-btn st-btn-small"
+                      disabled={busy || state !== "ready"}
+                      onClick={() => {
+                        target.current = plan.folder;
+                        fileInput.current?.click();
+                      }}
+                    >
+                      <Icon name="plus" size={14} />
+                      Do computador
+                    </button>
+                    <button type="button" className="st-btn st-btn-small" disabled={busy || state !== "ready"} onClick={() => setPicking(plan.folder)}>
+                      <Icon name="grid" size={14} />
+                      Da biblioteca
+                    </button>
+                  </div>
                 </section>
               );
             })}
           </div>
         </>
       )}
+
+      {picking && (
+        <LibraryPicker
+          folder={picking}
+          onClose={() => setPicking(null)}
+          onPick={async (chosen) => {
+            setPicking(null);
+            const files = await Promise.all(
+              chosen.map(async (item) => {
+                const blob = await fetch(item.url).then((r) => r.blob());
+                return new File([blob], item.path.split("/").pop()!, { type: blob.type });
+              })
+            );
+            await addTo(picking, files);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+// Escolher da biblioteca (fora das pastas de vendas): o arquivo e copiado para a
+// pasta; o original continua onde estava.
+function LibraryPicker({ folder, onClose, onPick }: { folder: Folder; onClose: () => void; onPick: (items: Item[]) => void }) {
+  const { items } = useStudio();
+  const [onlyAdult, setOnlyAdult] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const library = items.filter((i) => !i.path.startsWith("vendas/") && i.display !== "arquivado" && (!onlyAdult || i.rating !== "livre"));
+  return (
+    <Modal title={`Adicionar em ${folder.label}`} onClose={onClose} wide>
+      <label className="st-check">
+        <input type="checkbox" checked={onlyAdult} onChange={(e) => setOnlyAdult(e.target.checked)} />
+        Só fotos e vídeos marcados como +18 ou sensíveis
+      </label>
+      {library.length === 0 ? (
+        <p className="st-hint">Nada para escolher na biblioteca.</p>
+      ) : (
+        <div className="st-picker">
+          {library.map((item) => {
+            const n = picked.indexOf(item.path);
+            return (
+              <div key={item.path} className={n >= 0 ? "st-pick on" : "st-pick"}>
+                <Thumb item={item} onClick={() => setPicked((p) => (n >= 0 ? p.filter((x) => x !== item.path) : [...p, item.path]))} />
+                {n >= 0 && <span className="st-pick-n">{n + 1}</span>}
+                <span className="st-pick-name">{item.title}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="st-composer-actions">
+        <span className="st-hint">{picked.length} escolhido(s)</span>
+        <button type="button" className="st-btn st-btn-primary" disabled={!picked.length} onClick={() => onPick(picked.map((p) => items.find((i) => i.path === p)!))}>
+          Adicionar em {folder.label}
+        </button>
+      </div>
+    </Modal>
   );
 }
