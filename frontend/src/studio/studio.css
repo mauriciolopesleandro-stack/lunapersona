@@ -3460,3 +3460,66 @@
   border: 1px solid var(--border);
   border-radius: 10px;
 }
+
+/* Vendas (+18) */
+.st-sales-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 4px 0 8px;
+}
+.st-sales-stats b {
+  font-size: 1.25rem;
+  margin-right: 4px;
+}
+.st-sales-products {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.st-sales-product {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.st-sales-product-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.st-sales-media {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+}
+.st-sales-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+.st-sales-missing {
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+.st-sales-product .st-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.st-sales-product .st-field .st-input {
+  width: 100%;
+}
+.st-sales-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.st-sales-product > .st-btn {
+  align-self: flex-start;
+}

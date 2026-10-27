@@ -9,6 +9,7 @@ import { ComingSoon, Modal, formatBytes } from "./shared";
 import { AccountsPage, InstagramPage, TikTokPage } from "./social";
 import { MusicPage } from "./music";
 import { AssistantPage } from "./assistant";
+import { SalesPage } from "./sales";
 import { StudioProvider, useStudio, type Post } from "./store";
 import "./studio.css";
 
@@ -22,6 +23,7 @@ const NAV: { id: string; label: string; icon: string }[] = [
   { id: "publicacoes", label: "Publicações", icon: "send" },
   { id: "conteudos", label: "Biblioteca de mídia", icon: "grid" },
   { id: "musicas", label: "Músicas e áudios", icon: "music" },
+  { id: "vendas", label: "Vendas", icon: "bag" },
   { id: "contas", label: "Contas conectadas", icon: "users" },
   { id: "personagens", label: "Personagens", icon: "user" },
   { id: "configuracoes", label: "Configurações", icon: "gear" },
@@ -29,7 +31,6 @@ const NAV: { id: string; label: string; icon: string }[] = [
 const NAV_SOON: { id: string; label: string; icon: string }[] = [
   { id: "monetizacao", label: "Monetização", icon: "dollar" },
   { id: "assinaturas", label: "Assinaturas", icon: "subscription" },
-  { id: "vendas", label: "Vendas Avulsas", icon: "bag" },
   { id: "audiencia", label: "Audiência", icon: "chart" },
   { id: "financeiro", label: "Financeiro", icon: "wallet" },
 ];
@@ -44,7 +45,6 @@ const SOON: Record<string, string> = {
   telegram: "Bot para entregar conteúdo, assinaturas e vendas. O bot de avisos que já existe (Meu perfil) pode ser a base.",
   monetizacao: "Resumo de assinaturas e vendas avulsas, quando o bot do Telegram estiver vendendo.",
   assinaturas: "Planos e assinantes do canal pago no Telegram.",
-  vendas: "Packs e conteúdos vendidos avulsos pelo bot.",
   audiencia: "Seguidores e alcance, vindos das integrações oficiais.",
   financeiro: "Receitas e custos do mês, a partir das vendas registradas.",
 };
@@ -238,6 +238,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           {page === "tiktok" && <TikTokPage />}
           {page === "musicas" && <MusicPage />}
           {page === "assistente" && <AssistantPage />}
+          {page === "vendas" && <SalesPage />}
           {page === "contas" && <AccountsPage nav={nav} />}
           {page === "perfil" && <ProfilePage onLogout={onLogout} />}
           {SOON[page] && current && <ComingSoon title={current.label} icon={current.icon} text={SOON[page]} />}

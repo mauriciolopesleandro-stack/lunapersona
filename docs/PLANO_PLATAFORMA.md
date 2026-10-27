@@ -713,3 +713,49 @@ As publicações +18 aprovadas no bot saem sozinhas no canal do Telegram, no hor
 - desligar.
 
 O harness ganhou um Upstash falso, que só liga quando o teste pede (`/__kv?on=1`).
+
+## 29. Bot de vendas +18, etapa 1 (27/10/2026)
+
+Um **bot só para os fãs**, separado do bot de aprovações, que continua só do administrador. Decisões do administrador (27/10):
+- **Pacotes:** Ensaio R$ 9,90; Álbum VIP sem censura R$ 19,90; VIP completo R$ 29,90 (fotos, vídeos e ensaios, com conteúdo novo quase todo dia no canal VIP; assinatura de 30 dias).
+- **Pagamento por Pix** (próxima etapa, falta o gateway). Ele sabe que o Telegram exige Stars para conteúdo digital vendido por bot e que o bot pode ser derrubado. Por isso a lista de fãs e de compras fica no banco, para dar para recomeçar num bot novo.
+- **Disparo diário ligado** (etapa 2). Ele foi avisado do ECA Digital (Lei 15.211/2025, em vigor desde 17/03/2026), que proíbe verificar a idade só por autodeclaração, inclusive para prévias. No bot: confirmação de 18+ no /start; a prévia grátis vai borrada e com texto sugestivo, não explícito; o explícito só chega depois do pagamento.
+
+**Banco:** migração `0008_vendas.sql`, só aditiva. Cria `sales_products` (com os 3 pacotes iniciais), `sales_product_media`, `fans`, `sales_orders` e `sales_broadcasts`.
+
+**Bot dos fãs** (`api/_sales_bot.ts`; webhook `/api/vendas/telegram` → `r=sales-hook`, assinado):
+- **/start:** registra o fã e pede a confirmação de 18+. Sem ela, nada de pacotes.
+- **Menu:** botões só dos pacotes prontos. O ensaio e o álbum precisam ter conteúdo; o VIP precisa do canal +18 conectado.
+- **Tocar num pacote:** por enquanto, "Pix quase pronto" e um aviso ao administrador ("fulano quis comprar…").
+- **/parar e /voltar** desligam e religam as novidades. Bloqueou o bot: fica marcado, e as mensagens param.
+
+**Página Vendas** (`src/studio/sales.tsx`, rota `r=sales`):
+- ligar o bot de vendas: token de outro bot, que não pode ser o de aprovações;
+- os números dos fãs;
+- editar nome, preço, descrição, dias do VIP e "à venda";
+- **colocar fotos e vídeos nos pacotes:**
+  - o navegador pega o arquivo da pasta do PC (JPEG até 5 MB, MP4 até 20 MB) e sobe uma cópia temporária;
+  - o bot de vendas manda essa cópia para a conversa do administrador, sem som, e apaga a mensagem;
+  - o estúdio guarda só o `file_id` do Telegram e apaga a cópia. O conteúdo dos pacotes **não fica em servidor nenhum**;
+  - para isso, o administrador precisa ter aberto o bot de vendas (Começar).
+- **Ver como o fã vê:** o menu chega no Telegram do administrador.
+
+**Teste:** `test_vendas.mjs`. Cobre:
+- os pacotes iniciais;
+- o token (formato e Ligar);
+- o segredo do webhook;
+- /start e 18+, sem pacote antes de confirmar;
+- grupo ignorado;
+- guardar a foto pela página (file_id, mensagem apagada);
+- o preço;
+- o menu só com os pacotes prontos;
+- comprar, com o aviso ao fã e ao administrador;
+- o VIP com o canal;
+- /parar, /voltar e o bloqueio;
+- Ver como o fã vê;
+- o celular sem rolagem para o lado;
+- desligar.
+
+**Próximas etapas:**
+- **(2)** a prévia borrada feita no PC e o disparo diário, com a aprovação do administrador;
+- **(3)** o Pix com o gateway, a entrega automática do pacote (`file_id`, com proteção contra encaminhar) e o VIP com o convite do canal e a saída quando o prazo vence.
