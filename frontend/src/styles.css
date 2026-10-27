@@ -1962,3 +1962,14 @@ button.result-download {
   color: #e05555;
 }
 
+
+.telegram-token-swap {
+  margin: 12px 0;
+}
+.telegram-token-swap summary {
+  cursor: pointer;
+}
+.telegram-token-swap input {
+  width: 100%;
+  margin-top: 6px;
+}

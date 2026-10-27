@@ -115,6 +115,25 @@ export function TelegramSettings() {
               />
               Mandar a foto/vídeo junto (passa pelos servidores do Telegram; desligado, só o aviso)
             </label>
+            <details className="telegram-token-swap">
+              <summary>Trocar o token (depois de um /revoke no @BotFather)</summary>
+              <p className="muted small">
+                Com o mesmo bot, a conversa e o canal continuam ligados. Cole o token novo e salve.
+              </p>
+              <input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="123456789:ABC..."
+                autoComplete="off"
+                aria-label="Token novo do bot"
+              />
+              <div className="content-action-buttons">
+                <button type="button" disabled={!token.trim()} onClick={() => run("token", { token: token.trim() }, "Token trocado. O bot continua conectado.")}>
+                  {busy === "token" ? "Conferindo..." : "Salvar token novo"}
+                </button>
+              </div>
+            </details>
             <div className="content-action-buttons">
               <button type="button" onClick={() => run("test", {}, "Mensagem de teste enviada.")}>
                 {busy === "test" ? "Enviando..." : "Enviar teste"}
