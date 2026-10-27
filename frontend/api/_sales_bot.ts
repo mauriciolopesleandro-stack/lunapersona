@@ -107,7 +107,7 @@ export async function productsForSale(): Promise<ProductRow[]> {
   return products.filter((p) => (p.kind === "vip" ? vipReady : withMedia.has(p.id)));
 }
 
-const AGE_TEXT = "Oi! Aqui é a Luna 💛\n\nEste bot tem conteúdo só para maiores de 18 anos. Você confirma que tem 18 anos ou mais?";
+const AGE_TEXT = "Oi! Aqui é a Luna 💛\n\nAqui tem conteúdo só para maiores de 18 anos. Se você tem 18 ou mais, vem comigo curtir os meus melhores momentos 😘";
 const MENU_TEXT = "Que bom te ver por aqui 😘\n\nEscolha o seu pacote:";
 const NOTHING_TEXT = "Os pacotes estão sendo preparados. Volte daqui a pouquinho 💛";
 
