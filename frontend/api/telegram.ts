@@ -25,7 +25,8 @@ interface Update {
 
 // /api/telegram - configura o aviso no celular (pagina "Meu perfil").
 // GET: estado (sem nunca devolver o token). POST { action }:
-//   token { token }  - confere com o Telegram (getMe) e guarda
+//   token { token }  - confere com o Telegram (getMe) e guarda; token novo do mesmo
+//                      bot (/revoke) mantem a conversa e o canal e religa o webhook
 //   connect          - acha a conversa de quem mandou /start para o bot
 //   media { value }  - mandar a foto/video junto ou so o texto
 //   webhook          - (re)liga os botoes de aprovacao (Telegram chama /api/telegram/webhook)
@@ -93,7 +94,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       } catch {
         return reply(400, { detail: "O Telegram nao aceitou esse token. Copie de novo do @BotFather." });
       }
-      await saveToken(token);
+      const { sameBot } = await saveToken(token);
+      // mesmo bot (/revoke): o webhook precisa do segredo novo, derivado do token novo
+      if (sameBot && (await telegramConfig()).chatId) await registerWebhook(token, siteUrl(req));
     } else if (body.action === "connect") {
       const config = await telegramConfig();
       if (!config.token) return reply(400, { detail: "Cole o token do bot primeiro." });

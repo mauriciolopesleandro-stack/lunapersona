@@ -894,3 +894,15 @@ Pedido do administrador: uma aba só do Telegram no menu, e controlar o conteúd
 - **Atualizar** continua valendo para o que for mexido à mão pelo Explorer.
 - **Estúdio** (`store.tsx`, `localFolder.ts`): `addFiles(files, subdir)` copia para qualquer subpasta de `conteudos/`, e `moveItem(path, subdir)` move (copia e só depois tira o original).
 - **Teste:** `test_pastas.mjs` cobre também o item do menu, o ✕ (sai do pacote e vai para `_removidos`), "Do computador" no álbum e "Da biblioteca" no VIP (posta no canal e o original fica).
+
+## 34. Trocar o token do bot de aprovações sem perder o canal (27/10/2026)
+
+Depois de um `/revoke` no BotFather, o bot continua o mesmo (o número antes do ":" não muda). Agora, salvar o token novo de um bot **igual**:
+- mantém a conversa do administrador e o canal +18 conectados;
+- religa o webhook com o segredo novo, que é derivado do token.
+
+O token de **outro** bot continua apagando a conversa e o canal (precisa conectar de novo).
+
+Em **Meu perfil → Avisos no celular**, com o bot já conectado, há a opção **"Trocar o token (depois de um /revoke no @BotFather)"**.
+
+**Teste:** `test_token_revoke.mjs`. O harness ganhou `/__kvset`, só para teste.

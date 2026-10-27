@@ -37,10 +37,18 @@ export function looksLikeToken(token: string): boolean {
   return TOKEN_PATTERN.test(token);
 }
 
-export async function saveToken(token: string): Promise<void> {
+// Guarda o token. Token novo do MESMO bot (o numero antes do ":", depois de um
+// /revoke no BotFather) mantem a conversa e o canal; bot diferente precisa
+// conectar de novo e ser posto de novo como admin do canal.
+export async function saveToken(token: string): Promise<{ sameBot: boolean }> {
+  const previous = await safeGet(TOKEN_KEY);
+  const sameBot = Boolean(previous && previous.split(":")[0] === token.split(":")[0]);
   await storeSet(TOKEN_KEY, token);
-  await storeDelete(CHAT_KEY); // bot novo: precisa conectar de novo
-  await storeDelete(CHANNEL_KEY); // e ser posto de novo como admin do canal
+  if (!sameBot) {
+    await storeDelete(CHAT_KEY);
+    await storeDelete(CHANNEL_KEY);
+  }
+  return { sameBot };
 }
 
 export interface TelegramChannel {
