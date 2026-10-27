@@ -52,5 +52,17 @@ const [quick] = (await db.query(`insert into content_plans (title, request, stat
 await expect("foto avulsa entra direto na fila", `insert into content_plan_items (plan_id, position, scheduled_at, network, format, kind, adult, prompt, caption, hashtags, status) values ('${quick.id}', 0, ${when}, 'instagram', 'Feed', 'image', false, 'Luna na praia ao por do sol', 'Fim de tarde', '{#praia}', 'na_fila')`, true);
 await expect("foto avulsa +18 vai para o Telegram", `insert into content_plan_items (plan_id, position, scheduled_at, network, format, kind, adult, prompt, status) values ('${quick.id}', 1, ${when}, 'telegram', 'Canal', 'image', true, 'Luna no quarto', 'na_fila')`, true);
 report("fila do robo enxerga as fotos avulsas", (await db.query(`select count(*)::int as n from content_plan_items where status = 'na_fila' and kind = 'image' and source_item_id is null`)).rows[0].n === 2);
+
+// Correcao pelo Telegram (parte C): o item ja tem foto e volta para a fila com
+// o pedido na nota; o filtro do robo (source_item_id nulo OU media_path
+// preenchido) pega tambem a correcao de um item que reaproveitava outra foto.
+const queue = `select count(*)::int as n from content_plan_items where status = 'na_fila' and kind = 'image' and (source_item_id is null or media_path is not null)`;
+const [src] = (await db.query(`select id from content_plan_items where plan_id = '${quick.id}' and position = 0`)).rows;
+await db.query(`update content_plan_items set status = 'em_analise', media_path = 'conteudos/2026-10/a.jpg' where id = '${src.id}'`);
+await db.query(`insert into content_plan_items (plan_id, position, scheduled_at, network, format, source_item_id, media_path, status) values ('${quick.id}', 2, ${when}, 'tiktok', 'Foto', '${src.id}', 'conteudos/2026-10/a.jpg', 'em_analise')`);
+report("sem correcao: so a foto +18 na fila", (await db.query(queue)).rows[0].n === 1);
+await expect("correcao volta para a fila com o pedido", `update content_plan_items set status = 'na_fila', attempts = 0, note = 'Correção: coloca a parte de cima do biquíni' where id = '${src.id}'`, true);
+await db.query(`update content_plan_items set status = 'na_fila', note = 'Correção: mais sol' where position = 2 and plan_id = '${quick.id}'`);
+report("fila pega as duas correcoes", (await db.query(queue)).rows[0].n === 3);
 console.log(fails ? `${fails} FALHA(S)` : "TUDO OK");
 process.exit(fails ? 1 : 0);

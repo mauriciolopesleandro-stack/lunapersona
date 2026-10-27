@@ -2,8 +2,10 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { createHmac, timingSafeEqual } from "crypto";
 import { NETWORK_RULES, UPLOAD_BUCKET, type PostRow } from "./_posts.js";
 import { Problem, decidePost } from "./_posts_api.js";
+import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbSelect, storageReadUrl } from "./_supabase.js";
 import { telegram, telegramConfig } from "./_telegram.js";
+import { queueCorrection } from "./_worker.js";
 
 // Aprovacao pelo Telegram: a versao em revisao chega no celular do
 // administrador (foto/video + legenda + horario) com os botoes Aprovar,
@@ -12,8 +14,15 @@ import { telegram, telegramConfig } from "./_telegram.js";
 // mesmas regras do estudio (decidePost). So a conversa do administrador
 // (chat salvo em Meu perfil) e atendida; o Telegram assina cada chamada com
 // o segredo do webhook.
+//
+// Pedir correcao: o texto seguinte do administrador (respondendo a pergunta
+// ou escrito direto no chat, ate 30 min depois do botao) e o pedido. Se a
+// publicacao veio do plano, o robo do PC edita a foto na Naiaflow com esse
+// pedido e a versao corrigida volta aqui para aprovar.
 
 const CORRECTION_TAG = "#correcao";
+const PENDING_KEY = "luna:tg-correcao";
+const PENDING_TTL_MS = 30 * 60_000;
 const LINK_TTL = 3 * 24 * 3600; // as fotos do Telegram ficam salvas no app; o link so precisa servir no envio
 
 export function webhookSecret(token: string): string {
@@ -125,6 +134,18 @@ function decided(post: PostRow): string {
   return "❌ Reprovada: voltou para rascunho no estúdio.";
 }
 
+// correcao pedida pelo botao ha pouco, esperando o texto
+async function pendingCorrection(): Promise<string> {
+  if (!storeConfigured()) return "";
+  const raw = await storeGet(PENDING_KEY).catch(() => null);
+  try {
+    const pending = JSON.parse(raw ?? "null") as { ref: string; at: number } | null;
+    return pending && Date.now() - pending.at < PENDING_TTL_MS ? pending.ref : "";
+  } catch {
+    return "";
+  }
+}
+
 // POST do Telegram (webhook). Sempre responde 200 para o Telegram nao repetir.
 export default async function telegramHook(req: IncomingMessage, res: ServerResponse) {
   const done = (status = 200) => {
@@ -161,6 +182,7 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
         if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
         await say(decided(post), replyTo);
       } else if (kind === "cr") {
+        if (storeConfigured()) await storeSet(PENDING_KEY, JSON.stringify({ ref: `${id}:${version}`, at: Date.now() })).catch(() => undefined);
         await say(`✏️ O que precisa mudar? Responda esta mensagem com a correção.\n${CORRECTION_TAG} ${id}:${version}`, { ...replyTo, reply_markup: { force_reply: true } });
       }
     } catch (e) {
@@ -170,14 +192,23 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
   }
 
   const msg = update.message;
-  if (msg && String(msg.chat.id) === chatId && msg.text && msg.reply_to_message?.text?.includes(CORRECTION_TAG)) {
-    const ref = msg.reply_to_message.text.split(CORRECTION_TAG)[1]?.trim() ?? "";
+  if (msg && String(msg.chat.id) === chatId && msg.text && !msg.text.startsWith("/")) {
+    const ref = msg.reply_to_message?.text?.includes(CORRECTION_TAG)
+      ? msg.reply_to_message.text.split(CORRECTION_TAG)[1]?.trim() ?? ""
+      : await pendingCorrection();
+    if (!ref) return done();
     const [id, v] = ref.split(":");
+    const replyTo = { reply_to_message_id: msg.message_id };
     try {
       await decidePost(id, Number(v), "reject", `Correção pedida pelo Telegram: ${msg.text}`);
-      await say("✏️ Correção anotada: a publicação voltou para rascunho no estúdio com o seu pedido.", { reply_to_message_id: msg.message_id });
+      if (storeConfigured()) await storeDelete(PENDING_KEY).catch(() => undefined);
+      if (await queueCorrection(id, msg.text)) {
+        await say("✏️ Correção anotada: o robô do PC vai editar a foto na Naiaflow com o seu pedido e a nova versão chega aqui para aprovar.", replyTo);
+      } else {
+        await say("✏️ Correção anotada: a publicação voltou para rascunho no estúdio com o seu pedido.", replyTo);
+      }
     } catch (e) {
-      await say(`⚠️ ${e instanceof Error ? e.message : String(e)}`, { reply_to_message_id: msg.message_id });
+      await say(`⚠️ ${e instanceof Error ? e.message : String(e)}`, replyTo);
     }
   }
   return done();
