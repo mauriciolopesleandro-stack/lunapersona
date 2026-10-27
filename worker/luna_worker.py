@@ -44,6 +44,8 @@ NAIAFLOW = "https://app.naiaflow.com/generations"
 NAIAFLOW_JOB = "https://app.naiaflow.com/generations/preview/job/"
 # qual job da Naiaflow gerou cada foto do estudio (para a correcao editar a foto certa)
 JOBS_FILE = HERE / "naia-jobs.json"
+EDIT_ACTION = "Editar pelo texto"  # nome da acao no painel
+EDIT_CHIP = "Editar"  # etiqueta que ela deixa no composer
 CLONE = "luna"
 MIN_CREDITS = 2  # abaixo disso para e avisa (nao gasta o resto)
 GENERATION_TIMEOUT_S = 10 * 60
@@ -307,20 +309,40 @@ class Naiaflow:
         """Correcao: abre a foto pronta, escolhe Editar pelo texto (1 credito),
         escreve o pedido e espera a foto editada."""
         self.page.goto(NAIAFLOW_JOB + job_id, wait_until="domcontentloaded")
-        action = self.page.get_by_role("button", name=re.compile(r"Editar pelo texto", re.I)).first
-        action.wait_for(state="attached", timeout=60000)
+        search = self.page.get_by_placeholder("Filtrar ações", exact=False).first
+        search.wait_for(state="visible", timeout=60000)
         self.page.wait_for_timeout(1500)
         self._dismiss_overlays(panels=False)
         before = self._job_images()
-        action.scroll_into_view_if_needed()
-        action.click()
+        self._choose_action(search, EDIT_ACTION)
         box = self.page.get_by_placeholder("Digite seu prompt", exact=False).first
         box.wait_for(state="visible", timeout=15000)
         box.click()
         box.fill(instruction)
+        # a lista tem acoes parecidas lado a lado (ex.: "Adicionar esperma"): so
+        # gasta o credito se a etiqueta no composer for exatamente a da edicao
+        chips = self._action_chips()
+        if chips != [EDIT_CHIP]:
+            raise RuntimeError(f'A Naiaflow marcou a acao errada ({", ".join(chips) or "nenhuma"}); nao cliquei em Criar.')
         self._create_button().click()
         log("Editando na Naiaflow…")
         return self._wait_result(before)
+
+    def _choose_action(self, search, name: str) -> None:
+        # filtra pelo nome: so a acao certa fica na lista, sem rolar nem errar a vizinha
+        search.fill(name)
+        self.page.wait_for_timeout(1200)
+        title = self.page.get_by_text(name, exact=True)
+        action = self.page.locator("button").filter(has=title)
+        if action.count() != 1:
+            raise RuntimeError(f'Nao achei uma unica acao "{name}" na Naiaflow (achei {action.count()}).')
+        action.click()
+        self.page.wait_for_timeout(800)
+
+    def _action_chips(self) -> list[str]:
+        # etiqueta da acao escolhida, ao lado de "Pintar para remover"
+        chips = self.page.locator("div.rounded-full[class*='border-accent'] span.whitespace-nowrap")
+        return [chips.nth(i).inner_text().strip() for i in range(chips.count()) if chips.nth(i).is_visible()]
 
     def _create_button(self):
         # o botao virou "Criar" (com o custo, ex. "Criar 1"); "Criar novo clone" fica de fora
