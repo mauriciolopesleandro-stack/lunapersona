@@ -673,3 +673,43 @@ Os itens de **Reels** do plano agora passam pelo robô do PC, sem gastar crédit
 - `worker/luna_worker.py`: `make_reels`; `requirements.txt` com `imageio-ffmpeg==0.5.1` (o `Iniciar automação.bat` instala sozinho).
 
 **Teste:** `test_worker.mjs` ganhou o bloco do Reels (estimativa, fila, vídeo montado, MP4 na biblioteca e no armazenamento, música, vídeo no bot com 🎵, correção de Reels volta para a fila).
+
+## 28. Canal +18 postando sozinho (27/10/2026)
+
+As publicações +18 aprovadas no bot saem sozinhas no canal do Telegram, no horário marcado. Sem canal conectado, continua como antes: o lembrete com a foto chega no Telegram do administrador para postar à mão.
+
+**Conectar (Meu perfil → Avisos no celular → Canal +18):**
+1. **Preparar o bot**: o webhook passa a receber `my_chat_member`, o aviso de que o bot entrou num grupo ou canal.
+2. No Telegram, num canal **privado**: Administradores → Adicionar administrador → o bot, com **Publicar mensagens** ligado.
+3. O Telegram avisa o estúdio, que salva o canal (Upstash `luna:telegram-channel`, com id e nome) e manda "📢 Canal conectado" no chat do administrador.
+- **Segurança:** só vale quando quem adicionou o bot é o próprio administrador (`from.id` = chat salvo). Se outra pessoa puser o bot no canal dela, nada muda.
+- Sem a permissão de publicar, o canal não conecta e chega um aviso.
+- Bot tirado do canal: o canal é esquecido e chega um aviso. Também dá para **Desligar canal** no estúdio.
+- Trocar o token do bot ou desligar os avisos apaga o canal.
+
+**Postar (`_jobs.ts`, tarefa `lembrete_publicacao`):**
+- Publicação do Telegram com canal conectado: `sendToChannel` (`_tg_review.ts`) manda a foto ou o vídeo (ou o álbum, com a legenda na primeira mídia) com legenda e hashtags, até 1024 caracteres.
+- Depois disso:
+  - o destino e a publicação ficam "publicado", com o link `t.me/c/<id>/<mensagem>`;
+  - registra o uso da mídia;
+  - apaga a cópia temporária;
+  - avisa "✅ Postado no canal" com o link.
+- **Falha:** tenta de novo em 2, 4 e 8 min. Sem tentativas restantes, avisa para postar à mão; a publicação fica "publicando" para confirmar no estúdio.
+- Sem migração: usa o `channel: 'api'` e o `confirmed_by: 'api'` que já existem.
+
+**Regras do Telegram:**
+- Conteúdo adulto só em canal **privado**: os termos proíbem pornografia em canais, bots e grupos públicos.
+- Vendas, assinaturas e mídia paga (Stars) ficam para o próximo passo, depois de conferir as regras.
+
+**Teste:** `test_canal18.mjs`. Cobre:
+- preparar o bot;
+- outra pessoa sendo ignorada;
+- sem permissão de publicar;
+- conectar;
+- Meu perfil;
+- postar no canal no horário (link, aviso, cópia apagada, uso);
+- o canal fora do ar, que tenta de novo;
+- o bot tirado do canal, que volta ao lembrete;
+- desligar.
+
+O harness ganhou um Upstash falso, que só liga quando o teste pede (`/__kv?on=1`).
