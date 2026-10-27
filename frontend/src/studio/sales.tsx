@@ -16,7 +16,8 @@ interface Product {
   title: string;
   description: string;
   price_cents: number;
-  period_days: number | null;
+  period_days: number;
+  billing: "avulso" | "mensal";
   active: boolean;
   media: { media_id: string; kind: "photo" | "video"; path: string | null }[];
 }
@@ -38,11 +39,12 @@ const ORDER_STATUS: Record<string, string> = {
   pendente: "Esperando o Pix",
   pago: "Pago (entregando)",
   entregue: "Pago e entregue",
-  expirado: "VIP vencido",
+  expirado: "Acesso vencido",
   cancelado: "Cancelado",
 };
 
-const KIND: Record<Product["kind"], string> = { ensaio: "Ensaio", album: "Álbum", vip: "VIP (assinatura)" };
+const kindLabel = (p: Pick<Product, "kind" | "billing">) =>
+  p.kind === "vip" ? (p.billing === "mensal" ? "VIP mensal (Pix Recorrente)" : "VIP avulso") : p.kind === "album" ? "Álbum" : "Ensaio";
 const PHOTO_MAX = 5 * 1024 * 1024;
 const VIDEO_MAX = 20 * 1024 * 1024;
 
@@ -347,17 +349,17 @@ function ProductCard({
   const { items } = useStudio();
   const [title, setTitle] = useState(p.title);
   const [price, setPrice] = useState(money(p.price_cents));
-  const [days, setDays] = useState(String(p.period_days ?? 30));
+  const [days, setDays] = useState(String(p.period_days));
   const [description, setDescription] = useState(p.description);
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const parsed = cents(price);
-  const changed = title !== p.title || parsed !== p.price_cents || description !== p.description || (p.kind === "vip" && Number(days) !== p.period_days);
+  const changed = title !== p.title || parsed !== p.price_cents || description !== p.description || Number(days) !== p.period_days;
   const ready = p.kind === "vip" ? Boolean(channel) : p.media.length > 0;
 
   return (
     <section className="st-panel st-sales-product">
       <div className="st-sales-product-head">
-        <span className="st-hint">{KIND[p.kind]}</span>
+        <span className="st-hint">{kindLabel(p)}</span>
         <label className="st-check">
           <input type="checkbox" checked={p.active} disabled={busy !== null} onChange={(e) => run(`active-${p.id}`, { action: "product", id: p.id, active: e.target.checked })} />
           À venda
@@ -372,12 +374,10 @@ function ProductCard({
           <span>Preço (R$)</span>
           <input className="st-input" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} />
         </label>
-        {p.kind === "vip" && (
-          <label className="st-field">
-            <span>Dias de acesso</span>
-            <input className="st-input" type="number" min={1} max={366} value={days} onChange={(e) => setDays(e.target.value)} />
-          </label>
-        )}
+        <label className="st-field">
+          <span>{p.billing === "mensal" ? "Dias por mensalidade" : "Dias de acesso"}</span>
+          <input className="st-input" type="number" min={1} max={366} value={days} onChange={(e) => setDays(e.target.value)} />
+        </label>
       </div>
       <label className="st-field">
         <span>Descrição</span>
@@ -389,7 +389,7 @@ function ProductCard({
           className="st-btn st-btn-small st-btn-primary"
           disabled={busy !== null || parsed === null}
           onClick={() =>
-            run(`save-${p.id}`, { action: "product", id: p.id, title, description, price_cents: parsed, ...(p.kind === "vip" ? { period_days: Number(days) } : {}) }, "Pacote salvo.")
+            run(`save-${p.id}`, { action: "product", id: p.id, title, description, price_cents: parsed, period_days: Number(days) }, "Pacote salvo.")
           }
         >
           Salvar
@@ -399,12 +399,17 @@ function ProductCard({
       {p.kind === "vip" ? (
         <p className={channel ? "st-hint" : "st-warn"}>
           {channel
-            ? `Acesso ao canal “${channel}”, que recebe sozinho o conteúdo +18 que você aprova.`
+            ? `Acesso ao canal “${channel}”, que recebe sozinho o conteúdo +18 que você aprova.${
+                p.billing === "mensal" ? " Renova sozinho todo mês pelo Pix; o fã cancela com /cancelar." : " Vencido, o fã sai do canal e recebe o botão de renovar."
+              }`
             : "Conecte o canal +18 em Meu perfil → Canal +18: o VIP é o acesso a ele."}
         </p>
       ) : (
         <>
-          <p className="st-hint">{p.media.length ? `${p.media.length} foto(s)/vídeo(s) no pacote.` : "Pacote vazio: não aparece para os fãs até ter conteúdo."}</p>
+          <p className="st-hint">
+            {p.media.length ? `${p.media.length} foto(s)/vídeo(s) no pacote.` : "Pacote vazio: não aparece para os fãs até ter conteúdo."} Depois de pago, o fã
+            pode abrir de novo pelo bot durante os dias de acesso.
+          </p>
           {p.media.length > 0 && (
             <div className="st-sales-media">
               {p.media.map((m) => {

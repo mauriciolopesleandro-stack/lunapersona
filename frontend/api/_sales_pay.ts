@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { createHmac, timingSafeEqual } from "crypto";
 import { storeConfigured, storeDelete, storeGet, storeSet, storeSetIfAbsent } from "./_store.js";
-import { audit, dbInsert, dbSelect, dbUpdate } from "./_supabase.js";
+import { audit, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere } from "./_supabase.js";
 import { sendNotice, telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 import type { FanRow, ProductRow } from "./_sales_bot.js";
 
@@ -9,15 +9,21 @@ import type { FanRow, ProductRow } from "./_sales_bot.js";
 // por Pix, aceita conteudo adulto com a confirmacao de 18+ do comprador).
 //
 // Fluxo:
-//  1. o fa toca no pacote -> pedido "pendente" + cobranca (POST /api/pix/cashIn,
-//     valor em centavos) com webhook_url assinado para aquele pedido; o bot
-//     manda o Pix copia-e-cola e o botao "Ja paguei";
+//  1. o fa toca no pacote -> pedido "pendente" + cobranca com webhook_url assinado
+//     para aquele pedido (POST /api/pix/cashIn; VIP mensal: Pix Recorrente em
+//     /api/pix/cashIn/subscription, que renova sozinho todo mes); o bot manda o
+//     Pix copia-e-cola e o botao "Ja paguei";
 //  2. a PushinPay avisa em /api/studio?r=sales-pix&o=<pedido>&s=<assinatura>. O aviso
 //     nao basta: o estudio confere na propria PushinPay (GET /api/transactions/{id})
-//     se esta "paid" e se o valor bate - aviso falso nao libera nada;
-//  3. pago -> entrega: ensaio/album pelo file_id do Telegram (protegido contra
-//     encaminhar e salvar); VIP com convite do canal para 1 pessoa, ate a data.
-//     Vencido o VIP, o processador da fila tira o fa do canal e oferece renovar.
+//     se esta "paid" e se o valor bate - aviso falso nao libera nada. Parcela nova
+//     do VIP mensal chega no mesmo link (outro id, mesmo subscription_id) e vira
+//     outro pedido;
+//  3. pago -> entrega, com acesso por period_days (30) dias:
+//     ensaio/album pelo file_id do Telegram (protegido contra encaminhar e
+//     salvar), que ficam no chat; o fa abre de novo em "Meus pacotes" enquanto
+//     o acesso vale; VIP com convite do canal para 1 pessoa.
+//  4. vencido (processador da fila, a cada minuto): VIP sai do canal; pacote para
+//     de abrir; o fa recebe o botao para comprar de novo.
 // O token da PushinPay fica no Upstash (colado em Vendas) e nunca volta ao navegador.
 
 const TOKEN_KEY = "luna:pix-token";
@@ -25,6 +31,10 @@ const ENV_KEY = "luna:pix-env";
 const API = { producao: "https://api.pushinpay.com.br", sandbox: "https://api-sandbox.pushinpay.com.br" };
 const PENDING_REUSE_MS = 30 * 60_000; // mesmo pacote pedido de novo em 30 min: reaproveita o Pix
 const INVITE_HOURS = 24;
+const REOPEN_WAIT_S = 10 * 60; // abrir o mesmo pacote de novo: no maximo a cada 10 min
+const MONTHLY_GRACE_MS = 3 * 86400_000; // VIP mensal: espera a parcela atrasada antes de tirar do canal
+const FREQUENCY_MONTHLY = 2;
+const RETRY_3X_7_DAYS = 2;
 
 export type PixEnv = keyof typeof API;
 
@@ -41,6 +51,8 @@ export interface OrderRow {
   paid_at: string | null;
   delivered_at: string | null;
   access_until: string | null;
+  subscription_id: string | null;
+  installment: number | null;
   note: string | null;
 }
 
@@ -49,6 +61,7 @@ interface Charge {
   status: string;
   value: number;
   qr_code?: string;
+  subscription_id?: string;
 }
 
 export async function pixConfig(): Promise<{ token: string | null; env: PixEnv }> {
@@ -68,7 +81,7 @@ export async function forgetPix(): Promise<void> {
   await storeDelete(ENV_KEY);
 }
 
-async function pushin<T>(method: "GET" | "POST", path: string, body?: object): Promise<T> {
+async function pushin<T>(method: "GET" | "POST" | "DELETE", path: string, body?: object): Promise<T> {
   const { token, env } = await pixConfig();
   if (!token) throw new Error("Pix não configurado.");
   const res = await fetch(`${API[env]}${path}`, {
@@ -99,6 +112,10 @@ function brl(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace(".", ",")}`;
 }
 
+function day(iso: string): string {
+  return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+}
+
 function fanName(f: Pick<FanRow, "username" | "first_name" | "telegram_id">): string {
   return f.username ? `@${f.username}` : f.first_name || `fã ${f.telegram_id}`;
 }
@@ -112,11 +129,13 @@ function escapeHtml(s: string): string {
 }
 
 async function sendPix(salesToken: string, chatId: number, product: ProductRow, order: OrderRow): Promise<void> {
+  const monthly = product.billing === "mensal";
   await telegram(salesToken, "sendMessage", {
     chat_id: chatId,
     text:
-      `💳 Pix de ${brl(order.amount_cents)} — ${product.title}\n\n` +
-      "Copie o código abaixo e pague no app do seu banco (Pix copia e cola). Assim que o pagamento cair, eu te mando tudo aqui 💛",
+      `💳 Pix de ${brl(order.amount_cents)}${monthly ? " por mês" : ""} — ${product.title}\n\n` +
+      "Copie o código abaixo e pague no app do seu banco (Pix copia e cola). Assim que o pagamento cair, eu te mando tudo aqui 💛" +
+      (monthly ? "\n\nÉ uma assinatura: pagando, você autoriza o Pix automático todo mês. Cancele quando quiser com /cancelar." : ""),
   });
   await telegram(salesToken, "sendMessage", {
     chat_id: chatId,
@@ -146,15 +165,27 @@ export async function startPayment(salesToken: string, fan: FanRow, product: Pro
     amount_cents: product.price_cents,
     status: "pendente",
     gateway: "pushinpay",
+    ...(product.billing === "mensal" ? { installment: 1 } : {}),
   });
   try {
-    const charge = await pushin<Charge>("POST", "/api/pix/cashIn", {
-      value: product.price_cents,
-      description: `Luna Vox - ${product.title}`.slice(0, 255),
-      webhook_url: `${site}/api/studio?r=sales-pix&o=${order.id}&s=${orderSignature(order.id)}`,
-    });
+    const webhook_url = `${site}/api/studio?r=sales-pix&o=${order.id}&s=${orderSignature(order.id)}`;
+    const charge =
+      product.billing === "mensal"
+        ? await pushin<Charge>("POST", "/api/pix/cashIn/subscription", {
+            value: product.price_cents,
+            frequency: FREQUENCY_MONTHLY,
+            pix_recurring_retry_policy: RETRY_3X_7_DAYS,
+            webhook_url,
+            name: `Luna Vox - ${product.title}`.slice(0, 200),
+          })
+        : await pushin<Charge>("POST", "/api/pix/cashIn", { value: product.price_cents, description: `Luna Vox - ${product.title}`.slice(0, 255), webhook_url });
     if (!charge.id || !charge.qr_code) throw new Error("a PushinPay não devolveu o Pix");
-    const saved = await dbUpdate<OrderRow>("sales_orders", `id=eq.${order.id}`, { gateway_charge_id: String(charge.id).toLowerCase(), pix_code: charge.qr_code.slice(0, 1000) });
+    if (product.billing === "mensal" && !charge.subscription_id) throw new Error("a PushinPay não devolveu a assinatura");
+    const saved = await dbUpdate<OrderRow>("sales_orders", `id=eq.${order.id}`, {
+      gateway_charge_id: String(charge.id).toLowerCase(),
+      pix_code: charge.qr_code.slice(0, 1000),
+      ...(charge.subscription_id ? { subscription_id: String(charge.subscription_id) } : {}),
+    });
     await sendPix(salesToken, chatId, product, saved ?? { ...order, pix_code: charge.qr_code });
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
@@ -184,37 +215,78 @@ export async function settle(orderId: string, salesToken: string): Promise<"entr
   return "entregue";
 }
 
+// Parcela nova do VIP mensal (mesmo subscription_id, outro id de cobranca):
+// conferida na PushinPay, vira um pedido novo (a chave unica da cobranca
+// impede entregar duas vezes) e soma mais um periodo.
+async function renewal(first: OrderRow, chargeId: string, salesToken: string): Promise<void> {
+  const charge = await pushin<Charge>("GET", `/api/transactions/${chargeId}`);
+  if (String(charge.status).toLowerCase() !== "paid" || Number(charge.value) !== first.amount_cents) return;
+  const previous = await dbSelect<{ installment: number | null }>("sales_orders", `select=installment&subscription_id=eq.${first.subscription_id}&order=installment.desc&limit=1`);
+  const [created] = await dbInsertIgnoringDuplicates<OrderRow>(
+    "sales_orders",
+    [
+      {
+        fan_id: first.fan_id,
+        product_id: first.product_id,
+        amount_cents: first.amount_cents,
+        status: "pago",
+        gateway: "pushinpay",
+        gateway_charge_id: chargeId,
+        subscription_id: first.subscription_id,
+        installment: (previous[0]?.installment ?? 1) + 1,
+        paid_at: new Date().toISOString(),
+      },
+    ],
+    "gateway_charge_id"
+  );
+  if (created) await deliver(created, salesToken);
+}
+
+// Manda as fotos/videos do pacote (albuns de ate 10), protegidos contra
+// encaminhar e salvar.
+async function sendPack(product: ProductRow, chatId: number, salesToken: string): Promise<void> {
+  const media = await dbSelect<{ kind: "photo" | "video"; telegram_file_id: string }>(
+    "sales_product_media",
+    `select=kind,telegram_file_id&product_id=eq.${product.id}&order=position.asc`
+  );
+  if (!media.length) throw new Error("o pacote está sem fotos");
+  for (let i = 0; i < media.length; i += 10) {
+    const chunk = media.slice(i, i + 10);
+    if (chunk.length === 1) {
+      const m = chunk[0];
+      await telegram(salesToken, m.kind === "video" ? "sendVideo" : "sendPhoto", { chat_id: chatId, [m.kind === "video" ? "video" : "photo"]: m.telegram_file_id, protect_content: true });
+    } else {
+      await telegram(salesToken, "sendMediaGroup", {
+        chat_id: chatId,
+        media: chunk.map((m) => ({ type: m.kind, media: m.telegram_file_id })),
+        protect_content: true,
+      });
+    }
+  }
+}
+
 async function deliver(order: OrderRow, salesToken: string): Promise<void> {
   const [fan] = await dbSelect<FanRow>("fans", `select=*&id=eq.${order.fan_id}`);
   const [product] = await dbSelect<ProductRow>("sales_products", `select=*&id=eq.${order.product_id}`);
   const chatId = fan.telegram_id;
   try {
-    let accessUntil: string | null = null;
+    let accessUntil: string;
     if (product.kind === "vip") {
       accessUntil = await deliverVip(order, fan, product, salesToken);
     } else {
-      const media = await dbSelect<{ kind: "photo" | "video"; telegram_file_id: string }>(
-        "sales_product_media",
-        `select=kind,telegram_file_id&product_id=eq.${product.id}&order=position.asc`
-      );
+      accessUntil = new Date(Date.now() + product.period_days * 86400_000).toISOString();
       await telegram(salesToken, "sendMessage", { chat_id: chatId, text: `Pagamento confirmado! 💛 Aqui está: ${product.title}` });
-      for (let i = 0; i < media.length; i += 10) {
-        const chunk = media.slice(i, i + 10);
-        if (chunk.length === 1) {
-          const m = chunk[0];
-          await telegram(salesToken, m.kind === "video" ? "sendVideo" : "sendPhoto", { chat_id: chatId, [m.kind === "video" ? "video" : "photo"]: m.telegram_file_id, protect_content: true });
-        } else {
-          await telegram(salesToken, "sendMediaGroup", {
-            chat_id: chatId,
-            media: chunk.map((m) => ({ type: m.kind, media: m.telegram_file_id })),
-            protect_content: true,
-          });
-        }
-      }
+      await sendPack(product, chatId, salesToken);
+      await telegram(salesToken, "sendMessage", {
+        chat_id: chatId,
+        text: `Aproveite 💛 Você pode abrir este pacote de novo até ${day(accessUntil)} em 📂 Meus pacotes.`,
+        reply_markup: { inline_keyboard: [[{ text: "📂 Meus pacotes", callback_data: "mine" }]] },
+      });
     }
-    await dbUpdate("sales_orders", `id=eq.${order.id}`, { status: "entregue", delivered_at: new Date().toISOString(), ...(accessUntil ? { access_until: accessUntil } : {}) });
-    await audit("venda", "sales_orders", order.id, { produto: product.slug, valor: order.amount_cents });
-    await adminNotice(`💰 Venda! ${fanName(fan)} comprou “${product.title}” por ${brl(order.amount_cents)} (Pix).`);
+    await dbUpdate("sales_orders", `id=eq.${order.id}`, { status: "entregue", delivered_at: new Date().toISOString(), access_until: accessUntil });
+    await audit("venda", "sales_orders", order.id, { produto: product.slug, valor: order.amount_cents, parcela: order.installment });
+    const what = order.installment && order.installment > 1 ? `renovou “${product.title}” (parcela ${order.installment})` : `comprou “${product.title}”`;
+    await adminNotice(`💰 Venda! ${fanName(fan)} ${what} por ${brl(order.amount_cents)} (Pix).`);
   } catch (e) {
     const error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
     await dbUpdate("sales_orders", `id=eq.${order.id}`, { note: `Entrega: ${error}` });
@@ -229,12 +301,9 @@ async function deliverVip(order: OrderRow, fan: FanRow, product: ProductRow, sal
   const channel = await telegramChannel();
   const admin = await telegramConfig();
   if (!channel || !admin.token) throw new Error("o canal VIP não está conectado (Meu perfil → Canal +18)");
-  const current = await dbSelect<{ access_until: string | null }>(
-    "sales_orders",
-    `select=access_until&fan_id=eq.${fan.id}&status=eq.entregue&access_until=gt.${new Date().toISOString()}&order=access_until.desc&limit=1`
-  );
-  const from = current[0]?.access_until ? Date.parse(current[0].access_until) : Date.now();
-  const until = new Date(from + (product.period_days ?? 30) * 86400_000).toISOString();
+  const current = await activeVip(fan.id);
+  const from = current ? Date.parse(current) : Date.now();
+  const until = new Date(from + product.period_days * 86400_000).toISOString();
   // quem ja esta no canal (renovacao) so ganha mais dias; o convite serve para quem saiu
   await telegram(admin.token, "unbanChatMember", { chat_id: channel.id, user_id: fan.telegram_id, only_if_banned: true }).catch(() => undefined);
   const invite = await telegram<{ invite_link: string }>(admin.token, "createChatInviteLink", {
@@ -244,14 +313,85 @@ async function deliverVip(order: OrderRow, fan: FanRow, product: ProductRow, sal
     expire_date: Math.floor(Date.now() / 1000) + INVITE_HOURS * 3600,
   });
   if (!invite.invite_link) throw new Error("o Telegram não criou o convite do canal (o bot precisa poder convidar por link)");
-  const date = new Date(until).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const renewing = Boolean(order.installment && order.installment > 1) || Boolean(current);
   await telegram(salesToken, "sendMessage", {
     chat_id: fan.telegram_id,
-    text: `Pagamento confirmado! 💎 Bem-vindo ao VIP.\n\nSeu acesso vale até ${date}. Entre no canal pelo botão (o convite é só seu e vale por ${INVITE_HOURS} h):`,
+    text:
+      (renewing ? `VIP renovado! 💎 Seu acesso agora vale até ${day(until)}.` : `Pagamento confirmado! 💎 Bem-vindo ao VIP.\n\nSeu acesso vale até ${day(until)}.`) +
+      ` Se ainda não estiver no canal, entre pelo botão (o convite é só seu e vale por ${INVITE_HOURS} h):` +
+      (product.billing === "mensal" ? "\n\nO VIP mensal renova sozinho pelo Pix. Para cancelar: /cancelar" : ""),
     reply_markup: { inline_keyboard: [[{ text: "Entrar no canal VIP", url: invite.invite_link }]] },
     protect_content: true,
   });
   return until;
+}
+
+// fim do VIP mais longo ainda valendo (de qualquer VIP: avulso ou mensal)
+async function activeVip(fanId: string): Promise<string | null> {
+  const vips = await dbSelect<{ id: string }>("sales_products", "select=id&kind=eq.vip");
+  if (!vips.length) return null;
+  const [row] = await dbSelect<{ access_until: string }>(
+    "sales_orders",
+    `select=access_until&fan_id=eq.${fanId}&status=eq.entregue&product_id=in.(${vips.map((v) => v.id).join(",")})&access_until=gt.${new Date().toISOString()}&order=access_until.desc&limit=1`
+  );
+  return row?.access_until ?? null;
+}
+
+// Pacotes (ensaio/album) pagos e ainda dentro do prazo, para "Meus pacotes".
+export async function activePacks(fanId: string): Promise<{ id: string; title: string; access_until: string }[]> {
+  const orders = await dbSelect<OrderRow>("sales_orders", `select=*&fan_id=eq.${fanId}&status=eq.entregue&access_until=gt.${new Date().toISOString()}&order=access_until.desc`);
+  if (!orders.length) return [];
+  const products = await dbSelect<ProductRow>("sales_products", `select=id,title,kind&id=in.(${[...new Set(orders.map((o) => o.product_id))].join(",")})`);
+  const packs = new Map(products.filter((p) => p.kind !== "vip").map((p) => [p.id, p.title]));
+  return orders.filter((o) => packs.has(o.product_id)).map((o) => ({ id: o.id, title: packs.get(o.product_id)!, access_until: o.access_until! }));
+}
+
+// "Meus pacotes" -> abrir: manda o pacote de novo enquanto o acesso vale.
+export async function openPack(orderId: string, fan: FanRow, salesToken: string, chatId: number): Promise<void> {
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) return;
+  const [order] = await dbSelect<OrderRow>("sales_orders", `select=*&id=eq.${orderId}&fan_id=eq.${fan.id}`);
+  const [product] = order ? await dbSelect<ProductRow>("sales_products", `select=*&id=eq.${order.product_id}`) : [];
+  if (!order || !product || product.kind === "vip") return;
+  if (order.status !== "entregue" || !order.access_until || Date.parse(order.access_until) < Date.now()) {
+    await telegram(salesToken, "sendMessage", {
+      chat_id: chatId,
+      text: `Seu acesso a “${product.title}” terminou. Quer de novo?`,
+      reply_markup: { inline_keyboard: [[{ text: `🔁 Comprar de novo — ${brl(product.price_cents)}`, callback_data: `buy:${product.id}` }]] },
+    });
+    return;
+  }
+  if (!(await storeSetIfAbsent(`luna:pack-open:${order.id}`, "1", REOPEN_WAIT_S).catch(() => true))) {
+    await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Acabei de te mandar esse pacote 💛 Role a conversa para cima." });
+    return;
+  }
+  await sendPack(product, chatId, salesToken);
+  await telegram(salesToken, "sendMessage", { chat_id: chatId, text: `Aproveite 💛 Abra de novo quando quiser até ${day(order.access_until)}.` });
+}
+
+// /cancelar: cancela o VIP mensal na PushinPay. O acesso vai ate o fim do mes pago.
+export async function cancelSubscription(fan: FanRow, salesToken: string, chatId: number): Promise<void> {
+  const [order] = await dbSelect<OrderRow>(
+    "sales_orders",
+    `select=*&fan_id=eq.${fan.id}&subscription_id=not.is.null&status=in.(entregue,pago,expirado)&order=created_at.desc&limit=1`
+  );
+  if (!order?.subscription_id || (order.note ?? "").startsWith("Assinatura cancelada")) {
+    await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Você não tem VIP mensal ativo para cancelar." });
+    return;
+  }
+  try {
+    await pushin("DELETE", `/api/pix/cashIn/subscription/${encodeURIComponent(order.subscription_id)}/cancel`);
+  } catch (e) {
+    await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Não consegui cancelar agora 😕 Tente de novo daqui a pouco." });
+    await adminNotice(`⚠️ ${fanName(fan)} pediu para cancelar o VIP mensal e deu erro: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);
+    return;
+  }
+  await dbUpdateWhere("sales_orders", `subscription_id=eq.${encodeURIComponent(order.subscription_id)}`, { note: "Assinatura cancelada pelo fã" });
+  const until = await activeVip(fan.id);
+  await telegram(salesToken, "sendMessage", {
+    chat_id: chatId,
+    text: `Pronto, o VIP mensal foi cancelado e não vai cobrar mais.${until ? ` Seu acesso continua até ${day(until)} 💛` : ""}`,
+  });
+  await adminNotice(`ℹ️ ${fanName(fan)} cancelou o VIP mensal.`);
 }
 
 // "Ja paguei": no maximo uma consulta por minuto por pedido (regra da PushinPay).
@@ -260,7 +400,7 @@ export async function checkPaid(orderId: string, fan: FanRow, salesToken: string
   const [order] = await dbSelect<OrderRow>("sales_orders", `select=*&id=eq.${orderId}&fan_id=eq.${fan.id}`);
   if (!order) return;
   if (order.status === "entregue") {
-    await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Esse pedido já foi pago e entregue 💛 Veja as mensagens acima." });
+    await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Esse pedido já foi pago e entregue 💛 Veja as mensagens acima ou 📂 Meus pacotes." });
     return;
   }
   if (order.status !== "pendente") return;
@@ -274,8 +414,8 @@ export async function checkPaid(orderId: string, fan: FanRow, salesToken: string
   }
 }
 
-// POST da PushinPay em /api/studio?r=sales-pix&o=<pedido>&s=<assinatura>. Sempre 200
-// (a PushinPay repete ate 3 vezes em erro); a verdade vem da consulta na API.
+// POST da PushinPay em /api/studio?r=sales-pix&o=<pedido>&s=<assinatura>. Sempre
+// 200 (a PushinPay repete ate 3 vezes em erro); a verdade vem da consulta na API.
 export default async function pixHook(req: IncomingMessage, res: ServerResponse) {
   const done = (status = 200) => {
     res.statusCode = status;
@@ -291,45 +431,66 @@ export default async function pixHook(req: IncomingMessage, res: ServerResponse)
   if (given.length !== expected.length || !timingSafeEqual(Buffer.from(given), Buffer.from(expected))) return done(401);
   let raw = "";
   for await (const chunk of req) raw += chunk;
-  let chargeId = "";
+  let body: Record<string, unknown>;
   try {
-    const body = raw.trim().startsWith("{") ? (JSON.parse(raw) as Record<string, unknown>) : Object.fromEntries(new URLSearchParams(raw));
-    chargeId = String(body.id ?? "").toLowerCase();
+    body = raw.trim().startsWith("{") ? (JSON.parse(raw) as Record<string, unknown>) : Object.fromEntries(new URLSearchParams(raw));
   } catch {
     return done();
   }
-  const [order] = await dbSelect<OrderRow>("sales_orders", `select=id,gateway_charge_id&id=eq.${orderId}`);
-  if (!order || order.gateway_charge_id !== chargeId) return done();
+  const chargeId = String(body.id ?? "").toLowerCase();
+  const [order] = await dbSelect<OrderRow>("sales_orders", `select=*&id=eq.${orderId}`);
+  if (!order || !chargeId) return done();
   const { salesToken } = await import("./_sales_bot.js");
   const token = await salesToken();
-  if (token) await settle(orderId, token).catch(() => undefined);
+  if (!token) return done();
+  if (order.gateway_charge_id === chargeId) {
+    await settle(orderId, token).catch(() => undefined);
+  } else if (order.subscription_id && String(body.subscription_id ?? "") === order.subscription_id && /^[0-9a-z-]{8,80}$/.test(chargeId)) {
+    await renewal(order, chargeId, token).catch(() => undefined);
+  }
   return done();
 }
 
-// Processador da fila (a cada minuto): VIP vencido sai do canal e recebe o
-// convite para renovar. Nunca derruba o processador.
+// Processador da fila (a cada minuto). Nunca derruba o processador.
+// Acesso vencido: VIP sai do canal (o mensal espera 3 dias pela parcela),
+// pacote para de abrir; o fa recebe o botao para comprar de novo.
 export async function salesTick(): Promise<number> {
   try {
-    const now = new Date().toISOString();
-    const due = await dbSelect<OrderRow>("sales_orders", `select=*&status=eq.entregue&access_until=lt.${now}&limit=20`);
-    if (!due.length) return 0;
     const { salesToken } = await import("./_sales_bot.js");
     const token = await salesToken();
+    const now = new Date().toISOString();
+    const expired = await dbSelect<OrderRow>("sales_orders", `select=*&status=eq.entregue&access_until=lt.${now}&order=access_until.asc&limit=50`);
+    if (!expired.length) return 0;
+    const products = new Map((await dbSelect<ProductRow>("sales_products", "select=*")).map((p) => [p.id, p]));
     const channel = await telegramChannel();
     const admin = await telegramConfig();
     let done = 0;
-    for (const order of due) {
-      // renovou: um pedido mais novo ainda vale -> so encerra este
-      const newer = await dbSelect<{ id: string }>("sales_orders", `select=id&fan_id=eq.${order.fan_id}&status=eq.entregue&access_until=gt.${now}&limit=1`);
+    for (const order of expired) {
+      const product = products.get(order.product_id);
+      if (!product) continue;
+      const monthlyActive = product.billing === "mensal" && !(order.note ?? "").startsWith("Assinatura cancelada");
+      if (monthlyActive && Date.parse(order.access_until!) + MONTHLY_GRACE_MS > Date.now()) continue;
       const [fan] = await dbSelect<FanRow>("fans", `select=*&id=eq.${order.fan_id}`);
-      if (!newer.length && fan && channel && admin.token) {
-        await telegram(admin.token, "banChatMember", { chat_id: channel.id, user_id: fan.telegram_id }).catch(() => undefined);
-        await telegram(admin.token, "unbanChatMember", { chat_id: channel.id, user_id: fan.telegram_id, only_if_banned: true }).catch(() => undefined);
-        if (token && !fan.blocked_at) {
+      if (product.kind === "vip") {
+        // renovou (outro VIP ainda vale): so encerra este pedido
+        if (!(await activeVip(order.fan_id)) && fan && channel && admin.token) {
+          await telegram(admin.token, "banChatMember", { chat_id: channel.id, user_id: fan.telegram_id }).catch(() => undefined);
+          await telegram(admin.token, "unbanChatMember", { chat_id: channel.id, user_id: fan.telegram_id, only_if_banned: true }).catch(() => undefined);
+          if (token && !fan.blocked_at) {
+            await telegram(token, "sendMessage", {
+              chat_id: fan.telegram_id,
+              text: "Seu VIP terminou 💔 Quer continuar recebendo tudo? Renove por aqui:",
+              reply_markup: { inline_keyboard: [[{ text: "💎 Renovar o VIP", callback_data: `buy:${order.product_id}` }]] },
+            }).catch(() => undefined);
+          }
+        }
+      } else if (token && fan && !fan.blocked_at) {
+        const again = await dbSelect<{ id: string }>("sales_orders", `select=id&fan_id=eq.${order.fan_id}&product_id=eq.${order.product_id}&status=eq.entregue&access_until=gt.${now}&limit=1`);
+        if (!again.length) {
           await telegram(token, "sendMessage", {
             chat_id: fan.telegram_id,
-            text: "Seu VIP terminou 💔 Quer continuar recebendo tudo? Renove por aqui:",
-            reply_markup: { inline_keyboard: [[{ text: "💎 Renovar o VIP", callback_data: `buy:${order.product_id}` }]] },
+            text: `Seu acesso a “${product.title}” terminou (${product.period_days} dias). Quer de novo?`,
+            reply_markup: { inline_keyboard: [[{ text: `🔁 Comprar de novo — ${brl(product.price_cents)}`, callback_data: `buy:${product.id}` }]] },
           }).catch(() => undefined);
         }
       }

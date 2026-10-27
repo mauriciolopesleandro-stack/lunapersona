@@ -539,7 +539,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     aguardando: 0,
     falhas: 0,
     token_instagram: null as string | null,
-    vip_vencidos: 0,
+    acessos_vencidos: 0,
     erro: null as string | null,
   };
   try {
@@ -563,8 +563,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
     // renova o token do Instagram de tempos em tempos (vale 60 dias)
     result.token_instagram = await igRefreshIfDue();
-    // VIP vencido sai do canal e recebe o convite para renovar
-    result.vip_vencidos = await salesTick();
+    // vendas: acesso vencido (VIP sai do canal, pacote para de abrir) recebe o
+    // convite para comprar de novo
+    result.acessos_vencidos = await salesTick();
   } catch (e) {
     result.erro = (e instanceof Error ? e.message : String(e)).slice(0, 300);
   }

@@ -4,12 +4,15 @@
 -- Os fas falam com um bot proprio de vendas (separado do bot de aprovacoes do
 -- administrador). No /start confirmam que tem 18 anos ou mais, veem os pacotes
 -- e compram por Pix. O estudio guarda:
---   sales_products        pacotes a venda (ensaio, album, VIP por assinatura)
+--   sales_products        pacotes a venda (ensaio, album, VIP avulso ou mensal);
+--                         todo pacote vale period_days (30) dias depois de pago
 --   sales_product_media   fotos/videos de cada pacote; o arquivo fica no PC e
 --                         no Telegram (file_id do bot de vendas), nunca aqui
 --   fans                  quem abriu o bot (id do Telegram), 18+ confirmado,
 --                         se parou de receber novidades ou bloqueou o bot
---   sales_orders          pedidos (Pix) e entregas; VIP com acesso ate a data
+--   sales_orders          pedidos (Pix) e entregas, com acesso ate a data (VIP:
+--                         sai do canal ao vencer); o VIP mensal (Pix Recorrente)
+--                         gera um pedido por parcela paga
 --   sales_broadcasts      disparo diario (texto + previa borrada), aprovado
 --                         pelo administrador antes de sair para os fas
 
@@ -20,13 +23,15 @@ create table if not exists public.sales_products (
   title text not null check (length(title) between 1 and 80),
   description text not null default '' check (length(description) <= 600),
   price_cents integer not null check (price_cents between 100 and 100000),
-  -- VIP: dias de acesso ao canal por pagamento
-  period_days integer check (period_days between 1 and 366),
+  -- dias de acesso por pagamento (pacote: abrir de novo no bot; VIP: ficar no canal)
+  period_days integer not null default 30 check (period_days between 1 and 366),
+  -- VIP mensal: Pix Recorrente (renova sozinho); o resto e pagamento avulso
+  billing text not null default 'avulso' check (billing in ('avulso', 'mensal')),
   active boolean not null default true,
   position integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint sales_products_vip_period check ((kind = 'vip') = (period_days is not null))
+  constraint sales_products_mensal_only_vip check (billing = 'avulso' or kind = 'vip')
 );
 
 create table if not exists public.sales_product_media (
@@ -65,13 +70,18 @@ create table if not exists public.sales_orders (
   created_at timestamptz not null default now(),
   paid_at timestamptz,
   delivered_at timestamptz,
-  -- VIP: ate quando o fa pode ficar no canal
+  -- ate quando vale: pacote (abrir de novo no bot) ou VIP (ficar no canal)
   access_until timestamptz,
+  -- VIP mensal: assinatura da PushinPay e numero da parcela
+  subscription_id text check (length(subscription_id) <= 120),
+  installment integer check (installment >= 1),
   note text check (length(note) <= 500)
 );
 
 create index if not exists sales_orders_fan_idx on public.sales_orders (fan_id, created_at desc);
 create index if not exists sales_orders_status_idx on public.sales_orders (status, created_at);
+create index if not exists sales_orders_subscription_idx on public.sales_orders (subscription_id);
+
 
 create table if not exists public.sales_broadcasts (
   id uuid primary key default gen_random_uuid(),
@@ -92,10 +102,11 @@ create table if not exists public.sales_broadcasts (
 create index if not exists sales_broadcasts_day_idx on public.sales_broadcasts (day, created_at);
 
 -- pacotes iniciais (o administrador muda nome, preco e conteudo no estudio)
-insert into public.sales_products (slug, kind, title, description, price_cents, period_days, position) values
-  ('ensaio', 'ensaio', 'Ensaio', 'Um ensaio completo da Luna.', 990, null, 0),
-  ('album-vip', 'album', 'Álbum VIP sem censura', 'O álbum sem censura.', 1990, null, 1),
-  ('vip', 'vip', 'VIP completo', 'Fotos, vídeos e ensaios, com conteúdo novo quase todo dia no canal VIP.', 2990, 30, 2)
+insert into public.sales_products (slug, kind, title, description, price_cents, period_days, billing, position) values
+  ('ensaio', 'ensaio', 'Ensaio', 'Um ensaio completo da Luna.', 990, 30, 'avulso', 0),
+  ('album-vip', 'album', 'Álbum VIP sem censura', 'O álbum sem censura.', 1990, 30, 'avulso', 1),
+  ('vip', 'vip', 'VIP completo 30 dias', 'Fotos, vídeos e ensaios, com conteúdo novo quase todo dia no canal VIP.', 2990, 30, 'avulso', 2),
+  ('vip-mensal', 'vip', 'VIP completo mensal', 'O VIP completo, renovando sozinho todo mês pelo Pix. Cancele quando quiser.', 2990, 30, 'mensal', 3)
 on conflict (slug) do nothing;
 
 alter table public.sales_products enable row level security;

@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbInsertIgnoringDuplicates, dbSelect, dbUpdateWhere } from "./_supabase.js";
 import { sendNotice, telegram, telegramChannel, telegramConfig } from "./_telegram.js";
-import { baseUrl, checkPaid, startPayment } from "./_sales_pay.js";
+import { activePacks, baseUrl, cancelSubscription, checkPaid, openPack, startPayment } from "./_sales_pay.js";
 
 // Bot de vendas (+18): o bot que os fas abrem. E outro bot, separado do bot de
 // aprovacoes do administrador (que continua so dele). O token fica no Upstash
@@ -16,6 +16,9 @@ import { baseUrl, checkPaid, startPayment } from "./_sales_pay.js";
 //   botao do pacote   Pix copia-e-cola (PushinPay, _sales_pay.ts) e "Ja paguei";
 //                     sem o Pix configurado, avisa o fa e conta o interesse
 //                     para o administrador
+//   Meus pacotes      pacotes pagos ainda dentro dos 30 dias: abre de novo
+//   (/pacotes)
+//   /cancelar         cancela o VIP mensal (o acesso vai ate o fim do mes pago)
 //   /parar /voltar    desliga e religa as novidades diarias
 // O Telegram avisa quando o fa bloqueia o bot (my_chat_member): para de mandar.
 
@@ -29,7 +32,8 @@ export interface ProductRow {
   title: string;
   description: string;
   price_cents: number;
-  period_days: number | null;
+  period_days: number;
+  billing: "avulso" | "mensal";
   active: boolean;
   position: number;
 }
@@ -75,6 +79,8 @@ export async function registerSalesWebhook(token: string, baseUrl: string): Prom
   await telegram(token, "setMyCommands", {
     commands: [
       { command: "start", description: "Ver os pacotes" },
+      { command: "pacotes", description: "Abrir os pacotes que você comprou" },
+      { command: "cancelar", description: "Cancelar o VIP mensal" },
       { command: "parar", description: "Parar de receber novidades" },
       { command: "voltar", description: "Voltar a receber novidades" },
     ],
@@ -85,9 +91,9 @@ export function price(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace(".", ",")}`;
 }
 
-export function productLabel(p: Pick<ProductRow, "kind" | "title" | "price_cents" | "period_days">): string {
+export function productLabel(p: Pick<ProductRow, "kind" | "title" | "price_cents" | "period_days" | "billing">): string {
   const icon = p.kind === "vip" ? "💎" : p.kind === "album" ? "🔥" : "📸";
-  const period = p.kind === "vip" ? (p.period_days === 30 ? "/mês" : ` por ${p.period_days} dias`) : "";
+  const period = p.billing === "mensal" ? "/mês" : /\bdias?\b/i.test(p.title) ? "" : ` · ${p.period_days} dias`;
   return `${icon} ${p.title} — ${price(p.price_cents)}${period}`;
 }
 
@@ -136,16 +142,29 @@ async function upsertFan(from: From): Promise<FanRow> {
   return fan;
 }
 
-export async function sendMenu(token: string, chatId: number): Promise<void> {
+export async function sendMenu(token: string, chatId: number, fan?: FanRow): Promise<void> {
   const products = await productsForSale();
-  if (!products.length) {
+  const mine = fan ? await activePacks(fan.id) : [];
+  if (!products.length && !mine.length) {
     await telegram(token, "sendMessage", { chat_id: chatId, text: NOTHING_TEXT });
     return;
   }
+  const rows = products.map((p) => [{ text: productLabel(p), callback_data: `buy:${p.id}` }]);
+  if (mine.length) rows.push([{ text: "📂 Meus pacotes", callback_data: "mine" }]);
+  await telegram(token, "sendMessage", { chat_id: chatId, text: products.length ? MENU_TEXT : "Seus pacotes:", reply_markup: { inline_keyboard: rows } });
+}
+
+async function listMine(token: string, fan: FanRow, chatId: number): Promise<void> {
+  const mine = await activePacks(fan.id);
+  if (!mine.length) {
+    await telegram(token, "sendMessage", { chat_id: chatId, text: "Você não tem pacotes ativos agora. Veja os pacotes com /start 💛" });
+    return;
+  }
+  const date = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
   await telegram(token, "sendMessage", {
     chat_id: chatId,
-    text: MENU_TEXT,
-    reply_markup: { inline_keyboard: products.map((p) => [{ text: productLabel(p), callback_data: `buy:${p.id}` }]) },
+    text: "Seus pacotes (abra de novo quando quiser até a data):",
+    reply_markup: { inline_keyboard: mine.map((o) => [{ text: `📂 ${o.title} — até ${date(o.access_until)}`, callback_data: `open:${o.id}` }]) },
   });
 }
 
@@ -221,7 +240,7 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
       if (kind === "age") {
         if (arg === "yes") {
           await dbUpdateWhere("fans", `id=eq.${fan.id}`, { adult_confirmed_at: new Date().toISOString() });
-          await sendMenu(token, chatId);
+          await sendMenu(token, chatId, fan);
         } else {
           await telegram(token, "sendMessage", { chat_id: chatId, text: "Tudo bem! Este bot é só para maiores de 18 anos. Até mais 👋" });
         }
@@ -231,6 +250,10 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
         await buy(token, fan, arg ?? "", chatId, baseUrl(req));
       } else if (kind === "paid") {
         await checkPaid(arg ?? "", fan, token, chatId);
+      } else if (kind === "mine") {
+        await listMine(token, fan, chatId);
+      } else if (kind === "open") {
+        await openPack(arg ?? "", fan, token, chatId);
       }
       return done();
     }
@@ -244,11 +267,15 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
       } else if (text.startsWith("/parar")) {
         await dbUpdateWhere("fans", `id=eq.${fan.id}`, { opted_out_at: new Date().toISOString() });
         await telegram(token, "sendMessage", { chat_id: msg.chat.id, text: "Pronto, não mando mais novidades. Suas compras continuam valendo. Para voltar, mande /voltar." });
+      } else if (text.startsWith("/pacotes")) {
+        await listMine(token, fan, msg.chat.id);
+      } else if (text.startsWith("/cancelar")) {
+        await cancelSubscription(fan, token, msg.chat.id);
       } else if (text.startsWith("/voltar")) {
         await dbUpdateWhere("fans", `id=eq.${fan.id}`, { opted_out_at: null });
         await telegram(token, "sendMessage", { chat_id: msg.chat.id, text: "Que bom que voltou 💛 Você vai receber as novidades de novo." });
       } else {
-        await sendMenu(token, msg.chat.id);
+        await sendMenu(token, msg.chat.id, fan);
       }
     }
   } catch {

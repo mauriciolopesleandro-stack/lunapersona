@@ -23,7 +23,7 @@ import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 //   POST { action: "token", token }      confere o token do bot de vendas (getMe) e guarda
 //   POST { action: "connect" }           liga o webhook do bot de vendas
 //   POST { action: "forget" }            desliga o bot de vendas
-//   POST { action: "product", id, ... }  muda nome, descricao, preco, prazo do VIP, ativo
+//   POST { action: "product", id, ... }  muda nome, descricao, preco, dias de acesso, ativo
 //   POST { action: "media-url", product_id, mime_type, size_bytes }
 //                                        link para subir a copia temporaria de uma foto/video
 //   POST { action: "media-add", product_id, media_id, path }
@@ -185,9 +185,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         if (!Number.isInteger(cents) || cents < 100 || cents > 100000) throw new Problem(400, "Preço entre R$ 1,00 e R$ 1.000,00.");
         patch.price_cents = cents;
       }
-      if (body.period_days !== undefined && p.kind === "vip") {
+      if (body.period_days !== undefined) {
         const days = Number(body.period_days);
-        if (!Number.isInteger(days) || days < 1 || days > 366) throw new Problem(400, "Prazo do VIP entre 1 e 366 dias.");
+        if (!Number.isInteger(days) || days < 1 || days > 366) throw new Problem(400, "Prazo de acesso entre 1 e 366 dias.");
         patch.period_days = days;
       }
       if (typeof body.active === "boolean") patch.active = body.active;

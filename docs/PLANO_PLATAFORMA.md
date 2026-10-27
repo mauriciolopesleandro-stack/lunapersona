@@ -810,3 +810,45 @@ Um **bot só para os fãs**, separado do bot de aprovações, que continua só d
 - desligar o Pix.
 
 O harness agora compara `lt`/`gt` no tipo da coluna, como o PostgREST.
+
+## 31. Regras de prazo: pacotes de 30 dias e VIP avulso ou mensal (27/10/2026)
+
+Pedido do administrador:
+- todo pacote vale 30 dias;
+- o VIP de R$ 29,90 pode ser avulso ou mensal, porque o canal sempre tem conteúdo novo;
+- não apagar mensagens: ao vencer, só tirar do canal.
+
+**Pacotes (Ensaio R$ 9,90 e Álbum R$ 19,90):**
+- **Ao pagar:** as fotos chegam no chat e ficam lá, protegidas contra encaminhar e salvar. O pedido ganha `access_until` = pagamento + `period_days` (30).
+- **📂 Meus pacotes** (botão e `/pacotes`): abre de novo enquanto vale, no máximo a cada 10 min por pacote.
+- **No dia 30:** o processador marca "expirado", o pacote não abre mais, e o fã recebe "Seu acesso terminou" com o botão **Comprar de novo**.
+- Ninguém apaga mensagem nenhuma. O Telegram só deixa o bot apagar até 48 h, e o administrador não quer.
+
+**VIP (canal):**
+- **VIP completo 30 dias (avulso):**
+  - paga uma vez e recebe o convite de 1 pessoa;
+  - comprar de novo antes de vencer soma os dias;
+  - no vencimento, sai do canal (banir e desbanir) e recebe o botão **Renovar**.
+- **VIP completo mensal:**
+  - **Pix Recorrente** da PushinPay (`POST /api/pix/cashIn/subscription`, `frequency` 2 = mensal, `pix_recurring_retry_policy` 2 = até 3 tentativas em 7 dias). Pagar o primeiro Pix autoriza os meses seguintes.
+  - **Cada parcela paga** chega no mesmo link assinado do primeiro pedido (outro `id`, mesmo `subscription_id`) e é conferida na PushinPay. Vira um pedido novo, com `installment` + 1; a chave única da cobrança impede duplicar. Soma 30 dias, e o administrador recebe "renovou (parcela N)".
+  - **Parcela atrasada:** o fã só sai do canal 3 dias depois do vencimento.
+  - **/cancelar** cancela na PushinPay (`DELETE /api/pix/cashIn/subscription/{id}/cancel`). O acesso vai até o fim do mês pago; depois, sai do canal sem a folga.
+
+**Banco (0008, ainda não rodada em produção):**
+- `sales_products.period_days` agora é obrigatório para todos os pacotes (padrão 30);
+- `billing` (`avulso` ou `mensal`; mensal só para VIP);
+- 4 pacotes iniciais;
+- `sales_orders.subscription_id` e `installment`.
+
+**Página:**
+- "Dias de acesso" em todos os pacotes;
+- o cartão do VIP mensal;
+- a situação "Acesso vencido" na lista de pedidos.
+
+**Teste:** `test_pix.mjs` agora cobre também:
+- os 30 dias do pacote;
+- Meus pacotes (abrir de novo, não repetir em seguida);
+- nenhuma mensagem apagada;
+- o pacote vencido;
+- o mensal: assinatura, parcela 2 somando dias (sem duplicar), a folga de 3 dias, /cancelar e a saída depois de cancelado e vencido.
