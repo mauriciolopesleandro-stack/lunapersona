@@ -123,9 +123,9 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
           <h1>Vendas</h1>
           <p>O bot de vendas que os fãs abrem no Telegram, os pacotes e quem comprou. Conteúdo só para maiores de 18.</p>
           <p className="st-hint">
-            Prefere montar os pacotes por pastas no PC? Use a página{" "}
+            O conteúdo de cada pacote e do canal VIP você controla na aba{" "}
             <button type="button" className="st-link" onClick={onFolders}>
-              Telegram (pastas)
+              Telegram
             </button>
             .
           </p>

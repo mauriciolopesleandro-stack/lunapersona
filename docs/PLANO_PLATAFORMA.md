@@ -881,3 +881,16 @@ A pasta `vendas` tem um `LEIA-ME.txt`, e há um atalho na Área de Trabalho: **"
 - tirar e pôr arquivos (sai do pacote, o post antigo é apagado e o novo postado);
 - o VIP sem canal;
 - o celular.
+
+## 33. Aba Telegram: controlar pelo estúdio (27/10/2026)
+
+Pedido do administrador: uma aba só do Telegram no menu, e controlar o conteúdo pelo estúdio, sem precisar mexer nas pastas pelo Explorer.
+
+- **Menu:** o item **Telegram** fica logo abaixo de Vendas (antes estava escondido em Contas conectadas). A página se chama **Telegram**.
+- **Em cada cartão** (Ensaio, Álbum VIP sem censura, VIP canal):
+  - **Do computador:** escolhe arquivos do PC. O estúdio copia para a pasta (`conteudos/vendas/<pasta>/`) e **já atualiza** (guarda no pacote ou posta no canal).
+  - **Da biblioteca:** escolhe da Biblioteca de mídia (fora das pastas de vendas). O estúdio copia para a pasta, o original continua onde estava, e já atualiza.
+  - **✕ em cada foto:** pede confirmação, tira do pacote ou apaga o post do canal, e **move** o arquivo para `conteudos/vendas/_removidos/`. Nada é apagado de vez.
+- **Atualizar** continua valendo para o que for mexido à mão pelo Explorer.
+- **Estúdio** (`store.tsx`, `localFolder.ts`): `addFiles(files, subdir)` copia para qualquer subpasta de `conteudos/`, e `moveItem(path, subdir)` move (copia e só depois tira o original).
+- **Teste:** `test_pastas.mjs` cobre também o item do menu, o ✕ (sai do pacote e vai para `_removidos`), "Do computador" no álbum e "Da biblioteca" no VIP (posta no canal e o original fica).

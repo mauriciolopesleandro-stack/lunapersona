@@ -14,7 +14,7 @@ import { TelegramFoldersPage } from "./telegramFolders";
 import { StudioProvider, useStudio, type Post } from "./store";
 import "./studio.css";
 
-// Menu na ordem do fluxo de trabalho. Instagram, TikTok e Telegram abrem por
+// Menu na ordem do fluxo de trabalho. Instagram e TikTok abrem por
 // Contas conectadas; os modulos que ainda nao existem ficam em "Em breve".
 const NAV: { id: string; label: string; icon: string }[] = [
   { id: "visao", label: "Visão Geral", icon: "home" },
@@ -25,6 +25,8 @@ const NAV: { id: string; label: string; icon: string }[] = [
   { id: "conteudos", label: "Biblioteca de mídia", icon: "grid" },
   { id: "musicas", label: "Músicas e áudios", icon: "music" },
   { id: "vendas", label: "Vendas", icon: "bag" },
+  // pastas do PC que viram os pacotes e os posts do canal VIP
+  { id: "telegram", label: "Telegram", icon: "telegram" },
   { id: "contas", label: "Contas conectadas", icon: "users" },
   { id: "personagens", label: "Personagens", icon: "user" },
   { id: "configuracoes", label: "Configurações", icon: "gear" },
@@ -38,7 +40,6 @@ const NAV_SOON: { id: string; label: string; icon: string }[] = [
 const HIDDEN: { id: string; label: string; icon: string }[] = [
   { id: "instagram", label: "Instagram", icon: "instagram" },
   { id: "tiktok", label: "TikTok", icon: "tiktok" },
-  { id: "telegram", label: "Telegram", icon: "telegram" },
 ];
 
 // Modulos que dependem de integracoes oficiais ou de dados que ainda nao existem.

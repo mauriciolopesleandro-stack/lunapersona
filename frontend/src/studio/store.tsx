@@ -5,6 +5,7 @@ import {
   fileSha256,
   folderSupported,
   mediaTypeOf,
+  moveWithinContent,
   permissionOf,
   pickFolder,
   readData,
@@ -260,7 +261,10 @@ interface Studio {
   reconnect: () => Promise<void>;
   forget: () => Promise<void>;
   refresh: () => Promise<void>;
-  addFiles: (files: File[]) => Promise<{ added: number; skipped: string[] }>;
+  // subdir: subpasta de conteudos/ (ex. "vendas/ensaio"); sem ela, conteudos/AAAA-MM
+  addFiles: (files: File[], subdir?: string) => Promise<{ added: number; skipped: string[] }>;
+  // move o arquivo para outra subpasta de conteudos/ (nada e apagado) e rele a pasta
+  moveItem: (path: string, toSubdir: string) => Promise<void>;
   updateItem: (path: string, patch: MetaPatch) => Promise<void>;
   savePost: (post: Post) => Promise<void>;
   deletePost: (id: string) => Promise<void>;
@@ -533,8 +537,17 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     if (root) await load(root);
   }, [root, load]);
 
+  const moveItem = useCallback(
+    async (path: string, toSubdir: string) => {
+      if (!root) throw new Error("Abra a pasta do estúdio neste navegador.");
+      await moveWithinContent(root, path, toSubdir);
+      await load(root);
+    },
+    [root, load]
+  );
+
   const addFiles = useCallback(
-    async (list: File[]) => {
+    async (list: File[], subdir?: string) => {
       if (!root) return { added: 0, skipped: list.map((f) => f.name) };
       const skipped: string[] = [];
       const added: { path: string; file: File }[] = [];
@@ -543,7 +556,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
           skipped.push(file.name);
           continue;
         }
-        const path = await copyIntoFolder(root, file);
+        const path = await copyIntoFolder(root, file, subdir);
         added.push({ path, file });
       }
       if (added.length) {
@@ -829,6 +842,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     forget,
     refresh,
     addFiles,
+    moveItem,
     updateItem,
     savePost,
     deletePost,

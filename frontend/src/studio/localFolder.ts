@@ -142,13 +142,19 @@ export async function fileSha256(file: File): Promise<string | null> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Copia um arquivo escolhido para conteudos/AAAA-MM/, sem sobrescrever
-// nada: se o nome ja existe, ganha " (2)", " (3)"...
-export async function copyIntoFolder(root: DirHandle, file: File): Promise<string> {
+async function subdirOf(root: DirHandle, rel: string): Promise<FileSystemDirectoryHandle> {
+  let dir = await root.getDirectoryHandle(CONTENT_DIR, { create: true });
+  for (const part of rel.split("/").filter(Boolean)) dir = await dir.getDirectoryHandle(part, { create: true });
+  return dir;
+}
+
+// Copia um arquivo escolhido para conteudos/AAAA-MM/ (ou para a subpasta dada,
+// ex. "vendas/ensaio"), sem sobrescrever nada: se o nome ja existe, ganha
+// " (2)", " (3)"...
+export async function copyIntoFolder(root: DirHandle, file: File, subdir?: string): Promise<string> {
   const now = new Date();
-  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const content = await root.getDirectoryHandle(CONTENT_DIR, { create: true });
-  const dir = await content.getDirectoryHandle(month, { create: true });
+  const month = subdir ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const dir = await subdirOf(root, month);
   const clean = file.name.replace(/[\\/:*?"<>|]/g, "_");
   const dot = clean.lastIndexOf(".");
   const base = dot > 0 ? clean.slice(0, dot) : clean;
@@ -160,6 +166,18 @@ export async function copyIntoFolder(root: DirHandle, file: File): Promise<strin
   await writable.write(file);
   await writable.close();
   return `${month}/${name}`;
+}
+
+// Move um arquivo de conteudos/ para outra subpasta (copia e so depois tira o
+// original): nada e apagado de vez. Devolve o caminho novo.
+export async function moveWithinContent(root: DirHandle, path: string, toSubdir: string): Promise<string> {
+  const parts = path.split("/");
+  const name = parts.pop()!;
+  const from = await subdirOf(root, parts.join("/"));
+  const file = await (await from.getFileHandle(name)).getFile();
+  const moved = await copyIntoFolder(root, file, toSubdir);
+  await from.removeEntry(name);
+  return moved;
 }
 
 async function exists(dir: FileSystemDirectoryHandle, name: string): Promise<boolean> {
