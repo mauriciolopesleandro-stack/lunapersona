@@ -69,6 +69,7 @@ export async function sendForReview(post: PostRow, formats: string[]): Promise<v
   const text = [
     `📝 Para aprovar — ${label}${post.network === "telegram" ? " +18" : ""} ${formats.join(", ")} (versão ${post.version})`,
     `🕒 ${fmt(post.scheduled_at)}`,
+    ...(post.flags?.igAudio ? [`🎵 ${post.flags.igAudio.title} — ${post.flags.igAudio.artist}`] : []),
     "",
     [post.caption, post.hashtags.join(" ")].filter(Boolean).join("\n\n") || "(sem legenda)",
   ]

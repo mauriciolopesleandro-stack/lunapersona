@@ -657,3 +657,19 @@ Só fotos: vídeo continua fora da automação.
 **Banco:** nenhuma migração (usa `note` e `media_path` de `content_plan_items`).
 
 **Robô no início do Windows:** atalho na pasta Inicializar, janela minimizada; tenta de novo em 2 min se cair; não abre duas vezes.
+
+## 27. Reels automático a partir da foto (27/10/2026)
+
+Os itens de **Reels** do plano agora passam pelo robô do PC, sem gastar crédito de vídeo:
+1. o robô gera a **foto** na Naiaflow (1 crédito), como num item de foto;
+2. monta no PC um **vídeo 9:16 de 7 s, 30 fps, com zoom leve de 6%** (Pillow + ffmpeg do pacote `imageio-ffmpeg`, trilha muda; ~1 min e ~1-2 MB);
+3. o estúdio cadastra o **MP4** na biblioteca e cria a publicação de Reels (automática). A foto fica no item (`media_path`), ao lado do vídeo, para a correção editar a foto e remontar o vídeo;
+4. **música:** o estúdio escolhe uma das 5 músicas em alta da biblioteca do Instagram (só com a conexão pelo Facebook; sem ela, o Reels sai sem música). A música aparece na mensagem de aprovação do Telegram (🎵).
+
+**Mudanças:**
+- `api/_worker.ts`: a fila inclui itens de vídeo; `done` recebe `video_path`/`video_size`; `upload-url` aceita `mime_type: video/mp4`; a correção vale também para Reels.
+- `api/_plans.ts`: estimativa do Reels = 1 crédito; a IA escreve o prompt de uma foto que vira Reels.
+- `api/_tg_review.ts`: linha 🎵 com a música.
+- `worker/luna_worker.py`: `make_reels`; `requirements.txt` com `imageio-ffmpeg==0.5.1` (o `Iniciar automação.bat` instala sozinho).
+
+**Teste:** `test_worker.mjs` ganhou o bloco do Reels (estimativa, fila, vídeo montado, MP4 na biblioteca e no armazenamento, música, vídeo no bot com 🎵, correção de Reels volta para a fila).
