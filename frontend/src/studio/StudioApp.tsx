@@ -10,6 +10,7 @@ import { AccountsPage, InstagramPage, TikTokPage } from "./social";
 import { MusicPage } from "./music";
 import { AssistantPage } from "./assistant";
 import { SalesPage } from "./sales";
+import { TelegramFoldersPage } from "./telegramFolders";
 import { StudioProvider, useStudio, type Post } from "./store";
 import "./studio.css";
 
@@ -42,7 +43,6 @@ const HIDDEN: { id: string; label: string; icon: string }[] = [
 
 // Modulos que dependem de integracoes oficiais ou de dados que ainda nao existem.
 const SOON: Record<string, string> = {
-  telegram: "Bot para entregar conteúdo, assinaturas e vendas. O bot de avisos que já existe (Meu perfil) pode ser a base.",
   monetizacao: "Resumo de assinaturas e vendas avulsas, quando o bot do Telegram estiver vendendo.",
   assinaturas: "Planos e assinantes do canal pago no Telegram.",
   audiencia: "Seguidores e alcance, vindos das integrações oficiais.",
@@ -238,7 +238,8 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           {page === "tiktok" && <TikTokPage />}
           {page === "musicas" && <MusicPage />}
           {page === "assistente" && <AssistantPage />}
-          {page === "vendas" && <SalesPage />}
+          {page === "vendas" && <SalesPage onFolders={() => go("telegram")} />}
+          {page === "telegram" && <TelegramFoldersPage onSales={() => go("vendas")} />}
           {page === "contas" && <AccountsPage nav={nav} />}
           {page === "perfil" && <ProfilePage onLogout={onLogout} />}
           {SOON[page] && current && <ComingSoon title={current.label} icon={current.icon} text={SOON[page]} />}

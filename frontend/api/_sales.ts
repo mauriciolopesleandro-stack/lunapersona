@@ -14,7 +14,7 @@ import {
   type ProductRow,
 } from "./_sales_bot.js";
 import { forgetPix, pixConfig, savePixConfig } from "./_sales_pay.js";
-import { storeConfigured } from "./_store.js";
+import { storeConfigured, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 
@@ -34,11 +34,40 @@ import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 //   POST { action: "test" }              o bot de vendas manda o menu para o administrador
 //   POST { action: "pix", token, env }   guarda o token da PushinPay (producao ou sandbox)
 //   POST { action: "pix-forget" }        desliga o Pix (os pacotes voltam a "quase pronto")
+//   POST { action: "vip-url", mime_type, size_bytes }  link para a copia de um arquivo da pasta do VIP
+//   POST { action: "vip-post", media_id, path }        o bot do canal posta o arquivo no canal VIP
+//   POST { action: "vip-unpost", media_id }            apaga do canal o post daquele arquivo
+//
+// Pastas do Telegram (pagina Telegram): conteudos/vendas/ensaio e album-vip viram
+// o conteudo dos pacotes (media-add/media-remove); conteudos/vendas/vip e postado
+// no canal VIP. Quais arquivos ja estao no canal fica no Upstash (luna:vip-posts).
 //
 // Para guardar o conteudo dos pacotes, o administrador precisa ter aberto o
 // bot de vendas (Comecar): e na conversa com ele que o bot sobe as midias.
 
 const MEDIA_MAX = 40; // por pacote
+const VIP_POSTS_KEY = "luna:vip-posts";
+
+// arquivo da pasta do VIP -> mensagens dele no canal
+async function vipPosts(): Promise<Record<string, number[]>> {
+  if (!storeConfigured()) return {};
+  try {
+    const map = JSON.parse((await storeGet(VIP_POSTS_KEY)) ?? "{}");
+    return map && typeof map === "object" && !Array.isArray(map) ? map : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveVipPosts(map: Record<string, number[]>): Promise<void> {
+  await storeSet(VIP_POSTS_KEY, JSON.stringify(map));
+}
+
+async function channelBot(): Promise<{ token: string; channelId: string }> {
+  const [channel, admin] = await Promise.all([telegramChannel(), telegramConfig()]);
+  if (!channel || !admin.token) throw new Problem(400, "Conecte o canal +18 em Meu perfil → Canal +18 antes de postar no VIP.");
+  return { token: admin.token, channelId: channel.id };
+}
 const MIMES: Record<string, string> = { "image/jpeg": "jpg", "video/mp4": "mp4" };
 
 interface ProductMediaRow {
@@ -94,7 +123,8 @@ async function status() {
       "select=id,status,amount_cents,created_at,paid_at,product_id,fan_id,note&order=created_at.desc&limit=200"
     ),
   ]);
-  const ids = [...new Set(media.map((m) => m.media_id))];
+  const vipIds = Object.keys(await vipPosts());
+  const ids = [...new Set([...media.map((m) => m.media_id), ...vipIds])];
   const paths = ids.length ? await dbSelect<{ id: string; local_path: string }>("media_assets", `select=id,local_path&id=in.(${ids.join(",")})`) : [];
   const pathOf = new Map(paths.map((m) => [m.id, m.local_path]));
   const channel = await telegramChannel().catch(() => null);
@@ -122,6 +152,8 @@ async function status() {
       today: fans.filter((f) => Date.now() - Date.parse(f.started_at) < 86400_000).length,
     },
     pix: { configured: Boolean(pix.token), env: pix.env },
+    // arquivo da pasta do VIP ja postado no canal (o caminho fica no banco mesmo se o arquivo sair da pasta)
+    vipPosts: vipIds.map((id) => ({ media_id: id, path: pathOf.get(id) ?? null })),
     sales: {
       count30: sold.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).length,
       total30: sold.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).reduce((t, o) => t + o.amount_cents, 0),
@@ -250,6 +282,50 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     } else if (body.action === "pix-forget") {
       await forgetPix();
       await audit("pix_desligar", "sales", null);
+    } else if (body.action === "vip-url") {
+      await channelBot();
+      const ext = MIMES[String(body.mime_type)];
+      if (!ext) throw new Problem(400, "Mande foto JPEG ou vídeo MP4.");
+      const size = Number(body.size_bytes);
+      const max = ext === "jpg" ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
+      if (!Number.isFinite(size) || size <= 0 || size > max) throw new Problem(400, ext === "jpg" ? "Cada foto pode ter no máximo 5 MB." : "Cada vídeo pode ter no máximo 20 MB.");
+      const path = `vendas/vip/${randomUUID()}.${ext}`;
+      return reply(200, { path, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
+    } else if (body.action === "vip-post") {
+      const mediaId = uuid(body.media_id, "Mídia");
+      const path = String(body.path ?? "");
+      if (!/^vendas\/vip\/[0-9a-f-]{36}\.(jpg|mp4)$/.test(path)) throw new Problem(400, "Arquivo inválido.");
+      const { token: botToken, channelId } = await channelBot();
+      const posts = await vipPosts();
+      try {
+        if (!posts[mediaId]) {
+          const video = path.endsWith(".mp4");
+          const url = await storageReadUrl(UPLOAD_BUCKET, path, 600);
+          const sent = await telegram<{ message_id: number }>(botToken, video ? "sendVideo" : "sendPhoto", { chat_id: channelId, [video ? "video" : "photo"]: url });
+          posts[mediaId] = [sent.message_id];
+          await saveVipPosts(posts);
+          await audit("vip_postar", "media_assets", mediaId, { mensagem: sent.message_id });
+        }
+      } finally {
+        await storageRemove(UPLOAD_BUCKET, [path]).catch(() => undefined);
+      }
+    } else if (body.action === "vip-unpost") {
+      const mediaId = uuid(body.media_id, "Mídia");
+      const posts = await vipPosts();
+      const ids = posts[mediaId] ?? [];
+      let warning: string | null = null;
+      if (ids.length) {
+        const { token: botToken, channelId } = await channelBot();
+        for (const id of ids) {
+          await telegram(botToken, "deleteMessage", { chat_id: channelId, message_id: id }).catch(() => {
+            warning = "O Telegram não deixou apagar um post antigo do canal: apague à mão no canal (ou dê ao bot a permissão “Apagar mensagens”).";
+          });
+        }
+      }
+      delete posts[mediaId];
+      await saveVipPosts(posts);
+      await audit("vip_apagar", "media_assets", mediaId, { mensagens: ids });
+      return reply(200, { ...(await status()), warning });
     } else if (body.action === "test") {
       await sendMenu(needToken(), await adminChat());
     } else {

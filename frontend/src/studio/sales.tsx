@@ -10,8 +10,9 @@ import { useStudio, type Item } from "./store";
 // uma vez para o Telegram (o estudio guarda so o codigo do arquivo) e a copia
 // temporaria e apagada.
 
-interface Product {
+export interface Product {
   id: string;
+  slug: string;
   kind: "ensaio" | "album" | "vip";
   title: string;
   description: string;
@@ -21,7 +22,7 @@ interface Product {
   active: boolean;
   media: { media_id: string; kind: "photo" | "video"; path: string | null }[];
 }
-interface Status {
+export interface Status {
   storeReady: boolean;
   tokenSet: boolean;
   bot: string | null;
@@ -32,6 +33,7 @@ interface Status {
   fans: { total: number; adults: number; optedOut: number; blocked: number; today: number };
   pix: { configured: boolean; env: "producao" | "sandbox" };
   sales: { count30: number; total30: number; pending: number };
+  vipPosts: { media_id: string; path: string | null }[]; // arquivos da pasta do VIP ja postados no canal
   orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; product: string; fan: string; note: string | null }[];
 }
 
@@ -48,7 +50,7 @@ const kindLabel = (p: Pick<Product, "kind" | "billing">) =>
 const PHOTO_MAX = 5 * 1024 * 1024;
 const VIDEO_MAX = 20 * 1024 * 1024;
 
-async function call(body?: object): Promise<Status & { url?: string; path?: string }> {
+export async function call(body?: object): Promise<Status & { url?: string; path?: string; warning?: string | null }> {
   const r = await fetch("/api/studio?r=sales", body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
   const b = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(b.detail ?? `Erro HTTP ${r.status}`);
@@ -62,7 +64,7 @@ function cents(text: string): number | null {
 }
 
 // foto em JPEG ate 5 MB (limite do Telegram por link); video MP4 ate 20 MB
-async function prepare(item: Item): Promise<{ blob: Blob; mime: string }> {
+export async function prepare(item: Item): Promise<{ blob: Blob; mime: string }> {
   const blob = await fetch(item.url).then((r) => r.blob());
   if (item.kind === "video") {
     if (blob.type !== "video/mp4") throw new Error(`“${item.title}”: o vídeo precisa ser MP4.`);
@@ -81,7 +83,7 @@ async function prepare(item: Item): Promise<{ blob: Blob; mime: string }> {
   throw new Error(`“${item.title}”: não consegui deixar a foto com menos de 5 MB.`);
 }
 
-export function SalesPage() {
+export function SalesPage({ onFolders }: { onFolders: () => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -120,6 +122,13 @@ export function SalesPage() {
         <div>
           <h1>Vendas</h1>
           <p>O bot de vendas que os fãs abrem no Telegram, os pacotes e quem comprou. Conteúdo só para maiores de 18.</p>
+          <p className="st-hint">
+            Prefere montar os pacotes por pastas no PC? Use a página{" "}
+            <button type="button" className="st-link" onClick={onFolders}>
+              Telegram (pastas)
+            </button>
+            .
+          </p>
         </div>
       </div>
       {error && <p className="st-error">{error}</p>}
