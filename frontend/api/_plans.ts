@@ -25,8 +25,9 @@ const TZ_OFFSET = "-03:00"; // horario de Brasilia (sem horario de verao desde 2
 const MAX_DAYS = 92; // trimestre
 const MAX_ITEMS = 400;
 const FILL_BATCH = 20;
-// creditos da Naiaflow (estimativa): foto 1; video ~6 (Criar video curto)
-const CREDITS = { image: 1, video: 6 };
+// creditos da Naiaflow (estimativa): foto 1; Reels 1 (a foto; o video com zoom
+// e montado no PC, de graca)
+const CREDITS = { image: 1, video: 1 };
 
 type SlotKey = "feed" | "stories" | "reels" | "tiktok" | "telegram18";
 const SLOTS: Record<SlotKey, { network: "instagram" | "tiktok" | "telegram"; format: string; kind: "image" | "video"; adult: boolean; times: string[]; label: string }> = {
@@ -166,7 +167,7 @@ async function writeBatch(mode: Mode, plan: PlanRow, batch: ItemRow[]): Promise<
     `Tema do período: ${theme}.`,
     "Para cada publicação abaixo, escreva: prompt (frase simples para a Naiaflow: Luna + roupa + lugar + o que faz + clima), caption (legenda curta) e hashtags (até 5).",
     "Varie roupas, lugares e momentos entre os itens; nada repetido.",
-    ...batch.map((it, i) => `${i}) ${weekday(it.scheduled_at)} · ${SLOTS[(Object.keys(SLOTS) as SlotKey[]).find((k) => SLOTS[k].network === it.network && SLOTS[k].format === it.format)!].label}${it.kind === "video" ? " (vídeo curto)" : " (foto)"}`),
+    ...batch.map((it, i) => `${i}) ${weekday(it.scheduled_at)} · ${SLOTS[(Object.keys(SLOTS) as SlotKey[]).find((k) => SLOTS[k].network === it.network && SLOTS[k].format === it.format)!].label}${it.kind === "video" ? " (foto que vira Reels com zoom leve)" : " (foto)"}`),
   ].join("\n");
   const out = await askAi(mode, [{ role: "system", content: system }, { role: "user", content: user }], { json: true, maxTokens: 3000, timeoutMs: 50_000 });
   const parsed = parseJson(out.text);

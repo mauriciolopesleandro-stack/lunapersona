@@ -5,6 +5,8 @@ import { Problem, cancelDraftPost, createDraftPost, reviewOnTelegram, submitPost
 import { storeConfigured, storeGet, storeIncr, storeSet } from "./_store.js";
 import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
+import type { IgAudioFlag } from "./_flags.js";
+import { igAudioSearch, igConnection } from "./_instagram.js";
 
 // /api/studio?r=worker - a automacao local (parte B do fluxo): um programa no
 // PC do administrador (Python + Playwright, pasta worker/) pega os itens dos
@@ -19,12 +21,16 @@ import { sendNotice, telegramConfig } from "./_telegram.js";
 //   POST { action: "pair" }      -> nova chave do PC + arquivo de configuracao (a anterior para de valer)
 // Com a chave do PC:
 //   POST { action: "ping" }      -> { queue }
-//   POST { action: "next" }      -> proximo item de foto na fila (vira "gerando") ou { item: null };
+//   POST { action: "next" }      -> proximo item da fila (vira "gerando") ou { item: null };
 //                                   correcao pedida no Telegram vem com edit { source, instruction }:
 //                                   o PC edita a foto que ja tem (opcao Editar da Naiaflow)
-//   POST { action: "done", id, local_path, size_bytes }  -> cadastra a midia, cria as publicacoes
-//                                   (o item e os que reaproveitam a foto) e devolve os destinos
-//   POST { action: "upload-url", post_id, version, size_bytes } -> link para subir a copia daquele destino
+//                                   Reels (kind "video"): o PC gera a foto e monta no proprio PC o
+//                                   video com zoom leve (gratis, sem credito de video)
+//   POST { action: "done", id, local_path, size_bytes, video_path?, video_size? }
+//                                -> cadastra a midia, cria as publicacoes (o item e os que
+//                                   reaproveitam a foto) e devolve os destinos; Reels sai com
+//                                   uma musica em alta da biblioteca do Instagram
+//   POST { action: "upload-url", post_id, version, size_bytes, mime_type? } -> link para subir a copia daquele destino
 //   POST { action: "uploaded", id } -> manda cada publicacao do item para a analise no bot
 //   POST { action: "fail", id, error } -> volta para a fila ou, sem tentativas, falhou (aviso no Telegram)
 
@@ -91,8 +97,9 @@ function isCorrection(item: ItemRow): boolean {
   return Boolean(item.media_path) && (item.note ?? "").startsWith(CORRECTION_PREFIX);
 }
 
-// fotos novas (sem reaproveitar outra) e correcoes, que tem foto propria
-const QUEUE_FILTER = "status=eq.na_fila&kind=eq.image&or=(source_item_id.is.null,media_path.not.is.null)";
+// fotos e Reels novos (sem reaproveitar outro item) e correcoes, que tem foto
+// propria (no Reels, media_path e a foto de onde o video sai)
+const QUEUE_FILTER = "status=eq.na_fila&or=(source_item_id.is.null,media_path.not.is.null)";
 
 async function queueSize(): Promise<number> {
   const rows = await dbSelect<{ id: string }>("content_plan_items", `select=id&${QUEUE_FILTER}`);
@@ -103,7 +110,7 @@ async function queueSize(): Promise<number> {
 // ja foi reprovada (decidePost); o item volta para a fila do robo, que edita a
 // foto com o pedido. Sem item do plano (publicacao feita a mao) devolve false.
 export async function queueCorrection(postId: string, text: string): Promise<boolean> {
-  const [item] = await dbSelect<ItemRow>("content_plan_items", `select=*&post_id=eq.${postId}&kind=eq.image&media_path=not.is.null`);
+  const [item] = await dbSelect<ItemRow>("content_plan_items", `select=*&post_id=eq.${postId}&media_path=not.is.null`);
   if (!item) return false;
   await dbUpdateWhere("content_plan_items", `id=eq.${item.id}`, {
     status: "na_fila",
@@ -132,6 +139,32 @@ async function familyOf(item: ItemRow): Promise<ItemRow[]> {
 
 async function notify(text: string) {
   await sendNotice(await telegramConfig(), text).catch(() => undefined);
+}
+
+// Reels do plano: uma das musicas em alta da biblioteca do Instagram (so pela
+// conexao do Facebook). Sem conexao ou sem resposta, o Reels sai sem musica;
+// o administrador ve a escolhida na mensagem de aprovacao do Telegram.
+async function reelsAudio(): Promise<IgAudioFlag | undefined> {
+  try {
+    const conn = await igConnection();
+    if (!conn || conn.provider !== "facebook_login") return undefined;
+    const top = (await igAudioSearch(conn, "")).slice(0, 5);
+    const pick = top[Math.floor(Math.random() * top.length)];
+    return pick ? { id: pick.id, title: pick.title, artist: pick.artist } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function safeLocalPath(raw: unknown, ext: string): string {
+  const path = String(raw ?? "");
+  if (!path.startsWith("conteudos/") || path.includes("..") || !path.toLowerCase().endsWith(ext)) throw new Problem(400, "Caminho do arquivo inválido.");
+  return path;
+}
+
+function safeSize(raw: unknown): number {
+  const size = Number(raw);
+  return Number.isSafeInteger(size) && size > 0 ? size : 0;
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
@@ -209,17 +242,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     if (body.action === "done") {
       if (item.status !== "gerando") throw new Problem(409, `O item está "${item.status}", não "gerando".`);
-      const localPath = String(body.local_path ?? "");
-      if (!localPath.startsWith("conteudos/") || localPath.includes("..")) throw new Problem(400, "Caminho da foto inválido.");
-      const size = Number(body.size_bytes);
+      // a foto fica no item (a correcao edita ela); no Reels a midia publicada e o video
+      const localPath = safeLocalPath(body.local_path, ".jpg");
+      const video = item.kind === "video";
+      const assetPath = video ? safeLocalPath(body.video_path, ".mp4") : localPath;
       await dbInsertIgnoringDuplicates(
         "media_assets",
         [
           {
-            local_path: localPath,
-            kind: "image",
-            mime_type: "image/jpeg",
-            size_bytes: Number.isSafeInteger(size) && size > 0 ? size : 0,
+            local_path: assetPath,
+            kind: video ? "video" : "image",
+            mime_type: video ? "video/mp4" : "image/jpeg",
+            size_bytes: safeSize(video ? body.video_size : body.size_bytes),
             title: item.prompt.slice(0, 120) || "Gerada pela automação",
             status: "rascunho",
             content_rating: item.adult ? "adulto" : "livre",
@@ -228,8 +262,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         ],
         "local_path"
       );
-      const [media] = await dbSelect<{ id: string }>("media_assets", `select=id&local_path=eq.${encodeURIComponent(localPath)}`);
-      if (!media) throw new Problem(500, "Não consegui cadastrar a foto na biblioteca.");
+      const [media] = await dbSelect<{ id: string }>("media_assets", `select=id&local_path=eq.${encodeURIComponent(assetPath)}`);
+      if (!media) throw new Problem(500, "Não consegui cadastrar a mídia na biblioteca.");
       const family = await familyOf(item);
       const correction = isCorrection(item);
       // a publicacao reprovada sai do caminho; a foto corrigida vira outra
@@ -237,6 +271,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const groupId = family.length > 1 ? crypto.randomUUID() : null;
       const targets = [];
       for (const it of family) {
+        const igAudio = it.network === "instagram" && it.format === "Reels" ? await reelsAudio() : undefined;
         const post = await createDraftPost({
           network: it.network,
           formats: [it.format],
@@ -246,7 +281,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           scheduled_at: it.scheduled_at,
           // +18 vai para o canal do Telegram (postagem manual, com lembrete); o resto e automatico
           publish_mode: it.network === "telegram" ? "manual" : "api",
-          flags: { aiGenerated: true },
+          flags: { aiGenerated: true, ...(igAudio ? { igAudio } : {}) },
           ...(groupId ? { group_id: groupId } : {}),
         });
         const submitted = await submitPost(post.id);
@@ -259,7 +294,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     if (body.action === "upload-url") {
       const size = Number(body.size_bytes);
-      const [url] = await uploadUrlsFor(String(body.post_id ?? ""), body.version, [{ position: 0, mime_type: "image/jpeg", size_bytes: size }]);
+      const mime = body.mime_type === "video/mp4" ? "video/mp4" : "image/jpeg";
+      const [url] = await uploadUrlsFor(String(body.post_id ?? ""), body.version, [{ position: 0, mime_type: mime, size_bytes: size }]);
       return reply(200, { url: url.url });
     }
 

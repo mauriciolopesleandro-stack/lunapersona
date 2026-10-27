@@ -5,7 +5,9 @@ planos aprovados (Assistente -> Planejamento), gera cada foto na Naiaflow com o
 clone "luna" (Playwright controlando o Chrome, num perfil separado so para a
 Naiaflow), salva na pasta do estudio (conteudos/AAAA-MM, +18 em subpasta),
 devolve ao estudio - que cria a publicacao de cada destino - e sobe uma copia
-JPEG no formato de cada destino (Feed 4:5, Stories/TikTok 9:16). O estudio
+JPEG no formato de cada destino (Feed 4:5, Stories/TikTok 9:16). Item de Reels:
+a mesma foto vira um video 9:16 de 7 s com zoom leve, montado aqui no PC
+(ffmpeg do pacote imageio-ffmpeg, sem gastar credito de video). O estudio
 manda cada publicacao para a analise no bot do Telegram.
 
 O PC nao guarda a chave do banco: fala so com /api/studio?r=worker, com a
@@ -25,6 +27,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -51,6 +54,9 @@ MIN_CREDITS = 2  # abaixo disso para e avisa (nao gasta o resto)
 GENERATION_TIMEOUT_S = 10 * 60
 QUEUE_POLL_S = 60
 JPEG_MAX_BYTES = 4 * 1024 * 1024  # limite do TikTok para foto
+REELS_SECONDS = 7
+REELS_FPS = 30
+REELS_ZOOM = 0.06  # 6% de aproximacao do comeco ao fim
 
 
 def log(msg: str) -> None:
@@ -146,11 +152,45 @@ def copy_for(img: Image.Image, network: str, fmt: str) -> bytes:
     return to_jpeg(fit_ratio(img, 9, 16, (1080, 1920)))
 
 
-def put_copy(url: str, data: bytes) -> None:
+def make_reels(img: Image.Image, out: Path) -> None:
+    """Video 9:16 1080x1920 de 7 s a 30 fps: zoom leve centrado um pouco acima
+    (rosto), com trilha muda (o Instagram poe a musica por cima)."""
+    import imageio_ffmpeg
+
+    W, H = 1080, 1920
+    base = fit_ratio(img, 9, 16, (1440, 2560)) if img.size[0] >= 1440 else fit_ratio(img, 9, 16, (W, H))
+    bw, bh = base.size
+    frames = REELS_SECONDS * REELS_FPS
+    cmd = [
+        imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error",
+        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(REELS_FPS), "-i", "-",
+        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+        "-shortest", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+        "-g", str(REELS_FPS * 2), "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out),
+    ]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        for n in range(frames):
+            z = 1 + REELS_ZOOM * n / (frames - 1)
+            w, h = bw / z, bh / z
+            x, y = (bw - w) / 2, (bh - h) * 0.35
+            # transformacao com fracao de pixel: o zoom anda liso, sem tremer
+            frame = base.transform((W, H), Image.AFFINE, (w / W, 0, x, 0, h / H, y), resample=Image.BICUBIC)
+            proc.stdin.write(frame.tobytes())
+        proc.stdin.close()
+    except OSError:  # o ffmpeg parou antes: o motivo sai no erro abaixo
+        pass
+    err = proc.stderr.read().decode("utf-8", "replace")
+    if proc.wait() != 0 or not out.exists():
+        raise RuntimeError(f"Nao consegui montar o video do Reels: {err[-300:]}")
+
+
+def put_copy(url: str, data: bytes, mime: str = "image/jpeg") -> None:
+    name = "0.mp4" if mime == "video/mp4" else "0.jpg"
     r = requests.put(
         url,
         headers={"x-upsert": "true"},
-        files={"": ("0.jpg", data, "image/jpeg")},
+        files={"": (name, data, mime)},
         data={"cacheControl": "3600"},
         timeout=120,
     )
@@ -404,11 +444,22 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
     if url:
         remember_job(local_path, url)
     log(f"Salva em {local_path}")
-    done = studio.call("done", id=item["id"], local_path=local_path, size_bytes=path.stat().st_size)
+    extra = {}
+    video: bytes | None = None
+    if item.get("kind") == "video":
+        mp4 = path.with_suffix(".mp4")
+        make_reels(img, mp4)
+        video = mp4.read_bytes()
+        extra = {"video_path": f"{item['folder']}/{mp4.name}", "video_size": len(video)}
+        log(f"Vídeo do Reels montado no PC: {extra['video_path']}")
+    done = studio.call("done", id=item["id"], local_path=local_path, size_bytes=path.stat().st_size, **extra)
     for t in done["targets"]:
-        data = copy_for(img, t["network"], t["format"])
-        up = studio.call("upload-url", id=item["id"], post_id=t["post_id"], version=t["version"], size_bytes=len(data))
-        put_copy(up["url"], data)
+        if video is not None and t["format"] == "Reels":
+            data, mime = video, "video/mp4"
+        else:
+            data, mime = copy_for(img, t["network"], t["format"]), "image/jpeg"
+        up = studio.call("upload-url", id=item["id"], post_id=t["post_id"], version=t["version"], size_bytes=len(data), mime_type=mime)
+        put_copy(up["url"], data, mime)
     sent = studio.call("uploaded", id=item["id"])
     log(f"Mandada para você aprovar no Telegram ({sent['sent']} publicação(ões)).")
 
@@ -422,7 +473,7 @@ def main() -> None:
     url, token = load_config()
     studio = Studio(url, token)
     queue = studio.call("ping")["queue"]
-    log(f"Conectado ao estúdio ({url}). Fotos na fila: {queue}.")
+    log(f"Conectado ao estúdio ({url}). Itens na fila: {queue}.")
     naia: Naiaflow | None = None
     try:
         if not args.imagem_teste:
