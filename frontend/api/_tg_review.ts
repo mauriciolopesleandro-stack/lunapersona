@@ -134,6 +134,12 @@ function decided(post: PostRow): string {
   return "❌ Reprovada: voltou para rascunho no estúdio.";
 }
 
+async function isDraft(id: string): Promise<boolean> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return false;
+  const [post] = await dbSelect<{ status: string }>("posts", `select=status&id=eq.${id}`);
+  return post?.status === "rascunho";
+}
+
 // correcao pedida pelo botao ha pouco, esperando o texto
 async function pendingCorrection(): Promise<string> {
   if (!storeConfigured()) return "";
@@ -200,7 +206,8 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
     const [id, v] = ref.split(":");
     const replyTo = { reply_to_message_id: msg.message_id };
     try {
-      await decidePost(id, Number(v), "reject", `Correção pedida pelo Telegram: ${msg.text}`);
+      // ja reprovada antes (volta para rascunho): a correcao ainda vale para o robo
+      if (!(await isDraft(id))) await decidePost(id, Number(v), "reject", `Correção pedida pelo Telegram: ${msg.text}`);
       if (storeConfigured()) await storeDelete(PENDING_KEY).catch(() => undefined);
       if (await queueCorrection(id, msg.text)) {
         await say("✏️ Correção anotada: o robô do PC vai editar a foto na Naiaflow com o seu pedido e a nova versão chega aqui para aprovar.", replyTo);
