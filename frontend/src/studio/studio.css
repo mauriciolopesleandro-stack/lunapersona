@@ -3553,3 +3553,25 @@
     grid-template-columns: 1fr auto;
   }
 }
+.st-folder-path {
+  font-size: 0.8rem;
+  opacity: 0.8;
+  word-break: break-all;
+}
+.st-folder-new .st-thumb {
+  outline: 2px dashed var(--st-violet);
+  outline-offset: -2px;
+}
+.st-folder-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--st-violet);
+  color: #fff;
+  font-size: 0.7rem;
+}
+.st-sales .st-row + .st-sales-products {
+  margin-top: 16px;
+}

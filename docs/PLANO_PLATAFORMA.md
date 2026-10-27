@@ -852,3 +852,32 @@ Pedido do administrador:
 - nenhuma mensagem apagada;
 - o pacote vencido;
 - o mensal: assinatura, parcela 2 somando dias (sem duplicar), a folga de 3 dias, /cancelar e a saída depois de cancelado e vencido.
+
+## 32. Telegram por pastas no PC (27/10/2026)
+
+Pedido do administrador: montar os pacotes e o canal VIP colocando e tirando arquivos de pastas no PC.
+
+**Pastas** (dentro da pasta do estúdio, para o estúdio enxergar):
+- `conteudos\vendas\ensaio\` → conteúdo do pacote **Ensaio**;
+- `conteudos\vendas\album-vip\` → conteúdo do pacote **Álbum VIP sem censura**;
+- `conteudos\vendas\vip\` → **postado no canal VIP**.
+
+A pasta `vendas` tem um `LEIA-ME.txt`, e há um atalho na Área de Trabalho: **"Luna Vox - Pastas do Telegram"**.
+
+**Página "Telegram (pastas)":**
+- Abre por Contas conectadas → Telegram, ou pelo link em Vendas.
+- Mostra cada pasta e **o que vai mudar**: "vai entrar" ou "vai postar" nos arquivos novos, e "vai sair do pacote" ou "vai apagar do canal" nos que saíram.
+- **Ler as pastas de novo:** relê a pasta do PC.
+- **Atualizar (N mudanças):** aplica.
+  - **Pacotes:** usa o mesmo caminho da página Vendas (cópia temporária → bot de vendas → `file_id`), e quem saiu da pasta sai do pacote.
+  - **VIP:** o bot do canal posta a foto ou o vídeo no canal. Quem saiu da pasta tem o post apagado do canal. Se o Telegram não deixar apagar um post antigo (o bot precisa de "Apagar mensagens"), aparece um aviso para apagar à mão.
+- Quais arquivos já estão no canal fica no Upstash (`luna:vip-posts`, arquivo → mensagens). Não precisa de migração.
+
+**Servidor** (`r=sales`): ações `vip-url`, `vip-post` e `vip-unpost`. O estado traz `vipPosts`, com o caminho do arquivo mesmo depois de ele sair da pasta.
+
+**Teste:** `test_pastas.mjs`. Cobre:
+- as 3 pastas e o que vai entrar ou postar;
+- Atualizar (ensaio 2, álbum 1, VIP postado pelo bot do canal);
+- tirar e pôr arquivos (sai do pacote, o post antigo é apagado e o novo postado);
+- o VIP sem canal;
+- o celular.
