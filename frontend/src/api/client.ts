@@ -94,6 +94,7 @@ export interface TelegramStatus {
   bot: string | null;
   connected: boolean;
   media: boolean;
+  channel: string | null; // nome do canal +18 onde o bot posta sozinho
 }
 
 export async function getTelegram(): Promise<TelegramStatus> {
@@ -104,7 +105,7 @@ export async function getTelegram(): Promise<TelegramStatus> {
 }
 
 export async function telegramAction(
-  action: "token" | "connect" | "media" | "test" | "forget",
+  action: "token" | "connect" | "media" | "test" | "forget" | "channel" | "forget-channel",
   extra: Record<string, unknown> = {}
 ): Promise<TelegramStatus> {
   const res = await fetch("/api/telegram", {

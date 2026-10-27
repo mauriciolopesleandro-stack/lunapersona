@@ -7,6 +7,8 @@ import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 const TOKEN_KEY = "luna:telegram-token";
 const CHAT_KEY = "luna:telegram-chat";
 const MEDIA_KEY = "luna:telegram-media";
+// canal +18 onde o bot posta sozinho (o administrador poe o bot como admin do canal)
+const CHANNEL_KEY = "luna:telegram-channel";
 const TOKEN_PATTERN = /^\d{5,15}:[A-Za-z0-9_-]{30,60}$/;
 
 export interface TelegramConfig {
@@ -38,6 +40,29 @@ export function looksLikeToken(token: string): boolean {
 export async function saveToken(token: string): Promise<void> {
   await storeSet(TOKEN_KEY, token);
   await storeDelete(CHAT_KEY); // bot novo: precisa conectar de novo
+  await storeDelete(CHANNEL_KEY); // e ser posto de novo como admin do canal
+}
+
+export interface TelegramChannel {
+  id: string;
+  title: string;
+}
+
+export async function telegramChannel(): Promise<TelegramChannel | null> {
+  try {
+    const saved = JSON.parse((await safeGet(CHANNEL_KEY)) ?? "null") as TelegramChannel | null;
+    return saved && /^-100\d{5,20}$/.test(saved.id) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveChannel(channel: TelegramChannel): Promise<void> {
+  await storeSet(CHANNEL_KEY, JSON.stringify({ id: channel.id, title: channel.title.slice(0, 120) }));
+}
+
+export async function forgetChannel(): Promise<void> {
+  await storeDelete(CHANNEL_KEY);
 }
 
 export async function saveChat(chatId: string): Promise<void> {
@@ -51,6 +76,7 @@ export async function saveMedia(media: boolean): Promise<void> {
 export async function forgetTelegram(): Promise<void> {
   await storeDelete(TOKEN_KEY);
   await storeDelete(CHAT_KEY);
+  await storeDelete(CHANNEL_KEY);
 }
 
 interface TelegramReply<T> {

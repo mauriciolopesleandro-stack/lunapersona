@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
 import { storeConfigured } from "./_store.js";
 import {
+  forgetChannel,
   forgetTelegram,
   looksLikeToken,
   saveChat,
@@ -9,6 +10,7 @@ import {
   saveToken,
   sendNotice,
   telegram,
+  telegramChannel,
   telegramConfig,
 } from "./_telegram.js";
 import { registerWebhook } from "./_tg_review.js";
@@ -28,7 +30,11 @@ interface Update {
 //   media { value }  - mandar a foto/video junto ou so o texto
 //   webhook          - (re)liga os botoes de aprovacao (Telegram chama /api/telegram/webhook)
 //   test             - manda uma mensagem de teste
-//   forget           - apaga token e conversa
+//   channel          - prepara o bot para o canal +18 (o webhook passa a receber
+//                      "bot virou administrador"); o canal se conecta quando o
+//                      administrador poe o bot como admin do canal
+//   forget-channel   - desliga o canal (as publicacoes +18 voltam ao lembrete)
+//   forget           - apaga token, conversa e canal
 function siteUrl(req: IncomingMessage): string {
   const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "");
   const proto = String(req.headers["x-forwarded-proto"] ?? "https").split(",")[0];
@@ -57,6 +63,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       bot,
       connected: Boolean(config.token && config.chatId),
       media: config.media,
+      channel: (await telegramChannel())?.title ?? null,
     };
   };
 
@@ -110,6 +117,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const config = await telegramConfig();
       if (!config.token) return reply(400, { detail: "Cole o token do bot primeiro." });
       await registerWebhook(config.token, siteUrl(req));
+    } else if (body.action === "channel") {
+      const config = await telegramConfig();
+      if (!config.token || !config.chatId) return reply(400, { detail: "Conecte o bot primeiro." });
+      await registerWebhook(config.token, siteUrl(req));
+    } else if (body.action === "forget-channel") {
+      await forgetChannel();
     } else if (body.action === "media") {
       await saveMedia(body.value === true);
     } else if (body.action === "test") {

@@ -4,7 +4,7 @@ import { NETWORK_RULES, UPLOAD_BUCKET, type PostRow } from "./_posts.js";
 import { Problem, decidePost } from "./_posts_api.js";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbSelect, storageReadUrl } from "./_supabase.js";
-import { telegram, telegramConfig } from "./_telegram.js";
+import { forgetChannel, saveChannel, telegram, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
 import { queueCorrection } from "./_worker.js";
 
 // Aprovacao pelo Telegram: a versao em revisao chega no celular do
@@ -19,6 +19,12 @@ import { queueCorrection } from "./_worker.js";
 // ou escrito direto no chat, ate 30 min depois do botao) e o pedido. Se a
 // publicacao veio do plano, o robo do PC edita a foto na Naiaflow com esse
 // pedido e a versao corrigida volta aqui para aprovar.
+//
+// Canal +18: o administrador cria um canal privado e poe o bot como
+// administrador (com "Publicar mensagens"). O Telegram avisa por aqui
+// (my_chat_member) e o canal fica salvo - so vale quando quem adicionou e o
+// proprio administrador, para ninguem ligar o bot num canal de outra pessoa.
+// No horario, a publicacao +18 aprovada sai sozinha no canal (_jobs.ts).
 
 const CORRECTION_TAG = "#correcao";
 const PENDING_KEY = "luna:tg-correcao";
@@ -34,7 +40,7 @@ export async function registerWebhook(token: string, baseUrl: string): Promise<v
   await telegram(token, "setWebhook", {
     url: `${baseUrl}/api/telegram/webhook`,
     secret_token: webhookSecret(token),
-    allowed_updates: ["callback_query", "message"],
+    allowed_updates: ["callback_query", "message", "my_chat_member"],
   });
 }
 
@@ -109,12 +115,70 @@ export async function sendMediaNotice(copies: { storage_path: string; mime_type:
   await telegram(config.token, "sendMediaGroup", { ...base, media: media.map((m, i) => ({ type: m.type, media: m.url, ...(i === 0 ? { caption: text.slice(0, 1000) } : {}) })) });
 }
 
+// Posta a versao aprovada no canal +18: foto/video com a legenda, ou album
+// (a legenda vai na primeira midia). Devolve o link da mensagem no canal.
+export async function sendToChannel(post: PostRow, channel: TelegramChannel): Promise<{ messageId: number; url: string }> {
+  const config = await telegramConfig();
+  if (!config.token) throw new Problem(400, "O bot do Telegram não está conectado.");
+  const uploads = await dbSelect<{ storage_path: string; mime_type: string }>(
+    "post_uploads",
+    `select=storage_path,mime_type&post_id=eq.${post.id}&post_version=eq.${post.version}&deleted_at=is.null&order=position.asc`
+  );
+  if (!uploads.length) throw new Problem(409, "As mídias desta versão não estão no armazenamento temporário.");
+  const media = await Promise.all(
+    uploads.slice(0, 10).map(async (u) => ({ type: u.mime_type.startsWith("video/") ? "video" : "photo", url: await storageReadUrl(UPLOAD_BUCKET, u.storage_path, LINK_TTL) }))
+  );
+  const caption = [post.caption, post.hashtags.join(" ")].filter(Boolean).join("\n\n").slice(0, 1024);
+  const base = { chat_id: channel.id };
+  let messageId: number;
+  if (media.length === 1) {
+    const [m] = media;
+    const sent = await telegram<{ message_id: number }>(config.token, m.type === "video" ? "sendVideo" : "sendPhoto", { ...base, [m.type]: m.url, ...(caption ? { caption } : {}) });
+    messageId = sent.message_id;
+  } else {
+    const sent = await telegram<{ message_id: number }[]>(config.token, "sendMediaGroup", {
+      ...base,
+      media: media.map((m, i) => ({ type: m.type, media: m.url, ...(i === 0 && caption ? { caption } : {}) })),
+    });
+    messageId = sent[0].message_id;
+  }
+  // canal privado: link t.me/c/<id sem o -100>/<mensagem> (abre para quem e membro)
+  return { messageId, url: `https://t.me/c/${channel.id.replace(/^-100/, "")}/${messageId}` };
+}
+
+interface ChatMemberUpdate {
+  chat: { id: number; type: string; title?: string };
+  from: { id: number };
+  new_chat_member: { status: string; can_post_messages?: boolean };
+}
+
+// Bot posto (ou tirado) como administrador de um canal.
+async function channelMembership(update: ChatMemberUpdate, adminChat: string, say: (text: string) => Promise<unknown>) {
+  if (update.chat.type !== "channel" || String(update.from.id) !== adminChat) return;
+  const id = String(update.chat.id);
+  const title = update.chat.title ?? "canal";
+  const current = await telegramChannel();
+  const member = update.new_chat_member;
+  if (member.status === "administrator") {
+    if (member.can_post_messages === false) {
+      await say(`⚠️ O bot entrou no canal “${title}”, mas sem a permissão “Publicar mensagens”. Edite o administrador e ligue essa permissão.`);
+      return;
+    }
+    await saveChannel({ id, title });
+    await say(`📢 Canal “${title}” conectado. As publicações +18 que você aprovar vão sair lá sozinhas, no horário marcado.`);
+  } else if (current?.id === id) {
+    await forgetChannel();
+    await say(`📢 O bot saiu do canal “${title}”. As publicações +18 voltam a chegar aqui para você postar à mão.`);
+  }
+}
+
 interface Update {
   callback_query?: {
     id: string;
     data?: string;
     message?: { message_id: number; chat: { id: number } };
   };
+  my_chat_member?: ChatMemberUpdate;
   message?: {
     message_id: number;
     chat: { id: number };
@@ -175,6 +239,11 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
   const token = config.token;
   const chatId = config.chatId;
   const say = (text: string, extra: Record<string, unknown> = {}) => telegram(token, "sendMessage", { chat_id: chatId, text, ...extra }).catch(() => undefined);
+
+  if (update.my_chat_member) {
+    await channelMembership(update.my_chat_member, chatId, (text) => say(text)).catch(() => undefined);
+    return done();
+  }
 
   const cb = update.callback_query;
   if (cb) {

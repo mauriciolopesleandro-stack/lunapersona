@@ -127,6 +127,57 @@ export function TelegramSettings() {
         )}
       </fieldset>
 
+      {status?.connected && (
+        <>
+          <h3>Canal +18</h3>
+          {status.channel ? (
+            <>
+              <p className="profile-success">
+                Canal “{status.channel}” conectado. As publicações +18 que você aprovar saem lá sozinhas, no horário marcado.
+              </p>
+              <div className="content-action-buttons">
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    window.confirm("Desligar o canal? As publicações +18 voltam a chegar no seu Telegram para você postar à mão.") &&
+                    run("forget-channel", {}, "Canal desligado.")
+                  }
+                >
+                  Desligar canal
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="muted small">
+                Com o canal conectado, o bot posta sozinho no canal as publicações +18 que você aprovar. Sem ele, elas chegam
+                aqui no seu Telegram para você postar à mão.
+              </p>
+              <ol className="telegram-steps">
+                <li>
+                  Toque em <strong>Preparar o bot</strong>.
+                </li>
+                <li>
+                  No Telegram, crie um canal <strong>privado</strong> (ou abra o que você já tem).
+                </li>
+                <li>
+                  Nele: <strong>Administradores → Adicionar administrador</strong>, escolha{" "}
+                  {status.bot ? <strong>@{status.bot}</strong> : "o seu bot"} e deixe ligada a permissão{" "}
+                  <strong>Publicar mensagens</strong>. Se o bot já estava lá, tire e adicione de novo.
+                </li>
+                <li>O bot te avisa no Telegram quando o canal estiver conectado. Depois recarregue esta página.</li>
+              </ol>
+              <div className="content-action-buttons">
+                <button type="button" className="primary" disabled={busy !== null} onClick={() => run("channel", {}, "Bot preparado. Agora coloque o bot como administrador do canal.")}>
+                  {busy === "channel" ? "Preparando..." : "Preparar o bot"}
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
       {error && <p className="error small">{error}</p>}
       {notice && <p className="profile-success">{notice}</p>}
     </div>

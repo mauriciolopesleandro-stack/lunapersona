@@ -14,9 +14,9 @@ import type { PostFlags } from "./_flags.js";
 import { NETWORK_RULES, UPLOAD_BUCKET, cleanupUploads, type PostRow } from "./_posts.js";
 import { TikTokError, publishStatus, recentVideos, tiktokAccessToken, tiktokConnectionRow, uploadDraft, uploadPhotoDraft, type TikTokVideo } from "./_tiktok.js";
 import { tiktokMediaUrl } from "./_tiktok_media.js";
-import { sendMediaNotice } from "./_tg_review.js";
+import { sendMediaNotice, sendToChannel } from "./_tg_review.js";
 import { dbInsert, dbRpc, dbSelect, dbUpdate, dbUpdateWhere, dbUpsert, storageReadUrl, supabaseConfigured } from "./_supabase.js";
-import { sendNotice, telegramConfig } from "./_telegram.js";
+import { sendNotice, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
 
 // /api/studio?r=jobs - processa a fila (scheduled_jobs). Chamado:
 //  - a cada minuto pelo Supabase Cron (POST com "Authorization: Bearer <JOBS_SECRET>"),
@@ -28,6 +28,8 @@ import { sendNotice, telegramConfig } from "./_telegram.js";
 // Tarefa "lembrete_publicacao": no horario, a publicacao aprovada passa para
 // "publicando" e o administrador recebe o aviso no Telegram para publicar a
 // mao e confirmar no estudio. Falha no aviso: tenta de novo em 2, 4, 8 min.
+// Telegram +18 com o canal conectado (bot administrador do canal): no horario
+// o bot posta no canal e a publicacao fica "publicado", sem lembrete.
 //
 // Tarefa "publicar_instagram" (modo automatico): publica pela API oficial,
 // destino a destino, usando a copia temporaria da versao aprovada. O conteiner
@@ -99,6 +101,11 @@ async function runReminder(job: JobRow, url: string): Promise<"ok" | "obsoleta" 
     // so passa se continuar agendada na mesma versao (outra execucao pode ter mexido)
     await dbUpdate("posts", `id=eq.${post.id}&status=eq.agendado&version=eq.${post.version}`, { status: "publicando" });
   }
+  // +18 com o canal conectado: o bot posta sozinho, sem lembrete
+  if (post.network === "telegram") {
+    const channel = await telegramChannel().catch(() => null);
+    if (channel) return runChannel(job, post, channel);
+  }
   const label = NETWORK_RULES[post.network].label;
   const dests = await dbSelect<{ format: string }>("post_destinations", `select=format&post_id=eq.${post.id}&status=eq.pendente`);
   const text = [
@@ -135,6 +142,42 @@ async function runReminder(job: JobRow, url: string): Promise<"ok" | "obsoleta" 
 
 async function notify(text: string) {
   await sendNotice(await telegramConfig(), text).catch(() => undefined);
+}
+
+// Canal +18: posta a versao aprovada pelo bot e marca publicada. Falhou: tenta
+// de novo em 2, 4, 8 min; sem tentativas, avisa para postar a mao (a
+// publicacao fica "publicando", para confirmar no estudio).
+async function runChannel(job: JobRow, post: PostRow, channel: TelegramChannel): Promise<"ok" | "nova_tentativa" | "falhou"> {
+  try {
+    const { messageId, url } = await sendToChannel(post, channel);
+    const now = new Date().toISOString();
+    await dbUpdateWhere("post_destinations", `post_id=eq.${post.id}&status=eq.pendente`, {
+      status: "publicado",
+      external_id: String(messageId),
+      external_url: url,
+      confirmed_at: now,
+      confirmed_by: "api",
+    });
+    await dbUpdate("posts", `id=eq.${post.id}&version=eq.${post.version}`, { status: "publicado", published_at: now });
+    await finish(job, { status: "concluido", finished_at: now, last_error: null });
+    await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "api", outcome: "ok", detail: `postado no canal ${channel.title}` });
+    for (const m of await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${post.id}`)) {
+      await dbInsert("media_usage", { media_id: m.media_id, channel: "telegram", context: "post", reference: post.id });
+    }
+    await cleanupUploads(post.id);
+    await notify(`✅ Postado no canal “${channel.title}”.\n${url}`);
+    return "ok";
+  } catch (e) {
+    const error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+    await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "api", outcome: "erro", detail: `canal: ${error}` });
+    if (job.attempts >= job.max_attempts) {
+      await finish(job, { status: "falhou", finished_at: new Date().toISOString(), last_error: error });
+      await notify(`⚠️ Não consegui postar no canal “${channel.title}”: ${error}\n\nPoste à mão e confirme no estúdio.`);
+      return "falhou";
+    }
+    await finish(job, { status: "pendente", run_at: new Date(Date.now() + 2 ** job.attempts * 60_000).toISOString(), last_error: error });
+    return "nova_tentativa";
+  }
 }
 
 async function retryOrFail(job: JobRow, post: PostRow, error: string, retryable: boolean): Promise<Outcome> {
