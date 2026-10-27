@@ -179,8 +179,12 @@ class Naiaflow:
         raise RuntimeError("Nao consegui abrir a Naiaflow (login nao concluido em 15 minutos).")
 
     def credits(self) -> int | None:
+        # Tela de 10/2026: "Créditos  22" no topo da barra lateral.
         try:
-            text = self.page.locator("body").inner_text(timeout=5000)[:40]
+            text = self.page.locator("body").inner_text(timeout=5000)
+            m = re.search(r"Cr[ée]ditos\s*\n?\s*(\d+)", text)
+            if m:
+                return int(m.group(1))
             first = text.strip().split("\n")[0]
             return int(first) if first.isdigit() else None
         except Exception:
@@ -193,7 +197,19 @@ class Naiaflow:
     def _dismiss_overlays(self) -> None:
         """Avisos fixos da Naiaflow (cookies, boas-vindas, novidades) ficam por
         cima do composer e bloqueiam os cliques ("subtree intercepts pointer
-        events"). Prefere recusar/fechar; se nao achar botao, esconde o aviso."""
+        events"). Prefere recusar/fechar; se nao achar botao, esconde o aviso.
+        Tambem fecha o seletor de acoes ("Filtrar acoes...") e a lista de
+        clones, que as vezes ficam abertos por cima do composer."""
+        for placeholder in ("Filtrar ações", "Pesquisar"):
+            try:
+                panel = self.page.get_by_placeholder(placeholder)
+                for _ in range(3):
+                    if not (panel.count() and panel.first.is_visible()):
+                        break
+                    self.page.keyboard.press("Escape")
+                    self.page.wait_for_timeout(500)
+            except Exception:
+                pass
         try:
             banners = self.page.locator("div.fixed.bottom-6")
             for i in range(banners.count()):
@@ -216,15 +232,32 @@ class Naiaflow:
         except Exception as exc:
             log(f"Nao consegui fechar um aviso da Naiaflow: {exc}")
 
+    def _clone_name(self):
+        return self.page.locator("span").filter(has_text=re.compile(rf"^\s*{re.escape(CLONE)}\s*$", re.I))
+
+    def _clone_chip(self):
+        # etiqueta do clone ja escolhido no composer (botao arredondado com o nome)
+        return self.page.locator("button.rounded-full").filter(has=self._clone_name())
+
+    def _clone_list_open(self) -> bool:
+        return self.page.get_by_placeholder("Pesquisar").count() > 0 and self.page.get_by_placeholder("Pesquisar").first.is_visible()
+
     def _ensure_clone(self) -> None:
-        composer = self.page.locator("text=Adicionar")
-        chip = self.page.get_by_role("button", name=CLONE, exact=True)
-        if chip.count():
+        # Tela de 10/2026: com o clone escolhido aparece a etiqueta "luna" no
+        # composer (e o cartao dele fica com um check). Clicar no cartao de novo
+        # tiraria o clone - por isso so abre a lista se a etiqueta nao estiver la.
+        if self._clone_chip().count():
             return
-        self.page.get_by_text("Adicionar clone").first.click()
-        self.page.get_by_text(CLONE, exact=True).first.click(timeout=15000)
+        self.page.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
+        # cartao do clone na lista (carrega depois de abrir)
+        card = self.page.locator("div.group").filter(has=self._clone_name()).first
+        card.wait_for(state="visible", timeout=20000)
+        card.click()
         self.page.wait_for_timeout(800)
-        if not self.page.get_by_role("button", name=CLONE, exact=True).count() and composer.count() == 0:
+        if self._clone_list_open():
+            self.page.keyboard.press("Escape")
+            self.page.wait_for_timeout(500)
+        if not self._clone_chip().count():
             raise RuntimeError(f'Nao consegui selecionar o clone "{CLONE}" na Naiaflow.')
 
     def generate(self, prompt: str) -> str:
@@ -239,7 +272,8 @@ class Naiaflow:
             box = self.page.locator("textarea").first
         box.click()
         box.fill(prompt)
-        self.page.get_by_role("button", name="Gerar").last.click()
+        # o botao virou "Criar" (com o custo, ex. "Criar 1"); "Criar novo clone" fica de fora
+        self.page.get_by_role("button", name=re.compile(r"^\s*(Criar|Gerar)(\s*\d+)?\s*$", re.I)).last.click()
         log("Gerando na Naiaflow…")
         deadline = time.time() + GENERATION_TIMEOUT_S
         while time.time() < deadline:
