@@ -713,3 +713,142 @@ As publicações +18 aprovadas no bot saem sozinhas no canal do Telegram, no hor
 - desligar.
 
 O harness ganhou um Upstash falso, que só liga quando o teste pede (`/__kv?on=1`).
+
+## 29. Bot de vendas +18, etapa 1 (27/10/2026)
+
+Um **bot só para os fãs**, separado do bot de aprovações, que continua só do administrador. Decisões do administrador (27/10):
+- **Pacotes:** Ensaio R$ 9,90; Álbum VIP sem censura R$ 19,90; VIP completo R$ 29,90 (fotos, vídeos e ensaios, com conteúdo novo quase todo dia no canal VIP; assinatura de 30 dias).
+- **Pagamento por Pix** (próxima etapa, falta o gateway). Ele sabe que o Telegram exige Stars para conteúdo digital vendido por bot e que o bot pode ser derrubado. Por isso a lista de fãs e de compras fica no banco, para dar para recomeçar num bot novo.
+- **Disparo diário ligado** (etapa 2). Ele foi avisado do ECA Digital (Lei 15.211/2025, em vigor desde 17/03/2026), que proíbe verificar a idade só por autodeclaração, inclusive para prévias. No bot: confirmação de 18+ no /start; a prévia grátis vai borrada e com texto sugestivo, não explícito; o explícito só chega depois do pagamento.
+
+**Banco:** migração `0008_vendas.sql`, só aditiva. Cria `sales_products` (com os 3 pacotes iniciais), `sales_product_media`, `fans`, `sales_orders` e `sales_broadcasts`.
+
+**Bot dos fãs** (`api/_sales_bot.ts`; webhook `/api/vendas/telegram` → `r=sales-hook`, assinado):
+- **/start:** registra o fã e pede a confirmação de 18+. Sem ela, nada de pacotes.
+- **Menu:** botões só dos pacotes prontos. O ensaio e o álbum precisam ter conteúdo; o VIP precisa do canal +18 conectado.
+- **Tocar num pacote:** por enquanto, "Pix quase pronto" e um aviso ao administrador ("fulano quis comprar…").
+- **/parar e /voltar** desligam e religam as novidades. Bloqueou o bot: fica marcado, e as mensagens param.
+
+**Página Vendas** (`src/studio/sales.tsx`, rota `r=sales`):
+- ligar o bot de vendas: token de outro bot, que não pode ser o de aprovações;
+- os números dos fãs;
+- editar nome, preço, descrição, dias do VIP e "à venda";
+- **colocar fotos e vídeos nos pacotes:**
+  - o navegador pega o arquivo da pasta do PC (JPEG até 5 MB, MP4 até 20 MB) e sobe uma cópia temporária;
+  - o bot de vendas manda essa cópia para a conversa do administrador, sem som, e apaga a mensagem;
+  - o estúdio guarda só o `file_id` do Telegram e apaga a cópia. O conteúdo dos pacotes **não fica em servidor nenhum**;
+  - para isso, o administrador precisa ter aberto o bot de vendas (Começar).
+- **Ver como o fã vê:** o menu chega no Telegram do administrador.
+
+**Teste:** `test_vendas.mjs`. Cobre:
+- os pacotes iniciais;
+- o token (formato e Ligar);
+- o segredo do webhook;
+- /start e 18+, sem pacote antes de confirmar;
+- grupo ignorado;
+- guardar a foto pela página (file_id, mensagem apagada);
+- o preço;
+- o menu só com os pacotes prontos;
+- comprar, com o aviso ao fã e ao administrador;
+- o VIP com o canal;
+- /parar, /voltar e o bloqueio;
+- Ver como o fã vê;
+- o celular sem rolagem para o lado;
+- desligar.
+
+**Próximas etapas:**
+- **(2)** a prévia borrada feita no PC e o disparo diário, com a aprovação do administrador;
+- **(3)** o Pix com o gateway, a entrega automática do pacote (`file_id`, com proteção contra encaminhar) e o VIP com o convite do canal e a saída quando o prazo vence.
+
+## 30. Pix pela PushinPay e entrega automática (27/10/2026)
+
+**Gateway:** PushinPay, escolhida pelo administrador.
+- R$ 0,35 por Pix, sem mensalidade, saque no mesmo dia.
+- Os termos aceitam conteúdo adulto, desde que o vendedor colha a confirmação de 18+ do comprador (o /start do bot faz isso).
+- A conta é aberta pelo administrador, com documentos e selfie.
+- **Token:** fica no Upstash (`luna:pix-token`), colado em **Vendas → Pix**, com a escolha entre pagamentos de verdade e teste (sandbox). Ele nunca volta ao navegador.
+
+**Fluxo** (`api/_sales_pay.ts`):
+1. **O fã toca no pacote.**
+   - Nasce o pedido "pendente" e a cobrança (`POST /api/pix/cashIn`, valor em centavos).
+   - O link de aviso é assinado para aquele pedido: `/api/studio?r=sales-pix&o=<pedido>&s=<HMAC>`.
+   - O bot manda o valor, o **Pix copia-e-cola** (texto fácil de copiar) e o botão **"Já paguei"**.
+   - Se o fã tocar de novo no mesmo pacote em até 30 min, o mesmo Pix é reaproveitado.
+2. **Aviso da PushinPay.** A assinatura errada é recusada. Com a assinatura certa, o estúdio ainda **confere na PushinPay** (`GET /api/transactions/{id}`) se está `paid` e se o valor bate. Um aviso falso não libera nada; com valor diferente, nada é entregue e o administrador é avisado.
+3. **"Já paguei":** no máximo uma consulta por minuto por pedido, que é a regra da PushinPay (trava no Upstash).
+4. **Entrega**, só uma vez (o pedido passa de pendente a pago com trava no banco):
+   - **Ensaio e álbum:** as fotos e os vídeos saem pelo `file_id` do Telegram, em álbuns de até 10, com `protect_content`, que impede encaminhar e salvar.
+   - **VIP:**
+     - convite do canal para **1 pessoa**, válido por 24 h, criado pelo bot que administra o canal;
+     - o acesso **soma** ao que ainda resta, então renovar antes de vencer não perde dias.
+   - Para o administrador: "💰 Venda! fulano comprou X por R$ Y".
+   - Se a entrega falhar, o fã recebe "já estou resolvendo" e o administrador é avisado.
+5. **VIP vencido:** o processador da fila (a cada minuto, `salesTick`) tira o fã do canal (banir e desbanir, para ele poder voltar se renovar), manda "Seu VIP terminou" com o botão **Renovar** e marca o pedido "expirado".
+
+**Canal:** ao conectar o canal +18, o bot avisa se faltarem as permissões "Convidar usuários via link" e "Banir usuários", que o VIP precisa.
+
+**Página Vendas:**
+- o cartão do **Pix** (ligar e desligar);
+- vendas e valor recebido em 30 dias;
+- Pix esperando pagamento;
+- a lista dos pedidos (data, fã, pacote, valor, situação, ⚠ quando há observação).
+
+**Teste:** `test_pix.mjs`, com a PushinPay falsa no harness. Cobre:
+- o token;
+- a cobrança e o link assinado;
+- o Pix reaproveitado;
+- o aviso com assinatura errada;
+- o aviso falso (ainda `created`);
+- "Já paguei" antes de pagar e no mesmo minuto;
+- a entrega protegida das 2 fotos e o aviso da venda;
+- a repetição sem entregar de novo;
+- o valor diferente;
+- o VIP com convite de 1 pessoa;
+- a renovação somando 60 dias;
+- o vencimento (sai do canal e oferece renovar);
+- a página;
+- desligar o Pix.
+
+O harness agora compara `lt`/`gt` no tipo da coluna, como o PostgREST.
+
+## 31. Regras de prazo: pacotes de 30 dias e VIP avulso ou mensal (27/10/2026)
+
+Pedido do administrador:
+- todo pacote vale 30 dias;
+- o VIP de R$ 29,90 pode ser avulso ou mensal, porque o canal sempre tem conteúdo novo;
+- não apagar mensagens: ao vencer, só tirar do canal.
+
+**Pacotes (Ensaio R$ 9,90 e Álbum R$ 19,90):**
+- **Ao pagar:** as fotos chegam no chat e ficam lá, protegidas contra encaminhar e salvar. O pedido ganha `access_until` = pagamento + `period_days` (30).
+- **📂 Meus pacotes** (botão e `/pacotes`): abre de novo enquanto vale, no máximo a cada 10 min por pacote.
+- **No dia 30:** o processador marca "expirado", o pacote não abre mais, e o fã recebe "Seu acesso terminou" com o botão **Comprar de novo**.
+- Ninguém apaga mensagem nenhuma. O Telegram só deixa o bot apagar até 48 h, e o administrador não quer.
+
+**VIP (canal):**
+- **VIP completo 30 dias (avulso):**
+  - paga uma vez e recebe o convite de 1 pessoa;
+  - comprar de novo antes de vencer soma os dias;
+  - no vencimento, sai do canal (banir e desbanir) e recebe o botão **Renovar**.
+- **VIP completo mensal:**
+  - **Pix Recorrente** da PushinPay (`POST /api/pix/cashIn/subscription`, `frequency` 2 = mensal, `pix_recurring_retry_policy` 2 = até 3 tentativas em 7 dias). Pagar o primeiro Pix autoriza os meses seguintes.
+  - **Cada parcela paga** chega no mesmo link assinado do primeiro pedido (outro `id`, mesmo `subscription_id`) e é conferida na PushinPay. Vira um pedido novo, com `installment` + 1; a chave única da cobrança impede duplicar. Soma 30 dias, e o administrador recebe "renovou (parcela N)".
+  - **Parcela atrasada:** o fã só sai do canal 3 dias depois do vencimento.
+  - **/cancelar** cancela na PushinPay (`DELETE /api/pix/cashIn/subscription/{id}/cancel`). O acesso vai até o fim do mês pago; depois, sai do canal sem a folga.
+
+**Banco (0008, ainda não rodada em produção):**
+- `sales_products.period_days` agora é obrigatório para todos os pacotes (padrão 30);
+- `billing` (`avulso` ou `mensal`; mensal só para VIP);
+- 4 pacotes iniciais;
+- `sales_orders.subscription_id` e `installment`.
+
+**Página:**
+- "Dias de acesso" em todos os pacotes;
+- o cartão do VIP mensal;
+- a situação "Acesso vencido" na lista de pedidos.
+
+**Teste:** `test_pix.mjs` agora cobre também:
+- os 30 dias do pacote;
+- Meus pacotes (abrir de novo, não repetir em seguida);
+- nenhuma mensagem apagada;
+- o pacote vencido;
+- o mensal: assinatura, parcela 2 somando dias (sem duplicar), a folga de 3 dias, /cancelar e a saída depois de cancelado e vencido.

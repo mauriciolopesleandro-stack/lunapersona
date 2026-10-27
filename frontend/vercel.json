@@ -16,6 +16,10 @@
       "destination": "/api/studio?r=telegram-hook"
     },
     {
+      "source": "/api/vendas/telegram",
+      "destination": "/api/studio?r=sales-hook"
+    },
+    {
       "source": "/api/tiktok/callback",
       "destination": "/api/studio?r=tiktok-callback"
     },
