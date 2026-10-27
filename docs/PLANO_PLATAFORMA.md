@@ -759,3 +759,54 @@ Um **bot só para os fãs**, separado do bot de aprovações, que continua só d
 **Próximas etapas:**
 - **(2)** a prévia borrada feita no PC e o disparo diário, com a aprovação do administrador;
 - **(3)** o Pix com o gateway, a entrega automática do pacote (`file_id`, com proteção contra encaminhar) e o VIP com o convite do canal e a saída quando o prazo vence.
+
+## 30. Pix pela PushinPay e entrega automática (27/10/2026)
+
+**Gateway:** PushinPay, escolhida pelo administrador.
+- R$ 0,35 por Pix, sem mensalidade, saque no mesmo dia.
+- Os termos aceitam conteúdo adulto, desde que o vendedor colha a confirmação de 18+ do comprador (o /start do bot faz isso).
+- A conta é aberta pelo administrador, com documentos e selfie.
+- **Token:** fica no Upstash (`luna:pix-token`), colado em **Vendas → Pix**, com a escolha entre pagamentos de verdade e teste (sandbox). Ele nunca volta ao navegador.
+
+**Fluxo** (`api/_sales_pay.ts`):
+1. **O fã toca no pacote.**
+   - Nasce o pedido "pendente" e a cobrança (`POST /api/pix/cashIn`, valor em centavos).
+   - O link de aviso é assinado para aquele pedido: `/api/studio?r=sales-pix&o=<pedido>&s=<HMAC>`.
+   - O bot manda o valor, o **Pix copia-e-cola** (texto fácil de copiar) e o botão **"Já paguei"**.
+   - Se o fã tocar de novo no mesmo pacote em até 30 min, o mesmo Pix é reaproveitado.
+2. **Aviso da PushinPay.** A assinatura errada é recusada. Com a assinatura certa, o estúdio ainda **confere na PushinPay** (`GET /api/transactions/{id}`) se está `paid` e se o valor bate. Um aviso falso não libera nada; com valor diferente, nada é entregue e o administrador é avisado.
+3. **"Já paguei":** no máximo uma consulta por minuto por pedido, que é a regra da PushinPay (trava no Upstash).
+4. **Entrega**, só uma vez (o pedido passa de pendente a pago com trava no banco):
+   - **Ensaio e álbum:** as fotos e os vídeos saem pelo `file_id` do Telegram, em álbuns de até 10, com `protect_content`, que impede encaminhar e salvar.
+   - **VIP:**
+     - convite do canal para **1 pessoa**, válido por 24 h, criado pelo bot que administra o canal;
+     - o acesso **soma** ao que ainda resta, então renovar antes de vencer não perde dias.
+   - Para o administrador: "💰 Venda! fulano comprou X por R$ Y".
+   - Se a entrega falhar, o fã recebe "já estou resolvendo" e o administrador é avisado.
+5. **VIP vencido:** o processador da fila (a cada minuto, `salesTick`) tira o fã do canal (banir e desbanir, para ele poder voltar se renovar), manda "Seu VIP terminou" com o botão **Renovar** e marca o pedido "expirado".
+
+**Canal:** ao conectar o canal +18, o bot avisa se faltarem as permissões "Convidar usuários via link" e "Banir usuários", que o VIP precisa.
+
+**Página Vendas:**
+- o cartão do **Pix** (ligar e desligar);
+- vendas e valor recebido em 30 dias;
+- Pix esperando pagamento;
+- a lista dos pedidos (data, fã, pacote, valor, situação, ⚠ quando há observação).
+
+**Teste:** `test_pix.mjs`, com a PushinPay falsa no harness. Cobre:
+- o token;
+- a cobrança e o link assinado;
+- o Pix reaproveitado;
+- o aviso com assinatura errada;
+- o aviso falso (ainda `created`);
+- "Já paguei" antes de pagar e no mesmo minuto;
+- a entrega protegida das 2 fotos e o aviso da venda;
+- a repetição sem entregar de novo;
+- o valor diferente;
+- o VIP com convite de 1 pessoa;
+- a renovação somando 60 dias;
+- o vencimento (sai do canal e oferece renovar);
+- a página;
+- desligar o Pix.
+
+O harness agora compara `lt`/`gt` no tipo da coluna, como o PostgREST.

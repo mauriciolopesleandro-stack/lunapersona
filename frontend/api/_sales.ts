@@ -13,6 +13,7 @@ import {
   type FanRow,
   type ProductRow,
 } from "./_sales_bot.js";
+import { forgetPix, pixConfig, savePixConfig } from "./_sales_pay.js";
 import { storeConfigured } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
@@ -31,6 +32,8 @@ import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 //                                        copia: o pacote fica no Telegram, nao no servidor
 //   POST { action: "media-remove", product_id, media_id }
 //   POST { action: "test" }              o bot de vendas manda o menu para o administrador
+//   POST { action: "pix", token, env }   guarda o token da PushinPay (producao ou sandbox)
+//   POST { action: "pix-forget" }        desliga o Pix (os pacotes voltam a "quase pronto")
 //
 // Para guardar o conteudo dos pacotes, o administrador precisa ter aberto o
 // bot de vendas (Comecar): e na conversa com ele que o bot sobe as midias.
@@ -85,16 +88,21 @@ async function status() {
   const [products, media, fans, orders] = await Promise.all([
     dbSelect<ProductRow>("sales_products", "select=*&order=position.asc"),
     dbSelect<ProductMediaRow>("sales_product_media", "select=product_id,media_id,position,kind&order=position.asc"),
-    dbSelect<FanRow & { started_at: string }>("fans", "select=id,telegram_id,adult_confirmed_at,opted_out_at,blocked_at,started_at"),
-    dbSelect<{ id: string; status: string; amount_cents: number; created_at: string; product_id: string }>(
+    dbSelect<FanRow & { started_at: string }>("fans", "select=id,telegram_id,username,first_name,adult_confirmed_at,opted_out_at,blocked_at,started_at"),
+    dbSelect<{ id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; product_id: string; fan_id: string; note: string | null }>(
       "sales_orders",
-      "select=id,status,amount_cents,created_at,product_id&order=created_at.desc&limit=50"
+      "select=id,status,amount_cents,created_at,paid_at,product_id,fan_id,note&order=created_at.desc&limit=200"
     ),
   ]);
   const ids = [...new Set(media.map((m) => m.media_id))];
   const paths = ids.length ? await dbSelect<{ id: string; local_path: string }>("media_assets", `select=id,local_path&id=in.(${ids.join(",")})`) : [];
   const pathOf = new Map(paths.map((m) => [m.id, m.local_path]));
   const channel = await telegramChannel().catch(() => null);
+  const pix = await pixConfig();
+  const fanOf = new Map(fans.map((f) => [f.id, f.username ? `@${f.username}` : f.first_name || `fã ${f.telegram_id}`]));
+  const titleOf = new Map(products.map((p) => [p.id, p.title]));
+  const sold = orders.filter((o) => o.status === "entregue" || o.status === "expirado" || o.status === "pago");
+  const month = Date.now() - 30 * 86400_000;
   return {
     storeReady: storeConfigured(),
     tokenSet: Boolean(token),
@@ -113,7 +121,13 @@ async function status() {
       blocked: fans.filter((f) => f.blocked_at).length,
       today: fans.filter((f) => Date.now() - Date.parse(f.started_at) < 86400_000).length,
     },
-    orders,
+    pix: { configured: Boolean(pix.token), env: pix.env },
+    sales: {
+      count30: sold.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).length,
+      total30: sold.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).reduce((t, o) => t + o.amount_cents, 0),
+      pending: orders.filter((o) => o.status === "pendente").length,
+    },
+    orders: orders.slice(0, 50).map((o) => ({ ...o, product: titleOf.get(o.product_id) ?? "?", fan: fanOf.get(o.fan_id) ?? "?" })),
   };
 }
 
@@ -228,6 +242,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const p = await getProduct(body.product_id);
       await dbDelete("sales_product_media", `product_id=eq.${p.id}&media_id=eq.${uuid(body.media_id, "Mídia")}`);
       await audit("pacote_tirar_midia", "sales_products", p.id, { media_id: body.media_id });
+    } else if (body.action === "pix") {
+      const value = typeof body.token === "string" ? body.token.trim() : "";
+      if (!/^[A-Za-z0-9|._~+/=-]{20,400}$/.test(value)) throw new Problem(400, "Isso não parece um token da PushinPay. Copie de novo no painel dela (API).");
+      await savePixConfig(value, body.env === "sandbox" ? "sandbox" : "producao");
+      await audit("pix_configurar", "sales", null, { ambiente: body.env === "sandbox" ? "sandbox" : "producao" });
+    } else if (body.action === "pix-forget") {
+      await forgetPix();
+      await audit("pix_desligar", "sales", null);
     } else if (body.action === "test") {
       await sendMenu(needToken(), await adminChat());
     } else {

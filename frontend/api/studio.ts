@@ -12,6 +12,7 @@ import tiktokMedia from "./_tiktok_media.js";
 import telegramHook from "./_tg_review.js";
 import sales from "./_sales.js";
 import salesHook from "./_sales_bot.js";
+import pixHook from "./_sales_pay.js";
 
 // /api/studio?r=<rota> - uma funcao so para as rotas do estudio novo. O plano
 // Hobby da Vercel aceita no maximo 12 funcoes por deploy (projeto sem
@@ -32,9 +33,10 @@ import salesHook from "./_sales_bot.js";
 //   r=assistant chat do administrador com a IA (OpenRouter) que conhece a Luna
 //   r=sales    pagina Vendas: bot de vendas (+18), pacotes, fas e pedidos
 //   r=sales-hook webhook do bot de vendas (/api/vendas/telegram, reescrito pelo vercel.json)
+//   r=sales-pix aviso de Pix pago da PushinPay (link assinado por pedido)
 //   r=tiktok-media foto temporaria para o TikTok baixar (link assinado em
 //              /api/tiktok/media/....jpg, reescrito pelo vercel.json)
-const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music, tiktok, "tiktok-callback": tiktokCallback, "tiktok-media": tiktokMedia, "instagram-callback": instagramCallback, assistant, plans, worker, "telegram-hook": telegramHook, sales, "sales-hook": salesHook };
+const ROUTES: Record<string, (req: IncomingMessage, res: ServerResponse) => Promise<unknown>> = { library, posts, jobs, instagram, music, tiktok, "tiktok-callback": tiktokCallback, "tiktok-media": tiktokMedia, "instagram-callback": instagramCallback, assistant, plans, worker, "telegram-hook": telegramHook, sales, "sales-hook": salesHook, "sales-pix": pixHook };
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "/", "http://local");

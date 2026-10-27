@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbInsertIgnoringDuplicates, dbSelect, dbUpdateWhere } from "./_supabase.js";
 import { sendNotice, telegram, telegramChannel, telegramConfig } from "./_telegram.js";
+import { baseUrl, checkPaid, startPayment } from "./_sales_pay.js";
 
 // Bot de vendas (+18): o bot que os fas abrem. E outro bot, separado do bot de
 // aprovacoes do administrador (que continua so dele). O token fica no Upstash
@@ -12,8 +13,9 @@ import { sendNotice, telegram, telegramChannel, telegramConfig } from "./_telegr
 // segredo derivado do token. So conversas privadas sao atendidas:
 //   /start            registra o fa; pede a confirmacao de 18+ antes de tudo
 //   18+ confirmado    mostra os pacotes (botoes)
-//   botao do pacote   pagamento por Pix (ainda nao ligado: avisa o fa e conta o
-//                     interesse para o administrador)
+//   botao do pacote   Pix copia-e-cola (PushinPay, _sales_pay.ts) e "Ja paguei";
+//                     sem o Pix configurado, avisa o fa e conta o interesse
+//                     para o administrador
 //   /parar /voltar    desliga e religa as novidades diarias
 // O Telegram avisa quando o fa bloqueia o bot (my_chat_member): para de mandar.
 
@@ -165,7 +167,7 @@ function fanName(f: Pick<FanRow, "username" | "first_name" | "telegram_id">): st
   return f.username ? `@${f.username}` : f.first_name || `fã ${f.telegram_id}`;
 }
 
-async function buy(token: string, fan: FanRow, productId: string, chatId: number): Promise<void> {
+async function buy(token: string, fan: FanRow, productId: string, chatId: number, site: string): Promise<void> {
   if (!/^[0-9a-f-]{36}$/i.test(productId)) return;
   const [product] = (await productsForSale()).filter((p) => p.id === productId);
   if (!product) {
@@ -173,7 +175,8 @@ async function buy(token: string, fan: FanRow, productId: string, chatId: number
     await sendMenu(token, chatId);
     return;
   }
-  // Pix: proxima etapa (falta o gateway). Por enquanto avisa e conta o interesse.
+  if (await startPayment(token, fan, product, chatId, site)) return;
+  // Pix ainda nao configurado: avisa e conta o interesse
   await telegram(token, "sendMessage", {
     chat_id: chatId,
     text: `Você escolheu: ${productLabel(product)}\n\nO pagamento por Pix está quase pronto! Assim que liberar, eu te aviso aqui 💛`,
@@ -225,7 +228,9 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
       } else if (!fan.adult_confirmed_at) {
         await askAge(token, chatId);
       } else if (kind === "buy") {
-        await buy(token, fan, arg ?? "", chatId);
+        await buy(token, fan, arg ?? "", chatId, baseUrl(req));
+      } else if (kind === "paid") {
+        await checkPaid(arg ?? "", fan, token, chatId);
       }
       return done();
     }

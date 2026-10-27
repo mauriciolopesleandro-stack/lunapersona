@@ -15,6 +15,7 @@ import { NETWORK_RULES, UPLOAD_BUCKET, cleanupUploads, type PostRow } from "./_p
 import { TikTokError, publishStatus, recentVideos, tiktokAccessToken, tiktokConnectionRow, uploadDraft, uploadPhotoDraft, type TikTokVideo } from "./_tiktok.js";
 import { tiktokMediaUrl } from "./_tiktok_media.js";
 import { sendMediaNotice, sendToChannel } from "./_tg_review.js";
+import { salesTick } from "./_sales_pay.js";
 import { dbInsert, dbRpc, dbSelect, dbUpdate, dbUpdateWhere, dbUpsert, storageReadUrl, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
 
@@ -538,6 +539,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     aguardando: 0,
     falhas: 0,
     token_instagram: null as string | null,
+    vip_vencidos: 0,
     erro: null as string | null,
   };
   try {
@@ -561,6 +563,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
     // renova o token do Instagram de tempos em tempos (vale 60 dias)
     result.token_instagram = await igRefreshIfDue();
+    // VIP vencido sai do canal e recebe o convite para renovar
+    result.vip_vencidos = await salesTick();
   } catch (e) {
     result.erro = (e instanceof Error ? e.message : String(e)).slice(0, 300);
   }

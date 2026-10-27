@@ -149,7 +149,7 @@ export async function sendToChannel(post: PostRow, channel: TelegramChannel): Pr
 interface ChatMemberUpdate {
   chat: { id: number; type: string; title?: string };
   from: { id: number };
-  new_chat_member: { status: string; can_post_messages?: boolean };
+  new_chat_member: { status: string; can_post_messages?: boolean; can_invite_users?: boolean; can_restrict_members?: boolean };
 }
 
 // Bot posto (ou tirado) como administrador de um canal.
@@ -165,7 +165,12 @@ async function channelMembership(update: ChatMemberUpdate, adminChat: string, sa
       return;
     }
     await saveChannel({ id, title });
-    await say(`📢 Canal “${title}” conectado. As publicações +18 que você aprovar vão sair lá sozinhas, no horário marcado.`);
+    // o VIP do bot de vendas convida por link e tira do canal quem venceu
+    const vipMissing = [member.can_invite_users === false && "“Convidar usuários via link”", member.can_restrict_members === false && "“Banir usuários”"].filter(Boolean);
+    await say(
+      `📢 Canal “${title}” conectado. As publicações +18 que você aprovar vão sair lá sozinhas, no horário marcado.` +
+        (vipMissing.length ? `\n\n⚠️ Para o VIP das vendas funcionar, ligue também ${vipMissing.join(" e ")} nas permissões do bot no canal.` : "")
+    );
   } else if (current?.id === id) {
     await forgetChannel();
     await say(`📢 O bot saiu do canal “${title}”. As publicações +18 voltam a chegar aqui para você postar à mão.`);

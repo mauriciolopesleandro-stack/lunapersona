@@ -4,9 +4,9 @@ import { Icon } from "./Icon";
 import { Modal, Thumb } from "./shared";
 import { useStudio, type Item } from "./store";
 
-// Vendas (+18): o bot de vendas que os fas abrem no Telegram, os pacotes
-// (ensaio, album e VIP por assinatura) com o conteudo de cada um e os
-// numeros de fas e pedidos. As fotos dos pacotes saem da pasta do PC, sobem
+// Vendas (+18): o bot de vendas que os fas abrem no Telegram, o Pix
+// (PushinPay), os pacotes (ensaio, album e VIP por assinatura) com o conteudo
+// de cada um e os numeros de fas e vendas. As fotos dos pacotes saem da pasta do PC, sobem
 // uma vez para o Telegram (o estudio guarda so o codigo do arquivo) e a copia
 // temporaria e apagada.
 
@@ -29,8 +29,18 @@ interface Status {
   channel: string | null;
   products: Product[];
   fans: { total: number; adults: number; optedOut: number; blocked: number; today: number };
-  orders: { id: string; status: string; amount_cents: number; created_at: string; product_id: string }[];
+  pix: { configured: boolean; env: "producao" | "sandbox" };
+  sales: { count30: number; total30: number; pending: number };
+  orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; product: string; fan: string; note: string | null }[];
 }
+
+const ORDER_STATUS: Record<string, string> = {
+  pendente: "Esperando o Pix",
+  pago: "Pago (entregando)",
+  entregue: "Pago e entregue",
+  expirado: "VIP vencido",
+  cancelado: "Cancelado",
+};
 
 const KIND: Record<Product["kind"], string> = { ensaio: "Ensaio", album: "Álbum", vip: "VIP (assinatura)" };
 const PHOTO_MAX = 5 * 1024 * 1024;
@@ -76,6 +86,8 @@ export function SalesPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [picking, setPicking] = useState<Product | null>(null);
+  const [pixToken, setPixToken] = useState("");
+  const [pixEnv, setPixEnv] = useState<"producao" | "sandbox">("producao");
 
   useEffect(() => {
     call()
@@ -209,9 +221,57 @@ export function SalesPage() {
                 <b>{status.fans.blocked}</b> bloquearam o bot
               </span>
             </div>
-            <p className="st-hint">
-              Pagamento por Pix: ainda não ligado (falta o gateway). Quem toca num pacote recebe “quase pronto” e você é avisado no seu Telegram.
-            </p>
+          </section>
+
+          <section className="st-panel st-settings">
+            <h2>Pix (PushinPay)</h2>
+            {status.pix.configured ? (
+              <>
+                <p className="st-ok">
+                  Pix ligado{status.pix.env === "sandbox" ? " em modo de teste (sandbox): nenhum pagamento é de verdade" : ""}. O fã recebe o Pix copia-e-cola e, quando o
+                  pagamento cai, o bot entrega sozinho.
+                </p>
+                <div className="st-row">
+                  <button
+                    type="button"
+                    className="st-btn st-btn-small"
+                    disabled={busy !== null}
+                    onClick={() => window.confirm("Desligar o Pix? Quem tocar num pacote volta a receber “quase pronto”.") && run("pix-forget", { action: "pix-forget" }, "Pix desligado.")}
+                  >
+                    Desligar o Pix
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="st-hint">
+                Ainda não ligado: quem toca num pacote recebe “quase pronto” e você é avisado no seu Telegram. No painel da PushinPay, gere o token da API e cole aqui.
+              </p>
+            )}
+            {!status.pix.configured && (
+              <div className="st-row">
+                <input
+                  type="password"
+                  className="st-input"
+                  value={pixToken}
+                  onChange={(e) => setPixToken(e.target.value)}
+                  placeholder="Token da API da PushinPay"
+                  autoComplete="off"
+                  aria-label="Token da API da PushinPay"
+                />
+                <select className="st-input" value={pixEnv} onChange={(e) => setPixEnv(e.target.value as "producao" | "sandbox")} aria-label="Ambiente">
+                  <option value="producao">Pagamentos de verdade</option>
+                  <option value="sandbox">Teste (sandbox)</option>
+                </select>
+                <button
+                  type="button"
+                  className="st-btn st-btn-primary"
+                  disabled={!pixToken.trim() || busy !== null}
+                  onClick={async () => (await run("pix", { action: "pix", token: pixToken.trim(), env: pixEnv }, "Pix ligado.")) && setPixToken("")}
+                >
+                  {busy === "pix" ? "Salvando..." : "Ligar o Pix"}
+                </button>
+              </div>
+            )}
           </section>
 
           <div className="st-sales-products">
@@ -219,6 +279,39 @@ export function SalesPage() {
               <ProductCard key={p.id} product={p} channel={status.channel} busy={busy} run={run} onPick={() => setPicking(p)} />
             ))}
           </div>
+
+          <section className="st-panel st-settings">
+            <h2>Vendas</h2>
+            <div className="st-sales-stats">
+              <span>
+                <b>{status.sales.count30}</b> vendas em 30 dias
+              </span>
+              <span>
+                <b>R$ {money(status.sales.total30)}</b> recebidos
+              </span>
+              <span>
+                <b>{status.sales.pending}</b> Pix esperando pagamento
+              </span>
+            </div>
+            {status.orders.length === 0 ? (
+              <p className="st-hint">Nenhum pedido ainda.</p>
+            ) : (
+              <ul className="st-sales-orders">
+                {status.orders.map((o) => (
+                  <li key={o.id}>
+                    <span>{new Date(o.paid_at ?? o.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>
+                    <span>{o.fan}</span>
+                    <span>{o.product}</span>
+                    <b>R$ {money(o.amount_cents)}</b>
+                    <span className={o.note ? "st-sales-warn" : ""} title={o.note ?? undefined}>
+                      {ORDER_STATUS[o.status] ?? o.status}
+                      {o.note ? " ⚠" : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </>
       )}
 
