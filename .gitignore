@@ -57,4 +57,5 @@ personas/luna/lora_qwen_novas/colagens/
 worker/luna-worker.env
 worker/.perfil-naiaflow/
 worker/luna-worker.log
+worker/naia-jobs.json
 worker/__pycache__/

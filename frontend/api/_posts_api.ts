@@ -342,6 +342,22 @@ export async function reviewOnTelegram(id: string, version: unknown): Promise<Po
   return post;
 }
 
+async function cancelPost(post: PostRow): Promise<PostRow> {
+  const saved = await guardedUpdate(post, { status: "cancelado", cancelled_at: new Date().toISOString() });
+  await cancelJobs(post.id);
+  await cleanupUploads(post.id);
+  await dbUpdateWhere("post_destinations", `post_id=eq.${post.id}&status=eq.pendente`, { status: "cancelado" });
+  await audit("cancelar", "posts", post.id, {});
+  return saved;
+}
+
+// Correcao pelo Telegram: a foto editada vira uma publicacao nova; a antiga
+// (reprovada, em rascunho) sai do caminho.
+export async function cancelDraftPost(id: string): Promise<void> {
+  const post = await getPost(uuid(id));
+  if (post.status === "rascunho") await cancelPost(post);
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Cache-Control", "no-store");
@@ -556,12 +572,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     if (body.action === "cancel") {
       requireStatus(post, ["rascunho", "aguardando_aprovacao", "aprovado", "agendado", "publicando", "falhou"], "cancelar");
-      const saved = await guardedUpdate(post, { status: "cancelado", cancelled_at: now });
-      await cancelJobs(post.id);
-      await cleanupUploads(post.id);
-      await dbUpdateWhere("post_destinations", `post_id=eq.${post.id}&status=eq.pendente`, { status: "cancelado" });
-      await audit("cancelar", "posts", post.id, {});
-      return reply(200, { post: saved });
+      return reply(200, { post: await cancelPost(post) });
     }
 
     return reply(400, { detail: "Ação desconhecida." });

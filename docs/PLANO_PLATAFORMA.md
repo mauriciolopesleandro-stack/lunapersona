@@ -640,3 +640,20 @@ Ao confirmar, `POST /api/studio?r=plans` com `action: "quick"` cria um plano "Fo
 3. manda para aprovar no Telegram.
 
 Só fotos: vídeo continua fora da automação.
+
+## 26. Parte C: correção pelo Telegram editando a foto (27/10/2026)
+
+**Fluxo:**
+1. No Telegram, **✏️ Pedir correção** e o texto do pedido (respondendo a pergunta ou direto no chat, até 30 min depois do botão).
+2. A publicação é reprovada. Se veio de um item do plano (foto do robô), o item volta para a fila como correção: `status=na_fila`, nota `Correção: <pedido>`, `media_path` = foto atual.
+3. O robô abre a foto na Naiaflow pelo link direto (`/generations/preview/job/<id>`), escolhe **Editar pelo texto**, escreve o pedido e clica em Criar (1 crédito).
+4. A foto corrigida é salva com sufixo `-correcao-...`; a publicação antiga é cancelada e a nova vai para aprovar no Telegram. Só a publicação corrigida muda (o TikTok que reaproveitava a foto fica como está).
+
+**Detalhes:**
+- O robô anota em `worker/naia-jobs.json` qual job gerou cada foto. Foto gerada antes disso não tem como ser editada (a correção falha sem gastar crédito).
+- A espera pela foto pronta só aceita imagem com horário (no link) depois do clique, para não pegar foto antiga da galeria.
+- Publicação feita à mão (sem item do plano) continua como antes: volta para rascunho com o pedido.
+
+**Banco:** nenhuma migração (usa `note` e `media_path` de `content_plan_items`).
+
+**Robô no início do Windows:** atalho na pasta Inicializar, janela minimizada; tenta de novo em 2 min se cair; não abre duas vezes.

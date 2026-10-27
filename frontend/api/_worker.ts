@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { createHmac, timingSafeEqual } from "crypto";
 import { isAuthenticated } from "./_auth.js";
-import { Problem, createDraftPost, reviewOnTelegram, submitPost, uploadUrlsFor } from "./_posts_api.js";
+import { Problem, cancelDraftPost, createDraftPost, reviewOnTelegram, submitPost, uploadUrlsFor } from "./_posts_api.js";
 import { storeConfigured, storeGet, storeIncr, storeSet } from "./_store.js";
 import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
@@ -19,7 +19,9 @@ import { sendNotice, telegramConfig } from "./_telegram.js";
 //   POST { action: "pair" }      -> nova chave do PC + arquivo de configuracao (a anterior para de valer)
 // Com a chave do PC:
 //   POST { action: "ping" }      -> { queue }
-//   POST { action: "next" }      -> proximo item de foto na fila (vira "gerando") ou { item: null }
+//   POST { action: "next" }      -> proximo item de foto na fila (vira "gerando") ou { item: null };
+//                                   correcao pedida no Telegram vem com edit { source, instruction }:
+//                                   o PC edita a foto que ja tem (opcao Editar da Naiaflow)
 //   POST { action: "done", id, local_path, size_bytes }  -> cadastra a midia, cria as publicacoes
 //                                   (o item e os que reaproveitam a foto) e devolve os destinos
 //   POST { action: "upload-url", post_id, version, size_bytes } -> link para subir a copia daquele destino
@@ -65,6 +67,8 @@ interface ItemRow {
   attempts: number;
   max_attempts: number;
   post_id: string | null;
+  media_path: string | null;
+  note: string | null;
 }
 
 function folderFor(item: ItemRow): string {
@@ -75,12 +79,40 @@ function folderFor(item: ItemRow): string {
 function fileNameFor(item: ItemRow): string {
   const when = new Date(item.scheduled_at).toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).slice(0, 16).replace(/[-: ]/g, "");
   const dest = item.adult ? "telegram18" : `${item.network}-${item.format}`.toLowerCase();
-  return `plano-${when}-${dest}-${item.id.slice(0, 8)}.jpg`;
+  // a correcao nao sobrescreve a foto anterior
+  const suffix = isCorrection(item) ? `-correcao-${Date.now().toString(36)}` : "";
+  return `plano-${when}-${dest}-${item.id.slice(0, 8)}${suffix}.jpg`;
 }
 
+// Correcao pedida no Telegram: o item ja tem foto (media_path) e o pedido fica
+// na nota ate o robo terminar.
+const CORRECTION_PREFIX = "Correção: ";
+function isCorrection(item: ItemRow): boolean {
+  return Boolean(item.media_path) && (item.note ?? "").startsWith(CORRECTION_PREFIX);
+}
+
+// fotos novas (sem reaproveitar outra) e correcoes, que tem foto propria
+const QUEUE_FILTER = "status=eq.na_fila&kind=eq.image&or=(source_item_id.is.null,media_path.not.is.null)";
+
 async function queueSize(): Promise<number> {
-  const rows = await dbSelect<{ id: string }>("content_plan_items", "select=id&status=eq.na_fila&kind=eq.image&source_item_id=is.null");
+  const rows = await dbSelect<{ id: string }>("content_plan_items", `select=id&${QUEUE_FILTER}`);
   return rows.length;
+}
+
+// Telegram: "Pedir correcao" de uma publicacao que veio do plano. A publicacao
+// ja foi reprovada (decidePost); o item volta para a fila do robo, que edita a
+// foto com o pedido. Sem item do plano (publicacao feita a mao) devolve false.
+export async function queueCorrection(postId: string, text: string): Promise<boolean> {
+  const [item] = await dbSelect<ItemRow>("content_plan_items", `select=*&post_id=eq.${postId}&kind=eq.image&media_path=not.is.null`);
+  if (!item) return false;
+  await dbUpdateWhere("content_plan_items", `id=eq.${item.id}`, {
+    status: "na_fila",
+    attempts: 0,
+    note: (CORRECTION_PREFIX + text.trim()).slice(0, 1000),
+    updated_at: new Date().toISOString(),
+  });
+  await audit("pedir_correcao", "content_plan_items", item.id, { post_id: postId });
+  return true;
 }
 
 async function getItem(id: unknown): Promise<ItemRow> {
@@ -90,8 +122,10 @@ async function getItem(id: unknown): Promise<ItemRow> {
   return item;
 }
 
-// o item e os que reaproveitam a mesma foto (TikTok com a foto do Feed)
+// o item e os que reaproveitam a mesma foto (TikTok com a foto do Feed); a
+// correcao vale so para a publicacao corrigida
 async function familyOf(item: ItemRow): Promise<ItemRow[]> {
+  if (isCorrection(item)) return [item];
   const reusers = await dbSelect<ItemRow>("content_plan_items", `select=*&source_item_id=eq.${item.id}`);
   return [item, ...reusers.filter((r) => r.status !== "cancelado")];
 }
@@ -150,7 +184,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       await dbUpdateWhere("content_plan_items", `status=eq.gerando&updated_at=lt.${stale}`, { status: "na_fila", updated_at: now() });
       const [item] = await dbSelect<ItemRow>(
         "content_plan_items",
-        "select=*&status=eq.na_fila&kind=eq.image&source_item_id=is.null&order=scheduled_at.asc&limit=1"
+        `select=*&${QUEUE_FILTER}&order=scheduled_at.asc&limit=1`
       );
       if (!item) return reply(200, { item: null });
       const claimed = await dbUpdate<ItemRow>("content_plan_items", `id=eq.${item.id}&status=eq.na_fila`, { status: "gerando", attempts: item.attempts + 1, updated_at: now() });
@@ -166,6 +200,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           file: fileNameFor(item),
           // destinos que vao usar esta foto (o PC prepara uma copia para cada um)
           targets: (await familyOf(item)).map((i) => ({ network: i.network, format: i.format })),
+          ...(isCorrection(item) ? { edit: { source: item.media_path, instruction: (item.note ?? "").slice(CORRECTION_PREFIX.length) } } : {}),
         },
       });
     }
@@ -196,6 +231,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const [media] = await dbSelect<{ id: string }>("media_assets", `select=id&local_path=eq.${encodeURIComponent(localPath)}`);
       if (!media) throw new Problem(500, "Não consegui cadastrar a foto na biblioteca.");
       const family = await familyOf(item);
+      const correction = isCorrection(item);
+      // a publicacao reprovada sai do caminho; a foto corrigida vira outra
+      if (correction && item.post_id) await cancelDraftPost(item.post_id);
       const groupId = family.length > 1 ? crypto.randomUUID() : null;
       const targets = [];
       for (const it of family) {
@@ -212,10 +250,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           ...(groupId ? { group_id: groupId } : {}),
         });
         const submitted = await submitPost(post.id);
-        await dbUpdateWhere("content_plan_items", `id=eq.${it.id}`, { post_id: post.id, media_path: localPath, updated_at: now() });
+        await dbUpdateWhere("content_plan_items", `id=eq.${it.id}`, { post_id: post.id, media_path: localPath, ...(correction ? { note: null } : {}), updated_at: now() });
         targets.push({ item_id: it.id, post_id: post.id, version: submitted.version, network: it.network, format: it.format });
       }
-      await audit("gerar_item", "content_plan_items", item.id, { publicacoes: targets.length });
+      await audit(correction ? "corrigir_item" : "gerar_item", "content_plan_items", item.id, { publicacoes: targets.length });
       return reply(200, { media_id: media.id, targets });
     }
 
@@ -238,8 +276,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (body.action === "fail") {
       const error = String(body.error ?? "erro desconhecido").slice(0, 900);
       const final = item.attempts >= item.max_attempts;
-      await dbUpdateWhere("content_plan_items", `id=eq.${item.id}`, { status: final ? "falhou" : "na_fila", note: `Automação: ${error}`, updated_at: now() });
-      if (final) await notify(`⚠️ Não consegui gerar a foto do plano depois de ${item.attempts} tentativa(s): “${item.prompt.slice(0, 80)}”.\nMotivo: ${error.slice(0, 200)}`);
+      const correction = isCorrection(item);
+      // a correcao guarda o pedido na nota ate a ultima tentativa
+      const note = correction && !final ? item.note : `Automação: ${error}`;
+      await dbUpdateWhere("content_plan_items", `id=eq.${item.id}`, { status: final ? "falhou" : "na_fila", note, updated_at: now() });
+      if (final) {
+        const what = correction
+          ? `corrigir a foto (pedido: “${(item.note ?? "").slice(CORRECTION_PREFIX.length, CORRECTION_PREFIX.length + 80)}”)`
+          : `gerar a foto do plano: “${item.prompt.slice(0, 80)}”`;
+        await notify(`⚠️ Não consegui ${what} depois de ${item.attempts} tentativa(s).\nMotivo: ${error.slice(0, 200)}`);
+      }
       return reply(200, { status: final ? "falhou" : "na_fila" });
     }
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import os
 import re
 import sys
@@ -39,6 +40,10 @@ CONFIG_FILE = Path(os.environ.get("LUNA_WORKER_CONFIG", HERE / "luna-worker.env"
 PROFILE_DIR = HERE / ".perfil-naiaflow"
 LOG_FILE = HERE / "luna-worker.log"
 NAIAFLOW = "https://app.naiaflow.com/generations"
+# a foto pronta abre direto por este link (painel de Acoes: Editar pelo texto)
+NAIAFLOW_JOB = "https://app.naiaflow.com/generations/preview/job/"
+# qual job da Naiaflow gerou cada foto do estudio (para a correcao editar a foto certa)
+JOBS_FILE = HERE / "naia-jobs.json"
 CLONE = "luna"
 MIN_CREDITS = 2  # abaixo disso para e avisa (nao gasta o resto)
 GENERATION_TIMEOUT_S = 10 * 60
@@ -54,6 +59,27 @@ def log(msg: str) -> None:
             f.write(line + "\n")
     except OSError:
         pass
+
+
+def _job_time_ms(src: str) -> float:
+    m = re.search(r"job-[0-9a-f-]{36}-\d+-(\d{12,14})", src)
+    return float(m.group(1)) if m else 0.0
+
+
+def remember_job(local_path: str, url: str) -> None:
+    m = re.search(r"job-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", url)
+    if not m:
+        return
+    jobs = known_jobs()
+    jobs[local_path] = m.group(1)
+    JOBS_FILE.write_text(json.dumps(jobs, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def known_jobs() -> dict[str, str]:
+    try:
+        return json.loads(JOBS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
 
 def load_config() -> tuple[str, str]:
@@ -194,13 +220,14 @@ class Naiaflow:
         srcs = self.page.eval_on_selector_all("img", "els => els.map(e => e.currentSrc || e.src)")
         return {s for s in srcs if "cdn.naiaflow.com/job-" in s}
 
-    def _dismiss_overlays(self) -> None:
+    def _dismiss_overlays(self, panels: bool = True) -> None:
         """Avisos fixos da Naiaflow (cookies, boas-vindas, novidades) ficam por
         cima do composer e bloqueiam os cliques ("subtree intercepts pointer
         events"). Prefere recusar/fechar; se nao achar botao, esconde o aviso.
         Tambem fecha o seletor de acoes ("Filtrar acoes...") e a lista de
-        clones, que as vezes ficam abertos por cima do composer."""
-        for placeholder in ("Filtrar ações", "Pesquisar"):
+        clones, que as vezes ficam abertos por cima do composer (panels=False
+        na tela da foto pronta, onde o painel de acoes e o que o robo usa)."""
+        for placeholder in ("Filtrar ações", "Pesquisar") if panels else ():
             try:
                 panel = self.page.get_by_placeholder(placeholder)
                 for _ in range(3):
@@ -272,15 +299,50 @@ class Naiaflow:
             box = self.page.locator("textarea").first
         box.click()
         box.fill(prompt)
-        # o botao virou "Criar" (com o custo, ex. "Criar 1"); "Criar novo clone" fica de fora
-        self.page.get_by_role("button", name=re.compile(r"^\s*(Criar|Gerar)(\s*\d+)?\s*$", re.I)).last.click()
+        self._create_button().click()
         log("Gerando na Naiaflow…")
+        return self._wait_result(before)
+
+    def edit(self, job_id: str, instruction: str) -> str:
+        """Correcao: abre a foto pronta, escolhe Editar pelo texto (1 credito),
+        escreve o pedido e espera a foto editada."""
+        self.page.goto(NAIAFLOW_JOB + job_id, wait_until="domcontentloaded")
+        action = self.page.get_by_role("button", name=re.compile(r"Editar pelo texto", re.I)).first
+        action.wait_for(state="attached", timeout=60000)
+        self.page.wait_for_timeout(1500)
+        self._dismiss_overlays(panels=False)
+        before = self._job_images()
+        action.scroll_into_view_if_needed()
+        action.click()
+        box = self.page.get_by_placeholder("Digite seu prompt", exact=False).first
+        box.wait_for(state="visible", timeout=15000)
+        box.click()
+        box.fill(instruction)
+        self._create_button().click()
+        log("Editando na Naiaflow…")
+        return self._wait_result(before)
+
+    def _create_button(self):
+        # o botao virou "Criar" (com o custo, ex. "Criar 1"); "Criar novo clone" fica de fora
+        return self.page.get_by_role("button", name=re.compile(r"^\s*(Criar|Gerar)(\s*\d+)?\s*$", re.I)).last
+
+    def _wait_result(self, before: set[str]) -> str:
+        # o link da foto traz a hora em que ficou pronta (job-<id>-0-<ms>); a
+        # galeria carrega fotos antigas aos poucos, entao so vale foto feita
+        # depois do clique (2 min de folga para o relogio do PC)
+        since_ms = (time.time() - 120) * 1000
         deadline = time.time() + GENERATION_TIMEOUT_S
+        last_reload = time.time()
         while time.time() < deadline:
             time.sleep(5)
             try:
                 head = self.page.locator("body").inner_text()[:300]
-                new = self._job_images() - before
+                new = {s for s in self._job_images() - before if _job_time_ms(s) > since_ms}
+                # a tela da foto pronta pode nao mostrar a nova: a galeria mostra
+                if not new and time.time() - last_reload > 90 and "/preview/" in self.page.url:
+                    self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
+                    last_reload = time.time()
+                    continue
             except Exception:  # a pagina recarregou: confere de novo no proximo ciclo
                 continue
             if new and "Gerando" not in head and "Enviando" not in head:
@@ -292,11 +354,22 @@ class Naiaflow:
 # --- um item da fila -----------------------------------------------------------------------------------
 
 def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path | None) -> None:
-    log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): {item['prompt'][:90]}")
+    edit = item.get("edit")
+    if edit:
+        log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): correção da foto {edit['source']}: {edit['instruction'][:90]}")
+    else:
+        log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): {item['prompt'][:90]}")
+    url = ""
     if test_image:
         raw = test_image.read_bytes()
     else:
-        url = naia.generate(item["prompt"])
+        if edit:
+            job = known_jobs().get(edit["source"])
+            if not job:
+                raise RuntimeError(f"Nao sei qual foto da Naiaflow e {edit['source']} (foto gerada antes de o robo anotar os jobs).")
+            url = naia.edit(job, edit["instruction"])
+        else:
+            url = naia.generate(item["prompt"])
         r = requests.get(url, timeout=120)
         r.raise_for_status()
         raw = r.content
@@ -306,6 +379,8 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
     path = folder / item["file"]
     path.write_bytes(to_jpeg(img, 95))
     local_path = f"{item['folder']}/{item['file']}"
+    if url:
+        remember_job(local_path, url)
     log(f"Salva em {local_path}")
     done = studio.call("done", id=item["id"], local_path=local_path, size_bytes=path.stat().st_size)
     for t in done["targets"]:
