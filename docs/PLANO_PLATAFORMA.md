@@ -1029,3 +1029,10 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
 - Se o robô cair no meio, as fotos que já estão na pasta não gastam crédito de novo.
 - "Pedir correção" num carrossel volta a publicação para rascunho no estúdio (a correção automática é só de foto única).
 - O robô do PC precisa ser reiniciado depois do deploy para pegar o código novo.
+
+## 42. Planos e preços, promoção do dia e contagem do Telegram (28/10/2026)
+
+- Aba **Monetização → Planos e preços**: preço e dias de cada plano (vale para o próximo Pix).
+- **Promoção** (ex.: de domingo): liga/desliga, dias da semana (horário de Brasília), nome e preço de promoção por pacote (menor que o normal, mínimo R$ 1,00). Fica no Upstash (`luna:promo`).
+  - No dia: o botão do pacote mostra "R$ X (era R$ Y)", o Pix sai pelo preço da promoção (também na renovação do VIP) e as mensagens com os pacotes ganham a faixa "🔥 <nome>: só hoje, preço especial nos pacotes!".
+- Contagem: **Bot da Luna (canal principal)** = pessoas com +18 confirmado (e quantas recebem as mensagens); **Canal VIP** = membros pelo Telegram (`getChatMemberCount`, conta os administradores) e assinantes pagando.

@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
+import { promoActive, promoConfig, savePromo, weekdayInBrazil } from "./_sales_promo.js";
 import { randomUUID } from "crypto";
 import { isAuthenticated } from "./_auth.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
@@ -43,6 +44,7 @@ import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 //   POST { action: "cta-test" }                        manda uma mensagem diaria de teste para voce
 //   POST { action: "preview-suggest", image }          a IA (com visao) olha a previa e sugere 3 chamadas
 //   POST { action: "preview-text", media_id, text }    guarda a chamada daquela previa (vazio tira)
+//   POST { action: "promo-save", enabled, days, label, prices }  promocao (ex.: de domingo) por pacote
 //
 // Pastas do Telegram (pagina Telegram): conteudos/vendas/ensaio e album-vip viram
 // o conteudo dos pacotes (media-add/media-remove); conteudos/vendas/vip e postado
@@ -169,6 +171,12 @@ async function status() {
     if (o.status !== "entregue" || !o.access_until || !vipProducts.has(o.product_id)) continue;
     vipUntil.set(o.fan_id, Math.max(vipUntil.get(o.fan_id) ?? 0, Date.parse(o.access_until)));
   }
+  // quantas pessoas o Telegram conta no canal VIP (inclui os administradores)
+  const channelMembers =
+    channel && config.token
+      ? await telegram<number>(config.token, "getChatMemberCount", { chat_id: channel.id }).then((n) => (typeof n === "number" ? n : null)).catch(() => null)
+      : null;
+  const promo = await promoConfig();
   const vipMembers = [...vipUntil]
     .filter(([, until]) => until > Date.now() - 3 * 86400_000)
     .sort((a, b) => a[1] - b[1])
@@ -203,6 +211,8 @@ async function status() {
     },
     orders: orders.slice(0, 50).map((o) => ({ ...o, product: titleOf.get(o.product_id) ?? "?", fan: fanOf.get(o.fan_id) ?? "?" })),
     vipMembers,
+    channelMembers,
+    promo: { ...promo, active: promoActive(promo), today: weekdayInBrazil() },
   };
 }
 
@@ -393,6 +403,23 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (!list.some((p) => p.media_id === mediaId)) throw new Problem(404, "Essa prévia não está nas mensagens.");
       await savePreviews(list.map((p) => (p.media_id === mediaId ? { ...p, text: text || undefined } : p)));
       await audit("previa_chamada", "media_assets", mediaId);
+    } else if (body.action === "promo-save") {
+      const products = await dbSelect<ProductRow>("sales_products", "select=id,price_cents,title");
+      const days = Array.isArray(body.days) ? [...new Set(body.days.map(Number))].filter((d) => Number.isInteger(d) && d >= 0 && d <= 6) : [];
+      if (body.enabled && !days.length) throw new Problem(400, "Escolha pelo menos um dia da promoção.");
+      const prices: Record<string, number> = {};
+      const raw = body.prices && typeof body.prices === "object" ? (body.prices as Record<string, unknown>) : {};
+      for (const p of products) {
+        if (raw[p.id] === undefined || raw[p.id] === null || raw[p.id] === "") continue;
+        const cents = Number(raw[p.id]);
+        if (!Number.isInteger(cents) || cents < 100) throw new Problem(400, `Promoção de “${p.title}”: no mínimo R$ 1,00.`);
+        if (cents >= p.price_cents) throw new Problem(400, `Promoção de “${p.title}” precisa ser menor que o preço normal.`);
+        prices[p.id] = cents;
+      }
+      if (body.enabled && !Object.keys(prices).length) throw new Problem(400, "Coloque o preço da promoção em pelo menos um pacote.");
+      const label = typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 60) : "Promoção de domingo";
+      await savePromo({ enabled: Boolean(body.enabled), days, label, prices });
+      await audit("promocao", "sales", null, { ligada: Boolean(body.enabled), dias: days, pacotes: Object.keys(prices).length });
     } else if (body.action === "cta-save") {
       try {
         await saveCtaConfig(body);

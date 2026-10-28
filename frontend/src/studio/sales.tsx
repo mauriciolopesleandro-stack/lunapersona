@@ -48,6 +48,16 @@ export interface Status {
   cta: Cta;
   orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; access_until: string | null; product: string; fan: string; note: string | null }[];
   vipMembers: { fan: string; until: string }[]; // quem esta no canal VIP agora (vencido ha ate 3 dias ainda conta)
+  channelMembers: number | null; // o Telegram conta os membros do canal VIP (com os administradores)
+  promo: Promo;
+}
+export interface Promo {
+  enabled: boolean;
+  days: number[]; // 0 = domingo
+  label: string;
+  prices: Record<string, number>;
+  active: boolean; // valendo agora (horario de Brasilia)
+  today: number;
 }
 
 const ORDER_STATUS: Record<string, string> = {

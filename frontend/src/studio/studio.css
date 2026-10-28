@@ -4503,3 +4503,98 @@
     margin-left: 0;
   }
 }
+
+/* Planos e preços (Monetização) */
+.st-stats-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.st-mini-stat span svg {
+  vertical-align: -2px;
+}
+
+.st-plan-rows {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.st-plan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(110px, 0.6fr) minmax(110px, 0.6fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.st-plan-row-promo {
+  grid-template-columns: minmax(0, 1.6fr) minmax(140px, 0.7fr) 90px;
+}
+
+.st-plan-row b {
+  align-self: center;
+}
+
+.st-plan-row b small {
+  display: block;
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.st-plan-row label {
+  display: grid;
+  gap: 4px;
+}
+
+.st-plan-row label span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.st-plan-off {
+  align-self: center;
+  justify-self: start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(236, 72, 153, 0.15);
+  color: var(--st-pink);
+  font-weight: 700;
+}
+
+.st-plan-preview {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--bg-panel-2);
+}
+
+.st-plan-preview p {
+  margin: 0 0 4px;
+}
+
+.st-plan-button {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(139, 92, 246, 0.25);
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 700px) {
+  .st-stats-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .st-plan-row,
+  .st-plan-row-promo {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .st-plan-row b {
+    grid-column: 1 / -1;
+  }
+}
