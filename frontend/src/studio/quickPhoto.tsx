@@ -5,7 +5,9 @@ import { useState } from "react";
 // api/_assistant.ts). Cada bloco vira um botao; ao confirmar, a foto entra
 // na fila do robo do PC (/api/studio?r=plans, action "quick"), que gera na
 // Naiaflow e manda para aprovar no Telegram. Varios destinos marcados: a foto
-// sai uma vez so (1 credito) e cada destino ganha a sua publicacao.
+// sai uma vez so (1 credito) e cada destino ganha a sua publicacao. Carrossel
+// (Feed e TikTok): 2 a 10 fotos do mesmo ensaio, 1 credito cada; o Stories leva
+// so a primeira.
 
 type Slot = "feed" | "stories" | "tiktok" | "telegram18";
 const SLOT_LABEL: Record<Slot, string> = {
@@ -70,6 +72,7 @@ function defaultWhen(): string {
 export function QuickPhoto({ block }: { block: PhotoBlock }) {
   const [open, setOpen] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([block.slot]);
+  const [photos, setPhotos] = useState(1);
   const [when, setWhen] = useState(defaultWhen);
   const [prompt, setPrompt] = useState(block.prompt);
   const [caption, setCaption] = useState(block.caption);
@@ -88,6 +91,7 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
         body: JSON.stringify({
           action: "quick",
           slots,
+          photos: canCarousel ? photos : 1,
           prompt,
           caption,
           hashtags: hashtags.split(/[\s,]+/).filter(Boolean),
@@ -105,10 +109,13 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
     }
   }
 
+  const canCarousel = slots.some((k) => k === "feed" || k === "tiktok") && !slots.includes("telegram18");
+  const total = canCarousel ? photos : 1;
+
   if (done) {
     return (
       <p className="st-ok">
-        Na fila do robô ({slots.map((k) => SLOT_LABEL[k]).join(" + ")}). A foto chega no Telegram para você aprovar — o robô do PC precisa estar aberto.
+        Na fila do robô ({slots.map((k) => SLOT_LABEL[k]).join(" + ")}{total > 1 ? `, carrossel de ${total} fotos` : ""}). A foto chega no Telegram para você aprovar — o robô do PC precisa estar aberto.
       </p>
     );
   }
@@ -138,6 +145,21 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
           ))}
         </div>
       </div>
+      {canCarousel && (
+        <div className="st-field">
+          <span>Fotos {photos > 1 ? "(carrossel)" : ""}</span>
+          <div className="st-quick-count">
+            <button type="button" aria-label="Menos fotos" disabled={photos <= 1} onClick={() => setPhotos(photos - 1)}>
+              −
+            </button>
+            <b aria-live="polite">{photos}</b>
+            <button type="button" aria-label="Mais fotos" disabled={photos >= 10} onClick={() => setPhotos(photos + 1)}>
+              +
+            </button>
+            <small>{photos > 1 ? `${photos} fotos do mesmo ensaio, pose e ângulo diferentes` : "foto única · aumente para fazer carrossel"}</small>
+          </div>
+        </div>
+      )}
       <div className="st-row">
         <label className="st-field">
           <span>Publicar em</span>
@@ -159,12 +181,15 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
       {slots.includes("telegram18") ? (
         <p className="st-hint">+18: vai só para o canal do Telegram, por isso não junta com Instagram e TikTok.</p>
       ) : (
-        slots.length > 1 && <p className="st-hint">A mesma foto vai para os {slots.length} destinos, cada um com a sua publicação para aprovar.</p>
+        <>
+          {slots.length > 1 && <p className="st-hint">{total > 1 ? "As mesmas fotos vão" : "A mesma foto vai"} para os {slots.length} destinos, cada um com a sua publicação para aprovar.</p>}
+          {total > 1 && slots.includes("stories") && <p className="st-hint">Stories não tem carrossel: vai só a primeira foto.</p>}
+        </>
       )}
       {error && <p className="st-error">{error}</p>}
       <div className="st-row">
         <button type="button" className="st-btn st-btn-small st-btn-primary" disabled={busy || !prompt.trim() || !slots.length} onClick={queue}>
-          {busy ? "Mandando…" : slots.length > 1 ? `Gerar (1 crédito) · ${slots.length} destinos` : "Gerar (1 crédito)"}
+          {busy ? "Mandando…" : `Gerar (${total} crédito${total > 1 ? "s" : ""})${slots.length > 1 ? ` · ${slots.length} destinos` : ""}`}
         </button>
         <button type="button" className="st-btn st-btn-small" disabled={busy} onClick={() => setOpen(false)}>
           Cancelar

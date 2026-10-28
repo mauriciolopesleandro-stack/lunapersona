@@ -18,9 +18,10 @@ import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpda
 //   remove-item { id }
 //   approve { plan_id }         -> itens vao para a fila (na_fila)
 //   cancel { plan_id }          -> itens que ainda nao foram gerados sao cancelados
-//   quick { slots (ou slot), prompt, caption?, hashtags?, scheduled_at } -> foto avulsa
+//   quick { slots (ou slot), photos?, prompt, caption?, hashtags?, scheduled_at } -> foto avulsa
 //                               da Conversa: ja na fila do robo; com varios destinos
-//                               a foto sai uma vez so e os outros a reaproveitam
+//                               a foto sai uma vez so e os outros a reaproveitam;
+//                               photos 2-10 = carrossel no Feed/TikTok (Stories leva a 1a)
 
 const TZ_OFFSET = "-03:00"; // horario de Brasilia (sem horario de verao desde 2019)
 const MAX_DAYS = 92; // trimestre
@@ -275,10 +276,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (!prompt) throw new Problem(400, "Escreva o pedido da foto.");
       const when = typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
       if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
+      // carrossel: varias fotos do mesmo ensaio (1 credito cada) no Feed e no TikTok
+      const photos = body.photos === undefined ? 1 : Number(body.photos);
+      if (!Number.isInteger(photos) || photos < 1 || photos > 10) throw new Problem(400, "O carrossel vai de 2 a 10 fotos.");
+      if (photos > 1 && !keys.some((k) => k === "feed" || k === "tiktok")) throw new Problem(400, "Carrossel só no Instagram Feed ou no TikTok.");
       const stamp = new Date().toISOString();
       const plan = await dbInsert<PlanRow>("content_plans", {
-        title: `Foto avulsa do chat (${keys.map((k) => SLOTS[k].label).join(" + ")})`,
-        request: { source: "chat", slot: keys[0], slots: keys },
+        title: `Foto avulsa do chat (${keys.map((k) => SLOTS[k].label).join(" + ")}${photos > 1 ? `, carrossel de ${photos}` : ""})`,
+        request: { source: "chat", slot: keys[0], slots: keys, ...(photos > 1 ? { photos } : {}) },
         status: "aprovado",
         approved_at: stamp,
       });
@@ -305,7 +310,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         );
       }
       await audit("foto_avulsa", "content_plan_items", items[0].id, { destino: keys.join(",") });
-      return reply(200, { item: items[0], items, estimate: credits(items) });
+      const estimate = credits(items);
+      return reply(200, { item: items[0], items, estimate: { ...estimate, images: estimate.images * photos, credits: estimate.credits * photos } });
     }
 
     // acoes de item chegam com o id do item; as de plano, com plan_id

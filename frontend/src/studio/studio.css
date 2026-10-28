@@ -3484,6 +3484,43 @@
   color: #fff;
 }
 
+.st-quick-count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.st-quick-count button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  line-height: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: none;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.st-quick-count button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.st-quick-count b {
+  min-width: 18px;
+  text-align: center;
+  font-size: 16px;
+}
+
+.st-quick-count small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 /* Vendas (+18) */
 .st-sales-stats {
   display: flex;
