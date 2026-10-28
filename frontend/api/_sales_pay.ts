@@ -22,8 +22,9 @@ import type { FanRow, ProductRow } from "./_sales_bot.js";
 //     ensaio/album pelo file_id do Telegram (protegido contra encaminhar e
 //     salvar), que ficam no chat; o fa abre de novo em "Meus pacotes" enquanto
 //     o acesso vale; VIP com convite do canal para 1 pessoa.
-//  4. vencido (processador da fila, a cada minuto): VIP sai do canal; pacote para
-//     de abrir; o fa recebe o botao para comprar de novo.
+//  4. VIP perto de vencer (3 dias antes): aviso + Pix novo de renovacao;
+//     vencido (processador da fila, a cada minuto): VIP fica mais 3 dias no
+//     canal e entao sai; pacote para de abrir; o fa recebe o botao para comprar.
 // O token da PushinPay fica no Upstash (colado em Vendas) e nunca volta ao navegador.
 
 const TOKEN_KEY = "luna:pix-token";
@@ -32,7 +33,8 @@ const API = { producao: "https://api.pushinpay.com.br", sandbox: "https://api-sa
 const PENDING_REUSE_MS = 30 * 60_000; // mesmo pacote pedido de novo em 30 min: reaproveita o Pix
 const INVITE_HOURS = 24;
 const REOPEN_WAIT_S = 10 * 60; // abrir o mesmo pacote de novo: no maximo a cada 10 min
-const MONTHLY_GRACE_MS = 3 * 86400_000; // VIP mensal: espera a parcela atrasada antes de tirar do canal
+const VIP_GRACE_MS = 3 * 86400_000; // VIP vencido: espera 3 dias a renovacao antes de tirar do canal
+const RENEW_NOTICE_MS = 3 * 86400_000; // aviso + Pix de renovacao 3 dias antes de vencer
 const FREQUENCY_MONTHLY = 2;
 const RETRY_3X_7_DAYS = 2;
 
@@ -53,6 +55,7 @@ export interface OrderRow {
   access_until: string | null;
   subscription_id: string | null;
   installment: number | null;
+  reminded_at?: string | null; // ultimo lembrete (Pix esquecido ou renovacao do VIP)
   note: string | null;
 }
 
@@ -418,13 +421,14 @@ async function deliverVip(order: OrderRow, fan: FanRow, product: ProductRow, sal
   return until;
 }
 
-// fim do VIP mais longo ainda valendo (de qualquer VIP: avulso ou mensal)
-export async function activeVip(fanId: string): Promise<string | null> {
+// fim do VIP mais longo ainda valendo (de qualquer VIP: avulso ou mensal);
+// withGrace: conta tambem o VIP vencido ha menos de 3 dias (ainda no canal)
+export async function activeVip(fanId: string, withGrace = false): Promise<string | null> {
   const vips = await dbSelect<{ id: string }>("sales_products", "select=id&kind=eq.vip");
   if (!vips.length) return null;
   const [row] = await dbSelect<{ access_until: string }>(
     "sales_orders",
-    `select=access_until&fan_id=eq.${fanId}&status=eq.entregue&product_id=in.(${vips.map((v) => v.id).join(",")})&access_until=gt.${new Date().toISOString()}&order=access_until.desc&limit=1`
+    `select=access_until&fan_id=eq.${fanId}&status=eq.entregue&product_id=in.(${vips.map((v) => v.id).join(",")})&access_until=gt.${new Date(Date.now() - (withGrace ? VIP_GRACE_MS : 0)).toISOString()}&order=access_until.desc&limit=1`
   );
   return row?.access_until ?? null;
 }
@@ -543,25 +547,77 @@ export default async function pixHook(req: IncomingMessage, res: ServerResponse)
   return done();
 }
 
+// Campanha de renovacao do VIP: de 3 dias antes do vencimento ate o fim dos 3
+// dias de folga, uma mensagem por dia (reminded_at marca a ultima) com uma
+// previa e um texto que muda (Vendas -> Mensagens), e o botao "Renovar agora".
+// No primeiro aviso o Pix de renovacao ja vai junto. Renovou: para.
+const RENEW_GAP_MS = 20 * 3600_000;
+
+async function renewalReminders(token: string, products: Map<string, ProductRow>, site: string): Promise<number> {
+  const { ctaConfig, fill, sendCta } = await import("./_sales_cta.js");
+  const config = await ctaConfig();
+  const nowMs = Date.now();
+  const from = new Date(nowMs - VIP_GRACE_MS).toISOString();
+  const soon = new Date(nowMs + RENEW_NOTICE_MS).toISOString();
+  const gap = new Date(nowMs - RENEW_GAP_MS).toISOString();
+  const due = await dbSelect<OrderRow>(
+    "sales_orders",
+    `select=*&status=eq.entregue&access_until=gt.${from}&access_until=lt.${soon}&or=(reminded_at.is.null,reminded_at.lt.${gap})&limit=20`
+  );
+  let sent = 0;
+  for (const order of due) {
+    const product = products.get(order.product_id);
+    if (!product || product.kind !== "vip" || product.billing === "mensal") continue;
+    const first = !order.reminded_at;
+    const claimed = await dbUpdate("sales_orders", `id=eq.${order.id}&or=(reminded_at.is.null,reminded_at.lt.${gap})`, { reminded_at: new Date().toISOString() });
+    if (!claimed) continue;
+    // ja renovou (outro VIP vai alem deste): nada a fazer
+    const until = await activeVip(order.fan_id);
+    if (until && Date.parse(until) > Date.parse(order.access_until!)) continue;
+    const [fan] = await dbSelect<FanRow>("fans", `select=*&id=eq.${order.fan_id}`);
+    if (!fan || fan.blocked_at) continue;
+    const dueMs = Date.parse(order.access_until!);
+    const left = Math.max(1, Math.ceil((dueMs - nowMs) / 86400_000));
+    const text =
+      dueMs > nowMs
+        ? fill(config.renewal[(3 - left + config.renewal.length * 3) % config.renewal.length], fan, { data: day(order.access_until!), dias: `${left} dia${left > 1 ? "s" : ""}` })
+        : fill(config.renewalGrace, fan, { data: day(new Date(dueMs + VIP_GRACE_MS).toISOString()) });
+    try {
+      // texto e previa andam junto com os dias que faltam: muda todo dia
+      await sendCta(token, fan.telegram_id, text, Math.ceil((nowMs - dueMs) / 86400_000) + 3, [[{ text: "💎 Renovar agora", callback_data: `buy:${product.id}` }]]);
+      // primeiro aviso: o Pix de renovacao ja vai junto
+      if (first) await startPayment(token, fan, product, fan.telegram_id, site).catch(() => false);
+      sent++;
+    } catch {
+      // bloqueou o bot ou o Telegram falhou: tenta no proximo dia
+    }
+  }
+  return sent;
+}
+
 // Processador da fila (a cada minuto). Nunca derruba o processador.
-// Acesso vencido: VIP sai do canal (o mensal espera 3 dias pela parcela),
-// pacote para de abrir; o fa recebe o botao para comprar de novo.
-export async function salesTick(): Promise<number> {
+//  - VIP vence em 3 dias: aviso + Pix novo de renovacao;
+//  - acesso vencido: VIP continua no canal por mais 3 dias e entao sai; pacote
+//    para de abrir; o fa recebe o botao para comprar de novo.
+// site: endereco do estudio (para o aviso de pagamento do Pix de renovacao).
+export async function salesTick(site = ""): Promise<number> {
   try {
     const { salesToken } = await import("./_sales_bot.js");
     const token = await salesToken();
     const now = new Date().toISOString();
-    const expired = await dbSelect<OrderRow>("sales_orders", `select=*&status=eq.entregue&access_until=lt.${now}&order=access_until.asc&limit=50`);
-    if (!expired.length) return 0;
     const products = new Map((await dbSelect<ProductRow>("sales_products", "select=*")).map((p) => [p.id, p]));
+    let done = token && site ? await renewalReminders(token, products, site) : 0;
+    const expired = await dbSelect<OrderRow>("sales_orders", `select=*&status=eq.entregue&access_until=lt.${now}&order=access_until.asc&limit=200`);
+    if (!expired.length) return done;
     const channel = await telegramChannel();
     const admin = await telegramConfig();
-    let done = 0;
     for (const order of expired) {
       const product = products.get(order.product_id);
       if (!product) continue;
-      const monthlyActive = product.billing === "mensal" && !(order.note ?? "").startsWith("Assinatura cancelada");
-      if (monthlyActive && Date.parse(order.access_until!) + MONTHLY_GRACE_MS > Date.now()) continue;
+      // VIP vencido fica mais 3 dias no canal esperando a renovacao (o mensal
+      // cancelado pelo fa sai na hora)
+      const cancelled = product.billing === "mensal" && (order.note ?? "").startsWith("Assinatura cancelada");
+      if (product.kind === "vip" && !cancelled && Date.parse(order.access_until!) + VIP_GRACE_MS > Date.now()) continue;
       const [fan] = await dbSelect<FanRow>("fans", `select=*&id=eq.${order.fan_id}`);
       if (product.kind === "vip") {
         // renovou (outro VIP ainda vale): so encerra este pedido

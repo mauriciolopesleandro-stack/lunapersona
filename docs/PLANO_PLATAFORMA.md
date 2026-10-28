@@ -949,3 +949,29 @@ Em produção, a PushinPay recusou a assinatura (Pix Recorrente) com **422 "Info
 - Os dados vão **só** para a PushinPay (`customer: { name, document: { type: "cpf", number } }`) e não são gravados no banco nem na auditoria.
 - O erro da PushinPay agora vem completo (com a lista `errors` do 422) no aviso ao administrador e na nota do pedido, para ajustar se ela pedir outro campo.
 - **Teste:** `test_pix.mjs`, com a PushinPay falsa recusando assinatura sem cliente.
+
+## 37. VIP só avulso, com campanha de renovação (28/10/2026)
+
+A PushinPay respondeu **400 "Pix Automático liberado para contas nominais"**: a conta do administrador é virtual, então o mensal (Pix Recorrente) não funciona. Decisão dele:
+- deixar só o **VIP completo** (30 dias, avulso). O mensal sai de venda: ele desmarca "À venda" no cartão;
+- renovar com aviso e Pix novo.
+
+**Campanha de renovação** (`renewalReminders` em `_sales_pay.ts`, pelo processador da fila):
+- **De 3 dias antes do vencimento até o fim da folga: uma mensagem por dia.** O `sales_orders.reminded_at` marca a última, com intervalo mínimo de 20 h.
+- Cada mensagem leva uma **prévia** (aba Telegram → Prévias) e o botão **"💎 Renovar agora"**. O texto e a prévia **mudam a cada dia**, porque são escolhidos pelos dias que faltam.
+- **No primeiro aviso o Pix de renovação já vai junto.** Pagou: soma 30 dias ao vencimento atual (renovando antes de vencer, não perde dias).
+- **Folga:** vencido, o fã fica **mais 3 dias no canal**, recebendo "venceu, você sai em DD/MM". Passou disso sem renovar, sai do canal e recebe "Renovar".
+- Renovou: os avisos param, e o pedido antigo vence sem tirar ninguém do canal.
+- Nos dias de folga o fã **não** recebe a mensagem diária comum (`activeVip(fan, true)` conta a folga).
+
+**Textos** (Vendas → Mensagens para os fãs): lista **"Renovação do VIP"** (`{nome}`, `{data}` = vencimento, `{dias}` = quanto falta) e o texto **"Depois que venceu"** (`{data}` = dia em que sai). Ficam no Upstash `luna:cta` (`renewal`, `renewalGrace`).
+
+**Teste:** `test_renovacao.mjs`. Cobre:
+- o aviso com prévia e Pix no primeiro dia;
+- nada repetido no mesmo dia;
+- texto e prévia diferentes no dia seguinte, sem outro Pix;
+- a folga (continua no canal, sem a diária comum);
+- a saída depois da folga;
+- a renovação paga (+30 dias a partir do vencimento) parando os avisos.
+
+`test_pix.mjs` foi ajustado para a folga de 3 dias.

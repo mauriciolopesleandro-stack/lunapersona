@@ -567,7 +567,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     result.token_instagram = await igRefreshIfDue();
     // vendas: acesso vencido (VIP sai do canal, pacote para de abrir) recebe o
     // convite para comprar de novo
-    result.acessos_vencidos = await salesTick();
+    result.acessos_vencidos = await salesTick(url);
     // vendas: lembrete do Pix esquecido e a mensagem diaria para os fas
     result.cta_mensagens = await ctaTick();
   } catch (e) {

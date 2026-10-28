@@ -28,6 +28,8 @@ export interface Cta {
   welcome: string;
   pixReminder: string;
   daily: string[];
+  renewal: string[];
+  renewalGrace: string;
 }
 
 export interface Status {
@@ -404,39 +406,39 @@ function CtaEditor({
       <p className="st-hint">
         Uma por dia para quem ainda não é VIP (para com /parar). A frase muda todo dia, na ordem abaixo; a prévia pode repetir.
       </p>
-      <ol className="st-cta-list">
-        {draft.daily.map((text, i) => (
-          <li key={i}>
-            <textarea
-              className="st-input"
-              rows={2}
-              maxLength={900}
-              value={text}
-              aria-label={`Frase ${i + 1}`}
-              onChange={(e) => set({ daily: draft.daily.map((t, j) => (j === i ? e.target.value : t)) })}
-            />
-            <button
-              type="button"
-              className="st-icon-btn"
-              aria-label={`Tirar a frase ${i + 1}`}
-              disabled={draft.daily.length <= 1}
-              onClick={() => set({ daily: draft.daily.filter((_, j) => j !== i) })}
-            >
-              <Icon name="close" size={14} />
-            </button>
-          </li>
-        ))}
-      </ol>
+      <PhraseList label="Frase" items={draft.daily} onChange={(daily) => set({ daily })} />
       <div className="st-row st-row-tight">
         <button type="button" className="st-btn st-btn-small" onClick={() => set({ daily: [...draft.daily, "Oi {nome}… "] })}>
           <Icon name="plus" size={14} />
           Adicionar frase
         </button>
+      </div>
+
+      <h3>Renovação do VIP</h3>
+      <p className="st-hint">
+        De 3 dias antes do vencimento até sair do canal (3 dias depois), uma mensagem por dia com uma prévia e o botão “Renovar agora”; no primeiro aviso o Pix
+        já vai junto. <b>{"{data}"}</b> vira a data do vencimento e <b>{"{dias}"}</b> quanto falta.
+      </p>
+      <PhraseList label="Aviso" items={draft.renewal} onChange={(renewal) => set({ renewal })} />
+      <div className="st-row st-row-tight">
+        <button type="button" className="st-btn st-btn-small" onClick={() => set({ renewal: [...draft.renewal, "{nome}, seu VIP vence em {data}… "] })}>
+          <Icon name="plus" size={14} />
+          Adicionar aviso
+        </button>
+      </div>
+      <label className="st-field">
+        <span>Depois que venceu (ainda no canal). {"{data}"} vira o dia em que ele sai.</span>
+        <textarea className="st-input" rows={2} maxLength={900} value={draft.renewalGrace} onChange={(e) => set({ renewalGrace: e.target.value })} />
+      </label>
+
+      <div className="st-row">
         <button
           type="button"
           className="st-btn st-btn-small st-btn-primary"
           disabled={!changed || busy !== null}
-          onClick={() => run("cta-save", { action: "cta-save", ...draft, daily: draft.daily.filter((t) => t.trim()) }, "Mensagens salvas.")}
+          onClick={() =>
+            run("cta-save", { action: "cta-save", ...draft, daily: draft.daily.filter((t) => t.trim()), renewal: draft.renewal.filter((t) => t.trim()) }, "Mensagens salvas.")
+          }
         >
           Salvar mensagens
         </button>
@@ -451,6 +453,35 @@ function CtaEditor({
         </button>
       </div>
     </section>
+  );
+}
+
+// Lista de frases editaveis (uma caixa por frase, com o x para tirar).
+function PhraseList({ label, items, onChange }: { label: string; items: string[]; onChange: (items: string[]) => void }) {
+  return (
+    <ol className="st-cta-list">
+      {items.map((text, i) => (
+        <li key={i}>
+          <textarea
+            className="st-input"
+            rows={2}
+            maxLength={900}
+            value={text}
+            aria-label={`${label} ${i + 1}`}
+            onChange={(e) => onChange(items.map((t, j) => (j === i ? e.target.value : t)))}
+          />
+          <button
+            type="button"
+            className="st-icon-btn"
+            aria-label={`Tirar ${label.toLowerCase()} ${i + 1}`}
+            disabled={items.length <= 1}
+            onClick={() => onChange(items.filter((_, j) => j !== i))}
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </li>
+      ))}
+    </ol>
   );
 }
 
