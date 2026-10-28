@@ -46,7 +46,8 @@ export interface Status {
   vipPosts: { media_id: string; path: string | null }[]; // arquivos da pasta do VIP ja postados no canal
   previews: { media_id: string; kind: "photo" | "video"; path: string | null; text: string }[]; // previas das mensagens (CTA) e a chamada de cada uma
   cta: Cta;
-  orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; product: string; fan: string; note: string | null }[];
+  orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; access_until: string | null; product: string; fan: string; note: string | null }[];
+  vipMembers: { fan: string; until: string }[]; // quem esta no canal VIP agora (vencido ha ate 3 dias ainda conta)
 }
 
 const ORDER_STATUS: Record<string, string> = {

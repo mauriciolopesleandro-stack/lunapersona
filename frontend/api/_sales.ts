@@ -146,9 +146,9 @@ async function status() {
     dbSelect<ProductRow>("sales_products", "select=*&order=position.asc"),
     dbSelect<ProductMediaRow>("sales_product_media", "select=product_id,media_id,position,kind&order=position.asc"),
     dbSelect<FanRow & { started_at: string }>("fans", "select=id,telegram_id,username,first_name,adult_confirmed_at,opted_out_at,blocked_at,started_at"),
-    dbSelect<{ id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; product_id: string; fan_id: string; note: string | null }>(
+    dbSelect<{ id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; access_until: string | null; product_id: string; fan_id: string; note: string | null }>(
       "sales_orders",
-      "select=id,status,amount_cents,created_at,paid_at,product_id,fan_id,note&order=created_at.desc&limit=200"
+      "select=id,status,amount_cents,created_at,paid_at,access_until,product_id,fan_id,note&order=created_at.desc&limit=200"
     ),
   ]);
   const vipIds = Object.keys(await vipPosts());
@@ -162,6 +162,17 @@ async function status() {
   const titleOf = new Map(products.map((p) => [p.id, p.title]));
   const sold = orders.filter((o) => o.status === "entregue" || o.status === "expirado" || o.status === "pago");
   const month = Date.now() - 30 * 86400_000;
+  // quem esta no VIP agora (ate 3 dias depois de vencer a pessoa ainda fica no canal)
+  const vipProducts = new Set(products.filter((p) => p.kind === "vip").map((p) => p.id));
+  const vipUntil = new Map<string, number>();
+  for (const o of orders) {
+    if (o.status !== "entregue" || !o.access_until || !vipProducts.has(o.product_id)) continue;
+    vipUntil.set(o.fan_id, Math.max(vipUntil.get(o.fan_id) ?? 0, Date.parse(o.access_until)));
+  }
+  const vipMembers = [...vipUntil]
+    .filter(([, until]) => until > Date.now() - 3 * 86400_000)
+    .sort((a, b) => a[1] - b[1])
+    .map(([fanId, until]) => ({ fan: fanOf.get(fanId) ?? "?", until: new Date(until).toISOString() }));
   return {
     storeReady: storeConfigured(),
     tokenSet: Boolean(token),
@@ -191,6 +202,7 @@ async function status() {
       pending: orders.filter((o) => o.status === "pendente").length,
     },
     orders: orders.slice(0, 50).map((o) => ({ ...o, product: titleOf.get(o.product_id) ?? "?", fan: fanOf.get(o.fan_id) ?? "?" })),
+    vipMembers,
   };
 }
 

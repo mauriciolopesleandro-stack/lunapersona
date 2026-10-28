@@ -412,7 +412,7 @@ export function AccountsPage({ nav }: { nav: Nav }) {
       text: tiktok?.connected ? `${tiktok.name ?? "conta"} · rascunho automático (vídeo e fotos); você publica no app` : "não conectado · publicação manual com lembrete",
       error: tiktok?.lastError ?? null,
     },
-    { id: "telegram", icon: "telegram", label: "Telegram", ok: false, text: "lembretes no horário; bot de vendas em breve", error: null },
+    { id: "telegram", icon: "telegram", label: "Telegram", ok: false, text: "aprovação e lembretes no horário, bot de vendas e canal VIP (em Monetização)", error: null },
   ];
   return (
     <div>
