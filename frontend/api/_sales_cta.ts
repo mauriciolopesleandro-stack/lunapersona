@@ -125,9 +125,9 @@ export async function savePreviews(list: Preview[]): Promise<void> {
 const VISION_PROMPT = `Você escreve chamadas curtas (CTA) para o bot de vendas da Luna Vox no Telegram.
 A Luna Vox é uma influenciadora virtual brasileira criada com IA, adulta, carinhosa, confiante e provocante.
 Você recebe a foto de prévia que vai junto da mensagem (as partes íntimas já estão cobertas).
-Escreva 3 chamadas diferentes, em português do Brasil, como se fosse a própria Luna falando com o fã:
+Escreva 3 mini-histórias diferentes, em português do Brasil natural, como se fosse a própria Luna contando ao fã o que está fazendo na cena:
 - use exatamente {nome} onde entra o primeiro nome do fã (com as chaves);
-- 1 ou 2 frases curtas, com 1 a 3 emojis;
+- 2 ou 3 frases curtas, em primeira pessoa, com 1 a 3 emojis (ex.: se é um quarto de hotel: "Tô aqui no hotel de roupão, {nome}… vem curtir o dia todo comigo 😏");
 - ligadas ao que aparece na foto (lugar, roupa, pose, clima, hora do dia);
 - tom íntimo e provocante, criando vontade de ver o resto, e terminando com o convite para escolher um pacote ou entrar no VIP;
 - sem descrever atos sexuais nem partes íntimas (quem recebe ainda não pagou);

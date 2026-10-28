@@ -110,6 +110,7 @@ export async function productsForSale(): Promise<ProductRow[]> {
 
 const AGE_TEXT = "Oi! Aqui é a Luna 💛\n\nAqui tem conteúdo só para maiores de 18 anos. Se você tem 18 ou mais, vem comigo curtir os meus melhores momentos 😘";
 const MENU_TEXT = "Que bom te ver por aqui 😘\n\nEscolha o seu pacote:";
+const MENU_TEXT_NAMED = "Que bom te ver por aqui, {nome} 😘\n\nEscolha o seu pacote:";
 const NOTHING_TEXT = "Os pacotes estão sendo preparados. Volte daqui a pouquinho 💛";
 
 function safeSame(a: string, b: string): boolean {
@@ -152,6 +153,15 @@ export async function sendMenu(token: string, chatId: number, fan?: FanRow): Pro
   }
   const rows = products.map((p) => [{ text: productLabel(p), callback_data: `buy:${p.id}` }]);
   if (mine.length) rows.push([{ text: "📂 Meus pacotes", callback_data: "mine" }]);
+  // com previas cadastradas: a previa da vez + a historia dela (ou o texto do menu) + os botoes
+  const { previews, sendCta, fill } = await import("./_sales_cta.js");
+  const list = products.length ? await previews() : [];
+  if (list.length) {
+    const turn = Math.floor(Date.now() / 60_000); // gira a cada minuto
+    const own = list[turn % list.length].text;
+    await sendCta(token, chatId, fill(own || MENU_TEXT_NAMED, fan ?? { first_name: null }), turn, rows);
+    return;
+  }
   await telegram(token, "sendMessage", { chat_id: chatId, text: products.length ? MENU_TEXT : "Seus pacotes:", reply_markup: { inline_keyboard: rows } });
 }
 
@@ -264,6 +274,12 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
     if (msg && msg.chat.type === "private" && msg.from) {
       const fan = await upsertFan(msg.from);
       const text = (msg.text ?? "").trim().toLowerCase();
+      // /zerar: so o administrador; volta a ser um fa novo para testar do inicio
+      if (text.startsWith("/zerar") && String(msg.from.id) === (await telegramConfig()).chatId) {
+        await dbUpdateWhere("fans", `id=eq.${fan.id}`, { adult_confirmed_at: null, cta_sent_at: null, cta_count: 0, opted_out_at: null });
+        await telegram(token, "sendMessage", { chat_id: msg.chat.id, text: "Pronto, você voltou a ser um fã novo 🔄 Mande /start para ver tudo do começo (suas compras de teste continuam registradas)." });
+        return done();
+      }
       if (!fan.adult_confirmed_at) {
         await askAge(token, msg.chat.id);
       } else if (text.startsWith("/parar")) {
