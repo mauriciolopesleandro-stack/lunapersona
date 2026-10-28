@@ -8,46 +8,70 @@ import { needsYou, WaitingForYou } from "./PostFlow";
 import { ComingSoon, Modal, formatBytes } from "./shared";
 import { AccountsPage, InstagramPage, TikTokPage } from "./social";
 import { MusicPage } from "./music";
-import { AssistantPage } from "./assistant";
+import { Dock } from "./dock";
+import { FinancePage, SubscriptionsPage, useSalesStatus } from "./money";
 import { SalesPage } from "./sales";
 import { TelegramFoldersPage } from "./telegramFolders";
 import { StudioProvider, useStudio, type Post } from "./store";
 import "./studio.css";
 
-// Menu na ordem do fluxo de trabalho. Instagram e TikTok abrem por
-// Contas conectadas; os modulos que ainda nao existem ficam em "Em breve".
-const NAV: { id: string; label: string; icon: string }[] = [
+// Menu enxuto: o que e do dia a dia de criar fica em "Creator", o que e de
+// ganhar dinheiro em "Monetizacao" e as contas em "Configuracoes". O Assistente
+// (com agenda e planejamento) e as personagens ficam no dock flutuante.
+interface Group {
+  label: string;
+  icon: string;
+  text: string;
+  tabs: { id: string; label: string }[];
+}
+const GROUPS: Record<string, Group> = {
+  creator: {
+    label: "Creator",
+    icon: "star",
+    text: "Biblioteca, publicações, músicas e audiência num lugar só.",
+    tabs: [
+      { id: "conteudos", label: "Biblioteca" },
+      { id: "publicacoes", label: "Publicações" },
+      { id: "musicas", label: "Músicas e áudios" },
+      { id: "audiencia", label: "Audiência" },
+    ],
+  },
+  money: {
+    label: "Monetização",
+    icon: "dollar",
+    text: "Bot de vendas, conteúdo do Telegram, assinantes do VIP e o dinheiro.",
+    tabs: [
+      { id: "vendas", label: "Vendas" },
+      { id: "telegram", label: "Conteúdo do Telegram" },
+      { id: "assinaturas", label: "Assinaturas" },
+      { id: "financeiro", label: "Financeiro" },
+    ],
+  },
+  config: {
+    label: "Configurações",
+    icon: "gear",
+    text: "Pasta, banco, robô do PC, campanhas e as contas conectadas.",
+    tabs: [
+      { id: "configuracoes", label: "Geral" },
+      { id: "contas", label: "Contas conectadas" },
+    ],
+  },
+};
+// Instagram e TikTok abrem por Contas conectadas
+const ALIAS: Record<string, string> = { instagram: "contas", tiktok: "contas" };
+const groupOf = (page: string) => Object.keys(GROUPS).find((g) => GROUPS[g].tabs.some((t) => t.id === (ALIAS[page] ?? page))) ?? null;
+
+const NAV: { id: string; label: string; icon: string; group?: string }[] = [
   { id: "visao", label: "Visão Geral", icon: "home" },
   { id: "postar", label: "Publicar", icon: "plus" },
-  { id: "assistente", label: "Assistente", icon: "comment" },
-  { id: "calendario", label: "Planejamento", icon: "calendar" },
-  { id: "publicacoes", label: "Publicações", icon: "send" },
-  { id: "conteudos", label: "Biblioteca de mídia", icon: "grid" },
-  { id: "musicas", label: "Músicas e áudios", icon: "music" },
-  { id: "vendas", label: "Vendas", icon: "bag" },
-  // pastas do PC que viram os pacotes e os posts do canal VIP
-  { id: "telegram", label: "Telegram", icon: "telegram" },
-  { id: "contas", label: "Contas conectadas", icon: "users" },
-  { id: "personagens", label: "Personagens", icon: "user" },
-  { id: "configuracoes", label: "Configurações", icon: "gear" },
-];
-const NAV_SOON: { id: string; label: string; icon: string }[] = [
-  { id: "monetizacao", label: "Monetização", icon: "dollar" },
-  { id: "assinaturas", label: "Assinaturas", icon: "subscription" },
-  { id: "audiencia", label: "Audiência", icon: "chart" },
-  { id: "financeiro", label: "Financeiro", icon: "wallet" },
-];
-const HIDDEN: { id: string; label: string; icon: string }[] = [
-  { id: "instagram", label: "Instagram", icon: "instagram" },
-  { id: "tiktok", label: "TikTok", icon: "tiktok" },
+  { id: "conteudos", label: "Creator", icon: "star", group: "creator" },
+  { id: "vendas", label: "Monetização", icon: "dollar", group: "money" },
+  { id: "configuracoes", label: "Configurações", icon: "gear", group: "config" },
 ];
 
 // Modulos que dependem de integracoes oficiais ou de dados que ainda nao existem.
-const SOON: Record<string, string> = {
-  monetizacao: "Resumo de assinaturas e vendas avulsas, quando o bot do Telegram estiver vendendo.",
-  assinaturas: "Planos e assinantes do canal pago no Telegram.",
-  audiencia: "Seguidores e alcance, vindos das integrações oficiais.",
-  financeiro: "Receitas e custos do mês, a partir das vendas registradas.",
+const SOON: Record<string, { title: string; icon: string; text: string }> = {
+  audiencia: { title: "Audiência", icon: "chart", text: "Seguidores e alcance, vindos das integrações oficiais." },
 };
 
 interface Props {
@@ -74,6 +98,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [composer, setComposer] = useState<{ post?: Post; date?: Date; media?: string[] } | null>(null);
   const [postar, setPostar] = useState<PostarStart>({ key: 0 });
+  const [askAssistant, setAskAssistant] = useState<{ text: string; key: number } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -89,6 +114,11 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
   }, []);
 
   const go = (id: string) => {
+    // o Assistente nao e mais uma tela: abre o dock
+    if (id === "assistente") {
+      setAskAssistant({ text: "", key: Date.now() });
+      return;
+    }
     setPage(id);
     setMenuOpen(false);
     window.scrollTo(0, 0);
@@ -110,7 +140,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
     },
   };
 
-  const current = [...NAV, ...NAV_SOON, ...HIDDEN].find((n) => n.id === page);
+  const group = groupOf(page);
   const waitingCount = studio.source === "banco" ? studio.posts.filter(needsYou).length : 0;
 
   return (
@@ -126,26 +156,14 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
         </div>
         <nav className="st-nav">
           {NAV.map((n) => (
-            <button
-              key={n.id}
-              type="button"
-              className={page === n.id || (n.id === "contas" && HIDDEN.some((h) => h.id === page)) ? "active" : ""}
-              onClick={() => go(n.id)}
-            >
+            <button key={n.id} type="button" className={(n.group ? group === n.group : page === n.id) ? "active" : ""} onClick={() => go(n.id)}>
               <Icon name={n.icon} />
               {n.label}
-              {n.id === "publicacoes" && waitingCount > 0 && (
+              {n.group === "creator" && waitingCount > 0 && (
                 <span className="st-nav-count" title="Esperando você publicar">
                   {waitingCount}
                 </span>
               )}
-            </button>
-          ))}
-          <span className="st-nav-group">Em breve</span>
-          {NAV_SOON.map((n) => (
-            <button key={n.id} type="button" className={page === n.id ? "active" : ""} onClick={() => go(n.id)}>
-              <Icon name={n.icon} />
-              {n.label}
             </button>
           ))}
         </nav>
@@ -228,6 +246,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
 
         <main className="st-page">
           {page !== "perfil" && <WaitingForYou onOpen={(post) => setComposer({ post })} />}
+          {group && <GroupHead group={group} page={ALIAS[page] ?? page} go={go} waiting={waitingCount} />}
           {page === "visao" && <OverviewPage nav={nav} />}
           {page === "postar" && <PostarPage key={postar.key} start={postar} onDone={() => go("publicacoes")} />}
           {page === "conteudos" && <ContentsPage nav={nav} query={query} />}
@@ -238,14 +257,23 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           {page === "instagram" && <InstagramPage />}
           {page === "tiktok" && <TikTokPage />}
           {page === "musicas" && <MusicPage />}
-          {page === "assistente" && <AssistantPage />}
           {page === "vendas" && <SalesPage onFolders={() => go("telegram")} />}
           {page === "telegram" && <TelegramFoldersPage onSales={() => go("vendas")} />}
+          {page === "assinaturas" && <SubscriptionsPage />}
+          {page === "financeiro" && <FinancePage />}
           {page === "contas" && <AccountsPage nav={nav} />}
           {page === "perfil" && <ProfilePage onLogout={onLogout} />}
-          {SOON[page] && current && <ComingSoon title={current.label} icon={current.icon} text={SOON[page]} />}
+          {SOON[page] && <ComingSoon title={SOON[page].title} icon={SOON[page].icon} text={SOON[page].text} />}
         </main>
       </div>
+
+      <Dock
+        context={group ?? page}
+        onOpenPost={(post) => setComposer({ post })}
+        onNewPost={(date) => nav.openComposer({ date })}
+        go={go}
+        request={askAssistant}
+      />
 
       <input
         ref={fileInput}
@@ -273,6 +301,76 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           <Composer initial={composer.post} defaultDate={composer.date} defaultMedia={composer.media} onDone={() => setComposer(null)} />
         </Modal>
       )}
+    </div>
+  );
+}
+
+// Cabecalho dos menus agrupados: titulo, um resumo do que pede atencao e as abas.
+function GroupHead({ group, page, go, waiting }: { group: string; page: string; go: (id: string) => void; waiting: number }) {
+  const g = GROUPS[group];
+  const studio = useStudio();
+  const today = new Date().toDateString();
+  const chips: { text: string; to: string; hot?: boolean }[] = [];
+  if (group === "creator") {
+    if (waiting) chips.push({ text: `${waiting} esperando você publicar`, to: "publicacoes", hot: true });
+    const todayCount = studio.posts.filter((p) => p.status === "agendado" && p.scheduledAt && new Date(p.scheduledAt).toDateString() === today).length;
+    if (todayCount) chips.push({ text: `${todayCount} agendada(s) para hoje`, to: "publicacoes" });
+    const drafts = studio.items.filter((i) => i.display === "rascunho").length;
+    if (drafts) chips.push({ text: `${drafts} rascunho(s) na biblioteca`, to: "conteudos" });
+  }
+  const counts: Record<string, number | undefined> = {
+    conteudos: group === "creator" ? studio.items.filter((i) => i.display !== "arquivado").length : undefined,
+    publicacoes: waiting || undefined,
+  };
+  return (
+    <div className="st-group-head">
+      <div className="st-group-title">
+        <span className="st-group-icon">
+          <Icon name={g.icon} size={20} />
+        </span>
+        <div>
+          <h1>{g.label}</h1>
+          <p>{g.text}</p>
+        </div>
+        {group === "money" ? <MoneyChips go={go} /> : (
+          chips.length > 0 && (
+            <div className="st-group-chips">
+              {chips.map((c) => (
+                <button key={c.text} type="button" className={c.hot ? "hot" : ""} onClick={() => go(c.to)}>
+                  {c.text}
+                </button>
+              ))}
+            </div>
+          )
+        )}
+      </div>
+      <div className="st-group-tabs" role="tablist">
+        {g.tabs.map((t) => (
+          <button key={t.id} type="button" role="tab" aria-selected={page === t.id} className={page === t.id ? "active" : ""} onClick={() => go(t.id)}>
+            {t.label}
+            {counts[t.id] !== undefined && <span className={t.id === "publicacoes" ? "st-tab-count hot" : "st-tab-count"}>{counts[t.id]}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MoneyChips({ go }: { go: (id: string) => void }) {
+  const { status } = useSalesStatus();
+  if (!status) return null;
+  const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const chips: { text: string; to: string; hot?: boolean }[] = [{ text: `${brl(status.sales.total30)} em 30 dias`, to: "financeiro" }];
+  chips.push({ text: `${status.vipMembers.length} no VIP`, to: "assinaturas" });
+  if (status.sales.pending) chips.push({ text: `${status.sales.pending} Pix esperando`, to: "vendas", hot: true });
+  if (!status.pix.configured) chips.push({ text: "Pix desligado", to: "vendas", hot: true });
+  return (
+    <div className="st-group-chips">
+      {chips.map((c) => (
+        <button key={c.text} type="button" className={c.hot ? "hot" : ""} onClick={() => go(c.to)}>
+          {c.text}
+        </button>
+      ))}
     </div>
   );
 }

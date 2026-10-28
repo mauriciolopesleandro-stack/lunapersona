@@ -4,6 +4,7 @@ import { Calendar } from "./Calendar";
 import { Composer } from "./Composer";
 import { POST_STATUS, PostStatusBadge } from "./PostFlow";
 import { Icon } from "./Icon";
+import { TelegramCards } from "./money";
 import { cloudAudit } from "./cloud";
 import { FolderGate, Modal, NETWORKS, WhenReady, StatusBadge, Thumb, formatBytes, formatDate } from "./shared";
 import { metaProblem, useStudio, type Audience, type Campaign, type Character, type Item, type ItemStatus, type MetaPatch, type Network, type Post, type PostStatus } from "./store";
@@ -173,6 +174,8 @@ export function OverviewPage({ nav }: { nav: Nav }) {
         <Stat icon="send" tone="pink" label="Publicados" value={publishedThisMonth} sub="neste mês (confirmados)" />
       </div>
 
+      {source === "banco" && <TelegramCards onOpen={nav.go} />}
+
       {alerts.length > 0 && (
         <section className="st-panel st-alerts">
           <h2>Alertas</h2>
@@ -269,11 +272,6 @@ export function OverviewPage({ nav }: { nav: Nav }) {
               <em className={tiktok?.connected ? "on" : ""}>
                 {tiktok?.connected ? `${tiktok.name ?? "conectado"} · rascunho automático` : "não conectado · publicação manual"}
               </em>
-            </button>
-            <button type="button" className="st-integration" onClick={() => nav.go("telegram")}>
-              <Icon name="telegram" size={18} />
-              <span>Bot do Telegram</span>
-              <em>não configurado (Fase 3)</em>
             </button>
           </div>
         </section>

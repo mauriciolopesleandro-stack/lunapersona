@@ -1011,3 +1011,13 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
 - **Teste:** `test_cta_ia.mjs` confere o menu com prévia, história com o nome e botões.
 
 **/zerar** (só o administrador, no bot de vendas): apaga a confirmação de 18+ e o controle das mensagens dele, para testar o bot como um fã novo. As compras continuam registradas.
+
+## 40. Menu enxuto, Creator, Monetização e dock flutuante (28/10/2026)
+
+- Menu: Visão Geral, Publicar, **Creator**, **Monetização**, Configurações.
+- **Creator** (abas): Biblioteca, Publicações, Músicas e áudios, Audiência (em breve). O cabeçalho mostra o que pede atenção (esperando publicar, agendadas hoje, rascunhos).
+- **Monetização** (abas): Vendas, Conteúdo do Telegram (pastas), Assinaturas (quem está no VIP e quando vence) e Financeiro (30/7 dias, ticket médio, por dia e por pacote).
+- **Configurações** (abas): Geral e Contas conectadas (Instagram e TikTok abrem por aqui).
+- **Visão Geral**: cards do Telegram (bot de vendas, vendas em 30 dias, VIP, prévias), com destaque no que precisa de ação.
+- **Dock flutuante** em todas as telas: o Assistente minimizado (abre uma barra lateral com Conversa, Agenda dos próximos 14 dias e Planejamento; Ctrl J abre/fecha, Esc minimiza) e as personagens em bolinhas (clique: descrição, "Pedir ao assistente", Biblioteca, Editar).
+- Servidor: o status de vendas passou a trazer `vipMembers` (quem está no canal e até quando).
