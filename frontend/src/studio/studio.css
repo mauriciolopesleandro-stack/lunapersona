@@ -3461,6 +3461,29 @@
   border-radius: 10px;
 }
 
+.st-quick-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.st-quick-slots button {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.st-quick-slots button.on {
+  border-color: transparent;
+  background: var(--st-violet);
+  color: #fff;
+}
+
 /* Vendas (+18) */
 .st-sales-stats {
   display: flex;

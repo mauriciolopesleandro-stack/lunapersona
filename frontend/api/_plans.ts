@@ -18,8 +18,9 @@ import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpda
 //   remove-item { id }
 //   approve { plan_id }         -> itens vao para a fila (na_fila)
 //   cancel { plan_id }          -> itens que ainda nao foram gerados sao cancelados
-//   quick { slot, prompt, caption?, hashtags?, scheduled_at } -> foto avulsa da
-//                               Conversa: plano de 1 item ja na fila do robo
+//   quick { slots (ou slot), prompt, caption?, hashtags?, scheduled_at } -> foto avulsa
+//                               da Conversa: ja na fila do robo; com varios destinos
+//                               a foto sai uma vez so e os outros a reaproveitam
 
 const TZ_OFFSET = "-03:00"; // horario de Brasilia (sem horario de verao desde 2019)
 const MAX_DAYS = 92; // trimestre
@@ -264,35 +265,47 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     // aprovado, direto na fila do robo do PC (gera, cria a publicacao e manda
     // para a analise no Telegram, igual aos itens de um plano).
     if (body.action === "quick") {
-      const key = String(body.slot ?? "") as SlotKey;
-      const slot = SLOTS[key];
-      if (!slot || slot.kind !== "image") throw new Problem(400, "Escolha o destino da foto.");
+      // um ou mais destinos; a foto e gerada uma vez so e os outros destinos
+      // reaproveitam (mesma foto e legenda, uma publicacao para cada)
+      const raw: unknown[] = Array.isArray(body.slots) ? body.slots : [body.slot];
+      const keys = [...new Set(raw.map((k) => String(k ?? "")))] as SlotKey[];
+      if (!keys.length || keys.length > 4 || keys.some((k) => !SLOTS[k] || SLOTS[k].kind !== "image")) throw new Problem(400, "Escolha o destino da foto.");
+      if (keys.includes("telegram18") && keys.length > 1) throw new Problem(400, "Foto +18 vai só para o canal do Telegram: não dá para juntar com Instagram ou TikTok.");
       const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 2000) : "";
       if (!prompt) throw new Problem(400, "Escreva o pedido da foto.");
       const when = typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
       if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
       const stamp = new Date().toISOString();
       const plan = await dbInsert<PlanRow>("content_plans", {
-        title: `Foto avulsa do chat (${slot.label})`,
-        request: { source: "chat", slot: key },
+        title: `Foto avulsa do chat (${keys.map((k) => SLOTS[k].label).join(" + ")})`,
+        request: { source: "chat", slot: keys[0], slots: keys },
         status: "aprovado",
         approved_at: stamp,
       });
-      const item = await dbInsert<ItemRow>("content_plan_items", {
-        plan_id: plan.id,
-        position: 0,
-        scheduled_at: new Date(when).toISOString(),
-        network: slot.network,
-        format: slot.format,
-        kind: "image",
-        adult: slot.adult,
-        prompt,
-        caption: typeof body.caption === "string" ? body.caption.slice(0, 4000) : "",
-        hashtags: cleanTags(body.hashtags),
-        status: "na_fila",
-      });
-      await audit("foto_avulsa", "content_plan_items", item.id, { destino: key });
-      return reply(200, { item, estimate: credits([item]) });
+      const caption = typeof body.caption === "string" ? body.caption.slice(0, 4000) : "";
+      const hashtags = cleanTags(body.hashtags);
+      const items: ItemRow[] = [];
+      for (const [position, key] of keys.entries()) {
+        const slot = SLOTS[key];
+        items.push(
+          await dbInsert<ItemRow>("content_plan_items", {
+            plan_id: plan.id,
+            position,
+            scheduled_at: new Date(when).toISOString(),
+            network: slot.network,
+            format: slot.format,
+            kind: "image",
+            adult: slot.adult,
+            prompt,
+            caption,
+            hashtags,
+            status: "na_fila",
+            ...(items[0] ? { source_item_id: items[0].id } : {}),
+          })
+        );
+      }
+      await audit("foto_avulsa", "content_plan_items", items[0].id, { destino: keys.join(",") });
+      return reply(200, { item: items[0], items, estimate: credits(items) });
     }
 
     // acoes de item chegam com o id do item; as de plano, com plan_id
