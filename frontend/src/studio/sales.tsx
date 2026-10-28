@@ -22,6 +22,14 @@ export interface Product {
   active: boolean;
   media: { media_id: string; kind: "photo" | "video"; path: string | null }[];
 }
+export interface Cta {
+  enabled: boolean;
+  hour: number;
+  welcome: string;
+  pixReminder: string;
+  daily: string[];
+}
+
 export interface Status {
   storeReady: boolean;
   tokenSet: boolean;
@@ -34,6 +42,8 @@ export interface Status {
   pix: { configured: boolean; env: "producao" | "sandbox" };
   sales: { count30: number; total30: number; pending: number };
   vipPosts: { media_id: string; path: string | null }[]; // arquivos da pasta do VIP ja postados no canal
+  previews: { media_id: string; kind: "photo" | "video"; path: string | null }[]; // previas das mensagens (CTA)
+  cta: Cta;
   orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; product: string; fan: string; note: string | null }[];
 }
 
@@ -280,6 +290,8 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
             )}
           </section>
 
+          <CtaEditor cta={status.cta} previews={status.previews.length} busy={busy} run={run} onFolders={onFolders} />
+
           <div className="st-sales-products">
             {status.products.map((p) => (
               <ProductCard key={p.id} product={p} channel={status.channel} busy={busy} run={run} onPick={() => setPicking(p)} />
@@ -334,6 +346,111 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
         />
       )}
     </div>
+  );
+}
+
+// Mensagens que chamam o fa para comprar: boas-vindas, Pix esquecido e a diaria.
+function CtaEditor({
+  cta,
+  previews,
+  busy,
+  run,
+  onFolders,
+}: {
+  cta: Cta;
+  previews: number;
+  busy: string | null;
+  run: (key: string, body: object, done?: string) => Promise<boolean>;
+  onFolders: () => void;
+}) {
+  const [draft, setDraft] = useState<Cta>(cta);
+  useEffect(() => setDraft(cta), [cta]);
+  const changed = JSON.stringify(draft) !== JSON.stringify(cta);
+  const set = (patch: Partial<Cta>) => setDraft((d) => ({ ...d, ...patch }));
+  return (
+    <section className="st-panel st-settings st-cta">
+      <h2>Mensagens para os fãs (CTA)</h2>
+      <p className="st-hint">
+        <b>{"{nome}"}</b> vira o primeiro nome do fã. Cada mensagem vai com uma prévia ({previews} na aba{" "}
+        <button type="button" className="st-link" onClick={onFolders}>
+          Telegram → Prévias
+        </button>
+        ) e os botões dos pacotes. Nas mensagens grátis, provoque sem descrever sexo: quem recebe ainda não pagou.
+      </p>
+      <label className="st-field">
+        <span>Boas-vindas (logo depois do “tenho 18”)</span>
+        <textarea className="st-input" rows={3} maxLength={900} value={draft.welcome} onChange={(e) => set({ welcome: e.target.value })} />
+      </label>
+      <label className="st-field">
+        <span>Pix esquecido (20 min depois, se não pagou). {"{pacote}"} vira o nome do pacote.</span>
+        <textarea className="st-input" rows={3} maxLength={900} value={draft.pixReminder} onChange={(e) => set({ pixReminder: e.target.value })} />
+      </label>
+      <div className="st-row st-row-tight">
+        <label className="st-check">
+          <input type="checkbox" checked={draft.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+          Mensagem diária ligada
+        </label>
+        <label className="st-field st-cta-hour">
+          <span>a partir das</span>
+          <select className="st-input" value={draft.hour} onChange={(e) => set({ hour: Number(e.target.value) })}>
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>
+                {String(h).padStart(2, "0")}:00
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="st-hint">
+        Uma por dia para quem ainda não é VIP (para com /parar). A frase muda todo dia, na ordem abaixo; a prévia pode repetir.
+      </p>
+      <ol className="st-cta-list">
+        {draft.daily.map((text, i) => (
+          <li key={i}>
+            <textarea
+              className="st-input"
+              rows={2}
+              maxLength={900}
+              value={text}
+              aria-label={`Frase ${i + 1}`}
+              onChange={(e) => set({ daily: draft.daily.map((t, j) => (j === i ? e.target.value : t)) })}
+            />
+            <button
+              type="button"
+              className="st-icon-btn"
+              aria-label={`Tirar a frase ${i + 1}`}
+              disabled={draft.daily.length <= 1}
+              onClick={() => set({ daily: draft.daily.filter((_, j) => j !== i) })}
+            >
+              <Icon name="close" size={14} />
+            </button>
+          </li>
+        ))}
+      </ol>
+      <div className="st-row st-row-tight">
+        <button type="button" className="st-btn st-btn-small" onClick={() => set({ daily: [...draft.daily, "Oi {nome}… "] })}>
+          <Icon name="plus" size={14} />
+          Adicionar frase
+        </button>
+        <button
+          type="button"
+          className="st-btn st-btn-small st-btn-primary"
+          disabled={!changed || busy !== null}
+          onClick={() => run("cta-save", { action: "cta-save", ...draft, daily: draft.daily.filter((t) => t.trim()) }, "Mensagens salvas.")}
+        >
+          Salvar mensagens
+        </button>
+        <button
+          type="button"
+          className="st-btn st-btn-small"
+          disabled={busy !== null || changed}
+          title={changed ? "Salve antes de testar" : undefined}
+          onClick={() => run("cta-test", { action: "cta-test" }, "Mandei a mensagem de hoje no seu Telegram, como o fã recebe.")}
+        >
+          Mandar um teste para mim
+        </button>
+      </div>
+    </section>
   );
 }
 

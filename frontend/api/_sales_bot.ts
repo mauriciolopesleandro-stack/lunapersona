@@ -4,6 +4,7 @@ import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbInsertIgnoringDuplicates, dbSelect, dbUpdateWhere } from "./_supabase.js";
 import { sendNotice, telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 import { activePacks, baseUrl, cancelSubscription, checkPaid, openPack, startPayment } from "./_sales_pay.js";
+import { sendWelcome } from "./_sales_cta.js";
 
 // Bot de vendas (+18): o bot que os fas abrem. E outro bot, separado do bot de
 // aprovacoes do administrador (que continua so dele). O token fica no Upstash
@@ -240,7 +241,8 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
       if (kind === "age") {
         if (arg === "yes") {
           await dbUpdateWhere("fans", `id=eq.${fan.id}`, { adult_confirmed_at: new Date().toISOString() });
-          await sendMenu(token, chatId, fan);
+          // boas-vindas com o nome, a previa e os pacotes (sem pacote pronto: o menu avisa)
+          if (!(await sendWelcome(token, fan, chatId))) await sendMenu(token, chatId, fan);
         } else {
           await telegram(token, "sendMessage", { chat_id: chatId, text: "Tudo bem! Este bot é só para maiores de 18 anos. Até mais 👋" });
         }

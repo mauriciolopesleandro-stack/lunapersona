@@ -10,12 +10,13 @@ import { useStudio, type Item } from "./store";
 //   ensaio/     -> conteudo do pacote Ensaio
 //   album-vip/  -> conteudo do pacote Album VIP sem censura
 //   vip/        -> postado no canal VIP; tirou da pasta, o post sai do canal
+//   previa/     -> previas das mensagens que chamam o fa para comprar (CTA)
 // "Adicionar" copia o arquivo (do computador ou da biblioteca) para a pasta e
 // ja atualiza o Telegram; o "x" tira do pacote/canal e move o arquivo para
 // vendas/_removidos (nada e apagado). "Atualizar" aplica o que mudou a mao.
 
 interface Folder {
-  key: "ensaio" | "album" | "vip";
+  key: "ensaio" | "album" | "vip" | "previa";
   label: string;
   dir: string; // relativo a conteudos/
   slug?: string; // pacote ligado a pasta (o VIP e o canal)
@@ -25,7 +26,14 @@ const FOLDERS: Folder[] = [
   { key: "ensaio", label: "Ensaio", dir: "vendas/ensaio/", slug: "ensaio" },
   { key: "album", label: "Álbum VIP sem censura", dir: "vendas/album-vip/", slug: "album-vip" },
   { key: "vip", label: "VIP (canal)", dir: "vendas/vip/" },
+  { key: "previa", label: "Prévias (CTA)", dir: "vendas/previa/" },
 ];
+
+// o que cada pasta faz no Telegram
+const ACTIONS = {
+  vip: { url: "vip-url", add: "vip-post", remove: "vip-unpost", adding: "postando" },
+  previa: { url: "preview-url", add: "preview-add", remove: "preview-remove", adding: "guardando" },
+} as const;
 const REMOVED_DIR = "vendas/_removidos";
 const ACCEPT = "image/jpeg,image/png,image/webp,video/mp4";
 
@@ -42,14 +50,15 @@ function plansFor(status: Status, items: Item[]): Plan[] {
     const inFolder = items.filter((i) => i.id && i.path.startsWith(folder.dir));
     const ids = new Set(inFolder.map((i) => i.id));
     const label = (id: string, path: string | null) => (path ? path.split("/").pop()! : `arquivo ${id.slice(0, 8)}`);
-    if (folder.key === "vip") {
-      const posted = new Set(status.vipPosts.map((p) => p.media_id));
+    if (folder.key === "vip" || folder.key === "previa") {
+      const done = folder.key === "vip" ? status.vipPosts : status.previews;
+      const posted = new Set(done.map((p) => p.media_id));
       return {
         folder,
         product: null,
         inFolder,
         add: inFolder.filter((i) => !posted.has(i.id!)),
-        remove: status.vipPosts.filter((p) => !ids.has(p.media_id)).map((p) => ({ media_id: p.media_id, label: label(p.media_id, p.path) })),
+        remove: done.filter((p) => !ids.has(p.media_id)).map((p) => ({ media_id: p.media_id, label: label(p.media_id, p.path) })),
       };
     }
     const product = status.products.find((p) => p.slug === folder.slug) ?? null;
@@ -89,6 +98,12 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
   const pending = plans.reduce((n, p) => n + p.add.length + p.remove.length, 0);
   const blocked = (f: Folder) =>
     f.key === "vip" ? (!status?.channel ? "Conecte o canal +18 em Meu perfil → Canal +18." : null) : !status?.adminStarted ? "Abra o bot de vendas e toque em Começar." : null;
+  const doneHint = (f: Folder, p: Plan) =>
+    f.key === "vip"
+      ? `${status!.vipPosts.length} post(s) no canal${status!.channel ? ` “${status!.channel}”` : ""}.`
+      : f.key === "previa"
+        ? `${status!.previews.length} prévia(s) nas mensagens. Use fotos com as partes íntimas cobertas.`
+        : `${p.product?.media.length ?? 0} foto(s)/vídeo(s) no pacote.`;
   const busy = step !== null;
 
   async function run(work: () => Promise<string | void>) {
@@ -115,23 +130,23 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
       for (const r of plan.remove) {
         setStep(`${plan.folder.label}: tirando ${r.label}...`);
         const res =
-          plan.folder.key === "vip"
-            ? await call({ action: "vip-unpost", media_id: r.media_id })
+          plan.folder.key === "vip" || plan.folder.key === "previa"
+            ? await call({ action: ACTIONS[plan.folder.key].remove, media_id: r.media_id })
             : await call({ action: "media-remove", product_id: plan.product!.id, media_id: r.media_id });
         if (res.warning) warnings.push(res.warning);
         done++;
       }
       for (const [i, item] of plan.add.entries()) {
-        setStep(`${plan.folder.label}: ${plan.folder.key === "vip" ? "postando" : "guardando"} ${i + 1} de ${plan.add.length}...`);
+        const special = plan.folder.key === "vip" || plan.folder.key === "previa" ? ACTIONS[plan.folder.key] : null;
+        setStep(`${plan.folder.label}: ${special ? special.adding : "guardando"} ${i + 1} de ${plan.add.length}...`);
         const { blob, mime } = await prepare(item);
-        const up =
-          plan.folder.key === "vip"
-            ? await call({ action: "vip-url", mime_type: mime, size_bytes: blob.size })
-            : await call({ action: "media-url", product_id: plan.product!.id, mime_type: mime, size_bytes: blob.size });
+        const up = special
+          ? await call({ action: special.url, mime_type: mime, size_bytes: blob.size })
+          : await call({ action: "media-url", product_id: plan.product!.id, mime_type: mime, size_bytes: blob.size });
         await putSignedUpload(up.url!, blob);
         await call(
-          plan.folder.key === "vip"
-            ? { action: "vip-post", media_id: item.id, path: up.path }
+          special
+            ? { action: special.add, media_id: item.id, path: up.path }
             : { action: "media-add", product_id: plan.product!.id, media_id: item.id, path: up.path }
         );
         done++;
@@ -164,6 +179,8 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
       let warning: string | null | undefined = null;
       if (folder.key === "vip") {
         if (status?.vipPosts.some((p) => p.media_id === item.id)) warning = (await call({ action: "vip-unpost", media_id: item.id })).warning;
+      } else if (folder.key === "previa") {
+        if (status?.previews.some((p) => p.media_id === item.id)) await call({ action: "preview-remove", media_id: item.id });
       } else if (plan.product?.media.some((m) => m.media_id === item.id)) {
         await call({ action: "media-remove", product_id: plan.product.id, media_id: item.id });
       }
@@ -240,11 +257,7 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
                     <span className="st-hint">{plan.inFolder.length} na pasta</span>
                   </div>
                   <code className="st-folder-path">conteudos\{plan.folder.dir.replace(/\//g, "\\")}</code>
-                  <p className="st-hint">
-                    {plan.folder.key === "vip"
-                      ? `${status.vipPosts.length} post(s) no canal${status.channel ? ` “${status.channel}”` : ""}.`
-                      : `${plan.product?.media.length ?? 0} foto(s)/vídeo(s) no pacote.`}
-                  </p>
+                  <p className="st-hint">{doneHint(plan.folder, plan)}</p>
                   {why && <p className="st-warn">{why}</p>}
                   {plan.inFolder.length === 0 ? (
                     <p className="st-hint">Pasta vazia.</p>
@@ -269,7 +282,8 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
                   )}
                   {plan.remove.length > 0 && (
                     <p className="st-warn">
-                      {plan.folder.key === "vip" ? "Vai apagar do canal" : "Vai sair do pacote"}: {plan.remove.map((r) => r.label).join(", ")}
+                      {plan.folder.key === "vip" ? "Vai apagar do canal" : plan.folder.key === "previa" ? "Vai sair das prévias" : "Vai sair do pacote"}:{" "}
+                      {plan.remove.map((r) => r.label).join(", ")}
                     </p>
                   )}
                   <div className="st-row st-row-tight">

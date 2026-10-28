@@ -14,6 +14,7 @@ import {
   type ProductRow,
 } from "./_sales_bot.js";
 import { forgetPix, pixConfig, savePixConfig } from "./_sales_pay.js";
+import { ctaConfig, fill, previews, saveCtaConfig, savePreviews, sendCta } from "./_sales_cta.js";
 import { storeConfigured, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
@@ -37,6 +38,9 @@ import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 //   POST { action: "vip-url", mime_type, size_bytes }  link para a copia de um arquivo da pasta do VIP
 //   POST { action: "vip-post", media_id, path }        o bot do canal posta o arquivo no canal VIP
 //   POST { action: "vip-unpost", media_id }            apaga do canal o post daquele arquivo
+//   POST { action: "preview-url" | "preview-add" | "preview-remove" }  previas das mensagens (CTA)
+//   POST { action: "cta-save", enabled, hour, welcome, pixReminder, daily }  textos das mensagens
+//   POST { action: "cta-test" }                        manda uma mensagem diaria de teste para voce
 //
 // Pastas do Telegram (pagina Telegram): conteudos/vendas/ensaio e album-vip viram
 // o conteudo dos pacotes (media-add/media-remove); conteudos/vendas/vip e postado
@@ -103,6 +107,28 @@ async function adminChat(): Promise<number> {
   return me.telegram_id;
 }
 
+// O bot de vendas manda a copia para o administrador (sem som), guarda o file_id
+// do Telegram, apaga a mensagem e a copia: o arquivo fica no Telegram, nao aqui.
+async function storeOnTelegram(token: string, path: string, caption: string): Promise<{ fileId: string; kind: "photo" | "video" }> {
+  const chat = await adminChat();
+  const video = path.endsWith(".mp4");
+  try {
+    const url = await storageReadUrl(UPLOAD_BUCKET, path, 600);
+    const sent = await telegram<{ message_id: number; photo?: { file_id: string }[]; video?: { file_id: string } }>(token, video ? "sendVideo" : "sendPhoto", {
+      chat_id: chat,
+      [video ? "video" : "photo"]: url,
+      caption,
+      disable_notification: true,
+    });
+    const fileId = video ? sent.video?.file_id : sent.photo?.at(-1)?.file_id;
+    if (!fileId) throw new Problem(502, "O Telegram não devolveu o arquivo.");
+    await telegram(token, "deleteMessage", { chat_id: chat, message_id: sent.message_id }).catch(() => undefined);
+    return { fileId, kind: video ? "video" : "photo" };
+  } finally {
+    await storageRemove(UPLOAD_BUCKET, [path]).catch(() => undefined);
+  }
+}
+
 async function status() {
   const token = await salesToken();
   let bot: string | null = null;
@@ -124,7 +150,8 @@ async function status() {
     ),
   ]);
   const vipIds = Object.keys(await vipPosts());
-  const ids = [...new Set([...media.map((m) => m.media_id), ...vipIds])];
+  const previewList = await previews();
+  const ids = [...new Set([...media.map((m) => m.media_id), ...vipIds, ...previewList.map((p) => p.media_id)])];
   const paths = ids.length ? await dbSelect<{ id: string; local_path: string }>("media_assets", `select=id,local_path&id=in.(${ids.join(",")})`) : [];
   const pathOf = new Map(paths.map((m) => [m.id, m.local_path]));
   const channel = await telegramChannel().catch(() => null);
@@ -152,6 +179,8 @@ async function status() {
       today: fans.filter((f) => Date.now() - Date.parse(f.started_at) < 86400_000).length,
     },
     pix: { configured: Boolean(pix.token), env: pix.env },
+    cta: await ctaConfig(),
+    previews: previewList.map((p) => ({ media_id: p.media_id, kind: p.kind, path: pathOf.get(p.media_id) ?? null })),
     // arquivo da pasta do VIP ja postado no canal (o caminho fica no banco mesmo se o arquivo sair da pasta)
     vipPosts: vipIds.map((id) => ({ media_id: id, path: pathOf.get(id) ?? null })),
     sales: {
@@ -245,30 +274,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (current.length >= MEDIA_MAX) throw new Problem(400, `Cada pacote pode ter até ${MEDIA_MAX} fotos e vídeos.`);
       const [media] = await dbSelect<{ id: string }>("media_assets", `select=id&id=eq.${mediaId}`);
       if (!media) throw new Problem(404, "Mídia não encontrada na biblioteca.");
-      const chat = await adminChat();
-      const video = path.endsWith(".mp4");
-      try {
-        const url = await storageReadUrl(UPLOAD_BUCKET, path, 600);
-        const sent = await telegram<{ message_id: number; photo?: { file_id: string }[]; video?: { file_id: string } }>(needToken(), video ? "sendVideo" : "sendPhoto", {
-          chat_id: chat,
-          [video ? "video" : "photo"]: url,
-          caption: `Guardado no pacote “${p.title}”.`,
-          disable_notification: true,
-        });
-        const fileId = video ? sent.video?.file_id : sent.photo?.at(-1)?.file_id;
-        if (!fileId) throw new Problem(502, "O Telegram não devolveu o arquivo.");
-        await telegram(needToken(), "deleteMessage", { chat_id: chat, message_id: sent.message_id }).catch(() => undefined);
-        await dbDelete("sales_product_media", `product_id=eq.${p.id}&media_id=eq.${mediaId}`);
-        await dbInsert("sales_product_media", {
-          product_id: p.id,
-          media_id: mediaId,
-          position: current.filter((m) => m.media_id !== mediaId).length,
-          kind: video ? "video" : "photo",
-          telegram_file_id: fileId,
-        });
-      } finally {
-        await storageRemove(UPLOAD_BUCKET, [path]).catch(() => undefined);
-      }
+      const { fileId, kind } = await storeOnTelegram(needToken(), path, `Guardado no pacote “${p.title}”.`);
+      await dbDelete("sales_product_media", `product_id=eq.${p.id}&media_id=eq.${mediaId}`);
+      await dbInsert("sales_product_media", {
+        product_id: p.id,
+        media_id: mediaId,
+        position: current.filter((m) => m.media_id !== mediaId).length,
+        kind,
+        telegram_file_id: fileId,
+      });
       await audit("pacote_midia", "sales_products", p.id, { media_id: mediaId });
     } else if (body.action === "media-remove") {
       const p = await getProduct(body.product_id);
@@ -326,6 +340,42 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       await saveVipPosts(posts);
       await audit("vip_apagar", "media_assets", mediaId, { mensagens: ids });
       return reply(200, { ...(await status()), warning });
+    } else if (body.action === "preview-url") {
+      const ext = MIMES[String(body.mime_type)];
+      if (!ext) throw new Problem(400, "Mande foto JPEG ou vídeo MP4.");
+      const size = Number(body.size_bytes);
+      const max = ext === "jpg" ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
+      if (!Number.isFinite(size) || size <= 0 || size > max) throw new Problem(400, ext === "jpg" ? "Cada foto pode ter no máximo 5 MB." : "Cada vídeo pode ter no máximo 20 MB.");
+      const path = `vendas/previa/${randomUUID()}.${ext}`;
+      return reply(200, { path, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
+    } else if (body.action === "preview-add") {
+      const mediaId = uuid(body.media_id, "Mídia");
+      const path = String(body.path ?? "");
+      if (!/^vendas\/previa\/[0-9a-f-]{36}\.(jpg|mp4)$/.test(path)) throw new Problem(400, "Arquivo inválido.");
+      const list = await previews();
+      if (!list.some((p) => p.media_id === mediaId)) {
+        const { fileId, kind } = await storeOnTelegram(needToken(), path, "Guardada nas prévias das mensagens.");
+        await savePreviews([...list, { media_id: mediaId, kind, file_id: fileId }]);
+      } else {
+        await storageRemove(UPLOAD_BUCKET, [path]).catch(() => undefined);
+      }
+      await audit("previa_cta", "media_assets", mediaId);
+    } else if (body.action === "preview-remove") {
+      const mediaId = uuid(body.media_id, "Mídia");
+      await savePreviews((await previews()).filter((p) => p.media_id !== mediaId));
+      await audit("previa_cta_tirar", "media_assets", mediaId);
+    } else if (body.action === "cta-save") {
+      try {
+        await saveCtaConfig(body);
+      } catch (e) {
+        throw new Problem(400, e instanceof Error ? e.message : String(e));
+      }
+      await audit("cta_textos", "sales", null);
+    } else if (body.action === "cta-test") {
+      const chat = await adminChat();
+      const config = await ctaConfig();
+      const [me] = await dbSelect<FanRow>("fans", `select=*&telegram_id=eq.${chat}`);
+      await sendCta(needToken(), chat, fill(config.daily[Math.floor(Date.now() / 86400_000) % config.daily.length], me), Math.floor(Math.random() * 1000));
     } else if (body.action === "test") {
       await sendMenu(needToken(), await adminChat());
     } else {

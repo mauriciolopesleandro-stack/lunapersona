@@ -16,6 +16,7 @@ import { TikTokError, publishStatus, recentVideos, tiktokAccessToken, tiktokConn
 import { tiktokMediaUrl } from "./_tiktok_media.js";
 import { sendMediaNotice, sendToChannel } from "./_tg_review.js";
 import { salesTick } from "./_sales_pay.js";
+import { ctaTick } from "./_sales_cta.js";
 import { dbInsert, dbRpc, dbSelect, dbUpdate, dbUpdateWhere, dbUpsert, storageReadUrl, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
 
@@ -540,6 +541,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     falhas: 0,
     token_instagram: null as string | null,
     acessos_vencidos: 0,
+    cta_mensagens: 0,
     erro: null as string | null,
   };
   try {
@@ -566,6 +568,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     // vendas: acesso vencido (VIP sai do canal, pacote para de abrir) recebe o
     // convite para comprar de novo
     result.acessos_vencidos = await salesTick();
+    // vendas: lembrete do Pix esquecido e a mensagem diaria para os fas
+    result.cta_mensagens = await ctaTick();
   } catch (e) {
     result.erro = (e instanceof Error ? e.message : String(e)).slice(0, 300);
   }
