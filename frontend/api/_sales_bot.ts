@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbInsertIgnoringDuplicates, dbSelect, dbUpdateWhere } from "./_supabase.js";
 import { sendNotice, telegram, telegramChannel, telegramConfig } from "./_telegram.js";
-import { activePacks, baseUrl, cancelSubscription, checkPaid, openPack, startPayment } from "./_sales_pay.js";
+import { activePacks, baseUrl, cancelSubscription, checkPaid, handleCustomerData, openPack, startPayment } from "./_sales_pay.js";
 import { sendWelcome } from "./_sales_cta.js";
 
 // Bot de vendas (+18): o bot que os fas abrem. E outro bot, separado do bot de
@@ -269,6 +269,8 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
       } else if (text.startsWith("/parar")) {
         await dbUpdateWhere("fans", `id=eq.${fan.id}`, { opted_out_at: new Date().toISOString() });
         await telegram(token, "sendMessage", { chat_id: msg.chat.id, text: "Pronto, não mando mais novidades. Suas compras continuam valendo. Para voltar, mande /voltar." });
+      } else if (!text.startsWith("/") && (await handleCustomerData(token, fan, msg.text ?? "", msg.chat.id, baseUrl(req)))) {
+        // eram o nome e o CPF do VIP mensal
       } else if (text.startsWith("/pacotes")) {
         await listMine(token, fan, msg.chat.id);
       } else if (text.startsWith("/cancelar")) {
