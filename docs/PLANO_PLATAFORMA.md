@@ -906,3 +906,36 @@ O token de **outro** bot continua apagando a conversa e o canal (precisa conecta
 Em **Meu perfil → Avisos no celular**, com o bot já conectado, há a opção **"Trocar o token (depois de um /revoke no @BotFather)"**.
 
 **Teste:** `test_token_revoke.mjs`. O harness ganhou `/__kvset`, só para teste.
+
+## 35. Mensagens que chamam o fã para comprar (CTA) (28/10/2026)
+
+O administrador mostrou modelos de bots e canais do mercado: chamar a pessoa pelo nome, voltar a falar com quem não comprou, foto com as partes íntimas cobertas e botões de compra. Sem áudio (decisão dele).
+
+**Mensagens** (`api/_sales_cta.ts`). Todas levam `{nome}` (o primeiro nome do fã), uma **prévia** e os botões dos pacotes:
+1. **Boas-vindas:** logo depois do "Tenho 18". Conta como a mensagem do dia.
+2. **Pix esquecido:** 20 min depois de gerar o Pix sem pagar, um lembrete só (até 1 dia), com `{pacote}`, "✅ Já paguei" e "🔁 Gerar outro Pix".
+3. **Diária:**
+   - uma por dia (intervalo mínimo de 20 h), a partir do horário escolhido (Brasília), para quem confirmou 18+;
+   - não vai para quem deu /parar, bloqueou o bot ou tem **VIP ativo**;
+   - a frase gira pela lista, uma por dia; a prévia gira e pode repetir;
+   - sai em lotes de 25 por minuto, pelo processador da fila (`ctaTick` em `_jobs.ts`);
+   - se o fã bloqueou o bot, ele fica marcado e para de receber.
+
+**Prévias:** cartão **"Prévias (CTA)"** na aba Telegram (pasta `conteudos/vendas/previa/`). O conteúdo sobe para o Telegram como nos pacotes (`file_id`) e a lista fica no Upstash (`luna:sales-previews`). Use fotos com as partes íntimas **já cobertas**; cobrir automaticamente (NudeNet no PC) fica para depois.
+
+**Textos:**
+- Editáveis em **Vendas → Mensagens para os fãs (CTA)**: boas-vindas, Pix esquecido, liga/desliga, horário e a lista de frases diárias, com "Mandar um teste para mim".
+- Ficam no Upstash (`luna:cta`). Os padrões são 10 frases provocantes, **sem descrição de sexo**: as mensagens grátis chegam para quem só disse "tenho 18" (ECA Digital, seção 29).
+
+**Banco:** migração `0009_cta.sql`, só aditiva: `fans.cta_sent_at`, `fans.cta_count`, `sales_orders.reminded_at`. **Precisa rodar antes do merge.**
+
+**Teste:** `test_cta.mjs`. Cobre:
+- as boas-vindas (nome, prévia, botões);
+- o Pix esquecido (só depois de 20 min, e uma vez);
+- a diária (quem parou e o VIP ficam de fora, uma por dia, a frase muda);
+- o horário e o desligado;
+- o teste para o administrador;
+- frase vazia recusada;
+- editar e salvar pela tela;
+- o cartão Prévias;
+- o celular.

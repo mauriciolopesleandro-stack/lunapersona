@@ -3575,3 +3575,38 @@
 .st-sales .st-row + .st-sales-products {
   margin-top: 16px;
 }
+.st-cta .st-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+.st-cta .st-field .st-input {
+  width: 100%;
+}
+.st-cta .st-cta-hour {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0;
+}
+.st-cta .st-cta-hour .st-input {
+  width: auto;
+}
+.st-cta-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding-left: 22px;
+}
+.st-cta-list li > div,
+.st-cta-list li {
+  position: relative;
+}
+.st-cta-list textarea {
+  width: calc(100% - 36px);
+}
+.st-cta-list .st-icon-btn {
+  position: absolute;
+  right: 0;
+  top: 4px;
+}

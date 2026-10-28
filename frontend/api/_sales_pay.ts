@@ -327,7 +327,7 @@ async function deliverVip(order: OrderRow, fan: FanRow, product: ProductRow, sal
 }
 
 // fim do VIP mais longo ainda valendo (de qualquer VIP: avulso ou mensal)
-async function activeVip(fanId: string): Promise<string | null> {
+export async function activeVip(fanId: string): Promise<string | null> {
   const vips = await dbSelect<{ id: string }>("sales_products", "select=id&kind=eq.vip");
   if (!vips.length) return null;
   const [row] = await dbSelect<{ access_until: string }>(
