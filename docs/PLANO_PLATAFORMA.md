@@ -975,3 +975,29 @@ A PushinPay respondeu **400 "Pix Automático liberado para contas nominais"**: a
 - a renovação paga (+30 dias a partir do vencimento) parando os avisos.
 
 `test_pix.mjs` foi ajustado para a folga de 3 dias.
+
+## 38. Chamada pela prévia com IA que enxerga a imagem (28/10/2026)
+
+O administrador quis que a IA **olhasse a prévia** e escrevesse a chamada a partir dela. Ele concordou em mandar as prévias, já com as partes íntimas cobertas, para o OpenRouter.
+
+**Fluxo** (aba Telegram → Prévias → botão **✨ Chamada** em cada prévia):
+1. O navegador reduz a prévia para JPEG de até 768 px (vídeo: um quadro do meio, até 1 s) e manda para `r=sales`, `action: "preview-suggest"`.
+2. O servidor chama o OpenRouter com um modelo **com visão**: `OPENROUTER_MODEL_VISION`, padrão `mistralai/mistral-small-3.2-24b-instruct`, que custa frações de centavo por imagem.
+   - Regras do prompt: a Luna falando, `{nome}`, ligado ao que aparece na foto, provocante, **sem descrever sexo**, terminando com o convite para os pacotes ou o VIP.
+   - Resposta em JSON, com 3 chamadas. Uma sugestão sem `{nome}` ganha `{nome}, ` no começo.
+3. O administrador escolhe ou edita e salva (`preview-text`). A chamada fica **presa àquela prévia** (`text` em `luna:sales-previews`) e o botão vira **💬 Chamada**.
+4. **Mensagem diária:** quando a prévia da vez tem chamada própria, vai a chamada dela; senão, a frase do dia. Boas-vindas e renovação continuam com os textos delas.
+
+**Mudanças:**
+- `askAi` (`_assistant.ts`) aceita conteúdo com imagem e um modelo escolhido (`visionModel()`).
+- `suggestCaptions` fica em `_sales_cta.ts`.
+- O componente `CaptionEditor` fica em `telegramFolders.tsx`.
+
+**Teste:** `test_cta_ia.mjs`, com o OpenRouter falso respondendo a pedidos com imagem. Cobre:
+- o PNG recusado;
+- o botão;
+- o modelo com visão recebendo o JPEG;
+- as 3 sugestões com `{nome}`;
+- salvar;
+- a diária usando a chamada da prévia;
+- tirar a chamada.

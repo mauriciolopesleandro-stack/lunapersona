@@ -82,6 +82,7 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [picking, setPicking] = useState<Folder | null>(null);
+  const [captioning, setCaptioning] = useState<Item | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const target = useRef<Folder | null>(null);
   // os itens mudam depois de copiar arquivos; o "Atualizar" logo em seguida le daqui
@@ -267,6 +268,17 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
                         <div key={item.path} className={plan.add.includes(item) ? "st-pick st-folder-new" : "st-pick"} title={item.path}>
                           <Thumb item={item} />
                           {plan.add.includes(item) && <span className="st-folder-badge">{plan.folder.key === "vip" ? "vai postar" : "vai entrar"}</span>}
+                          {plan.folder.key === "previa" && !plan.add.includes(item) && (
+                            <button
+                              type="button"
+                              className={status.previews.find((p) => p.media_id === item.id)?.text ? "st-btn st-btn-small st-caption-btn on" : "st-btn st-btn-small st-caption-btn"}
+                              disabled={busy}
+                              onClick={() => setCaptioning(item)}
+                              title={status.previews.find((p) => p.media_id === item.id)?.text || "Criar a chamada desta prévia com IA"}
+                            >
+                              {status.previews.find((p) => p.media_id === item.id)?.text ? "💬 Chamada" : "✨ Chamada"}
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="st-icon-btn st-sales-remove"
@@ -311,6 +323,19 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
         </>
       )}
 
+      {captioning && status && (
+        <CaptionEditor
+          item={captioning}
+          current={status.previews.find((p) => p.media_id === captioning.id)?.text ?? ""}
+          onClose={() => setCaptioning(null)}
+          onSaved={(s) => {
+            setStatus(s);
+            setCaptioning(null);
+            setNotice("Chamada da prévia salva: ela vai na mensagem diária quando esta prévia sair.");
+          }}
+        />
+      )}
+
       {picking && (
         <LibraryPicker
           folder={picking}
@@ -328,6 +353,111 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
         />
       )}
     </div>
+  );
+}
+
+// Foto (ou um quadro do video) reduzida para a IA olhar: JPEG de ate 768 px.
+async function visionImage(item: Item): Promise<string> {
+  const canvas = document.createElement("canvas");
+  const draw = (src: CanvasImageSource, w: number, h: number) => {
+    const scale = Math.min(1, 768 / Math.max(w, h));
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    canvas.getContext("2d")!.drawImage(src, 0, 0, canvas.width, canvas.height);
+  };
+  if (item.kind === "video") {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.src = item.url;
+    await new Promise<void>((ok, fail) => {
+      video.onloadeddata = () => ok();
+      video.onerror = () => fail(new Error("Não consegui abrir o vídeo."));
+    });
+    video.currentTime = Math.min(1, (video.duration || 2) / 2);
+    await new Promise<void>((ok) => (video.onseeked = () => ok()));
+    draw(video, video.videoWidth, video.videoHeight);
+  } else {
+    const bitmap = await createImageBitmap(await fetch(item.url).then((r) => r.blob()));
+    draw(bitmap, bitmap.width, bitmap.height);
+  }
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+// Chamada da previa: a IA olha a foto e sugere 3; o administrador escolhe ou escreve.
+function CaptionEditor({ item, current, onClose, onSaved }: { item: Item; current: string; onClose: () => void; onSaved: (s: Status) => void }) {
+  const [text, setText] = useState(current);
+  const [ideas, setIdeas] = useState<string[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function suggest() {
+    setBusy("Olhando a prévia...");
+    setError(null);
+    try {
+      const res = (await call({ action: "preview-suggest", image: await visionImage(item) })) as unknown as { suggestions: string[] };
+      setIdeas(res.suggestions);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function save(value: string) {
+    setBusy("Salvando...");
+    setError(null);
+    try {
+      onSaved(await call({ action: "preview-text", media_id: item.id, text: value }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Modal title="Chamada desta prévia" onClose={onClose} wide>
+      <div className="st-caption-editor">
+        <div className="st-caption-thumb">
+          <Thumb item={item} />
+        </div>
+        <div>
+          <p className="st-hint">
+            A IA olha a prévia e escreve chamadas ligadas a ela. <b>{"{nome}"}</b> vira o nome do fã. Quando esta prévia sair na mensagem diária, vai esta
+            chamada no lugar da frase do dia.
+          </p>
+          <button type="button" className="st-btn st-btn-small" disabled={busy !== null} onClick={suggest}>
+            ✨ {ideas.length ? "Sugerir outras" : "Sugerir 3 chamadas com IA"}
+          </button>
+          {ideas.length > 0 && (
+            <ul className="st-caption-ideas">
+              {ideas.map((idea) => (
+                <li key={idea}>
+                  <button type="button" className={idea === text ? "on" : ""} onClick={() => setText(idea)}>
+                    {idea}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <label className="st-field">
+            <span>Chamada</span>
+            <textarea className="st-input" rows={3} maxLength={900} value={text} onChange={(e) => setText(e.target.value)} placeholder="{nome}, ..." />
+          </label>
+          {error && <p className="st-error">{error}</p>}
+          <div className="st-composer-actions">
+            <span className="st-hint">{busy ?? ""}</span>
+            {current && (
+              <button type="button" className="st-btn" disabled={busy !== null} onClick={() => save("")}>
+                Tirar chamada
+              </button>
+            )}
+            <button type="button" className="st-btn st-btn-primary" disabled={busy !== null || !text.trim() || text.trim() === current} onClick={() => save(text)}>
+              Salvar chamada
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

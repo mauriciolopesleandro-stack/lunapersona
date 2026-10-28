@@ -3610,3 +3610,54 @@
   right: 0;
   top: 4px;
 }
+.st-caption-btn {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+}
+.st-caption-btn.on {
+  background: var(--st-violet);
+  color: #fff;
+}
+.st-caption-editor {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 16px;
+}
+.st-caption-editor .st-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+.st-caption-editor .st-field .st-input {
+  width: 100%;
+}
+.st-caption-ideas {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 6px;
+}
+.st-caption-ideas button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--st-border, rgba(255, 255, 255, 0.12));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.st-caption-ideas button.on {
+  border-color: var(--st-violet);
+  outline: 1px solid var(--st-violet);
+}
+@media (max-width: 640px) {
+  .st-caption-editor {
+    grid-template-columns: 1fr;
+  }
+}

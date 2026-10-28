@@ -13,6 +13,15 @@ import { dbSelect, supabaseConfigured } from "./_supabase.js";
 const API = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "deepseek/deepseek-v4-flash";
 const DEFAULT_ADULT_MODEL = "cognitivecomputations/dolphin-mistral-24b-venice-edition";
+// modelo que enxerga imagem (chamada pela previa do bot de vendas)
+const DEFAULT_VISION_MODEL = "mistralai/mistral-small-3.2-24b-instruct";
+
+export function visionModel(): string {
+  return process.env.OPENROUTER_MODEL_VISION?.trim() || DEFAULT_VISION_MODEL;
+}
+
+// conteudo de uma mensagem: texto ou partes (texto + imagem, para o modelo com visao)
+export type AiContent = string | ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } })[];
 const MAX_MESSAGES = 24;
 const MAX_CHARS = 8000;
 
@@ -105,11 +114,11 @@ export class AiError extends Error {
 // Uma chamada ao OpenRouter (chat completions). json: pede um objeto JSON.
 export async function askAi(
   mode: Mode,
-  messages: { role: "system" | "user" | "assistant"; content: string }[],
-  opts: { json?: boolean; maxTokens?: number; timeoutMs?: number } = {}
+  messages: { role: "system" | "user" | "assistant"; content: AiContent }[],
+  opts: { json?: boolean; maxTokens?: number; timeoutMs?: number; model?: string } = {}
 ): Promise<{ text: string; model: string; usage: unknown }> {
   if (!assistantConfigured()) throw new AiError(400, "Falta cadastrar OPENROUTER_API_KEY na Vercel.");
-  const model = modelFor(mode);
+  const model = opts.model ?? modelFor(mode);
   let res: Response;
   try {
     res = await fetch(API, {
