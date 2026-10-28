@@ -90,10 +90,22 @@ async function pushin<T>(method: "GET" | "POST" | "DELETE", path: string, body?:
     ...(body ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(20_000),
   });
-  const data = (await res.json().catch(() => ({}))) as T & { message?: string; errors?: Record<string, string[] | string> };
+  const raw = await res.text().catch(() => "");
+  let data = {} as T & { message?: string; errors?: Record<string, string[] | string> };
+  try {
+    data = JSON.parse(raw || "{}");
+  } catch {
+    // resposta que nao e JSON: o texto vai para o aviso
+  }
   if (!res.ok) {
-    // 422 traz a lista de campos com problema: vai inteira para o aviso (sem os dados do fa)
-    const details = data?.errors && typeof data.errors === "object" ? Object.entries(data.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join("; ") : "";
+    // 422 traz a lista de campos com problema; outras respostas, o corpo como veio
+    // (sem CPF: os numeros longos sao trocados por ***)
+    const details =
+      data?.errors && typeof data.errors === "object"
+        ? Object.entries(data.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join("; ")
+        : data?.message
+          ? ""
+          : raw.replace(/\d{11,}/g, "***").replace(/\s+/g, " ").trim().slice(0, 300);
     throw new Error(`PushinPay respondeu ${res.status}${data?.message ? `: ${data.message}` : ""}${details ? ` [${details}]` : ""}`);
   }
   return data;
