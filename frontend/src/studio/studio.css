@@ -4598,3 +4598,89 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Conversa: referencias (foto, video, link) */
+.st-chat-clip {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  justify-content: center;
+}
+
+.st-chat-attach {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.st-chat-attach span {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+}
+
+.st-chat-attach img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.st-chat-attach i {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.st-chat-attach button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff !important;
+  cursor: pointer;
+}
+
+.st-msg-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.st-msg-refs img {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.st-msg-reading {
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.st-msg-reading summary {
+  color: var(--st-violet);
+  cursor: pointer;
+}
+
+.st-msg-reading p {
+  margin-top: 6px;
+  color: var(--text-muted);
+}

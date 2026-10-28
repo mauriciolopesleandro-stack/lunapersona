@@ -1036,3 +1036,12 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
 - **Promoção** (ex.: de domingo): liga/desliga, dias da semana (horário de Brasília), nome e preço de promoção por pacote (menor que o normal, mínimo R$ 1,00). Fica no Upstash (`luna:promo`).
   - No dia: o botão do pacote mostra "R$ X (era R$ Y)", o Pix sai pelo preço da promoção (também na renovação do VIP) e as mensagens com os pacotes ganham a faixa "🔥 <nome>: só hoje, preço especial nos pacotes!".
 - Contagem: **Bot da Luna (canal principal)** = pessoas com +18 confirmado (e quantas recebem as mensagens); **Canal VIP** = membros pelo Telegram (`getChatMemberCount`, conta os administradores) e assinantes pagando.
+
+## 43. Conversa com referências: foto, vídeo e links (28/10/2026)
+
+- 📎 na Conversa (ou colar imagem): até 4 fotos ou 1 vídeo. O navegador reduz a foto (1024 px) ou tira 4 quadros do vídeo (10/35/60/85%); a IA com visão (`OPENROUTER_MODEL_VISION`) faz a leitura da ideia (cenário, roupa, pose, ângulo, luz, clima, movimento) sem identificar nem descrever a pessoa.
+- Link na mensagem:
+  - **Perfil do Instagram** (`instagram.com/<usuario>`): Business Discovery pela conexão do Instagram via Facebook. Lê bio, seguidores e os últimos posts; a IA olha os 6 mais curtidos e a Conversa cria 5 conteúdos para a Luna no estilo da página. Só contas profissionais (criador/empresa) e públicas.
+  - **Post ou outra página:** título, texto e imagem de prévia (og:image). O Instagram costuma bloquear: aí a resposta pede um print.
+  - Endereços internos (localhost, IPs privados) são recusados.
+- A leitura vai junto com o pedido para a IA da Conversa, que termina com os blocos PROMPT/LEGENDA/HASHTAGS/DESTINO (botões "Gerar esta foto"). Na conversa, a mensagem mostra a miniatura e a "Leitura da referência" recolhida.
