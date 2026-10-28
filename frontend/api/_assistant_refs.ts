@@ -11,7 +11,7 @@ const MAX_IMAGES = 6;
 const MAX_IMAGE_CHARS = 1_500_000; // ~1,1 MB por imagem em base64
 const JPEG = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 
-const READ_RULES = `Não identifique a pessoa nem descreva rosto, corpo ou traços físicos dela: a ideia vai ser recriada com outra personagem (a Luna). Não leia nem repita nomes de marcas. Responda em português do Brasil, em tópicos curtos, sem introdução.`;
+const READ_RULES = `Descreva só o que aparece de verdade na imagem; não invente pessoa, roupa ou cenário que não estão lá (se não houver pessoa, diga). Não identifique a pessoa nem descreva rosto, corpo ou traços físicos dela: a ideia vai ser recriada com outra personagem (a Luna). Não leia nem repita nomes de marcas. Responda em português do Brasil, em tópicos curtos, sem introdução.`;
 
 const PHOTO_PROMPT = `Você ajuda a recriar ideias de conteúdo para redes sociais. Faça a leitura desta referência para recriar a IDEIA:
 - Lugar e cenário
@@ -48,9 +48,11 @@ export class RefError extends Error {
 async function read(prompt: string, images: string[], extra = ""): Promise<string> {
   const content: AiContent = [{ type: "text", text: extra ? `${prompt}\n\n${extra}` : prompt }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))];
   try {
-    const out = await askAi("normal", [{ role: "user", content }], { model: visionModel(), maxTokens: 900, timeoutMs: 50_000 });
+    const out = await askAi("normal", [{ role: "user", content }], { model: visionModel(), maxTokens: 900, timeoutMs: 40_000 });
     return out.text.slice(0, 5000);
   } catch (e) {
+    // lote de fotos recusado pelo provedor: tenta de novo com menos fotos
+    if (e instanceof AiError && e.status === 502 && images.length > 1) return read(prompt, images.slice(0, images.length > 3 ? 3 : 1), extra);
     if (e instanceof AiError) throw new RefError(e.status, e.message);
     throw e;
   }
@@ -71,7 +73,8 @@ async function asDataUrl(url: string): Promise<string | null> {
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     const type = r.headers.get("content-type") ?? "";
-    if (!r.ok || !/^image\/(jpeg|png|webp)/.test(type)) return null;
+    // so JPEG e PNG (nem todo provedor da IA aceita webp)
+    if (!r.ok || !/^image\/(jpeg|png)/.test(type)) return null;
     const buf = Buffer.from(await r.arrayBuffer());
     if (buf.length > 1_000_000) return null;
     return `data:${type.split(";")[0]};base64,${buf.toString("base64")}`;
