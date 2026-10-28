@@ -1009,3 +1009,5 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
 - **`sendMenu`** (o /start de quem já confirmou 18+, ou qualquer texto do fã): se houver prévias, manda a prévia da vez (gira a cada minuto) com a **chamada/história dela** (ou "Que bom te ver por aqui, {nome} 😘 Escolha o seu pacote:") e os botões dos pacotes, mais "📂 Meus pacotes". Sem prévias, continua o texto de antes.
 - **A IA da prévia** agora escreve **mini-histórias**: 2 ou 3 frases da Luna em primeira pessoa contando a cena da foto, terminando com o convite (sem descrever sexo).
 - **Teste:** `test_cta_ia.mjs` confere o menu com prévia, história com o nome e botões.
+
+**/zerar** (só o administrador, no bot de vendas): apaga a confirmação de 18+ e o controle das mensagens dele, para testar o bot como um fã novo. As compras continuam registradas.

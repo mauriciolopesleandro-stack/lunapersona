@@ -274,6 +274,12 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
     if (msg && msg.chat.type === "private" && msg.from) {
       const fan = await upsertFan(msg.from);
       const text = (msg.text ?? "").trim().toLowerCase();
+      // /zerar: so o administrador; volta a ser um fa novo para testar do inicio
+      if (text.startsWith("/zerar") && String(msg.from.id) === (await telegramConfig()).chatId) {
+        await dbUpdateWhere("fans", `id=eq.${fan.id}`, { adult_confirmed_at: null, cta_sent_at: null, cta_count: 0, opted_out_at: null });
+        await telegram(token, "sendMessage", { chat_id: msg.chat.id, text: "Pronto, você voltou a ser um fã novo 🔄 Mande /start para ver tudo do começo (suas compras de teste continuam registradas)." });
+        return done();
+      }
       if (!fan.adult_confirmed_at) {
         await askAge(token, msg.chat.id);
       } else if (text.startsWith("/parar")) {
