@@ -1,0 +1,14 @@
+﻿PASTAS DO TELEGRAM - LUNA VOX
+
+Coloque ou tire arquivos destas pastas e, no estudio, abra a pagina
+"Telegram (pastas)" (Contas conectadas -> Telegram, ou o link em Vendas),
+clique em "Ler as pastas de novo" e depois em "Atualizar".
+
+  ensaio\      fotos/videos do pacote Ensaio (R$ 9,90)
+  album-vip\   fotos/videos do pacote Album VIP sem censura (R$ 19,90)
+  vip\         o que entra aqui e postado no canal VIP; se tirar daqui,
+               o post sai do canal
+
+Formatos: fotos JPG ou PNG (o estudio ajusta para ate 5 MB),
+videos MP4 de ate 20 MB.
+So conteudo da Luna (personagem de IA, adulta). Nada de pessoa real.
