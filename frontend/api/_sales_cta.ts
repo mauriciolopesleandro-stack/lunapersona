@@ -37,6 +37,7 @@ export interface Preview {
   media_id: string;
   kind: "photo" | "video";
   file_id: string;
+  text?: string; // chamada feita para esta previa (a IA olhou a foto); vai na diaria
 }
 
 export const DEFAULT_CTA: CtaConfig = {
@@ -118,6 +119,47 @@ export async function previews(): Promise<Preview[]> {
 
 export async function savePreviews(list: Preview[]): Promise<void> {
   await storeSet(PREVIEWS_KEY, JSON.stringify(list.slice(0, 60)));
+}
+
+// --- chamada pela previa (IA com visao) -----------------------------------------------------------
+const VISION_PROMPT = `Você escreve chamadas curtas (CTA) para o bot de vendas da Luna Vox no Telegram.
+A Luna Vox é uma influenciadora virtual brasileira criada com IA, adulta, carinhosa, confiante e provocante.
+Você recebe a foto de prévia que vai junto da mensagem (as partes íntimas já estão cobertas).
+Escreva 3 chamadas diferentes, em português do Brasil, como se fosse a própria Luna falando com o fã:
+- use exatamente {nome} onde entra o primeiro nome do fã (com as chaves);
+- 1 ou 2 frases curtas, com 1 a 3 emojis;
+- ligadas ao que aparece na foto (lugar, roupa, pose, clima, hora do dia);
+- tom íntimo e provocante, criando vontade de ver o resto, e terminando com o convite para escolher um pacote ou entrar no VIP;
+- sem descrever atos sexuais nem partes íntimas (quem recebe ainda não pagou);
+- sem inventar nomes, preços ou promoções.
+Responda só JSON: {"chamadas": ["...", "...", "..."]}`;
+
+// Sugere 3 chamadas para a previa (imagem JPEG em data URL, ja reduzida no navegador).
+export async function suggestCaptions(image: string): Promise<string[]> {
+  const { askAi, visionModel } = await import("./_assistant.js");
+  const out = await askAi(
+    "adulto",
+    [
+      { role: "system", content: VISION_PROMPT },
+      { role: "user", content: [{ type: "text", text: "Esta é a prévia. Escreva as 3 chamadas." }, { type: "image_url", image_url: { url: image } }] },
+    ],
+    { json: true, maxTokens: 700, timeoutMs: 45_000, model: visionModel() }
+  );
+  const raw = out.text.replace(/^```(?:json)?\s*|\s*```$/g, "");
+  let list: unknown = [];
+  try {
+    const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
+    list = parsed.chamadas ?? parsed.calls ?? [];
+  } catch {
+    // resposta fora do JSON: uma chamada por linha
+    list = raw.split("\n").map((l) => l.replace(/^\s*(?:[-*\d.)]+\s*)?"?|"?,?\s*$/g, ""));
+  }
+  const clean = (Array.isArray(list) ? list : [])
+    .map((t) => (typeof t === "string" ? t.trim().slice(0, 900) : ""))
+    .filter((t) => t.length > 5)
+    .map((t) => (t.includes("{nome}") ? t : `{nome}, ${t.charAt(0).toLowerCase()}${t.slice(1)}`));
+  if (!clean.length) throw new Error("A IA não devolveu chamadas. Tente de novo.");
+  return clean.slice(0, 3);
 }
 
 export function fill(text: string, fan: Pick<FanRow, "first_name">, extra: Record<string, string> = {}): string {
@@ -217,9 +259,13 @@ export async function ctaTick(): Promise<number> {
       });
       // VIP ativo (ou nos dias de renovacao) nao recebe a chamada para comprar
       if (!claimed || (await activeVip(fan.id, true))) continue;
-      const text = config.daily[(dayNumber() + fan.cta_count) % config.daily.length];
+      // a previa da vez tem chamada propria (feita olhando a foto)? vai ela; senao, a frase do dia
+      const turn = fan.cta_count + 1;
+      const list = await previews();
+      const own = list.length ? list[turn % list.length].text : undefined;
+      const text = own || config.daily[(dayNumber() + fan.cta_count) % config.daily.length];
       try {
-        await sendCta(token, fan.telegram_id, fill(text, fan), fan.cta_count + 1);
+        await sendCta(token, fan.telegram_id, fill(text, fan), turn);
         sent++;
       } catch (e) {
         // o fa bloqueou o bot: para de mandar

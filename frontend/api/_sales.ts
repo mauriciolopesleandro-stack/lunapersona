@@ -14,7 +14,7 @@ import {
   type ProductRow,
 } from "./_sales_bot.js";
 import { forgetPix, pixConfig, savePixConfig } from "./_sales_pay.js";
-import { ctaConfig, fill, previews, saveCtaConfig, savePreviews, sendCta } from "./_sales_cta.js";
+import { ctaConfig, fill, previews, saveCtaConfig, savePreviews, sendCta, suggestCaptions } from "./_sales_cta.js";
 import { storeConfigured, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
@@ -41,6 +41,8 @@ import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 //   POST { action: "preview-url" | "preview-add" | "preview-remove" }  previas das mensagens (CTA)
 //   POST { action: "cta-save", enabled, hour, welcome, pixReminder, daily }  textos das mensagens
 //   POST { action: "cta-test" }                        manda uma mensagem diaria de teste para voce
+//   POST { action: "preview-suggest", image }          a IA (com visao) olha a previa e sugere 3 chamadas
+//   POST { action: "preview-text", media_id, text }    guarda a chamada daquela previa (vazio tira)
 //
 // Pastas do Telegram (pagina Telegram): conteudos/vendas/ensaio e album-vip viram
 // o conteudo dos pacotes (media-add/media-remove); conteudos/vendas/vip e postado
@@ -180,7 +182,7 @@ async function status() {
     },
     pix: { configured: Boolean(pix.token), env: pix.env },
     cta: await ctaConfig(),
-    previews: previewList.map((p) => ({ media_id: p.media_id, kind: p.kind, path: pathOf.get(p.media_id) ?? null })),
+    previews: previewList.map((p) => ({ media_id: p.media_id, kind: p.kind, path: pathOf.get(p.media_id) ?? null, text: p.text ?? "" })),
     // arquivo da pasta do VIP ja postado no canal (o caminho fica no banco mesmo se o arquivo sair da pasta)
     vipPosts: vipIds.map((id) => ({ media_id: id, path: pathOf.get(id) ?? null })),
     sales: {
@@ -364,6 +366,21 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const mediaId = uuid(body.media_id, "Mídia");
       await savePreviews((await previews()).filter((p) => p.media_id !== mediaId));
       await audit("previa_cta_tirar", "media_assets", mediaId);
+    } else if (body.action === "preview-suggest") {
+      const image = String(body.image ?? "");
+      if (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > 1_500_000) throw new Problem(400, "Mande a prévia como JPEG de até 1 MB.");
+      try {
+        return reply(200, { suggestions: await suggestCaptions(image) });
+      } catch (e) {
+        throw new Problem(502, e instanceof Error ? e.message : String(e));
+      }
+    } else if (body.action === "preview-text") {
+      const mediaId = uuid(body.media_id, "Mídia");
+      const text = typeof body.text === "string" ? body.text.trim().slice(0, 900) : "";
+      const list = await previews();
+      if (!list.some((p) => p.media_id === mediaId)) throw new Problem(404, "Essa prévia não está nas mensagens.");
+      await savePreviews(list.map((p) => (p.media_id === mediaId ? { ...p, text: text || undefined } : p)));
+      await audit("previa_chamada", "media_assets", mediaId);
     } else if (body.action === "cta-save") {
       try {
         await saveCtaConfig(body);

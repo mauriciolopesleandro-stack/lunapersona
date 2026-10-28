@@ -44,7 +44,7 @@ export interface Status {
   pix: { configured: boolean; env: "producao" | "sandbox" };
   sales: { count30: number; total30: number; pending: number };
   vipPosts: { media_id: string; path: string | null }[]; // arquivos da pasta do VIP ja postados no canal
-  previews: { media_id: string; kind: "photo" | "video"; path: string | null }[]; // previas das mensagens (CTA)
+  previews: { media_id: string; kind: "photo" | "video"; path: string | null; text: string }[]; // previas das mensagens (CTA) e a chamada de cada uma
   cta: Cta;
   orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; product: string; fan: string; note: string | null }[];
 }
