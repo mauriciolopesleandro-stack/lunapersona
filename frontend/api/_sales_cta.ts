@@ -11,6 +11,8 @@ import type { FanRow, ProductRow } from "./_sales_bot.js";
 //   diaria         uma por dia, no horario escolhido, para quem nao e VIP
 //                  (para com /parar, bloqueio ou VIP ativo); o texto muda todo
 //                  dia, a previa pode repetir
+//   renovacao      VIP perto de vencer (3 dias antes) e vencido (3 dias de folga
+//                  no canal): uma por dia, com previa e "Renovar agora" (_sales_pay.ts)
 // Os textos ficam no Upstash (luna:cta) e o administrador edita em Vendas. Nas
 // mensagens gratis o texto e provocante, sem descricao explicita: quem recebe
 // ainda nao passou por verificacao de idade alem do "tenho 18".
@@ -27,6 +29,8 @@ export interface CtaConfig {
   welcome: string;
   pixReminder: string;
   daily: string[];
+  renewal: string[]; // VIP vence em breve: {data} = vencimento, {dias} = quanto falta
+  renewalGrace: string; // VIP venceu e ainda esta no canal: {data} = quando sai
 }
 
 export interface Preview {
@@ -52,6 +56,12 @@ export const DEFAULT_CTA: CtaConfig = {
     "{nome}, meu VIP tá cada dia mais quente 🌶️ Conteúdo novo quase todo dia, só pra quem tá lá dentro.",
     "Ei {nome} 😘 Hoje eu tô só de lingerie e com vontade de ser vista… mas só no VIP 🔒",
   ],
+  renewal: [
+    "⏰ {nome}, seu VIP vence em {data}. Não vai perder o que vem por aí: tô preparando um ensaio novinho 📸🔥",
+    "{nome}, falta {dias} pra você perder tudo do meu VIP 😢 Ontem eu postei uma surpresa só pra quem tá lá dentro…",
+    "Amor, seu VIP vence em {data} 💔 Minhas próximas aventuras eu fiz pensando em você 😏 Renova e fica comigo.",
+  ],
+  renewalGrace: "{nome}, seu VIP venceu 😢 Você ainda tá no canal até {data}… renova agora pra não perder o ensaio novo que tá chegando 🔥",
 };
 
 function clean(text: unknown, max: number): string {
@@ -70,6 +80,8 @@ export async function ctaConfig(): Promise<CtaConfig> {
       welcome: clean(saved.welcome, 900) || DEFAULT_CTA.welcome,
       pixReminder: clean(saved.pixReminder, 900) || DEFAULT_CTA.pixReminder,
       daily: daily.length ? daily : DEFAULT_CTA.daily,
+      renewal: Array.isArray(saved.renewal) && saved.renewal.some((t) => clean(t, 900)) ? saved.renewal.map((t) => clean(t, 900)).filter(Boolean) : DEFAULT_CTA.renewal,
+      renewalGrace: clean(saved.renewalGrace, 900) || DEFAULT_CTA.renewalGrace,
     };
   } catch {
     return DEFAULT_CTA;
@@ -80,12 +92,15 @@ export async function saveCtaConfig(raw: Record<string, unknown>): Promise<CtaCo
   const daily = Array.isArray(raw.daily) ? raw.daily.map((t) => clean(t, 900)).filter(Boolean).slice(0, 60) : [];
   if (!daily.length) throw new Error("Deixe pelo menos uma frase para a mensagem diária.");
   const hour = Number(raw.hour);
+  const renewal = Array.isArray(raw.renewal) ? raw.renewal.map((t) => clean(t, 900)).filter(Boolean).slice(0, 30) : [];
   const config: CtaConfig = {
     enabled: raw.enabled !== false,
     hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_CTA.hour,
     welcome: clean(raw.welcome, 900) || DEFAULT_CTA.welcome,
     pixReminder: clean(raw.pixReminder, 900) || DEFAULT_CTA.pixReminder,
     daily,
+    renewal: renewal.length ? renewal : DEFAULT_CTA.renewal,
+    renewalGrace: clean(raw.renewalGrace, 900) || DEFAULT_CTA.renewalGrace,
   };
   await storeSet(CONFIG_KEY, JSON.stringify(config));
   return config;
@@ -115,10 +130,10 @@ async function buyButtons(): Promise<{ text: string; callback_data: string }[][]
   return (await productsForSale()).map((p: ProductRow) => [{ text: productLabel(p), callback_data: `buy:${p.id}` }]);
 }
 
-// Manda o CTA: previa (se houver) com o texto na legenda e os botoes dos pacotes.
-// "turn" escolhe a previa (gira a cada mensagem).
-export async function sendCta(token: string, chatId: number, text: string, turn: number): Promise<void> {
-  const rows = await buyButtons();
+// Manda o CTA: previa (se houver) com o texto na legenda e os botoes dos pacotes
+// (ou os botoes dados). "turn" escolhe a previa (gira a cada mensagem).
+export async function sendCta(token: string, chatId: number, text: string, turn: number, buttons?: { text: string; callback_data: string }[][]): Promise<void> {
+  const rows = buttons ?? (await buyButtons());
   const list = await previews();
   const markup = rows.length ? { reply_markup: { inline_keyboard: rows } } : {};
   const preview = list.length ? list[Math.abs(turn) % list.length] : null;
@@ -200,7 +215,8 @@ export async function ctaTick(): Promise<number> {
         cta_sent_at: new Date().toISOString(),
         cta_count: fan.cta_count + 1,
       });
-      if (!claimed || (await activeVip(fan.id))) continue; // VIP ativo nao recebe chamada para comprar
+      // VIP ativo (ou nos dias de renovacao) nao recebe a chamada para comprar
+      if (!claimed || (await activeVip(fan.id, true))) continue;
       const text = config.daily[(dayNumber() + fan.cta_count) % config.daily.length];
       try {
         await sendCta(token, fan.telegram_id, fill(text, fan), fan.cta_count + 1);
