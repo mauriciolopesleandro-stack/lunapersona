@@ -90,9 +90,84 @@ async function pushin<T>(method: "GET" | "POST" | "DELETE", path: string, body?:
     ...(body ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(20_000),
   });
-  const data = (await res.json().catch(() => ({}))) as T & { message?: string };
-  if (!res.ok) throw new Error(`PushinPay respondeu ${res.status}${data?.message ? `: ${data.message}` : ""}`);
+  const data = (await res.json().catch(() => ({}))) as T & { message?: string; errors?: Record<string, string[] | string> };
+  if (!res.ok) {
+    // 422 traz a lista de campos com problema: vai inteira para o aviso (sem os dados do fa)
+    const details = data?.errors && typeof data.errors === "object" ? Object.entries(data.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join("; ") : "";
+    throw new Error(`PushinPay respondeu ${res.status}${data?.message ? `: ${data.message}` : ""}${details ? ` [${details}]` : ""}`);
+  }
   return data;
+}
+
+// --- VIP mensal: dados de quem paga ---------------------------------------------------------------
+// O Pix automatico (recorrente) exige o nome e o CPF do pagador. O bot pede numa
+// mensagem so; os dados vao direto para a PushinPay e nao ficam guardados aqui.
+const SUB_DATA_KEY = (telegramId: number) => `luna:sub-data:${telegramId}`;
+const SUB_DATA_TTL_S = 15 * 60;
+
+export interface Customer {
+  name: string;
+  cpf: string; // so numeros
+}
+
+export function validCpf(raw: string): boolean {
+  const cpf = raw.replace(/\D/g, "");
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+  const digit = (len: number) => {
+    let sum = 0;
+    for (let i = 0; i < len; i++) sum += Number(cpf[i]) * (len + 1 - i);
+    const rest = (sum * 10) % 11;
+    return rest === 10 ? 0 : rest;
+  };
+  return digit(9) === Number(cpf[9]) && digit(10) === Number(cpf[10]);
+}
+
+// "Maria da Silva 123.456.789-00" (em qualquer ordem, numa mensagem so)
+export function parseCustomer(text: string): Customer | "cpf" | null {
+  const cpfMatch = text.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
+  const name = text.replace(cpfMatch?.[0] ?? "", " ").replace(/[^\p{L}\s'-]/gu, " ").replace(/\s+/g, " ").trim();
+  if (!cpfMatch || name.split(" ").length < 2) return null;
+  if (!validCpf(cpfMatch[0])) return "cpf";
+  return { name: name.slice(0, 120), cpf: cpfMatch[0].replace(/\D/g, "") };
+}
+
+async function askCustomer(salesToken: string, fan: FanRow, product: ProductRow, chatId: number): Promise<void> {
+  await storeSet(SUB_DATA_KEY(fan.telegram_id), product.id);
+  await storeSetIfAbsent(`${SUB_DATA_KEY(fan.telegram_id)}:ttl`, "1", SUB_DATA_TTL_S).catch(() => undefined);
+  await telegram(salesToken, "sendMessage", {
+    chat_id: chatId,
+    text:
+      `💎 ${product.title}\n\n` +
+      "O Pix automático (que renova sozinho todo mês) pede o nome completo e o CPF de quem vai pagar. Seus dados vão só para a processadora do pagamento, não ficam salvos aqui.\n\n" +
+      "Me manda numa mensagem só, assim:\nMaria da Silva 123.456.789-00\n\n" +
+      "Prefere não informar? Escolha o VIP de 30 dias, que não pede cadastro 💛",
+  });
+}
+
+// Mensagem do fa enquanto o bot espera os dados do VIP mensal. Devolve true se
+// a mensagem era para isso (consumida aqui).
+export async function handleCustomerData(salesToken: string, fan: FanRow, text: string, chatId: number, site: string): Promise<boolean> {
+  if (!storeConfigured()) return false;
+  const productId = await storeGet(SUB_DATA_KEY(fan.telegram_id)).catch(() => null);
+  if (!productId) return false;
+  // pedido velho (mais de 15 min): esquece
+  if (!(await storeGet(`${SUB_DATA_KEY(fan.telegram_id)}:ttl`).catch(() => null))) {
+    await storeDelete(SUB_DATA_KEY(fan.telegram_id)).catch(() => undefined);
+    return false;
+  }
+  const parsed = parseCustomer(text);
+  if (parsed === null) {
+    await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Não consegui entender 🙈 Manda o nome completo e o CPF numa mensagem só, assim:\nMaria da Silva 123.456.789-00" });
+    return true;
+  }
+  if (parsed === "cpf") {
+    await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Esse CPF não parece válido. Confere os números e manda de novo 💛" });
+    return true;
+  }
+  await storeDelete(SUB_DATA_KEY(fan.telegram_id)).catch(() => undefined);
+  const [product] = await dbSelect<ProductRow>("sales_products", `select=*&id=eq.${productId}`);
+  if (product) await startPayment(salesToken, fan, product, chatId, site, parsed);
+  return true;
 }
 
 function orderSignature(orderId: string): string {
@@ -147,7 +222,7 @@ async function sendPix(salesToken: string, chatId: number, product: ProductRow, 
 
 // Botao do pacote, com o Pix ligado: cria (ou reaproveita) o pedido e manda o Pix.
 // Devolve false quando o Pix nao esta configurado.
-export async function startPayment(salesToken: string, fan: FanRow, product: ProductRow, chatId: number, site: string): Promise<boolean> {
+export async function startPayment(salesToken: string, fan: FanRow, product: ProductRow, chatId: number, site: string, customer?: Customer): Promise<boolean> {
   const { token } = await pixConfig();
   if (!token) return false;
   const since = new Date(Date.now() - PENDING_REUSE_MS).toISOString();
@@ -157,6 +232,10 @@ export async function startPayment(salesToken: string, fan: FanRow, product: Pro
   );
   if (open?.pix_code && open.amount_cents === product.price_cents) {
     await sendPix(salesToken, chatId, product, open);
+    return true;
+  }
+  if (product.billing === "mensal" && !customer) {
+    await askCustomer(salesToken, fan, product, chatId);
     return true;
   }
   const order = await dbInsert<OrderRow>("sales_orders", {
@@ -177,6 +256,7 @@ export async function startPayment(salesToken: string, fan: FanRow, product: Pro
             pix_recurring_retry_policy: RETRY_3X_7_DAYS,
             webhook_url,
             name: `Luna Vox - ${product.title}`.slice(0, 200),
+            customer: { name: customer!.name, document: { type: "cpf", number: customer!.cpf } },
           })
         : await pushin<Charge>("POST", "/api/pix/cashIn", { value: product.price_cents, description: `Luna Vox - ${product.title}`.slice(0, 255), webhook_url });
     if (!charge.id || !charge.qr_code) throw new Error("a PushinPay não devolveu o Pix");

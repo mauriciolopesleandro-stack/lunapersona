@@ -939,3 +939,13 @@ O administrador mostrou modelos de bots e canais do mercado: chamar a pessoa pel
 - editar e salvar pela tela;
 - o cartão Prévias;
 - o celular.
+
+## 36. VIP mensal: nome e CPF de quem paga (28/10/2026)
+
+Em produção, a PushinPay recusou a assinatura (Pix Recorrente) com **422 "Informe o customerId ou os dados do customer"**: o Pix automático exige os dados do pagador.
+
+- Ao tocar no **VIP mensal**, o bot pede **nome completo e CPF numa mensagem só** (ex.: `Maria da Silva 123.456.789-00`). Quem não quiser informar fica com o VIP de 30 dias.
+- O CPF é conferido pelos dígitos verificadores. A mensagem sem CPF ou com CPF inválido é recusada com um aviso. O pedido de dados vale 15 min (Upstash `luna:sub-data:<id>`).
+- Os dados vão **só** para a PushinPay (`customer: { name, document: { type: "cpf", number } }`) e não são gravados no banco nem na auditoria.
+- O erro da PushinPay agora vem completo (com a lista `errors` do 422) no aviso ao administrador e na nota do pedido, para ajustar se ela pedir outro campo.
+- **Teste:** `test_pix.mjs`, com a PushinPay falsa recusando assinatura sem cliente.
