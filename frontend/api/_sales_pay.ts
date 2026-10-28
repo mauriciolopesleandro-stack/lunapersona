@@ -4,6 +4,7 @@ import { storeConfigured, storeDelete, storeGet, storeSet, storeSetIfAbsent } fr
 import { audit, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere } from "./_supabase.js";
 import { sendNotice, telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 import type { FanRow, ProductRow } from "./_sales_bot.js";
+import { promoConfig, withPromo } from "./_sales_promo.js";
 
 // Pix pela PushinPay (gateway escolhido pelo administrador em 27/10/2026: R$ 0,35
 // por Pix, aceita conteudo adulto com a confirmacao de 18+ do comprador).
@@ -237,9 +238,11 @@ async function sendPix(salesToken: string, chatId: number, product: ProductRow, 
 
 // Botao do pacote, com o Pix ligado: cria (ou reaproveita) o pedido e manda o Pix.
 // Devolve false quando o Pix nao esta configurado.
-export async function startPayment(salesToken: string, fan: FanRow, product: ProductRow, chatId: number, site: string, customer?: Customer): Promise<boolean> {
+export async function startPayment(salesToken: string, fan: FanRow, sold: ProductRow, chatId: number, site: string, customer?: Customer): Promise<boolean> {
   const { token } = await pixConfig();
   if (!token) return false;
+  // promocao do dia (tambem na renovacao do VIP)
+  const product = withPromo(sold, await promoConfig());
   const since = new Date(Date.now() - PENDING_REUSE_MS).toISOString();
   const [open] = await dbSelect<OrderRow>(
     "sales_orders",

@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
+import { promoConfig, withPromo, type SaleProduct } from "./_sales_promo.js";
 import { createHmac, timingSafeEqual } from "crypto";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbInsertIgnoringDuplicates, dbSelect, dbUpdateWhere } from "./_supabase.js";
@@ -92,20 +93,24 @@ export function price(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace(".", ",")}`;
 }
 
-export function productLabel(p: Pick<ProductRow, "kind" | "title" | "price_cents" | "period_days" | "billing">): string {
+export function productLabel(p: Pick<ProductRow, "kind" | "title" | "price_cents" | "period_days" | "billing"> & { regular_cents?: number }): string {
   const icon = p.kind === "vip" ? "💎" : p.kind === "album" ? "🔥" : "📸";
   const period = p.billing === "mensal" ? "/mês" : /\bdias?\b/i.test(p.title) ? "" : ` · ${p.period_days} dias`;
-  return `${icon} ${p.title} — ${price(p.price_cents)}${period}`;
+  // promocao: o preco de hoje e o normal ("era")
+  const cost = p.regular_cents ? `${price(p.price_cents)} (era ${price(p.regular_cents)})` : price(p.price_cents);
+  return `${icon} ${p.title} — ${cost}${period}`;
 }
 
-// Pacotes que aparecem para o fa: ativos e com conteudo (o VIP precisa do canal).
-export async function productsForSale(): Promise<ProductRow[]> {
+// Pacotes que aparecem para o fa: ativos e com conteudo (o VIP precisa do canal),
+// ja com o preco da promocao quando ela vale hoje.
+export async function productsForSale(): Promise<SaleProduct[]> {
   const products = await dbSelect<ProductRow>("sales_products", "select=*&active=eq.true&order=position.asc");
   const media = await dbSelect<{ product_id: string }>("sales_product_media", "select=product_id");
   const withMedia = new Set(media.map((m) => m.product_id));
   // o VIP e o acesso ao canal +18 (Meu perfil -> Canal +18)
   const vipReady = Boolean(await telegramChannel().catch(() => null));
-  return products.filter((p) => (p.kind === "vip" ? vipReady : withMedia.has(p.id)));
+  const promo = await promoConfig();
+  return products.filter((p) => (p.kind === "vip" ? vipReady : withMedia.has(p.id))).map((p) => withPromo(p, promo));
 }
 
 const AGE_TEXT = "Oi! Aqui é a Luna 💛\n\nAqui tem conteúdo só para maiores de 18 anos. Se você tem 18 ou mais, vem comigo curtir os meus melhores momentos 😘";
@@ -162,7 +167,10 @@ export async function sendMenu(token: string, chatId: number, fan?: FanRow): Pro
     await sendCta(token, chatId, fill(own || MENU_TEXT_NAMED, fan ?? { first_name: null }), turn, rows);
     return;
   }
-  await telegram(token, "sendMessage", { chat_id: chatId, text: products.length ? MENU_TEXT : "Seus pacotes:", reply_markup: { inline_keyboard: rows } });
+  const { promoBanner } = await import("./_sales_promo.js");
+  const banner = products.length ? await promoBanner() : null;
+  const text = products.length ? MENU_TEXT : "Seus pacotes:";
+  await telegram(token, "sendMessage", { chat_id: chatId, text: banner ? `${banner}\n\n${text}` : text, reply_markup: { inline_keyboard: rows } });
 }
 
 async function listMine(token: string, fan: FanRow, chatId: number): Promise<void> {

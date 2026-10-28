@@ -258,3 +258,222 @@ export function FinancePage() {
     </div>
   );
 }
+
+// --- Planos e precos: precos, promocao do dia e quem esta no Telegram ----------------------
+
+const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const WEEKDAY_NAMES = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+const toText = (cents: number | undefined) => (cents ? (cents / 100).toFixed(2).replace(".", ",") : "");
+function toCents(text: string): number | null {
+  const n = Number(text.replace(/[^\d,.]/g, "").replace(",", "."));
+  return text.trim() && Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+}
+
+export function PlansPage() {
+  const [status, setStatus] = useState<Status | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [prices, setPrices] = useState<Record<string, { price: string; days: string }>>({});
+  const [promo, setPromo] = useState<{ enabled: boolean; days: number[]; label: string; prices: Record<string, string> } | null>(null);
+
+  function load(s: Status) {
+    setStatus(s);
+    shared = Promise.resolve(s);
+    sharedAt = Date.now();
+    setPrices(Object.fromEntries(s.products.map((p) => [p.id, { price: toText(p.price_cents), days: String(p.period_days) }])));
+    setPromo({ enabled: s.promo.enabled, days: s.promo.days, label: s.promo.label, prices: Object.fromEntries(Object.entries(s.promo.prices).map(([id, c]) => [id, toText(c)])) });
+  }
+  useEffect(() => {
+    call()
+      .then(load)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  async function run(key: string, body: object, done: string) {
+    setBusy(key);
+    setError(null);
+    setNotice(null);
+    try {
+      load(await call(body));
+      setNotice(done);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (error && !status) return <p className="st-error">{error}</p>;
+  if (!status || !promo) return <div className="st-empty st-empty-small">Carregando…</div>;
+  const products = status.products.filter((p) => p.active);
+  const receiving = Math.max(0, status.fans.adults - status.fans.optedOut - status.fans.blocked);
+  const promoDays = promo.days.map((d) => WEEKDAY_NAMES[d]).join(", ");
+
+  return (
+    <div className="st-plans">
+      <div className="st-stats st-stats-2">
+        <div className="st-panel st-mini-stat">
+          <span>
+            <Icon name="telegram" size={15} /> Bot da Luna (canal principal)
+          </span>
+          <b>{status.fans.adults}</b>
+          <small>
+            pessoas (+18 confirmado) · {receiving} recebendo as mensagens · {status.fans.today} nova(s) hoje
+            {status.fans.optedOut ? ` · ${status.fans.optedOut} pediram para parar` : ""}
+          </small>
+        </div>
+        <div className="st-panel st-mini-stat">
+          <span>
+            <Icon name="star" size={15} /> Canal VIP {status.channel ? `· ${status.channel}` : ""}
+          </span>
+          <b>{status.channelMembers ?? "—"}</b>
+          <small>
+            {status.channelMembers === null
+              ? "o Telegram não respondeu a contagem agora"
+              : `membros no canal (conta você e o bot) · ${status.vipMembers.length} assinante(s) pagando`}
+          </small>
+        </div>
+      </div>
+
+      {notice && <p className="st-ok">{notice}</p>}
+      {error && <p className="st-error">{error}</p>}
+
+      <section className="st-panel st-settings">
+        <h2>Planos</h2>
+        <p className="st-hint">O preço novo vale para o próximo Pix. Quem já pagou continua com o que comprou.</p>
+        <div className="st-plan-rows">
+          {products.map((p) => {
+            const row = prices[p.id] ?? { price: "", days: "" };
+            const cents = toCents(row.price);
+            const days = Number(row.days);
+            const changed = cents !== p.price_cents || days !== p.period_days;
+            return (
+              <div key={p.id} className="st-plan-row">
+                <b>
+                  {p.kind === "vip" ? "💎" : p.kind === "album" ? "🔥" : "📸"} {p.title}
+                </b>
+                <label>
+                  <span>Preço (R$)</span>
+                  <input className="st-input" inputMode="decimal" value={row.price} onChange={(e) => setPrices({ ...prices, [p.id]: { ...row, price: e.target.value } })} />
+                </label>
+                <label>
+                  <span>Dias de acesso</span>
+                  <input className="st-input" inputMode="numeric" value={row.days} onChange={(e) => setPrices({ ...prices, [p.id]: { ...row, days: e.target.value } })} />
+                </label>
+                <button
+                  type="button"
+                  className="st-btn st-btn-small st-btn-primary"
+                  disabled={!changed || busy !== null || !cents || !Number.isInteger(days) || days < 1}
+                  onClick={() => run(`p-${p.id}`, { action: "product", id: p.id, price_cents: cents, period_days: days }, `“${p.title}” agora sai por ${brl(cents!)} (${days} dias).`)}
+                >
+                  {busy === `p-${p.id}` ? "Salvando…" : "Salvar"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="st-panel st-settings">
+        <div className="st-panel-head">
+          <h2>Promoção</h2>
+          {status.promo.active ? (
+            <span className="st-badge st-badge-aprovado">valendo agora</span>
+          ) : status.promo.enabled ? (
+            <span className="st-badge st-badge-rascunho">ligada · próxima: {promoDays || "—"}</span>
+          ) : (
+            <span className="st-badge st-badge-arquivado">desligada</span>
+          )}
+        </div>
+        <p className="st-hint">
+          Nos dias marcados (horário de Brasília) o pacote sai pelo preço da promoção: no botão do bot (com o “era”), no Pix e na renovação do VIP. As
+          mensagens com os pacotes ganham uma faixa 🔥 no topo.
+        </p>
+        <label className="st-check">
+          <input type="checkbox" checked={promo.enabled} onChange={(e) => setPromo({ ...promo, enabled: e.target.checked })} />
+          Promoção ligada
+        </label>
+        <span className="st-label">Dias</span>
+        <div className="st-quick-slots">
+          {WEEKDAYS.map((d, i) => (
+            <button
+              key={d}
+              type="button"
+              aria-pressed={promo.days.includes(i)}
+              className={promo.days.includes(i) ? "on" : ""}
+              onClick={() => setPromo({ ...promo, days: promo.days.includes(i) ? promo.days.filter((x) => x !== i) : [...promo.days, i].sort() })}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+        <label className="st-field">
+          <span>Nome da promoção</span>
+          <input className="st-input" maxLength={60} value={promo.label} onChange={(e) => setPromo({ ...promo, label: e.target.value })} />
+        </label>
+        <div className="st-plan-rows">
+          {products.map((p) => {
+            const value = promo.prices[p.id] ?? "";
+            const cents = toCents(value);
+            const off = cents && cents < p.price_cents ? Math.round((1 - cents / p.price_cents) * 100) : null;
+            return (
+              <div key={p.id} className="st-plan-row st-plan-row-promo">
+                <b>
+                  {p.title} <small>normal {brl(p.price_cents)}</small>
+                </b>
+                <label>
+                  <span>Na promoção (R$)</span>
+                  <input
+                    className="st-input"
+                    inputMode="decimal"
+                    placeholder="sem promoção"
+                    value={value}
+                    onChange={(e) => setPromo({ ...promo, prices: { ...promo.prices, [p.id]: e.target.value } })}
+                  />
+                </label>
+                <span className={off ? "st-plan-off" : "st-hint"}>{off ? `-${off}%` : value ? "precisa ser menor" : ""}</span>
+              </div>
+            );
+          })}
+        </div>
+        {products.some((p) => toCents(promo.prices[p.id] ?? "")) && (
+          <div className="st-plan-preview">
+            <span className="st-label">Como aparece no bot</span>
+            <p>🔥 {promo.label || "Promoção"}: só hoje, preço especial nos pacotes!</p>
+            {products.map((p) => {
+              const cents = toCents(promo.prices[p.id] ?? "");
+              return (
+                <span key={p.id} className="st-plan-button">
+                  {p.kind === "vip" ? "💎" : p.kind === "album" ? "🔥" : "📸"} {p.title} — {cents && cents < p.price_cents ? `${brl(cents)} (era ${brl(p.price_cents)})` : brl(p.price_cents)}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="st-composer-actions">
+          <button
+            type="button"
+            className="st-btn st-btn-primary"
+            disabled={busy !== null}
+            onClick={() =>
+              run(
+                "promo",
+                {
+                  action: "promo-save",
+                  enabled: promo.enabled,
+                  days: promo.days,
+                  label: promo.label,
+                  prices: Object.fromEntries(Object.entries(promo.prices).map(([id, t]) => [id, toCents(t)])),
+                },
+                promo.enabled ? `Promoção salva: vale em ${promoDays || "nenhum dia"}.` : "Promoção desligada."
+              )
+            }
+          >
+            {busy === "promo" ? "Salvando…" : "Salvar promoção"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}

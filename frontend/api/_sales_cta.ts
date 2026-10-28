@@ -176,6 +176,12 @@ async function buyButtons(): Promise<{ text: string; callback_data: string }[][]
 // (ou os botoes dados). "turn" escolhe a previa (gira a cada mensagem).
 export async function sendCta(token: string, chatId: number, text: string, turn: number, buttons?: { text: string; callback_data: string }[][]): Promise<void> {
   const rows = buttons ?? (await buyButtons());
+  // dia de promocao: a faixa vai no topo de toda mensagem com os pacotes
+  if (rows.length) {
+    const { promoBanner } = await import("./_sales_promo.js");
+    const banner = await promoBanner();
+    if (banner) text = `${banner}\n\n${text}`;
+  }
   const list = await previews();
   const markup = rows.length ? { reply_markup: { inline_keyboard: rows } } : {};
   const preview = list.length ? list[Math.abs(turn) % list.length] : null;

@@ -9,7 +9,7 @@ import { ComingSoon, Modal, formatBytes } from "./shared";
 import { AccountsPage, InstagramPage, TikTokPage } from "./social";
 import { MusicPage } from "./music";
 import { Dock } from "./dock";
-import { FinancePage, SubscriptionsPage, useSalesStatus } from "./money";
+import { FinancePage, PlansPage, SubscriptionsPage, useSalesStatus } from "./money";
 import { SalesPage } from "./sales";
 import { TelegramFoldersPage } from "./telegramFolders";
 import { StudioProvider, useStudio, type Post } from "./store";
@@ -42,6 +42,7 @@ const GROUPS: Record<string, Group> = {
     text: "Bot de vendas, conteúdo do Telegram, assinantes do VIP e o dinheiro.",
     tabs: [
       { id: "vendas", label: "Vendas" },
+      { id: "planos", label: "Planos e preços" },
       { id: "telegram", label: "Conteúdo do Telegram" },
       { id: "assinaturas", label: "Assinaturas" },
       { id: "financeiro", label: "Financeiro" },
@@ -259,6 +260,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           {page === "musicas" && <MusicPage />}
           {page === "vendas" && <SalesPage onFolders={() => go("telegram")} />}
           {page === "telegram" && <TelegramFoldersPage onSales={() => go("vendas")} />}
+          {page === "planos" && <PlansPage />}
           {page === "assinaturas" && <SubscriptionsPage />}
           {page === "financeiro" && <FinancePage />}
           {page === "contas" && <AccountsPage nav={nav} />}
@@ -362,6 +364,7 @@ function MoneyChips({ go }: { go: (id: string) => void }) {
   const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const chips: { text: string; to: string; hot?: boolean }[] = [{ text: `${brl(status.sales.total30)} em 30 dias`, to: "financeiro" }];
   chips.push({ text: `${status.vipMembers.length} no VIP`, to: "assinaturas" });
+  if (status.promo?.active) chips.push({ text: `🔥 ${status.promo.label} valendo`, to: "planos", hot: true });
   if (status.sales.pending) chips.push({ text: `${status.sales.pending} Pix esperando`, to: "vendas", hot: true });
   if (!status.pix.configured) chips.push({ text: "Pix desligado", to: "vendas", hot: true });
   return (
