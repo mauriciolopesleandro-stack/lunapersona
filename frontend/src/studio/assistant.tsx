@@ -13,7 +13,16 @@ import { useStudio, type Post } from "./store";
 
 interface Message {
   role: "user" | "assistant";
-  content: string;
+  content: string; // o que vai para a IA (com a leitura das referencias)
+  display?: string; // o que o administrador escreveu
+  refs?: string[]; // miniaturas das fotos/videos mandados
+  reading?: string; // leitura das referencias (abre e fecha na conversa)
+}
+// foto ou video anexado, ja reduzido no navegador
+interface Attachment {
+  kind: "foto" | "video";
+  thumb: string;
+  images: string[];
 }
 interface Status {
   configured: boolean;
@@ -83,8 +92,11 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [stage, setStage] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/studio?r=assistant")
@@ -112,19 +124,70 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     save(next);
   }
 
+  async function attach(files: File[]) {
+    setError(null);
+    try {
+      const list = [...attachments];
+      for (const f of files) {
+        if (f.type.startsWith("video/")) {
+          if (list.some((a) => a.kind === "video")) throw new Error("Mande um vídeo por vez.");
+          list.push(await videoRef(f));
+        } else if (f.type.startsWith("image/")) {
+          if (list.filter((a) => a.kind === "foto").length >= 4) throw new Error("Até 4 fotos por mensagem.");
+          list.push(await photoRef(f));
+        }
+      }
+      if (list.some((a) => a.kind === "video") && list.length > 1) throw new Error("Vídeo vai sozinho na mensagem (sem fotos junto).");
+      setAttachments(list);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function send(content: string) {
-    const body = content.trim();
-    if (!body || busy) return;
-    const next: Message[] = [...messages, { role: "user", content: body }];
-    update(next);
-    setText("");
+    const typed = content.trim();
+    const link = typed.match(/https?:\/\/\S+/)?.[0];
+    if ((!typed && !attachments.length) || busy) return;
     setBusy(true);
     setError(null);
+    // 1) leitura das referencias (fotos, video ou link) pela IA com visao
+    const reads: { label: string; text: string }[] = [];
+    try {
+      for (const a of attachments) {
+        setStage(a.kind === "video" ? "Assistindo o vídeo…" : "Olhando a foto…");
+        const out = await post<{ analysis: string }>({ action: "analyze", kind: a.kind, images: a.images });
+        reads.push({ label: a.kind, text: out.analysis });
+      }
+      if (link) {
+        setStage(/instagram\.com/i.test(link) ? "Lendo a página do Instagram…" : "Lendo o link…");
+        const out = await post<{ title: string; analysis: string }>({ action: "link", url: link });
+        reads.push({ label: out.title, text: out.analysis });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+      setStage(null);
+      return;
+    }
+    const profile = reads.some((r) => r.label.startsWith("perfil @"));
+    const ask = typed || (profile ? "Analise essa página e crie conteúdos para a Luna nesse estilo." : "Recria essa ideia com a Luna.");
+    const reading = reads.map((r) => `[Referência: ${r.label}]\n${r.text}`).join("\n\n");
+    const recreate = profile
+      ? "Use a leitura da página para criar 5 conteúdos para a Luna no mesmo estilo (inspire-se, não copie a pessoa, o rosto nem a marca). Termine com um bloco PROMPT/LEGENDA/HASHTAGS/DESTINO para cada um."
+      : "Recrie a ideia da referência com a Luna (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).";
+    const message: Message = reads.length
+      ? { role: "user", content: `${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
+      : { role: "user", content: typed };
+    const next: Message[] = [...messages, message];
+    update(next);
+    setText("");
+    setAttachments([]);
+    setStage(null);
     try {
       const r = await fetch("/api/studio?r=assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: next.map((m) => ({ role: m.role, content: m.content })) }),
       });
       const b = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(b.detail ?? `Erro HTTP ${r.status}`);
@@ -179,7 +242,10 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
           <div className="st-chat-list">
             {messages.length === 0 && (
               <div className="st-chat-quick">
-                <span className="st-hint">Peça o plano da semana, prompts para a Naiaflow, legendas e ideias. A IA conhece a Luna, as regras e a sua agenda.</span>
+                <span className="st-hint">
+                  Peça o plano da semana, prompts para a Naiaflow, legendas e ideias. Mande uma foto ou vídeo de referência (📎) ou cole o link de um perfil do
+                  Instagram: a IA faz a leitura e recria a ideia com a Luna.
+                </span>
                 {[...ideas, ...QUICK].map((q) => (
                   <button key={q} type="button" className="st-btn st-btn-small" disabled={busy || !status?.configured} onClick={() => send(q)}>
                     {q}
@@ -189,7 +255,20 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
             )}
             {messages.map((m, i) => (
               <div key={i} className={`st-msg st-msg-${m.role}`}>
-                <p>{m.content}</p>
+                {m.refs && m.refs.length > 0 && (
+                  <div className="st-msg-refs">
+                    {m.refs.map((src, j) => (
+                      <img key={j} src={src} alt="Referência" />
+                    ))}
+                  </div>
+                )}
+                <p>{m.display ?? m.content}</p>
+                {m.reading && (
+                  <details className="st-msg-reading">
+                    <summary>Leitura da referência</summary>
+                    <p>{m.reading}</p>
+                  </details>
+                )}
                 {m.role === "assistant" && (
                   <button type="button" className="st-link" onClick={() => copy(i)}>
                     {copied === i ? "Copiado" : "Copiar"}
@@ -198,7 +277,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
                 {m.role === "assistant" && parsePhotoBlocks(m.content).map((b, j) => <QuickPhoto key={`${i}-${j}`} block={b} />)}
               </div>
             ))}
-            {busy && <div className="st-msg st-msg-assistant st-msg-wait">Pensando…</div>}
+            {busy && <div className="st-msg st-msg-assistant st-msg-wait">{stage ?? "Pensando…"}</div>}
             <div ref={endRef} />
           </div>
           {error && <p className="st-error">{error}</p>}
@@ -211,6 +290,31 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
               ))}
             </div>
           )}
+          {attachments.length > 0 && (
+            <div className="st-chat-attach">
+              {attachments.map((a, j) => (
+                <span key={j}>
+                  <img src={a.thumb} alt="" />
+                  {a.kind === "video" && <i>vídeo</i>}
+                  <button type="button" aria-label="Tirar" onClick={() => setAttachments(attachments.filter((_, k) => k !== j))}>
+                    <Icon name="close" size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            hidden
+            multiple
+            accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm"
+            onChange={(e) => {
+              const files = [...(e.target.files ?? [])];
+              e.target.value = "";
+              attach(files);
+            }}
+          />
           <form
             className="st-chat-input"
             onSubmit={(e) => {
@@ -218,22 +322,32 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
               send(text);
             }}
           >
+            <button type="button" className="st-btn st-chat-clip" disabled={busy} onClick={() => fileRef.current?.click()} aria-label="Anexar foto ou vídeo" title="Anexar foto ou vídeo (ou cole uma imagem)">
+              <Icon name="image" size={16} />
+            </button>
             <textarea
               ref={inputRef}
               className="st-input"
               rows={2}
               value={text}
               onChange={(e) => setText(e.target.value)}
+              onPaste={(e) => {
+                const files = [...e.clipboardData.files].filter((f) => f.type.startsWith("image/"));
+                if (files.length) {
+                  e.preventDefault();
+                  attach(files);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   send(text);
                 }
               }}
-              placeholder="Escreva o que você precisa… (Enter envia)"
+              placeholder="Escreva, mande uma foto/vídeo ou cole um link do Instagram…"
               aria-label="Mensagem para o Assistente"
             />
-            <button type="submit" className="st-btn st-btn-primary" disabled={busy || !text.trim() || !status?.configured} aria-label="Enviar">
+            <button type="submit" className="st-btn st-btn-primary" disabled={busy || (!text.trim() && !attachments.length) || !status?.configured} aria-label="Enviar">
               <Icon name="send" size={16} />
             </button>
           </form>
@@ -249,6 +363,56 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       )}
     </div>
   );
+}
+
+async function post<T>(body: object): Promise<T> {
+  const r = await fetch("/api/studio?r=assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(b.detail ?? `Erro HTTP ${r.status}`);
+  return b as T;
+}
+
+// imagem/quadro reduzido em JPEG (a IA nao precisa da foto inteira)
+function shrink(src: CanvasImageSource, w: number, h: number, max: number, quality: number): string {
+  const scale = Math.min(1, max / Math.max(w, h));
+  const c = Object.assign(document.createElement("canvas"), { width: Math.round(w * scale), height: Math.round(h * scale) });
+  c.getContext("2d")!.drawImage(src, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", quality);
+}
+
+async function photoRef(file: File): Promise<Attachment> {
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error(`Não consegui abrir “${file.name}”. Mande em JPG ou PNG.`);
+  }
+  return { kind: "foto", thumb: shrink(bitmap, bitmap.width, bitmap.height, 160, 0.7), images: [shrink(bitmap, bitmap.width, bitmap.height, 1024, 0.82)] };
+}
+
+// 4 quadros do video (10%, 35%, 60% e 85%) para a IA entender o movimento
+async function videoRef(file: File): Promise<Attachment> {
+  const url = URL.createObjectURL(file);
+  try {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.preload = "auto";
+    video.src = url;
+    await new Promise<void>((ok, fail) => {
+      video.onloadeddata = () => ok();
+      video.onerror = () => fail(new Error(`Não consegui abrir o vídeo “${file.name}”. Mande em MP4.`));
+    });
+    const duration = video.duration || 1;
+    const frames: string[] = [];
+    for (const at of [0.1, 0.35, 0.6, 0.85]) {
+      video.currentTime = duration * at;
+      await new Promise<void>((ok) => (video.onseeked = () => ok()));
+      frames.push(shrink(video, video.videoWidth, video.videoHeight, 768, 0.8));
+    }
+    return { kind: "video", thumb: shrink(video, video.videoWidth, video.videoHeight, 160, 0.7), images: frames };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 // --- Agenda: os proximos 14 dias, por dia ------------------------------------------------
