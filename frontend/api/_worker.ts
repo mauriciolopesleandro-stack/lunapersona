@@ -26,11 +26,14 @@ import { igAudioSearch, igConnection } from "./_instagram.js";
 //                                   o PC edita a foto que ja tem (opcao Editar da Naiaflow)
 //                                   Reels (kind "video"): o PC gera a foto e monta no proprio PC o
 //                                   video com zoom leve (gratis, sem credito de video)
-//   POST { action: "done", id, local_path, size_bytes, video_path?, video_size? }
+//                                   carrossel (Feed/TikTok): vem prompts [] com uma variacao por foto
+//   POST { action: "done", id, local_path, size_bytes, video_path?, video_size?, more_paths? }
 //                                -> cadastra a midia, cria as publicacoes (o item e os que
 //                                   reaproveitam a foto) e devolve os destinos; Reels sai com
 //                                   uma musica em alta da biblioteca do Instagram
 //   POST { action: "upload-url", post_id, version, size_bytes, mime_type? } -> link para subir a copia daquele destino
+//   POST { action: "upload-url", post_id, version, items: [{ position, size_bytes, mime_type }] }
+//                                -> { urls } (carrossel: todas as fotos da publicacao de uma vez)
 //   POST { action: "uploaded", id } -> manda cada publicacao do item para a analise no bot
 //   POST { action: "fail", id, error } -> volta para a fila ou, sem tentativas, falhou (aviso no Telegram)
 
@@ -101,6 +104,21 @@ function isCorrection(item: ItemRow): boolean {
 // propria (no Reels, media_path e a foto de onde o video sai)
 const QUEUE_FILTER = "status=eq.na_fila&or=(source_item_id.is.null,media_path.not.is.null)";
 
+// Carrossel: o plano da foto do chat guarda quantas fotos (request.photos). O
+// robo gera todas no mesmo item (mesmo ensaio, pose e angulo diferentes); Feed e
+// TikTok levam todas, Stories so a primeira.
+async function photosOf(item: Pick<ItemRow, "plan_id">): Promise<number> {
+  const [plan] = await dbSelect<{ request: { photos?: unknown } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
+  const n = Number(plan?.request?.photos ?? 1);
+  return Number.isInteger(n) && n > 1 && n <= 10 ? n : 1;
+}
+
+function carouselPrompts(prompt: string, n: number): string[] {
+  return Array.from({ length: n }, (_, i) =>
+    i === 0 ? prompt : `${prompt}\n\nFoto ${i + 1} de ${n} do mesmo ensaio: mesma pessoa, mesma roupa e mesmo lugar; mude a pose e o ângulo da câmera.`
+  );
+}
+
 async function queueSize(): Promise<number> {
   const rows = await dbSelect<{ id: string }>("content_plan_items", `select=id&${QUEUE_FILTER}`);
   return rows.length;
@@ -112,6 +130,8 @@ async function queueSize(): Promise<number> {
 export async function queueCorrection(postId: string, text: string): Promise<boolean> {
   const [item] = await dbSelect<ItemRow>("content_plan_items", `select=*&post_id=eq.${postId}&media_path=not.is.null`);
   if (!item) return false;
+  // carrossel: a correcao de uma foto so nao cabe aqui; a publicacao volta para rascunho
+  if ((await photosOf(item)) > 1) return false;
   await dbUpdateWhere("content_plan_items", `id=eq.${item.id}`, {
     status: "na_fila",
     attempts: 0,
@@ -222,6 +242,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (!item) return reply(200, { item: null });
       const claimed = await dbUpdate<ItemRow>("content_plan_items", `id=eq.${item.id}&status=eq.na_fila`, { status: "gerando", attempts: item.attempts + 1, updated_at: now() });
       if (!claimed) return reply(200, { item: null });
+      const photos = isCorrection(item) ? 1 : await photosOf(item);
       return reply(200, {
         item: {
           id: item.id,
@@ -234,6 +255,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           // destinos que vao usar esta foto (o PC prepara uma copia para cada um)
           targets: (await familyOf(item)).map((i) => ({ network: i.network, format: i.format })),
           ...(isCorrection(item) ? { edit: { source: item.media_path, instruction: (item.note ?? "").slice(CORRECTION_PREFIX.length) } } : {}),
+          ...(photos > 1 ? { prompts: carouselPrompts(item.prompt, photos) } : {}),
         },
       });
     }
@@ -246,24 +268,32 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const localPath = safeLocalPath(body.local_path, ".jpg");
       const video = item.kind === "video";
       const assetPath = video ? safeLocalPath(body.video_path, ".mp4") : localPath;
+      const photos = isCorrection(item) || video ? 1 : await photosOf(item);
+      const more = photos > 1 ? (Array.isArray(body.more_paths) ? body.more_paths : []).map((p) => safeLocalPath(p, ".jpg")) : [];
+      if (more.length !== photos - 1) throw new Problem(400, `O carrossel tem ${photos} fotos: mande as outras ${photos - 1}.`);
+      const sizes = Array.isArray(body.more_sizes) ? body.more_sizes : [];
+      const paths = [assetPath, ...more];
       await dbInsertIgnoringDuplicates(
         "media_assets",
-        [
-          {
-            local_path: assetPath,
-            kind: video ? "video" : "image",
-            mime_type: video ? "video/mp4" : "image/jpeg",
-            size_bytes: safeSize(video ? body.video_size : body.size_bytes),
-            title: item.prompt.slice(0, 120) || "Gerada pela automação",
-            status: "rascunho",
-            content_rating: item.adult ? "adulto" : "livre",
-            created_at: now(),
-          },
-        ],
+        paths.map((p, i) => ({
+          local_path: p,
+          kind: video ? "video" : "image",
+          mime_type: video ? "video/mp4" : "image/jpeg",
+          size_bytes: safeSize(i === 0 ? (video ? body.video_size : body.size_bytes) : sizes[i - 1]),
+          title: (item.prompt.slice(0, 110) || "Gerada pela automação") + (photos > 1 ? ` (${i + 1}/${photos})` : ""),
+          status: "rascunho",
+          content_rating: item.adult ? "adulto" : "livre",
+          created_at: now(),
+        })),
         "local_path"
       );
-      const [media] = await dbSelect<{ id: string }>("media_assets", `select=id&local_path=eq.${encodeURIComponent(assetPath)}`);
-      if (!media) throw new Problem(500, "Não consegui cadastrar a mídia na biblioteca.");
+      const mediaIds: string[] = [];
+      for (const p of paths) {
+        const [m] = await dbSelect<{ id: string }>("media_assets", `select=id&local_path=eq.${encodeURIComponent(p)}`);
+        if (!m) throw new Problem(500, "Não consegui cadastrar a mídia na biblioteca.");
+        mediaIds.push(m.id);
+      }
+      const media = { id: mediaIds[0] };
       const family = await familyOf(item);
       const correction = isCorrection(item);
       // a publicacao reprovada sai do caminho; a foto corrigida vira outra
@@ -272,10 +302,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const targets = [];
       for (const it of family) {
         const igAudio = it.network === "instagram" && it.format === "Reels" ? await reelsAudio() : undefined;
+        // carrossel: Feed e TikTok com todas as fotos; Stories so com a primeira
+        const ids = it.format === "Stories" ? [media.id] : mediaIds;
         const post = await createDraftPost({
           network: it.network,
           formats: [it.format],
-          media_ids: [media.id],
+          media_ids: ids,
           caption: it.caption,
           hashtags: it.hashtags,
           scheduled_at: it.scheduled_at,
@@ -286,10 +318,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         });
         const submitted = await submitPost(post.id);
         await dbUpdateWhere("content_plan_items", `id=eq.${it.id}`, { post_id: post.id, media_path: localPath, ...(correction ? { note: null } : {}), updated_at: now() });
-        targets.push({ item_id: it.id, post_id: post.id, version: submitted.version, network: it.network, format: it.format });
+        targets.push({ item_id: it.id, post_id: post.id, version: submitted.version, network: it.network, format: it.format, photos: ids.length });
       }
       await audit(correction ? "corrigir_item" : "gerar_item", "content_plan_items", item.id, { publicacoes: targets.length });
       return reply(200, { media_id: media.id, targets });
+    }
+
+    if (body.action === "upload-url" && Array.isArray(body.items)) {
+      const urls = await uploadUrlsFor(String(body.post_id ?? ""), body.version, body.items);
+      return reply(200, { urls });
     }
 
     if (body.action === "upload-url") {

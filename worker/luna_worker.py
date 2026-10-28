@@ -421,29 +421,54 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
         log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): correção da foto {edit['source']}: {edit['instruction'][:90]}")
     else:
         log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): {item['prompt'][:90]}")
-    url = ""
-    if test_image:
-        raw = test_image.read_bytes()
-    else:
-        if edit:
-            job = known_jobs().get(edit["source"])
-            if not job:
-                raise RuntimeError(f"Nao sei qual foto da Naiaflow e {edit['source']} (foto gerada antes de o robo anotar os jobs).")
-            url = naia.edit(job, edit["instruction"])
-        else:
-            url = naia.generate(item["prompt"])
-        r = requests.get(url, timeout=120)
-        r.raise_for_status()
-        raw = r.content
-    img = Image.open(io.BytesIO(raw)).convert("RGB")
     folder = STUDIO_ROOT / item["folder"]
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / item["file"]
-    path.write_bytes(to_jpeg(img, 95))
-    local_path = f"{item['folder']}/{item['file']}"
-    if url:
-        remember_job(local_path, url)
-    log(f"Salva em {local_path}")
+    # carrossel: uma variacao do pedido por foto (a 1a e o proprio pedido)
+    prompts = item.get("prompts") or [item["prompt"]]
+    carousel = len(prompts) > 1
+    imgs: list[Image.Image] = []
+    names: list[str] = []
+    for i, prompt in enumerate(prompts):
+        name = item["file"] if i == 0 else item["file"].replace(".jpg", f"-{i + 1}.jpg")
+        path_i = folder / name
+        local_i = f"{item['folder']}/{name}"
+        if carousel and path_i.exists():
+            # tentativa anterior caiu no meio: a foto que ja saiu nao gasta credito de novo
+            log(f"Foto {i + 1}/{len(prompts)} já estava pronta: {local_i}")
+            imgs.append(Image.open(path_i).convert("RGB"))
+            names.append(name)
+            continue
+        url = ""
+        if test_image:
+            raw = test_image.read_bytes()
+        else:
+            if edit:
+                job = known_jobs().get(edit["source"])
+                if not job:
+                    raise RuntimeError(f"Nao sei qual foto da Naiaflow e {edit['source']} (foto gerada antes de o robo anotar os jobs).")
+                url = naia.edit(job, edit["instruction"])
+            else:
+                url = naia.generate(prompt)
+            r = requests.get(url, timeout=120)
+            r.raise_for_status()
+            raw = r.content
+        img_i = Image.open(io.BytesIO(raw)).convert("RGB")
+        path_i.write_bytes(to_jpeg(img_i, 95))
+        if url:
+            remember_job(local_i, url)
+        log(f"Salva em {local_i}" + (f" (foto {i + 1}/{len(prompts)} do carrossel)" if carousel else ""))
+        imgs.append(img_i)
+        names.append(name)
+    img = imgs[0]
+    path = folder / names[0]
+    local_path = f"{item['folder']}/{names[0]}"
+    if carousel:
+        extra_more = {
+            "more_paths": [f"{item['folder']}/{n}" for n in names[1:]],
+            "more_sizes": [(folder / n).stat().st_size for n in names[1:]],
+        }
+    else:
+        extra_more = {}
     extra = {}
     video: bytes | None = None
     if item.get("kind") == "video":
@@ -452,8 +477,22 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
         video = mp4.read_bytes()
         extra = {"video_path": f"{item['folder']}/{mp4.name}", "video_size": len(video)}
         log(f"Vídeo do Reels montado no PC: {extra['video_path']}")
-    done = studio.call("done", id=item["id"], local_path=local_path, size_bytes=path.stat().st_size, **extra)
+    done = studio.call("done", id=item["id"], local_path=local_path, size_bytes=path.stat().st_size, **extra, **extra_more)
     for t in done["targets"]:
+        photos = int(t.get("photos") or 1)
+        if photos > 1:
+            # carrossel: todas as fotos da publicacao, na ordem, num pedido so
+            datas = [copy_for(imgs[j], t["network"], t["format"]) for j in range(photos)]
+            up = studio.call(
+                "upload-url",
+                id=item["id"],
+                post_id=t["post_id"],
+                version=t["version"],
+                items=[{"position": j, "size_bytes": len(d), "mime_type": "image/jpeg"} for j, d in enumerate(datas)],
+            )
+            for u in up["urls"]:
+                put_copy(u["url"], datas[u["position"]], "image/jpeg")
+            continue
         if video is not None and t["format"] == "Reels":
             data, mime = video, "video/mp4"
         else:

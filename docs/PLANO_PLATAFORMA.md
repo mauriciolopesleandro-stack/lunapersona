@@ -1021,3 +1021,11 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
 - **Visão Geral**: cards do Telegram (bot de vendas, vendas em 30 dias, VIP, prévias), com destaque no que precisa de ação.
 - **Dock flutuante** em todas as telas: o Assistente minimizado (abre uma barra lateral com Conversa, Agenda dos próximos 14 dias e Planejamento; Ctrl J abre/fecha, Esc minimiza) e as personagens em bolinhas (clique: descrição, "Pedir ao assistente", Biblioteca, Editar).
 - Servidor: o status de vendas passou a trazer `vipMembers` (quem está no canal e até quando).
+
+## 41. Foto do chat: vários destinos e carrossel (28/10/2026)
+
+- **Vários destinos:** os destinos viram botões de marcar (Feed, Stories, TikTok, +18). A foto é gerada uma vez só (1 crédito) e cada destino ganha a sua publicação para aprovar. +18 não se mistura com Instagram/TikTok (tela e servidor).
+- **Carrossel (Feed e TikTok):** 2 a 10 fotos do mesmo ensaio, 1 crédito cada. O plano guarda `request.photos`; o robô do PC gera todas no mesmo item (a 1ª com o pedido, as outras com "mesma pessoa, roupa e lugar; mude pose e ângulo"), sobe as cópias de uma vez (`upload-url` com `items`) e o Stories leva só a primeira.
+- Se o robô cair no meio, as fotos que já estão na pasta não gastam crédito de novo.
+- "Pedir correção" num carrossel volta a publicação para rascunho no estúdio (a correção automática é só de foto única).
+- O robô do PC precisa ser reiniciado depois do deploy para pegar o código novo.
