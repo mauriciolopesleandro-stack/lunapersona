@@ -118,11 +118,12 @@ async function photosOf(item: Pick<ItemRow, "plan_id">): Promise<number> {
 
 // poses do carrossel, como no guia de estilo (STYLE_GUIDE em api/_assistant.ts):
 // mesmo momento, mesma roupa e lugar, pose diferente em cada foto
+// (maos simples: gesto complicado perto do rosto costuma sair com defeito)
 const CAROUSEL_POSES = [
-  "de lado ou de costas, olhando por cima do ombro para a câmera, sorrindo",
-  "mão no cabelo, um pouco mais perto da câmera",
-  "pose divertida: sinal de paz, piscadinha ou mandando beijo",
-  "corpo inteiro, outro ângulo da câmera",
+  "de lado ou de costas, olhando por cima do ombro para a câmera, sorrindo, mãos na cintura",
+  "uma mão no cabelo, um pouco mais perto da câmera, do peito para cima, rosto e ombros completos",
+  "piscando para a câmera, mãos apoiadas, outro ângulo",
+  "corpo inteiro dentro do quadro, da cabeça aos pés, de outro ângulo da câmera",
 ];
 
 function carouselPrompts(prompt: string, n: number): string[] {
