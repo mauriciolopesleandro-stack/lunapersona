@@ -116,9 +116,20 @@ async function photosOf(item: Pick<ItemRow, "plan_id">): Promise<number> {
   return Number.isInteger(n) && n > 1 && n <= 10 ? n : 1;
 }
 
+// poses do carrossel, como no guia de estilo (STYLE_GUIDE em api/_assistant.ts):
+// mesmo momento, mesma roupa e lugar, pose diferente em cada foto
+const CAROUSEL_POSES = [
+  "de lado ou de costas, olhando por cima do ombro para a câmera, sorrindo",
+  "mão no cabelo, um pouco mais perto da câmera",
+  "pose divertida: sinal de paz, piscadinha ou mandando beijo",
+  "corpo inteiro, outro ângulo da câmera",
+];
+
 function carouselPrompts(prompt: string, n: number): string[] {
   return Array.from({ length: n }, (_, i) =>
-    i === 0 ? prompt : `${prompt}\n\nFoto ${i + 1} de ${n} do mesmo ensaio: mesma pessoa, mesma roupa e mesmo lugar; mude a pose e o ângulo da câmera.`
+    i === 0
+      ? prompt
+      : `${prompt}\n\nFoto ${i + 1} de ${n} do mesmo momento: mesma pessoa, mesma roupa e mesmo lugar; agora ${CAROUSEL_POSES[(i - 1) % CAROUSEL_POSES.length]}.`
   );
 }
 

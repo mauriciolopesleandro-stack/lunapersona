@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
-import { ADULT_NOTE, AiError, PERSONA, askAi, type Mode } from "./_assistant.js";
+import { ADULT_NOTE, AiError, PERSONA, STYLE_GUIDE, askAi, type Mode } from "./_assistant.js";
 import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, supabaseConfigured } from "./_supabase.js";
 
 // /api/studio?r=plans - planejamento feito pelo chat (parte A do fluxo).
@@ -160,7 +160,7 @@ async function writeBatch(mode: Mode, plan: PlanRow, batch: ItemRow[]): Promise<
   const theme = typeof plan.request.theme === "string" && plan.request.theme.trim() ? plan.request.theme.trim() : "livre, variado, cenários reais do Brasil";
   const system = [
     PERSONA,
-    mode === "adulto" ? ADULT_NOTE : "",
+    mode === "adulto" ? ADULT_NOTE : STYLE_GUIDE,
     'Responda SÓ com JSON no formato {"items":[{"i":0,"prompt":"...","caption":"...","hashtags":["#..."]}]}, um objeto por item pedido, com o mesmo "i".',
   ]
     .filter(Boolean)
