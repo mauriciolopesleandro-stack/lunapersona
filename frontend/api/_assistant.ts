@@ -208,7 +208,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (req.method !== "POST") return reply(405, { detail: "Use GET ou POST." });
   if (!assistantConfigured()) return reply(400, { detail: "Falta cadastrar OPENROUTER_API_KEY na Vercel." });
 
-  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown };
+  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown };
   try {
     let raw = "";
     for await (const chunk of req) raw += chunk;
@@ -220,7 +220,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (body.action === "analyze" || body.action === "link") {
     const { analyzeImages, analyzeLink, RefError } = await import("./_assistant_refs.js");
     try {
-      if (body.action === "analyze") return reply(200, { analysis: await analyzeImages(body.images, body.kind) });
+      if (body.action === "analyze") return reply(200, { analysis: await analyzeImages(body.images, body.kind, body.purpose) });
       return reply(200, await analyzeLink(body.url));
     } catch (e) {
       if (e instanceof RefError) return reply(e.status, { detail: e.message });

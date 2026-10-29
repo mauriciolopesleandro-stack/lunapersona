@@ -311,7 +311,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
       await audit("foto_avulsa", "content_plan_items", items[0].id, { destino: keys.join(",") });
       const estimate = credits(items);
-      return reply(200, { item: items[0], items, estimate: { ...estimate, images: estimate.images * photos, credits: estimate.credits * photos } });
+      // carrossel: foto base (1) + "Gerar um carrossel" da Naiaflow (3 por rodada de 3 variacoes)
+      const carouselCredits = photos > 1 ? 1 + 3 * Math.ceil((photos - 1) / 3) : 1;
+      return reply(200, { item: items[0], items, estimate: { ...estimate, images: estimate.images * photos, credits: estimate.credits * carouselCredits } });
     }
 
     // acoes de item chegam com o id do item; as de plano, com plan_id

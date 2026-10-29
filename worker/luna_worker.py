@@ -50,6 +50,9 @@ NAIAFLOW_JOB = "https://app.naiaflow.com/generations/preview/job/"
 JOBS_FILE = HERE / "naia-jobs.json"
 EDIT_ACTION = "Editar pelo texto"  # nome da acao no painel
 EDIT_CHIP = "Editar"  # etiqueta que ela deixa no composer
+CAROUSEL_ACTION = "Gerar um carrossel"  # 3 creditos, 3 variacoes do mesmo look e lugar
+# painel de Acoes da tela de 29/10: cada acao fica numa categoria
+ACTION_CATEGORY = {EDIT_ACTION: "Editar", CAROUSEL_ACTION: "Nova Cena"}
 CLONE = "luna"
 MIN_CREDITS = 2  # abaixo disso para e avisa (nao gasta o resto)
 GENERATION_TIMEOUT_S = 10 * 60
@@ -401,13 +404,9 @@ class Naiaflow:
     def edit(self, job_id: str, instruction: str) -> str:
         """Correcao: abre a foto pronta, escolhe Editar pelo texto (1 credito),
         escreve o pedido e espera a foto editada."""
-        self.page.goto(NAIAFLOW_JOB + job_id, wait_until="domcontentloaded")
-        search = self.page.get_by_placeholder("Filtrar ações", exact=False).first
-        search.wait_for(state="visible", timeout=60000)
-        self.page.wait_for_timeout(1500)
-        self._dismiss_overlays(panels=False)
+        self._open_job(job_id)
         before = self._job_images()
-        self._choose_action(search, EDIT_ACTION)
+        self._choose_action(EDIT_ACTION)
         box = self.page.get_by_placeholder("Digite seu prompt", exact=False).first
         box.wait_for(state="visible", timeout=15000)
         box.click()
@@ -421,9 +420,42 @@ class Naiaflow:
         log("Editando na Naiaflow…")
         return self._wait_result(before)
 
-    def _choose_action(self, search, name: str) -> None:
-        # filtra pelo nome: so a acao certa fica na lista, sem rolar nem errar a vizinha
-        search.fill(name)
+    def carousel(self, job_id: str, count: int) -> list[str]:
+        """Carrossel: na foto base, "Gerar um carrossel" (Nova Cena, 3 creditos)
+        gera 3 variacoes do mesmo look e lugar. Repete ate ter `count` fotos."""
+        urls: list[str] = []
+        while len(urls) < count:
+            self._open_job(job_id)
+            before = self._job_images()
+            self._choose_action(CAROUSEL_ACTION)
+            # confirmacao "Carrossel do insta: gerar 3 imagens?" -> Continuar (3)
+            dialog = self.page.get_by_text(re.compile(r"Carrossel do insta", re.I))
+            go = self.page.get_by_role("button", name=re.compile(r"^\s*Continuar\b", re.I))
+            dialog.first.wait_for(state="visible", timeout=15000)
+            if go.count() != 1 or "3" not in go.first.inner_text():
+                raise RuntimeError("O aviso do carrossel da Naiaflow nao era o esperado (Continuar 3); nao cliquei.")
+            go.first.click()
+            log("Gerando o carrossel na Naiaflow (3 variações)…")
+            urls += self._wait_results(before, 3, skip_job=job_id)
+        return urls[:count]
+
+    def _open_job(self, job_id: str) -> None:
+        # foto pronta, com o painel de Acoes (tela de 29/10: categorias)
+        self.page.goto(NAIAFLOW_JOB + job_id, wait_until="domcontentloaded")
+        ready = self.page.get_by_text(re.compile(r"^\s*(Nova Cena|Filtrar ações.*)\s*$")).or_(self.page.get_by_placeholder("Filtrar ações", exact=False))
+        ready.first.wait_for(state="visible", timeout=60000)
+        self.page.wait_for_timeout(1500)
+        self._dismiss_overlays(panels=False)
+
+    def _choose_action(self, name: str) -> None:
+        """Escolhe a acao pelo nome exato. Tela de 29/10: categorias (Editar,
+        Nova Cena...) e a lista da categoria; tela antiga: campo "Filtrar acoes".
+        Exige uma acao so com o nome, para nao clicar na vizinha."""
+        search = self.page.get_by_placeholder("Filtrar ações", exact=False)
+        if search.count() and search.first.is_visible():
+            search.first.fill(name)
+        else:
+            self.page.get_by_text(ACTION_CATEGORY[name], exact=True).first.click()
         self.page.wait_for_timeout(1200)
         title = self.page.get_by_text(name, exact=True)
         action = self.page.locator("button").filter(has=title)
@@ -465,6 +497,38 @@ class Naiaflow:
                 return src.rsplit("/", 1)[0] + "/public"
         raise RuntimeError("A Naiaflow nao terminou a foto em 10 minutos.")
 
+    def _wait_results(self, before: set[str], count: int, skip_job: str = "") -> list[str]:
+        """Varias fotos de uma acao (carrossel): espera `count` fotos novas.
+        A galeria pode empilhar as fotos de um job num cartao so ("+3"), entao
+        a pagina de cada job novo tambem e lida. skip_job: a foto base (acabou
+        de ficar pronta e passaria no filtro de horario)."""
+        since_ms = (time.time() - 120) * 1000
+        deadline = time.time() + GENERATION_TIMEOUT_S
+        found: dict[str, None] = {}
+        base = lambda s: s.rsplit("/", 1)[0]  # noqa: E731 (sem /mini ou /public)
+        while time.time() < deadline and len(found) < count:
+            time.sleep(15)
+            try:
+                self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
+                self.page.wait_for_timeout(4000)
+                new = sorted(s for s in self._job_images() - before if _job_time_ms(s) > since_ms and not (skip_job and skip_job in s))
+                jobs = {re.search(r"job-([0-9a-f-]{36})", s).group(1) for s in new}
+                for s in new:
+                    found.setdefault(base(s))
+                for job in jobs:
+                    if len(found) >= count:
+                        break
+                    self.page.goto(NAIAFLOW_JOB + job, wait_until="domcontentloaded")
+                    self.page.wait_for_timeout(4000)
+                    for s in sorted(self._job_images()):
+                        if _job_time_ms(s) > since_ms and not (skip_job and skip_job in s):
+                            found.setdefault(base(s))
+            except Exception:  # pagina recarregando: tenta no proximo ciclo
+                continue
+        if len(found) < count:
+            raise RuntimeError(f"A Naiaflow entregou {len(found)} de {count} fotos do carrossel em 10 minutos.")
+        return [f"{b}/public" for b in list(found)[:count]]
+
 
 # --- um item da fila -----------------------------------------------------------------------------------
 
@@ -479,6 +543,10 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
     # carrossel: uma variacao do pedido por foto (a 1a e o proprio pedido)
     prompts = item.get("prompts") or [item["prompt"]]
     carousel = len(prompts) > 1
+    # carrossel pela Naiaflow: foto 1 = base pelo prompt; as outras saem do
+    # "Gerar um carrossel" na base (mesmo look e lugar, 3 variacoes por vez)
+    use_action = carousel and bool(item.get("carousel_action"))
+    variations: list[str] | None = None
     imgs: list[Image.Image] = []
     names: list[str] = []
     for i, prompt in enumerate(prompts):
@@ -500,6 +568,15 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
                 if not job:
                     raise RuntimeError(f"Nao sei qual foto da Naiaflow e {edit['source']} (foto gerada antes de o robo anotar os jobs).")
                 url = naia.edit(job, edit["instruction"])
+            elif use_action and i > 0:
+                if variations is None:
+                    base_local = f"{item['folder']}/{names[0]}"
+                    base_job = known_jobs().get(base_local)
+                    if not base_job:
+                        raise RuntimeError(f"Nao sei qual foto da Naiaflow e a base do carrossel ({base_local}).")
+                    missing = sum(1 for k in range(i, len(prompts)) if not (folder / item["file"].replace(".jpg", f"-{k + 1}.jpg")).exists())
+                    variations = naia.carousel(base_job, missing)
+                url = variations.pop(0)
             else:
                 url = naia.generate(prompt)
             r = requests.get(url, timeout=120)

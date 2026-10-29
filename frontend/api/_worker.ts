@@ -271,7 +271,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           // destinos que vao usar esta foto (o PC prepara uma copia para cada um)
           targets: (await familyOf(item)).map((i) => ({ network: i.network, format: i.format })),
           ...(isCorrection(item) ? { edit: { source: item.media_path, instruction: (item.note ?? "").slice(CORRECTION_PREFIX.length) } } : {}),
-          ...(photos > 1 ? { prompts: carouselPrompts(item.prompt, photos) } : {}),
+          // carrossel: o PC gera a foto base e usa "Gerar um carrossel" da Naiaflow
+          // (3 variacoes do mesmo look e lugar); prompts fica para robos antigos
+          ...(photos > 1 ? { prompts: carouselPrompts(item.prompt, photos), carousel_action: true } : {}),
         },
       });
     }

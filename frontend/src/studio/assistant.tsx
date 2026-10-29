@@ -35,6 +35,8 @@ const STORE_KEY = "luna-assistente-v2";
 // Antes havia duas conversas (redes e +18); a primeira abertura aproveita a
 // que tiver mensagens.
 const OLD_STORE_KEY = "luna-assistente-v1";
+// pedido de revisao junto com a foto/Reels da Luna ("o que esta errado?")
+const REVIEW_ASK = /errad|defeito|problema|revis|analis|corrig|ruim|ficou bo|pode postar|t[aá] bo/i;
 const QUICK = [
   "Planeje a semana da Luna de segunda a quinta: 2 posts no Feed, 3 Stories e 1 TikTok por dia, com horário, tema, prompt para a Naiaflow e legenda.",
   "Planeje os posts do canal +18 do Telegram de segunda a quinta (1 por dia), com prompt para a Naiaflow e texto do post.",
@@ -150,12 +152,14 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     if ((!typed && !attachments.length) || busy) return;
     setBusy(true);
     setError(null);
-    // 1) leitura das referencias (fotos, video ou link) pela IA com visao
+    // 1) leitura das referencias (fotos, video ou link) pela IA com visao;
+    // "o que esta errado?" numa foto/Reels da Luna vira revisao (defeitos)
+    const review = attachments.length > 0 && REVIEW_ASK.test(typed);
     const reads: { label: string; text: string }[] = [];
     try {
       for (const a of attachments) {
-        setStage(a.kind === "video" ? "Assistindo o vídeo…" : "Olhando a foto…");
-        const out = await post<{ analysis: string }>({ action: "analyze", kind: a.kind, images: a.images });
+        setStage(review ? "Revisando…" : a.kind === "video" ? "Assistindo o vídeo…" : "Olhando a foto…");
+        const out = await post<{ analysis: string }>({ action: "analyze", kind: a.kind, images: a.images, ...(review ? { purpose: "review" } : {}) });
         reads.push({ label: a.kind, text: out.analysis });
       }
       if (link) {
@@ -172,8 +176,10 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     const profile = reads.some((r) => r.label.startsWith("perfil @"));
     const ask = typed || (profile ? "Analise essa página e crie conteúdos para a Luna nesse estilo." : "Recria essa ideia com a Luna.");
     const reading = reads.map((r) => `[Referência: ${r.label}]\n${r.text}`).join("\n\n");
-    const recreate = profile
-      ? "Use a leitura da página para criar 5 conteúdos para a Luna no mesmo estilo (inspire-se, não copie a pessoa, o rosto nem a marca). Termine com um bloco PROMPT/LEGENDA/HASHTAGS/DESTINO para cada um."
+    const recreate = review
+      ? "Esta é uma foto/Reels da própria Luna gerado pela Naiaflow. Com a revisão acima, diga em tópicos curtos o que está errado (ou se está pronta para postar) e como acertar: se der para corrigir editando, escreva o pedido curto para o ✏️ Pedir correção do Telegram (Editar pelo texto da Naiaflow); se for melhor gerar de novo, escreva o prompt corrigido com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO, seguindo as regras de prompt (roupa completa, enquadramento, mãos simples)."
+      : profile
+      ?"Use a leitura da página para criar 5 conteúdos para a Luna no mesmo estilo (inspire-se, não copie a pessoa, o rosto nem a marca). Termine com um bloco PROMPT/LEGENDA/HASHTAGS/DESTINO para cada um."
       : "Recrie a ideia da referência com a Luna (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).";
     const message: Message = reads.length
       ? { role: "user", content: `${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }

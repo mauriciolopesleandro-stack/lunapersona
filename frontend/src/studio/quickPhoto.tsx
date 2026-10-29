@@ -10,7 +10,9 @@ import { useState } from "react";
 // so a primeira.
 
 type Slot = "feed" | "stories" | "tiktok" | "telegram18";
-const FEED_PHOTOS = 2;
+// Feed: foto base + 3 variacoes do "Gerar um carrossel" da Naiaflow (4 creditos)
+const FEED_PHOTOS = 4;
+const creditsFor = (photos: number) => (photos > 1 ? 1 + 3 * Math.ceil((photos - 1) / 3) : 1);
 const SLOT_LABEL: Record<Slot, string> = {
   feed: "Instagram Feed",
   stories: "Instagram Stories",
@@ -113,6 +115,7 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
 
   const canCarousel = slots.some((k) => k === "feed" || k === "tiktok") && !slots.includes("telegram18");
   const total = canCarousel ? photos : 1;
+  const cost = creditsFor(total);
 
   if (done) {
     return (
@@ -189,13 +192,14 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
       ) : (
         <>
           {slots.length > 1 && <p className="st-hint">{total > 1 ? "As mesmas fotos vão" : "A mesma foto vai"} para os {slots.length} destinos, cada um com a sua publicação para aprovar.</p>}
-          {total > 1 && slots.includes("stories") && <p className="st-hint">Stories não tem carrossel: vai só a primeira foto.</p>}
+          {total > 1 && slots.includes("stories") && <p className="st-hint">Stories não tem carrossel: vai só a primeira foto (a base).</p>}
+          {total > 1 && <p className="st-hint">Carrossel: o robô gera a foto base e usa o "Gerar um carrossel" da Naiaflow (3 variações do mesmo look e lugar).</p>}
         </>
       )}
       {error && <p className="st-error">{error}</p>}
       <div className="st-row">
         <button type="button" className="st-btn st-btn-small st-btn-primary" disabled={busy || !prompt.trim() || !slots.length} onClick={queue}>
-          {busy ? "Mandando…" : `Gerar (${total} crédito${total > 1 ? "s" : ""})${slots.length > 1 ? ` · ${slots.length} destinos` : ""}`}
+          {busy ? "Mandando…" : `Gerar (${cost} crédito${cost > 1 ? "s" : ""})${slots.length > 1 ? ` · ${slots.length} destinos` : ""}`}
         </button>
         <button type="button" className="st-btn st-btn-small" disabled={busy} onClick={() => setOpen(false)}>
           Cancelar

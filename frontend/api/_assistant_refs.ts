@@ -36,6 +36,26 @@ const PAGE_PROMPT = `Você ajuda a criar conteúdo para a Luna (influenciadora v
 - O que a Luna pode aproveitar e o que evitar
 ${READ_RULES}`;
 
+// Revisao: o administrador manda uma foto ou um Reels DA LUNA (gerado pela
+// Naiaflow) e pede para achar o que esta errado. A IA olha com cuidado (pouca
+// criatividade) e a Conversa transforma isso em prompt ou pedido de correcao.
+const REVIEW_PHOTO = `Você revisa fotos da Luna (influenciadora virtual brasileira, gerada por IA na Naiaflow) antes de postar no Instagram. Olhe a foto com atenção e responda em tópicos curtos, em português do Brasil:
+- O que aparece: roupa de verdade (parte de cima e de baixo; diga "sem nada em cima" se for o caso), lugar, pose, enquadramento.
+- Defeitos de IA: mãos e dedos (quantos, tortos, fundidos), braços ou pernas a mais/a menos ou em ângulo impossível, rosto deformado ou diferente em partes, olhos, dentes, roupa que se mistura com a pele, objetos derretidos, texto estranho, emendas, manchas ou borrões.
+- Enquadramento: cabeça, mãos ou pés cortados; foto torta; elemento cortando o rosto.
+- Regras do Instagram: nudez (seio, mamilo, partes íntimas à mostra) ou algo que o Instagram derruba.
+- Estilo: parece foto de celular natural de influenciadora ou artificial/produzida demais (pele de plástico, luz de estúdio)?
+- Nota de 0 a 10 para postar e, se tiver problema, o que corrigir (bem objetivo).
+Descreva só o que aparece de verdade; se estiver tudo certo, diga que está pronta para postar.`;
+
+const REVIEW_VIDEO = `Você revisa um Reels da Luna (influenciadora virtual brasileira, gerada por IA). Estes são quadros do vídeo, em ordem. Responda em tópicos curtos, em português do Brasil:
+- O que acontece no vídeo e a roupa/lugar.
+- Defeitos de IA entre os quadros: rosto que muda de um quadro para outro, mãos e dedos deformados, braços/pernas que somem ou se fundem, roupa que muda ou some, fundo que tremula ou derrete, objetos que aparecem e somem.
+- Enquadramento: cabeça ou pés saindo do quadro, movimento cortado.
+- Regras do Instagram: nudez ou algo que o Instagram derruba.
+- Nota de 0 a 10 para postar e o que corrigir (bem objetivo).
+Descreva só o que aparece de verdade nos quadros.`;
+
 export class RefError extends Error {
   constructor(
     public status: number,
@@ -45,24 +65,27 @@ export class RefError extends Error {
   }
 }
 
-async function read(prompt: string, images: string[], extra = ""): Promise<string> {
+async function read(prompt: string, images: string[], extra = "", temperature?: number): Promise<string> {
   const content: AiContent = [{ type: "text", text: extra ? `${prompt}\n\n${extra}` : prompt }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))];
   try {
-    const out = await askAi("normal", [{ role: "user", content }], { model: visionModel(), maxTokens: 900, timeoutMs: 40_000 });
+    const out = await askAi("normal", [{ role: "user", content }], { model: visionModel(), maxTokens: 900, timeoutMs: 40_000, temperature });
     return out.text.slice(0, 5000);
   } catch (e) {
     // lote de fotos recusado pelo provedor: tenta de novo com menos fotos
-    if (e instanceof AiError && e.status === 502 && images.length > 1) return read(prompt, images.slice(0, images.length > 3 ? 3 : 1), extra);
+    if (e instanceof AiError && e.status === 502 && images.length > 1) return read(prompt, images.slice(0, images.length > 3 ? 3 : 1), extra, temperature);
     if (e instanceof AiError) throw new RefError(e.status, e.message);
     throw e;
   }
 }
 
 // Foto (1 imagem) ou video (quadros em ordem), ja reduzidos no navegador.
-export async function analyzeImages(rawImages: unknown, kind: unknown): Promise<string> {
+// purpose "review": revisao de foto/Reels da Luna (o que esta errado) em vez da
+// leitura da ideia de uma referencia
+export async function analyzeImages(rawImages: unknown, kind: unknown, purpose?: unknown): Promise<string> {
   const images = Array.isArray(rawImages) ? rawImages.map(String) : [];
   if (!images.length || images.length > MAX_IMAGES) throw new RefError(400, `Mande de 1 a ${MAX_IMAGES} imagens.`);
   if (images.some((i) => !JPEG.test(i) || i.length > MAX_IMAGE_CHARS)) throw new RefError(400, "Imagem inválida ou grande demais.");
+  if (purpose === "review") return read(kind === "video" ? REVIEW_VIDEO : REVIEW_PHOTO, images, "", 0.1);
   return read(kind === "video" ? VIDEO_PROMPT : PHOTO_PROMPT, images);
 }
 
