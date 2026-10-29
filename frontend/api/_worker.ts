@@ -93,7 +93,7 @@ function fileNameFor(item: ItemRow): string {
   const when = new Date(item.scheduled_at).toLocaleString("sv-SE", { timeZone: "America/Sao_Paulo" }).slice(0, 16).replace(/[-: ]/g, "");
   const dest = item.adult ? "telegram18" : `${item.network}-${item.format}`.toLowerCase();
   // a correcao nao sobrescreve a foto anterior
-  const suffix = isCorrection(item) ? `-correcao-${Date.now().toString(36)}` : "";
+  const suffix = isRework(item) ? `-correcao-${Date.now().toString(36)}` : "";
   return `plano-${when}-${dest}-${item.id.slice(0, 8)}${suffix}.jpg`;
 }
 
@@ -102,6 +102,60 @@ function fileNameFor(item: ItemRow): string {
 const CORRECTION_PREFIX = "Correção: ";
 function isCorrection(item: ItemRow): boolean {
   return Boolean(item.media_path) && (item.note ?? "").startsWith(CORRECTION_PREFIX);
+}
+
+// Acao da Naiaflow pedida pelo botao do Telegram (ex.: rachadinha), em fotos
+// escolhidas da publicacao: a nota guarda o pedido em JSON ate o robo terminar.
+const ACTION_PREFIX = "Ação: ";
+export const NAIA_ACTIONS = { rachadinha: "Adicionar rachadinha" } as const;
+export const ACTION_LEVELS = ["Leve", "Médio", "Pesado"] as const;
+interface ActionSpec {
+  action: keyof typeof NAIA_ACTIONS;
+  level: (typeof ACTION_LEVELS)[number];
+  photos: number[]; // 1 = primeira foto da publicacao
+}
+function actionOf(item: ItemRow): ActionSpec | null {
+  if (!item.media_path || !(item.note ?? "").startsWith(ACTION_PREFIX)) return null;
+  try {
+    return JSON.parse((item.note ?? "").slice(ACTION_PREFIX.length)) as ActionSpec;
+  } catch {
+    return null;
+  }
+}
+// correcao ou acao: mexe so na publicacao pedida, com as fotos que ela ja tem
+const isRework = (item: ItemRow) => isCorrection(item) || actionOf(item) !== null;
+
+// fotos da publicacao, na ordem (caminho no PC de cada uma)
+async function postPhotoPaths(postId: string): Promise<string[]> {
+  const links = await dbSelect<{ media_id: string; position: number }>("post_media", `select=media_id,position&post_id=eq.${postId}&order=position.asc`);
+  if (!links.length) return [];
+  const assets = await dbSelect<{ id: string; local_path: string }>("media_assets", `select=id,local_path&id=in.(${links.map((l) => l.media_id).join(",")})`);
+  return links.map((l) => assets.find((a) => a.id === l.media_id)?.local_path ?? "").filter(Boolean);
+}
+
+// Telegram: botao de acao (rachadinha) numa publicacao do robo. Devolve
+// quantas fotos ela tem (para escolher em quais aplicar) ou null se nao
+// veio do robo.
+export async function actionTarget(postId: string): Promise<{ photos: number } | null> {
+  const [item] = await dbSelect<ItemRow>("content_plan_items", `select=*&post_id=eq.${postId}&media_path=not.is.null`);
+  if (!item || item.kind !== "image") return null;
+  const paths = await postPhotoPaths(postId);
+  return paths.length ? { photos: paths.length } : null;
+}
+
+// A publicacao ja foi reprovada (decidePost); o item volta para a fila com o
+// pedido da acao e o robo aplica nas fotos escolhidas.
+export async function queueAction(postId: string, spec: ActionSpec): Promise<boolean> {
+  const [item] = await dbSelect<ItemRow>("content_plan_items", `select=*&post_id=eq.${postId}&media_path=not.is.null`);
+  if (!item) return false;
+  await dbUpdateWhere("content_plan_items", `id=eq.${item.id}`, {
+    status: "na_fila",
+    attempts: 0,
+    note: (ACTION_PREFIX + JSON.stringify(spec)).slice(0, 1000),
+    updated_at: new Date().toISOString(),
+  });
+  await audit("pedir_acao", "content_plan_items", item.id, { post_id: postId, ...spec });
+  return true;
 }
 
 // fotos e Reels novos (sem reaproveitar outro item) e correcoes, que tem foto
@@ -169,7 +223,7 @@ async function getItem(id: unknown): Promise<ItemRow> {
 // o item e os que reaproveitam a mesma foto (TikTok com a foto do Feed); a
 // correcao vale so para a publicacao corrigida
 async function familyOf(item: ItemRow): Promise<ItemRow[]> {
-  if (isCorrection(item)) return [item];
+  if (isRework(item)) return [item];
   const reusers = await dbSelect<ItemRow>("content_plan_items", `select=*&source_item_id=eq.${item.id}`);
   return [item, ...reusers.filter((r) => r.status !== "cancelado")];
 }
@@ -259,7 +313,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (!item) return reply(200, { item: null });
       const claimed = await dbUpdate<ItemRow>("content_plan_items", `id=eq.${item.id}&status=eq.na_fila`, { status: "gerando", attempts: item.attempts + 1, updated_at: now() });
       if (!claimed) return reply(200, { item: null });
-      const photos = isCorrection(item) ? 1 : await photosOf(item);
+      const spec = actionOf(item);
+      const sources = spec && item.post_id ? await postPhotoPaths(item.post_id) : [];
+      const photos = isCorrection(item) || spec ? 1 : await photosOf(item);
       return reply(200, {
         item: {
           id: item.id,
@@ -272,6 +328,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           // destinos que vao usar esta foto (o PC prepara uma copia para cada um)
           targets: (await familyOf(item)).map((i) => ({ network: i.network, format: i.format })),
           ...(isCorrection(item) ? { edit: { source: item.media_path, instruction: (item.note ?? "").slice(CORRECTION_PREFIX.length) } } : {}),
+          // acao em fotos escolhidas: o PC aplica a acao nelas e mantem as outras
+          ...(spec ? { naia_action: { name: NAIA_ACTIONS[spec.action], level: spec.level, photos: spec.photos, sources } } : {}),
           // carrossel: o PC gera a foto base e usa "Gerar um carrossel" da Naiaflow
           // (3 variacoes do mesmo look e lugar); prompts fica para robos antigos
           ...(photos > 1 ? { prompts: carouselPrompts(item.prompt, photos), carousel_action: true } : {}),
@@ -325,7 +383,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const localPath = safeLocalPath(body.local_path, ".jpg");
       const video = item.kind === "video";
       const assetPath = video ? safeLocalPath(body.video_path, ".mp4") : localPath;
-      const photos = isCorrection(item) || video ? 1 : await photosOf(item);
+      const spec = actionOf(item);
+      const photos = isCorrection(item) || video
+        ? 1
+        : spec
+          ? 1 + Math.min(Array.isArray(body.more_paths) ? body.more_paths.length : 0, 9)
+          : await photosOf(item);
       const more = photos > 1 ? (Array.isArray(body.more_paths) ? body.more_paths : []).map((p) => safeLocalPath(p, ".jpg")) : [];
       if (more.length !== photos - 1) throw new Problem(400, `O carrossel tem ${photos} fotos: mande as outras ${photos - 1}.`);
       const sizes = Array.isArray(body.more_sizes) ? body.more_sizes : [];
@@ -352,7 +415,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
       const media = { id: mediaIds[0] };
       const family = await familyOf(item);
-      const correction = isCorrection(item);
+      const correction = isRework(item);
       // a publicacao reprovada sai do caminho; a foto corrigida vira outra
       if (correction && item.post_id) await cancelDraftPost(item.post_id);
       const groupId = family.length > 1 ? crypto.randomUUID() : null;
@@ -406,12 +469,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (body.action === "fail") {
       const error = String(body.error ?? "erro desconhecido").slice(0, 900);
       const final = item.attempts >= item.max_attempts;
-      const correction = isCorrection(item);
+      const correction = isRework(item);
       // a correcao guarda o pedido na nota ate a ultima tentativa
       const note = correction && !final ? item.note : `Automação: ${error}`;
       await dbUpdateWhere("content_plan_items", `id=eq.${item.id}`, { status: final ? "falhou" : "na_fila", note, updated_at: now() });
       if (final) {
-        const what = correction
+        const what = actionOf(item)
+          ? `aplicar ${NAIA_ACTIONS[actionOf(item)!.action]} (${actionOf(item)!.level})`
+          : correction
           ? `corrigir a foto (pedido: “${(item.note ?? "").slice(CORRECTION_PREFIX.length, CORRECTION_PREFIX.length + 80)}”)`
           : `gerar a foto do plano: “${item.prompt.slice(0, 80)}”`;
         await notify(`⚠️ Não consegui ${what} depois de ${item.attempts} tentativa(s).\nMotivo: ${error.slice(0, 200)}`);

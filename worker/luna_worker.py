@@ -31,6 +31,7 @@ import re
 import subprocess
 import sys
 import time
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -52,7 +53,7 @@ EDIT_ACTION = "Editar pelo texto"  # nome da acao no painel
 EDIT_CHIP = "Editar"  # etiqueta que ela deixa no composer
 CAROUSEL_ACTION = "Gerar um carrossel"  # 3 creditos, 3 variacoes do mesmo look e lugar
 # painel de Acoes da tela de 29/10: cada acao fica numa categoria
-ACTION_CATEGORY = {EDIT_ACTION: "Editar", CAROUSEL_ACTION: "Nova Cena"}
+ACTION_CATEGORY = {EDIT_ACTION: "Editar", CAROUSEL_ACTION: "Nova Cena", "Adicionar rachadinha": "Corpo", "Aumentar os seios": "Corpo", "Aumentar coxas e bunda": "Corpo"}
 CLONE = "luna"
 MIN_CREDITS = 2  # abaixo disso para e avisa (nao gasta o resto)
 GENERATION_TIMEOUT_S = 10 * 60
@@ -450,6 +451,25 @@ class Naiaflow:
             urls += self._wait_results(before, 3, skip_job=job_id)
         return urls[:count]
 
+    def apply_action(self, job_id: str, name: str, level: str) -> str:
+        """Acao de um clique com nivel (ex.: "Adicionar rachadinha": Leve,
+        Medio, Pesado; 1 credito) na foto pronta. Confere o nivel marcado e o
+        "Continuar 1" antes de gastar."""
+        self._open_job(job_id)
+        before = self._job_images()
+        self._choose_action(name)
+        option = self.page.get_by_role("button", name=re.compile(rf"^\s*{re.escape(level)}\s*$", re.I))
+        if option.count() != 1:
+            raise RuntimeError(f'Nao achei o nivel "{level}" de "{name}" na Naiaflow.')
+        option.first.click()
+        self.page.wait_for_timeout(600)
+        go = self.page.get_by_role("button", name=re.compile(r"^\s*Continuar\b", re.I))
+        if go.count() != 1 or go.first.inner_text().split()[-1] != "1":
+            raise RuntimeError(f'O botao de "{name}" na Naiaflow nao era o esperado (Continuar 1); nao cliquei.')
+        go.first.click()
+        log(f"{name} ({level}) na Naiaflow…")
+        return self._wait_result(before)[0]
+
     def _open_job(self, job_id: str) -> None:
         # foto pronta, com o painel de Acoes (tela de 29/10: categorias)
         self.page.goto(NAIAFLOW_JOB + job_id, wait_until="domcontentloaded")
@@ -570,6 +590,13 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
     spare: list[str] = []
     imgs: list[Image.Image] = []
     names: list[str] = []
+    act = item.get("naia_action")
+    if act:
+        # acao pedida no Telegram (ex.: rachadinha) nas fotos escolhidas; as
+        # outras fotos da publicacao continuam iguais
+        imgs, names = apply_action(naia, item, act, folder)
+        prompts = []
+        carousel = len(names) > 1
     for i, prompt in enumerate(prompts):
         name = item["file"] if i == 0 else item["file"].replace(".jpg", f"-{i + 1}.jpg")
         path_i = folder / name
@@ -656,8 +683,43 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
         put_copy(up["url"], data, mime)
     sent = studio.call("uploaded", id=item["id"])
     log(f"Mandada para você aprovar no Telegram ({sent['sent']} publicação(ões)).")
-    if not test_image:
+    if not test_image and not act:
         learn(studio, item, img, edit["instruction"] if edit else item["prompt"])
+
+
+def apply_action(naia: Naiaflow | None, item: dict, act: dict, folder: Path) -> tuple[list[Image.Image], list[str]]:
+    """Aplica a acao da Naiaflow (ex.: "Adicionar rachadinha", nivel Leve/Medio/
+    Pesado) nas fotos escolhidas (1 = primeira) e devolve todas as fotos da
+    publicacao na ordem, com os nomes na pasta do item."""
+    chosen = set(act["photos"])
+    # nome fixo por acao e nivel: numa nova tentativa a foto ja feita e aproveitada
+    plain = unicodedata.normalize("NFKD", f"{act['name'].split()[-1]}-{act['level']}").encode("ascii", "ignore").decode().lower()
+    slug = re.sub(r"[^a-z]+", "-", plain).strip("-") or "acao"
+    log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): {act['name']} ({act['level']}) na(s) foto(s) {sorted(chosen)}")
+    imgs: list[Image.Image] = []
+    names: list[str] = []
+    for n, src in enumerate(act["sources"], 1):
+        src_path = STUDIO_ROOT / src
+        if n not in chosen:
+            imgs.append(Image.open(src_path).convert("RGB"))
+            names.append(src_path.name)
+            continue
+        new_name = f"{src_path.stem}-{slug}.jpg"
+        if (folder / new_name).exists():
+            imgs.append(Image.open(folder / new_name).convert("RGB"))
+            names.append(new_name)
+            continue
+        job = known_jobs().get(src)
+        if not job or naia is None:
+            raise RuntimeError(f"Nao sei qual foto da Naiaflow e {src} (o robo nao anotou o job).")
+        url = naia.apply_action(job, act["name"], act["level"])
+        img = Image.open(io.BytesIO(requests.get(url, timeout=120).content)).convert("RGB")
+        (folder / new_name).write_bytes(to_jpeg(img, 95))
+        remember_job(f"{item['folder']}/{new_name}", url)
+        log(f"Salva em {item['folder']}/{new_name} (foto {n})")
+        imgs.append(img)
+        names.append(new_name)
+    return imgs, names
 
 
 def learn(studio: Studio, item: dict, img: Image.Image, prompt: str) -> None:

@@ -5,7 +5,7 @@ import { Problem, decidePost } from "./_posts_api.js";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbSelect, storageReadUrl } from "./_supabase.js";
 import { forgetChannel, saveChannel, telegram, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
-import { queueCorrection } from "./_worker.js";
+import { ACTION_LEVELS, actionTarget, queueAction, queueCorrection } from "./_worker.js";
 
 // Aprovacao pelo Telegram: a versao em revisao chega no celular do
 // administrador (foto/video + legenda + horario) com os botoes Aprovar,
@@ -20,6 +20,11 @@ import { queueCorrection } from "./_worker.js";
 // publicacao veio do plano, o robo do PC edita a foto na Naiaflow com esse
 // pedido e a versao corrigida volta aqui para aprovar.
 //
+// Rachadinha: o botao pergunta a intensidade (Leve, Medio, Pesado, como na
+// Naiaflow) e, no carrossel, em quais fotos; a publicacao e reprovada e o robo
+// do PC aplica "Adicionar rachadinha" so nelas (1 credito por foto). A nova
+// versao volta aqui para aprovar.
+//
 // Canal +18: o administrador cria um canal privado e poe o bot como
 // administrador (com "Publicar mensagens"). O Telegram avisa por aqui
 // (my_chat_member) e o canal fica salvo - so vale quando quem adicionou e o
@@ -29,6 +34,14 @@ import { queueCorrection } from "./_worker.js";
 const CORRECTION_TAG = "#correcao";
 const PENDING_KEY = "luna:tg-correcao";
 const PENDING_TTL_MS = 30 * 60_000;
+const ACTION_KEY = "luna:tg-acao";
+interface PendingAction {
+  ref: string;
+  total: number;
+  level?: (typeof ACTION_LEVELS)[number];
+  photos: number[];
+  at: number;
+}
 const LINK_TTL = 3 * 24 * 3600; // as fotos do Telegram ficam salvas no app; o link so precisa servir no envio
 
 export function webhookSecret(token: string): string {
@@ -56,7 +69,10 @@ function buttons(post: PostRow) {
         { text: "✅ Aprovar", callback_data: `ap:${ref}` },
         { text: "❌ Reprovar", callback_data: `rp:${ref}` },
       ],
-      [{ text: "✏️ Pedir correção", callback_data: `cr:${ref}` }],
+      [
+        { text: "✏️ Pedir correção", callback_data: `cr:${ref}` },
+        { text: "🍑 Rachadinha", callback_data: `rc:${ref}` },
+      ],
     ],
   };
 }
@@ -210,6 +226,29 @@ async function isDraft(id: string): Promise<boolean> {
   return post?.status === "rascunho";
 }
 
+async function loadAction(): Promise<PendingAction | null> {
+  if (!storeConfigured()) return null;
+  try {
+    const p = JSON.parse((await storeGet(ACTION_KEY)) ?? "null") as PendingAction | null;
+    return p && Date.now() - p.at < PENDING_TTL_MS ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+function photoButtons(p: PendingAction) {
+  const nums = Array.from({ length: p.total }, (_, i) => i + 1);
+  const rows = [];
+  for (let i = 0; i < nums.length; i += 4) {
+    rows.push(nums.slice(i, i + 4).map((n) => ({ text: `${p.photos.includes(n) ? "✅" : "▫️"} Foto ${n}`, callback_data: `rf:${n}` })));
+  }
+  rows.push([
+    { text: "Todas", callback_data: "rf:all" },
+    { text: "Confirmar", callback_data: "rf:ok" },
+  ]);
+  return { inline_keyboard: rows };
+}
+
 // correcao pedida pelo botao ha pouco, esperando o texto
 async function pendingCorrection(): Promise<string> {
   if (!storeConfigured()) return "";
@@ -262,6 +301,55 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
         const post = await decidePost(id, version, kind === "ap" ? "approve" : "reject", kind === "rp" ? "Reprovada pelo Telegram" : null);
         if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
         await say(decided(post), replyTo);
+      } else if (kind === "rc") {
+        // rachadinha: so em foto que veio do robo (ele precisa aplicar na Naiaflow)
+        const target = await actionTarget(id);
+        if (!target) {
+          await say("🍑 A rachadinha automática vale só para fotos geradas pelo robô.", replyTo);
+        } else if (!storeConfigured()) {
+          await say("⚠️ Falta o Upstash Redis na Vercel para guardar a escolha.", replyTo);
+        } else {
+          await storeSet(ACTION_KEY, JSON.stringify({ ref: `${id}:${version}`, total: target.photos, photos: [], at: Date.now() } satisfies PendingAction));
+          await say("🍑 Rachadinha: qual intensidade?", {
+            ...replyTo,
+            reply_markup: { inline_keyboard: [ACTION_LEVELS.map((l, i) => ({ text: l, callback_data: `rl:${i}` }))] },
+          });
+        }
+      } else if (kind === "rl" || kind === "rf") {
+        const pending = await loadAction();
+        if (!pending) {
+          await say("⏱️ Essa escolha expirou. Toque em 🍑 Rachadinha de novo.", replyTo);
+          return done();
+        }
+        if (kind === "rl") pending.level = ACTION_LEVELS[Number(id)] ?? "Leve";
+        else if (id === "all") pending.photos = Array.from({ length: pending.total }, (_, i) => i + 1);
+        else if (id !== "ok") {
+          const n = Number(id);
+          pending.photos = pending.photos.includes(n) ? pending.photos.filter((x) => x !== n) : [...pending.photos, n].sort((a, b) => a - b);
+        }
+        if (pending.total === 1) pending.photos = [1];
+        const ready = pending.level && pending.photos.length && (pending.total === 1 || id === "ok" || id === "all");
+        if (!ready) {
+          await storeSet(ACTION_KEY, JSON.stringify(pending));
+          if (kind === "rl") {
+            await say(`🍑 Rachadinha ${pending.level}: em quais fotos do carrossel? Marque e toque em Confirmar.`, { ...replyTo, reply_markup: photoButtons(pending) });
+          } else if (id === "ok") {
+            await say("Marque pelo menos uma foto.", replyTo);
+          } else if (cb.message) {
+            await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: photoButtons(pending) }).catch(() => undefined);
+          }
+          return done();
+        }
+        const [postId, postVersion] = pending.ref.split(":");
+        const fotos = pending.photos.length === pending.total ? (pending.total > 1 ? "todas as fotos" : "a foto") : `foto(s) ${pending.photos.join(", ")}`;
+        if (!(await isDraft(postId))) await decidePost(postId, Number(postVersion), "reject", `Rachadinha ${pending.level} pedida pelo Telegram (${fotos})`);
+        await storeDelete(ACTION_KEY).catch(() => undefined);
+        if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
+        if (await queueAction(postId, { action: "rachadinha", level: pending.level!, photos: pending.photos })) {
+          await say(`🍑 Rachadinha ${pending.level} em ${fotos}: o robô do PC vai aplicar na Naiaflow (${pending.photos.length} crédito(s)) e a nova versão chega aqui para aprovar.`, replyTo);
+        } else {
+          await say("⚠️ Não achei a foto do robô dessa publicação.", replyTo);
+        }
       } else if (kind === "cr") {
         if (storeConfigured()) await storeSet(PENDING_KEY, JSON.stringify({ ref: `${id}:${version}`, at: Date.now() })).catch(() => undefined);
         await say(`✏️ O que precisa mudar? Responda esta mensagem com a correção.\n${CORRECTION_TAG} ${id}:${version}`, { ...replyTo, reply_markup: { force_reply: true } });
