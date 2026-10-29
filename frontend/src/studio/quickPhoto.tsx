@@ -10,9 +10,10 @@ import { useState } from "react";
 // so a primeira.
 
 type Slot = "feed" | "stories" | "tiktok" | "telegram18";
-// Feed: foto base + 3 variacoes do "Gerar um carrossel" da Naiaflow (4 creditos)
-const FEED_PHOTOS = 4;
-const creditsFor = (photos: number) => (photos > 1 ? 1 + 3 * Math.ceil((photos - 1) / 3) : 1);
+// Feed: cada Criar da Naiaflow entrega 3 fotos da mesma cena por 1 credito;
+// passando de 3, o robo usa o "Gerar um carrossel" (3 creditos por 3 fotos)
+const FEED_PHOTOS = 3;
+const creditsFor = (photos: number) => (photos > 3 ? 1 + 3 * Math.ceil((photos - 3) / 3) : 1);
 const SLOT_LABEL: Record<Slot, string> = {
   feed: "Instagram Feed",
   stories: "Instagram Stories",
@@ -173,7 +174,7 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
             <button type="button" aria-label="Mais fotos" disabled={photos >= 10} onClick={() => setPhotos(photos + 1)}>
               +
             </button>
-            <small>{photos > 1 ? `${photos} fotos do mesmo ensaio, pose e ângulo diferentes` : "foto única · aumente para fazer carrossel"}</small>
+            <small>{photos > 1 ? `${photos} fotos da mesma cena (mesmo look e lugar)` : "foto única · aumente para fazer carrossel"}</small>
           </div>
         </div>
       )}
@@ -201,7 +202,7 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
         <>
           {slots.length > 1 && <p className="st-hint">{total > 1 ? "As mesmas fotos vão" : "A mesma foto vai"} para os {slots.length} destinos, cada um com a sua publicação para aprovar.</p>}
           {total > 1 && slots.includes("stories") && <p className="st-hint">Stories não tem carrossel: vai só a primeira foto (a base).</p>}
-          {total > 1 && <p className="st-hint">Carrossel: o robô gera a foto base e usa o "Gerar um carrossel" da Naiaflow (3 variações do mesmo look e lugar).</p>}
+          {total > 1 && <p className="st-hint">Carrossel: a Naiaflow entrega 3 fotos da mesma cena por crédito; passando de 3, o robô usa o "Gerar um carrossel" (3 créditos a cada 3 fotos).</p>}
         </>
       )}
       {error && <p className="st-error">{error}</p>}

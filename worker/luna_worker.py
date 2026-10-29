@@ -73,9 +73,19 @@ def log(msg: str) -> None:
         pass
 
 
+# link da foto: job-<id>-<n>-<ms> (ate 28/10) ou job-<id>-pro<n>-<ms> (29/10: cada
+# Criar entrega 3 fotos da mesma cena, pro1..pro3); <ms> = hora em que ficou pronta
+JOB_LINK = re.compile(r"job-([0-9a-f-]{36})-(?:pro)?(\d+)-(\d{12,14})")
+
+
 def _job_time_ms(src: str) -> float:
-    m = re.search(r"job-[0-9a-f-]{36}-\d+-(\d{12,14})", src)
-    return float(m.group(1)) if m else 0.0
+    m = JOB_LINK.search(src)
+    return float(m.group(3)) if m else 0.0
+
+
+def _job_variant(src: str) -> tuple[str, int]:
+    m = JOB_LINK.search(src)
+    return (m.group(1), int(m.group(2))) if m else ("", 0)
 
 
 def remember_job(local_path: str, url: str) -> None:
@@ -385,7 +395,8 @@ class Naiaflow:
             except Exception:
                 pass
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str) -> list[str]:
+        """Gera pelo prompt; devolve as fotos do mesmo Criar (3 desde 29/10)."""
         self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
         self.page.wait_for_selector("text=Modo imagem", timeout=60000)
         self.page.wait_for_timeout(1500)  # os avisos aparecem logo depois de carregar
@@ -418,7 +429,7 @@ class Naiaflow:
             raise RuntimeError(f'A Naiaflow marcou a acao errada ({", ".join(chips) or "nenhuma"}); nao cliquei em Criar.')
         self._create_button().click()
         log("Editando na Naiaflow…")
-        return self._wait_result(before)
+        return self._wait_result(before)[0]
 
     def carousel(self, job_id: str, count: int) -> list[str]:
         """Carrossel: na foto base, "Gerar um carrossel" (Nova Cena, 3 creditos)
@@ -473,28 +484,36 @@ class Naiaflow:
         # o botao virou "Criar" (com o custo, ex. "Criar 1"); "Criar novo clone" fica de fora
         return self.page.get_by_role("button", name=re.compile(r"^\s*(Criar|Gerar)(\s*\d+)?\s*$", re.I)).last
 
-    def _wait_result(self, before: set[str]) -> str:
+    def _wait_result(self, before: set[str]) -> list[str]:
         # o link da foto traz a hora em que ficou pronta (job-<id>-0-<ms>); a
         # galeria carrega fotos antigas aos poucos, entao so vale foto feita
         # depois do clique (2 min de folga para o relogio do PC)
         since_ms = (time.time() - 120) * 1000
         deadline = time.time() + GENERATION_TIMEOUT_S
         last_reload = time.time()
+        seen: set[str] = set()
         while time.time() < deadline:
             time.sleep(5)
             try:
-                head = self.page.locator("body").inner_text()[:300]
                 new = {s for s in self._job_images() - before if _job_time_ms(s) > since_ms}
-                # a tela da foto pronta pode nao mostrar a nova: a galeria mostra
-                if not new and time.time() - last_reload > 90 and "/preview/" in self.page.url:
+                # a galeria pode nao se atualizar sozinha (e a tela da foto pronta
+                # nao mostra a nova): recarrega a galeria a cada minuto
+                if not new and time.time() - last_reload > 60:
                     self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
                     last_reload = time.time()
                     continue
             except Exception:  # a pagina recarregou: confere de novo no proximo ciclo
                 continue
-            if new and "Gerando" not in head and "Enviando" not in head:
-                src = sorted(new)[0]
-                return src.rsplit("/", 1)[0] + "/public"
+            # A foto vale quando aparece igual em duas voltas seguidas. Nao olha
+            # mais o "Gerando" da pagina: uma geracao travada na galeria deixava
+            # o aviso para sempre e o robo nunca achava a foto (29/10).
+            stable = new & seen
+            if stable:
+                # todas as fotos do job novo (pro1, pro2, pro3), na ordem
+                job = _job_variant(sorted(stable)[0])[0]
+                same = sorted({x for x in new if _job_variant(x)[0] == job}, key=lambda x: _job_variant(x)[1])
+                return [x.rsplit("/", 1)[0] + "/public" for x in same]
+            seen = new
         raise RuntimeError("A Naiaflow nao terminou a foto em 10 minutos.")
 
     def _wait_results(self, before: set[str], count: int, skip_job: str = "") -> list[str]:
@@ -546,7 +565,9 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
     # carrossel pela Naiaflow: foto 1 = base pelo prompt; as outras saem do
     # "Gerar um carrossel" na base (mesmo look e lugar, 3 variacoes por vez)
     use_action = carousel and bool(item.get("carousel_action"))
-    variations: list[str] | None = None
+    # fotos que ja sairam e ainda nao foram usadas: as outras do mesmo Criar
+    # (3 por credito desde 29/10) e as do "Gerar um carrossel"
+    spare: list[str] = []
     imgs: list[Image.Image] = []
     names: list[str] = []
     for i, prompt in enumerate(prompts):
@@ -568,17 +589,21 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
                 if not job:
                     raise RuntimeError(f"Nao sei qual foto da Naiaflow e {edit['source']} (foto gerada antes de o robo anotar os jobs).")
                 url = naia.edit(job, edit["instruction"])
+            elif carousel and i > 0 and spare:
+                url = spare.pop(0)
             elif use_action and i > 0:
-                if variations is None:
-                    base_local = f"{item['folder']}/{names[0]}"
-                    base_job = known_jobs().get(base_local)
-                    if not base_job:
-                        raise RuntimeError(f"Nao sei qual foto da Naiaflow e a base do carrossel ({base_local}).")
-                    missing = sum(1 for k in range(i, len(prompts)) if not (folder / item["file"].replace(".jpg", f"-{k + 1}.jpg")).exists())
-                    variations = naia.carousel(base_job, missing)
-                url = variations.pop(0)
+                base_local = f"{item['folder']}/{names[0]}"
+                base_job = known_jobs().get(base_local)
+                if not base_job:
+                    raise RuntimeError(f"Nao sei qual foto da Naiaflow e a base do carrossel ({base_local}).")
+                missing = sum(1 for k in range(i, len(prompts)) if not (folder / item["file"].replace(".jpg", f"-{k + 1}.jpg")).exists())
+                spare = naia.carousel(base_job, missing)
+                url = spare.pop(0)
             else:
-                url = naia.generate(prompt)
+                urls = naia.generate(prompt)
+                url = urls[0]
+                if carousel:
+                    spare = urls[1:]
             r = requests.get(url, timeout=120)
             r.raise_for_status()
             raw = r.content

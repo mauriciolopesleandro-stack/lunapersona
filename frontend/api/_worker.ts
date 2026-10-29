@@ -36,6 +36,7 @@ import { forgetLessons, learnFromCorrection, learnFromPhoto, listLessons } from 
 //   POST { action: "upload-url", post_id, version, items: [{ position, size_bytes, mime_type }] }
 //                                -> { urls } (carrossel: todas as fotos da publicacao de uma vez)
 //   POST { action: "uploaded", id } -> manda cada publicacao do item para a analise no bot
+//   POST { action: "requeue", id (comeco), photos? } -> item que falhou volta para a fila
 //   POST { action: "learn", prompt, image } -> a IA com visao compara a foto (data URL JPEG
 //                                   pequena) com o pedido e guarda a licao para a Conversa (api/_lessons.ts)
 //   POST { action: "fail", id, error } -> volta para a fila ou, sem tentativas, falhou (aviso no Telegram)
@@ -294,6 +295,26 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (body.action === "lessons") {
       if (body.reset === true) await forgetLessons();
       return reply(200, { lessons: await listLessons() });
+    }
+
+    // item que falhou volta para a fila (ex.: a Naiaflow gerou mas o robo nao
+    // reconheceu; as fotos ja salvas no PC sao aproveitadas sem gastar credito).
+    // Aceita o comeco do id (8 letras, como no registro do robo); photos muda o
+    // tamanho do carrossel.
+    if (body.action === "requeue") {
+      const prefix = String(body.id ?? "").toLowerCase();
+      if (!/^[0-9a-f]{8}/.test(prefix)) throw new Problem(400, "Informe o id do item (pelo menos 8 letras).");
+      const failed = (await dbSelect<ItemRow>("content_plan_items", "select=*&status=eq.falhou&order=updated_at.desc&limit=50")).filter((i) => i.id.startsWith(prefix));
+      if (failed.length !== 1) throw new Problem(404, `Achei ${failed.length} item(ns) com falha começando por ${prefix}.`);
+      const it = failed[0];
+      const photos = Number(body.photos);
+      if (Number.isInteger(photos) && photos >= 1 && photos <= 10) {
+        const [plan] = await dbSelect<{ request: Record<string, unknown> }>("content_plans", `select=request&id=eq.${it.plan_id}`);
+        await dbUpdateWhere("content_plans", `id=eq.${it.plan_id}`, { request: { ...(plan?.request ?? {}), photos } });
+      }
+      await dbUpdateWhere("content_plan_items", `id=eq.${it.id}`, { status: "na_fila", attempts: 0, note: null, updated_at: now() });
+      await audit("refazer_item", "content_plan_items", it.id, { photos: Number.isInteger(photos) ? photos : null });
+      return reply(200, { id: it.id, folder: folderFor(it), file: fileNameFor(it) });
     }
 
     const item = await getItem(body.id ?? body.item_id);
