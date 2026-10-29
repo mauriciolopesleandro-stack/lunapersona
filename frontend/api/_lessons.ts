@@ -76,13 +76,15 @@ export async function learnFromPhoto(prompt: string, image: unknown, opts: { mod
   }
   const diff = String(parsed.diferencas ?? "").trim();
   const rule = String(parsed.licao ?? "").trim();
-  if (!rule) return null;
+  const ok = parsed.atendeu === true;
+  if (!ok && !rule) return null;
   const lesson: Lesson = {
     at: new Date().toISOString(),
     prompt: prompt.slice(0, 160),
     source: "foto",
-    ok: parsed.atendeu === true,
-    lesson: (diff ? `${diff} → ${rule}` : rule).slice(0, 400),
+    ok,
+    // saiu como pedido: o proprio prompt vira exemplo (a dica generica nao ensina nada)
+    lesson: (ok ? `deu certo, bom exemplo de prompt: "${prompt.slice(0, 300)}"` : diff ? `${diff} → ${rule}` : rule).slice(0, 400),
   };
   if (!opts.dry) await remember(lesson);
   return lesson;
