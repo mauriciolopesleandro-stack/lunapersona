@@ -10,6 +10,7 @@ import { useState } from "react";
 // so a primeira.
 
 type Slot = "feed" | "stories" | "tiktok" | "telegram18";
+const FEED_PHOTOS = 2;
 const SLOT_LABEL: Record<Slot, string> = {
   feed: "Instagram Feed",
   stories: "Instagram Stories",
@@ -72,7 +73,8 @@ function defaultWhen(): string {
 export function QuickPhoto({ block }: { block: PhotoBlock }) {
   const [open, setOpen] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([block.slot]);
-  const [photos, setPhotos] = useState(1);
+  // padrao do administrador: Feed sai em carrossel de 2 fotos
+  const [photos, setPhotos] = useState(block.slot === "feed" ? FEED_PHOTOS : 1);
   const [when, setWhen] = useState(defaultWhen);
   const [prompt, setPrompt] = useState(block.prompt);
   const [caption, setCaption] = useState(block.caption);
@@ -137,7 +139,11 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
               type="button"
               aria-pressed={slots.includes(k)}
               className={slots.includes(k) ? "on" : ""}
-              onClick={() => setSlots(toggle(slots, k))}
+              onClick={() => {
+                const next = toggle(slots, k);
+                if (k === "feed" && next.includes("feed") && photos < FEED_PHOTOS) setPhotos(FEED_PHOTOS);
+                setSlots(next);
+              }}
             >
               {slots.includes(k) ? "✓ " : ""}
               {SLOT_LABEL[k]}
