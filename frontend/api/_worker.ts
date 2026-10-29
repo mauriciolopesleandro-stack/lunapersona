@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { createHmac, timingSafeEqual } from "crypto";
 import { isAuthenticated } from "./_auth.js";
-import { Problem, cancelDraftPost, createDraftPost, reviewOnTelegram, submitPost, uploadUrlsFor } from "./_posts_api.js";
+import { Problem, cancelDraftPost, cancelUnpublishedPost, createDraftPost, reviewOnTelegram, submitPost, uploadUrlsFor } from "./_posts_api.js";
 import { storeConfigured, storeGet, storeIncr, storeSet } from "./_store.js";
 import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
@@ -146,8 +146,12 @@ export async function actionTarget(postId: string): Promise<{ photos: number } |
 // A publicacao ja foi reprovada (decidePost); o item volta para a fila com o
 // pedido da acao e o robo aplica nas fotos escolhidas.
 export async function queueAction(postId: string, spec: ActionSpec): Promise<boolean> {
-  const [item] = await dbSelect<ItemRow>("content_plan_items", `select=*&post_id=eq.${postId}&media_path=not.is.null`);
-  if (!item) return false;
+  const [hit] = await dbSelect<ItemRow>("content_plan_items", `select=*&post_id=eq.${postId}&media_path=not.is.null`);
+  if (!hit) return false;
+  // pedido no TikTok ou no Stories: a acao vai para o item dono das fotos, e o
+  // resultado vale para todas as publicacoes dele (1 credito por foto, uma vez)
+  const [owner] = hit.source_item_id ? await dbSelect<ItemRow>("content_plan_items", `select=*&id=eq.${hit.source_item_id}`) : [hit];
+  const item = owner?.post_id && owner.media_path ? owner : hit;
   await dbUpdateWhere("content_plan_items", `id=eq.${item.id}`, {
     status: "na_fila",
     attempts: 0,
@@ -223,7 +227,7 @@ async function getItem(id: unknown): Promise<ItemRow> {
 // o item e os que reaproveitam a mesma foto (TikTok com a foto do Feed); a
 // correcao vale so para a publicacao corrigida
 async function familyOf(item: ItemRow): Promise<ItemRow[]> {
-  if (isRework(item)) return [item];
+  if (isCorrection(item)) return [item];
   const reusers = await dbSelect<ItemRow>("content_plan_items", `select=*&source_item_id=eq.${item.id}`);
   return [item, ...reusers.filter((r) => r.status !== "cancelado")];
 }
@@ -417,7 +421,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const family = await familyOf(item);
       const correction = isRework(item);
       // a publicacao reprovada sai do caminho; a foto corrigida vira outra
-      if (correction && item.post_id) await cancelDraftPost(item.post_id);
+      if (actionOf(item)) {
+        for (const it of family) if (it.post_id) await cancelUnpublishedPost(it.post_id);
+      } else if (correction && item.post_id) await cancelDraftPost(item.post_id);
       const groupId = family.length > 1 ? crypto.randomUUID() : null;
       const targets = [];
       for (const it of family) {

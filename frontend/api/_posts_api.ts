@@ -358,6 +358,14 @@ export async function cancelDraftPost(id: string): Promise<void> {
   if (post.status === "rascunho") await cancelPost(post);
 }
 
+// Acao pedida no Telegram (ex.: rachadinha) muda as fotos de todas as
+// publicacoes que usam elas (Feed, TikTok, Stories): as antigas que ainda nao
+// sairam sao canceladas e as novas voltam para aprovar.
+export async function cancelUnpublishedPost(id: string): Promise<void> {
+  const post = await getPost(uuid(id));
+  if (["rascunho", "aguardando_aprovacao", "aprovado", "agendado"].includes(post.status)) await cancelPost(post);
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Cache-Control", "no-store");
