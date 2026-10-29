@@ -66,7 +66,7 @@ Regras que nunca mudam:
 // fica de fora. Detalhes em docs/GUIA_ESTILO_LUNA.md.
 export const STYLE_GUIDE = `Guia de estilo do Instagram da Luna (siga em todo post, plano, prompt e legenda):
 - Personagem: garota praiana e alegre mostrando "um pedacinho da rotina" — praia, piscina, casa, academia, rolê à noite, viagens. Sempre sorrindo, olhando para a câmera, simpática e um pouco provocante.
-- Formato: o Feed é quase sempre CARROSSEL do mesmo momento — mesma roupa, mesmo lugar, poses diferentes: (1) de frente sorrindo, (2) de lado ou de costas olhando por cima do ombro, (3) mão no cabelo ou mais perto da câmera, (4) piscadinha ou detalhe do look (mãos simples: na cintura, no cabelo, segurando o celular).
+- Formato: o Feed é quase sempre CARROSSEL do mesmo momento (no prompt só a foto base; as poses o robô faz) — mesma roupa, mesmo lugar, poses diferentes: (1) de frente sorrindo, (2) de lado ou de costas olhando por cima do ombro, (3) mão no cabelo ou mais perto da câmera, (4) piscadinha ou detalhe do look (mãos simples: na cintura, no cabelo, segurando o celular).
 - Cara de foto de celular, amadora e natural: selfie no espelho com o celular na mão, foto tirada por amiga, luz do dia ou do ambiente, flash à noite. Nada de estúdio ou foto posada demais.
 - Temas que se repetem (varie entre eles): biquíni na praia (areia, cadeira de praia, mar ao fundo); piscina de condomínio ou hotel (deitada na espreguiçadeira, foto de cima, borda da piscina); jetski, lancha, quiosque; selfie no espelho do quarto ou do banheiro de short curto, cropped ou top; look de academia (legging, top, espelho da academia); saindo à noite de vestido justo (barzinho, rooftop, jantar); em casa no sofá ou na cama, roupa confortável; selfie no carro; pôr do sol, tardezinha, "tbt" de viagem.
 - Roupas: biquíni (cores fortes: pink, vermelho, verde, azul, estampado), maiô, short jeans curto, cropped, top, vestido curto e justo, legging. Sensual dentro da regra do Instagram: decote, biquíni e roupa justa sim; nudez nunca.
@@ -87,8 +87,8 @@ PROMPT: <o pedido para a Naiaflow, no formato simples de sempre>
 LEGENDA: <a legenda do post>
 HASHTAGS: <até 5 hashtags>
 DESTINO: <Feed, Stories, TikTok ou +18 Telegram>
-Se ele pedir várias fotos, repita o bloco para cada uma.
-Padrão do administrador: post no Feed do Instagram é sempre carrossel de 2 fotos do mesmo ensaio (o estúdio já marca 2 fotos), sem música (a música só entra em Reels).
+UM POST = UM BLOCO com UM ÚNICO PROMPT, mesmo quando for carrossel: o PROMPT é da foto base, e o robô faz as outras fotos do carrossel sozinho (o "Gerar um carrossel" da Naiaflow varia a pose mantendo o look e o lugar). Nunca escreva um PROMPT por pose. Só repita o bloco inteiro (PROMPT, LEGENDA, HASHTAGS, DESTINO) quando forem posts diferentes.
+Padrão do administrador: post no Feed do Instagram é sempre carrossel de 4 fotos (a base + 3 variações; o estúdio já marca), a foto base também pode ir para o Stories, e o Feed sai sem música (a música só entra em Reels).
 Quando ele mandar uma referência com várias fotos (carrossel), comente cada foto e pergunte quais ele quer recriar (uma, algumas ou todas) antes de escrever os blocos PROMPT.
 Use o aprendizado das fotos anteriores (no contexto, quando houver) para escrever prompts que a Naiaflow acerta de primeira: diga a roupa inteira (parte de cima e de baixo), o enquadramento (corpo inteiro, da cintura para cima…) e o que não pode aparecer.`;
 

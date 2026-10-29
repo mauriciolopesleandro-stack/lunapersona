@@ -39,6 +39,7 @@ function slotFrom(text: string): Slot {
 export function parsePhotoBlocks(text: string): PhotoBlock[] {
   const blocks: PhotoBlock[] = [];
   let cur: PhotoBlock | null = null;
+  let sawSlot = false;
   for (const raw of text.split("\n")) {
     const line = raw.replace(/^[\s*>-]+/, "").replace(/\*\*/g, "").trim();
     const m = line.match(/^(PROMPT|LEGENDA|HASHTAGS|DESTINO)\s*:\s*(.*)$/i);
@@ -46,12 +47,19 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
     const label = m[1].toUpperCase();
     const value = m[2].trim();
     if (label === "PROMPT") {
+      // PROMPT logo depois de outro PROMPT (sem legenda no meio) = outra pose
+      // do mesmo post: o carrossel o robo faz sozinho, vale o primeiro (a base)
+      if (cur && !cur.caption && !cur.hashtags && !sawSlot) continue;
       cur = { prompt: value, caption: "", hashtags: "", slot: "feed" };
+      sawSlot = false;
       blocks.push(cur);
     } else if (cur) {
       if (label === "LEGENDA") cur.caption = value;
       else if (label === "HASHTAGS") cur.hashtags = value;
-      else cur.slot = slotFrom(value);
+      else {
+        cur.slot = slotFrom(value);
+        sawSlot = true;
+      }
     }
   }
   return blocks.filter((b) => b.prompt);
