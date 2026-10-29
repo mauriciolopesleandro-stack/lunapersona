@@ -94,7 +94,10 @@ def remember_job(local_path: str, url: str) -> None:
     if not m:
         return
     jobs = known_jobs()
-    jobs[local_path] = m.group(1)
+    # Criar com 3 fotos (pro1..pro3): anota qual delas ("<job>#3"); cada uma tem
+    # a sua pagina na Naiaflow
+    _, variant = _job_variant(url)
+    jobs[local_path] = m.group(1) + (f"#{variant}" if "-pro" in url and variant else "")
     JOBS_FILE.write_text(json.dumps(jobs, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
@@ -448,7 +451,7 @@ class Naiaflow:
                 raise RuntimeError("O aviso do carrossel da Naiaflow nao era o esperado (Continuar 3); nao cliquei.")
             go.first.click()
             log("Gerando o carrossel na Naiaflow (3 variações)…")
-            urls += self._wait_results(before, 3, skip_job=job_id)
+            urls += self._wait_results(before, 3, skip_job=job_id.partition("#")[0])
         return urls[:count]
 
     def apply_action(self, job_id: str, name: str, level: str) -> str:
@@ -471,8 +474,27 @@ class Naiaflow:
         return self._wait_result(before)[0]
 
     def _open_job(self, job_id: str) -> None:
-        # foto pronta, com o painel de Acoes (tela de 29/10: categorias)
-        self.page.goto(NAIAFLOW_JOB + job_id, wait_until="domcontentloaded")
+        """Foto pronta, com o painel de Acoes (tela de 29/10: categorias).
+        "<job>#3": a 3a foto de um Criar - o link do job abre sempre a 1a, entao
+        o robo clica na miniatura dela na galeria (cada foto tem a sua pagina)."""
+        job, _, variant = job_id.partition("#")
+        if variant and variant != "1":
+            self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
+            self.page.wait_for_selector("text=Modo imagem", timeout=60000)
+            self.page.wait_for_timeout(2500)
+            self._dismiss_overlays()
+            thumb = self.page.locator(f"img[src*='job-{job}-pro{variant}-']").first
+            for _ in range(8):  # foto mais antiga: rola a galeria ate aparecer
+                if thumb.count():
+                    break
+                self.page.mouse.wheel(0, 2500)
+                self.page.wait_for_timeout(1500)
+            if not thumb.count():
+                raise RuntimeError(f"Nao achei a foto {variant} do job {job[:8]} na galeria da Naiaflow.")
+            thumb.scroll_into_view_if_needed()
+            thumb.click()
+        else:
+            self.page.goto(NAIAFLOW_JOB + job, wait_until="domcontentloaded")
         ready = self.page.get_by_text(re.compile(r"^\s*(Nova Cena|Filtrar ações.*)\s*$")).or_(self.page.get_by_placeholder("Filtrar ações", exact=False))
         ready.first.wait_for(state="visible", timeout=60000)
         self.page.wait_for_timeout(1500)
