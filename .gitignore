@@ -59,3 +59,8 @@ worker/.perfil-naiaflow/
 worker/luna-worker.log
 worker/naia-jobs.json
 worker/__pycache__/
+
+# --- Conteudo de venda e estado local do estudio (nunca versionar) ---
+conteudos/
+luna-vox.json
+luna-vox.backup.json
