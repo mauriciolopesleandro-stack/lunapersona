@@ -7,6 +7,7 @@ import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, s
 import { sendNotice, telegramConfig } from "./_telegram.js";
 import type { IgAudioFlag } from "./_flags.js";
 import { igAudioSearch, igConnection } from "./_instagram.js";
+import { learnFromCorrection, learnFromPhoto } from "./_lessons.js";
 
 // /api/studio?r=worker - a automacao local (parte B do fluxo): um programa no
 // PC do administrador (Python + Playwright, pasta worker/) pega os itens dos
@@ -35,6 +36,8 @@ import { igAudioSearch, igConnection } from "./_instagram.js";
 //   POST { action: "upload-url", post_id, version, items: [{ position, size_bytes, mime_type }] }
 //                                -> { urls } (carrossel: todas as fotos da publicacao de uma vez)
 //   POST { action: "uploaded", id } -> manda cada publicacao do item para a analise no bot
+//   POST { action: "learn", prompt, image } -> a IA com visao compara a foto (data URL JPEG
+//                                   pequena) com o pedido e guarda a licao para a Conversa (api/_lessons.ts)
 //   POST { action: "fail", id, error } -> volta para a fila ou, sem tentativas, falhou (aviso no Telegram)
 
 const GEN_KEY = "luna:worker-gen";
@@ -130,6 +133,7 @@ async function queueSize(): Promise<number> {
 export async function queueCorrection(postId: string, text: string): Promise<boolean> {
   const [item] = await dbSelect<ItemRow>("content_plan_items", `select=*&post_id=eq.${postId}&media_path=not.is.null`);
   if (!item) return false;
+  await learnFromCorrection(item.prompt, text);
   // carrossel: a correcao de uma foto so nao cabe aqui; a publicacao volta para rascunho
   if ((await photosOf(item)) > 1) return false;
   await dbUpdateWhere("content_plan_items", `id=eq.${item.id}`, {
@@ -258,6 +262,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           ...(photos > 1 ? { prompts: carouselPrompts(item.prompt, photos) } : {}),
         },
       });
+    }
+
+    // aprendizado: copia pequena da foto que saiu; a IA compara com o pedido
+    // (o robo manda o texto usado: o prompt ou o pedido de correcao)
+    if (body.action === "learn") {
+      if (typeof body.prompt !== "string" || !body.prompt.trim()) throw new Problem(400, "Mande o pedido usado na foto.");
+      try {
+        return reply(200, { lesson: await learnFromPhoto(body.prompt, body.image) });
+      } catch (e) {
+        throw new Problem(502, `Análise da foto: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
 
     const item = await getItem(body.id ?? body.item_id);

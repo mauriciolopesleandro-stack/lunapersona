@@ -23,6 +23,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import base64
 import io
 import json
 import os
@@ -34,7 +35,7 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
-from PIL import Image
+from PIL import Image, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 # a pasta do estudio (luna persona); LUNA_STUDIO_ROOT e LUNA_WORKER_CONFIG so para testes
@@ -145,10 +146,28 @@ def fit_ratio(img: Image.Image, ratio_w: int, ratio_h: int, size: tuple[int, int
     return img.crop(box).resize(size, Image.LANCZOS)
 
 
+def fit_blur(img: Image.Image, size: tuple[int, int]) -> Image.Image:
+    """Foto inteira, sem cortar, sobre um fundo da propria foto ampliada e
+    desfocada (como o Instagram faz): a foto em pe (9:16) entra no Feed 4:5 sem
+    perder cabeca nem pernas."""
+    W, H = size
+    back = fit_ratio(img, W, H, size).filter(ImageFilter.GaussianBlur(40))
+    scale = min(W / img.width, H / img.height)
+    front = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
+    back.paste(front, ((W - front.width) // 2, (H - front.height) // 2))
+    return back
+
+
 def copy_for(img: Image.Image, network: str, fmt: str) -> bytes:
     if network == "instagram" and fmt == "Feed":
+        # a Naiaflow gera em pe (9:16; nao tem 4:5): no Feed a foto entra
+        # inteira, sem cortar cabeca nem pernas, como no Stories
+        if img.width / img.height < 4 / 5 * 0.97:
+            return to_jpeg(fit_blur(img, (1080, 1350)))
         return to_jpeg(fit_ratio(img, 4, 5, (1080, 1350)))
-    # Stories, TikTok e Telegram: vertical 9:16 ate 1080x1920
+    # Stories, TikTok e Telegram: vertical 9:16 1080x1920; foto mais larga (Feed 4:5) entra inteira
+    if img.width / img.height > 9 / 16 * 1.03:
+        return to_jpeg(fit_blur(img, (1080, 1920)))
     return to_jpeg(fit_ratio(img, 9, 16, (1080, 1920)))
 
 
@@ -269,6 +288,8 @@ class Naiaflow:
         Tambem fecha o seletor de acoes ("Filtrar acoes...") e a lista de
         clones, que as vezes ficam abertos por cima do composer (panels=False
         na tela da foto pronta, onde o painel de acoes e o que o robo usa)."""
+        if panels:
+            self._close_popovers()
         for placeholder in ("Filtrar ações", "Pesquisar") if panels else ():
             try:
                 panel = self.page.get_by_placeholder(placeholder)
@@ -315,19 +336,51 @@ class Naiaflow:
         # Tela de 10/2026: com o clone escolhido aparece a etiqueta "luna" no
         # composer (e o cartao dele fica com um check). Clicar no cartao de novo
         # tiraria o clone - por isso so abre a lista se a etiqueta nao estiver la.
-        if self._clone_chip().count():
+        # a etiqueta carrega depois da pagina: espera um pouco antes de achar que falta
+        try:
+            self._clone_chip().first.wait_for(state="visible", timeout=6000)
             return
+        except Exception:
+            pass
+        self._close_popovers()
+        # Tela de 29/10: "Adicionar" abre um menu (Outro clone, Modelos de Poses,
+        # Enviar imagem); "Outro clone" abre a lista de clones
         self.page.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
-        # cartao do clone na lista (carrega depois de abrir)
-        card = self.page.locator("div.group").filter(has=self._clone_name()).first
+        try:
+            self.page.get_by_text(re.compile(r"^\s*Outro clone\s*$", re.I)).first.click(timeout=5000)
+        except Exception:
+            pass  # tela antiga: Adicionar ja abria a lista
+        # cartao do clone na lista (carrega depois de abrir); a propria etiqueta
+        # do composer tambem e um div.group, por isso o filtro pelo formato do cartao
+        card = self.page.locator("div.group[class*='aspect-']").filter(has=self._clone_name()).first
         card.wait_for(state="visible", timeout=20000)
         card.click()
-        self.page.wait_for_timeout(800)
+        self.page.wait_for_timeout(1000)
         if self._clone_list_open():
             self.page.keyboard.press("Escape")
             self.page.wait_for_timeout(500)
+        self._close_popovers()
         if not self._clone_chip().count():
             raise RuntimeError(f'Nao consegui selecionar o clone "{CLONE}" na Naiaflow.')
+
+    def _close_popovers(self) -> None:
+        """Menus da Naiaflow (proporcao, Adicionar, lista de clones) deixam um
+        fundo invisivel (div.fixed.inset-0) por cima da tela que bloqueia os
+        cliques; o Escape nem sempre fecha. Fecha com Escape e, se o fundo
+        continuar, clicando nele."""
+        for _ in range(3):
+            backdrop = self.page.locator("div.fixed.inset-0")
+            visible = [backdrop.nth(i) for i in range(backdrop.count()) if backdrop.nth(i).is_visible()]
+            if not visible:
+                return
+            self.page.keyboard.press("Escape")
+            self.page.wait_for_timeout(400)
+            try:
+                if visible[-1].is_visible():
+                    visible[-1].click(position={"x": 5, "y": 5}, timeout=2000)
+                    self.page.wait_for_timeout(400)
+            except Exception:
+                pass
 
     def generate(self, prompt: str) -> str:
         self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
@@ -501,6 +554,24 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
         put_copy(up["url"], data, mime)
     sent = studio.call("uploaded", id=item["id"])
     log(f"Mandada para você aprovar no Telegram ({sent['sent']} publicação(ões)).")
+    if not test_image:
+        learn(studio, item, img, edit["instruction"] if edit else item["prompt"])
+
+
+def learn(studio: Studio, item: dict, img: Image.Image, prompt: str) -> None:
+    """Aprendizado: a IA do estudio compara a foto com o pedido e guarda uma
+    licao para a Conversa escrever prompts melhores. Falhar aqui nao atrapalha a
+    foto (ela ja foi para o Telegram)."""
+    small = img.copy()
+    small.thumbnail((768, 768))
+    buf = io.BytesIO()
+    small.save(buf, "JPEG", quality=80)
+    image = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    try:
+        lesson = studio.call("learn", id=item["id"], prompt=prompt, image=image).get("lesson")
+        log(f"Aprendizado: {lesson['lesson'][:160]}" if lesson else "Aprendizado: a foto saiu como o pedido.")
+    except Exception as exc:
+        log(f"Aprendizado: não consegui analisar a foto ({str(exc)[:160]}).")
 
 
 def main() -> None:

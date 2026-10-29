@@ -65,7 +65,10 @@ PROMPT: <o pedido para a Naiaflow, no formato simples de sempre>
 LEGENDA: <a legenda do post>
 HASHTAGS: <até 5 hashtags>
 DESTINO: <Feed, Stories, TikTok ou +18 Telegram>
-Se ele pedir várias fotos, repita o bloco para cada uma.`;
+Se ele pedir várias fotos, repita o bloco para cada uma.
+Padrão do administrador: post no Feed do Instagram é sempre carrossel de 2 fotos do mesmo ensaio (o estúdio já marca 2 fotos), sem música (a música só entra em Reels).
+Quando ele mandar uma referência com várias fotos (carrossel), comente cada foto e pergunte quais ele quer recriar (uma, algumas ou todas) antes de escrever os blocos PROMPT.
+Use o aprendizado das fotos anteriores (no contexto, quando houver) para escrever prompts que a Naiaflow acerta de primeira: diga a roupa inteira (parte de cima e de baixo), o enquadramento (corpo inteiro, da cintura para cima…) e o que não pode aparecer.`;
 
 interface PostRow {
   network: string;
@@ -211,7 +214,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // A Conversa e sempre com a IA sem restricao (o campo mode do pedido e
   // ignorado); o Planejamento continua escolhendo a IA por destino.
   const mode: Mode = "adulto";
-  const system = [PERSONA, CHAT_NOTE, await context()].join("\n\n");
+  const { lessonsForChat } = await import("./_lessons.js");
+  const lessons = await lessonsForChat().catch(() => "");
+  const system = [PERSONA, CHAT_NOTE, await context(), lessons].filter(Boolean).join("\n\n");
 
   try {
     const out = await askAi(mode, [{ role: "system", content: system }, ...messages]);
