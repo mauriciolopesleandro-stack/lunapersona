@@ -65,7 +65,8 @@ export async function learnFromPhoto(prompt: string, image: unknown, opts: { mod
         ],
       },
     ],
-    { model: opts.model || lessonsModel(), json: true, maxTokens: 600, timeoutMs: 40_000 }
+    // temperatura baixa: descrever a foto, nao inventar
+    { model: opts.model || lessonsModel(), json: true, maxTokens: 600, timeoutMs: 40_000, temperature: 0.1 }
   );
   let parsed: { atendeu?: unknown; diferencas?: unknown; licao?: unknown };
   try {

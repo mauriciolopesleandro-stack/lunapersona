@@ -118,7 +118,7 @@ export class AiError extends Error {
 export async function askAi(
   mode: Mode,
   messages: { role: "system" | "user" | "assistant"; content: AiContent }[],
-  opts: { json?: boolean; maxTokens?: number; timeoutMs?: number; model?: string } = {}
+  opts: { json?: boolean; maxTokens?: number; timeoutMs?: number; model?: string; temperature?: number } = {}
 ): Promise<{ text: string; model: string; usage: unknown }> {
   if (!assistantConfigured()) throw new AiError(400, "Falta cadastrar OPENROUTER_API_KEY na Vercel.");
   const model = opts.model ?? modelFor(mode);
@@ -135,7 +135,7 @@ export async function askAi(
       body: JSON.stringify({
         model,
         messages,
-        temperature: 0.8,
+        temperature: opts.temperature ?? 0.8,
         max_tokens: opts.maxTokens ?? 1500,
         ...(opts.json ? { response_format: { type: "json_object" } } : {}),
       }),
