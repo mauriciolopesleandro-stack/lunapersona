@@ -7,7 +7,7 @@ import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, s
 import { sendNotice, telegramConfig } from "./_telegram.js";
 import type { IgAudioFlag } from "./_flags.js";
 import { igAudioSearch, igConnection } from "./_instagram.js";
-import { learnFromCorrection, learnFromPhoto } from "./_lessons.js";
+import { forgetLessons, learnFromCorrection, learnFromPhoto, listLessons } from "./_lessons.js";
 
 // /api/studio?r=worker - a automacao local (parte B do fluxo): um programa no
 // PC do administrador (Python + Playwright, pasta worker/) pega os itens dos
@@ -269,10 +269,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (body.action === "learn") {
       if (typeof body.prompt !== "string" || !body.prompt.trim()) throw new Problem(400, "Mande o pedido usado na foto.");
       try {
-        return reply(200, { lesson: await learnFromPhoto(body.prompt, body.image) });
+        const model = typeof body.model === "string" ? body.model : undefined;
+        return reply(200, { lesson: await learnFromPhoto(body.prompt, body.image, { model, dry: body.dry === true }) });
       } catch (e) {
         throw new Problem(502, `Análise da foto: ${e instanceof Error ? e.message : String(e)}`);
       }
+    }
+
+    // licoes guardadas (reset: apaga todas, ex.: depois de trocar o modelo)
+    if (body.action === "lessons") {
+      if (body.reset === true) await forgetLessons();
+      return reply(200, { lessons: await listLessons() });
     }
 
     const item = await getItem(body.id ?? body.item_id);
