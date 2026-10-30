@@ -584,6 +584,107 @@ class Naiaflow:
             seen = new
         raise RuntimeError("A Naiaflow nao terminou a foto em 10 minutos.")
 
+    # --- dancinha: Copiar movimento --------------------------------------------------------------
+
+    def copy_motion(self, link: str | None, video_file: Path | None, seconds: int, outfit: str | None, dry: bool = False) -> str:
+        """Copiar movimento (Modo imagem -> Copiar movimento): o movimento vem do
+        link ou do video enviado, a pessoa e o clone luna, sem som (a musica entra
+        no Instagram), com a roupa escolhida da galeria (ou a do video). So gera
+        se o custo for o esperado (1 por segundo + 1 do clone). Devolve o link do MP4."""
+        p = self.page
+        p.goto(NAIAFLOW, wait_until="domcontentloaded")
+        p.wait_for_selector("text=Modo imagem", timeout=60000)
+        p.wait_for_timeout(2000)
+        self._dismiss_overlays()
+        p.get_by_role("button", name=re.compile(r"Modo imagem")).first.click()
+        p.wait_for_timeout(1200)
+        p.get_by_text(re.compile(r"Copiar movimento", re.I)).first.click()
+        p.wait_for_timeout(2500)
+        # a janela lembra o passo da ultima vez
+        for name in ("Recomeçar", "Limpar"):
+            b = p.get_by_role("button", name=name, exact=True)
+            if b.count() and b.last.is_visible():
+                b.last.click()
+                p.wait_for_timeout(1500)
+                break
+        if video_file:
+            p.get_by_role("button", name=re.compile(r"Enviar v[ií]deo")).first.click()
+            p.wait_for_timeout(1500)
+            with p.expect_file_chooser(timeout=15000) as chooser:
+                p.get_by_role("button", name="Escolher arquivo", exact=True).last.click()
+            chooser.value.set_files(str(video_file))
+            p.wait_for_timeout(15000)
+        else:
+            p.get_by_role("button", name=re.compile(r"Importar por link")).first.click()
+            p.wait_for_timeout(1500)
+            p.locator("input[placeholder^='https']").first.fill(link or "")
+        # link pede Continuar; o video enviado ja cai no trecho
+        dur = p.get_by_role("button", name=f"{seconds}s", exact=True)
+        if not (dur.count() and dur.first.is_visible()):
+            p.get_by_role("button", name="Continuar", exact=True).last.click()
+            dur.first.wait_for(state="visible", timeout=90000)
+        dur.first.click()
+        p.get_by_text("Sem som", exact=True).first.click()
+        p.wait_for_timeout(800)
+        p.get_by_role("button", name="Continuar", exact=True).last.click()
+        p.wait_for_timeout(5000)
+        dialog = p.locator("[role=dialog]").last
+        pending = dialog.get_by_text("Selecionar clone", exact=True)
+        if pending.count() and pending.first.is_visible():
+            pending.first.click()
+            p.wait_for_timeout(2500)
+            p.locator("[role=dialog]").last.get_by_text(CLONE, exact=True).first.click()
+            p.wait_for_timeout(2500)
+        if pending.count() and pending.first.is_visible():
+            raise RuntimeError(f'Nao consegui escolher o clone "{CLONE}" no Copiar movimento.')
+        if outfit:
+            p.get_by_role("button", name="Roupa", exact=True).last.click()
+            p.wait_for_timeout(1500)
+            p.get_by_role("menuitem", name="Abrir galeria").first.click()
+            p.wait_for_timeout(3500)
+            caption = p.get_by_text(re.compile(re.escape(outfit), re.I)).first
+            if not caption.count():
+                raise RuntimeError(f'Nao achei a roupa "{outfit}" na galeria da Naiaflow.')
+            caption.locator("xpath=ancestor::*[.//img][1]").locator("img").first.click()
+            p.wait_for_timeout(3000)
+            if not p.evaluate("() => !!document.querySelector(`[role=dialog] button[aria-label='Roupa'] img`)"):
+                raise RuntimeError(f'A roupa "{outfit}" nao ficou escolhida no Copiar movimento.')
+            log(f"Roupa: {outfit}.")
+        final = p.get_by_role("button", name=re.compile(r"Gerar v[ií]deo", re.I))
+        if final.count() != 1 or not final.first.is_enabled():
+            raise RuntimeError("O botao Gerar video da Naiaflow nao ficou ligado.")
+        label = final.first.inner_text().replace("\n", " ").strip()
+        if not label.endswith(str(seconds + 1)):
+            raise RuntimeError(f"Custo inesperado no Copiar movimento ({label}): nao gerei.")
+        if dry:  # conferencia sem gastar credito: para antes do Gerar
+            return label
+        before = set(self._stream_thumbs())
+        final.first.click(timeout=15000, force=True)
+        log(f"Gerando a dancinha ({seconds} s, {seconds + 1} créditos)…")
+        deadline = time.time() + 25 * 60
+        while time.time() < deadline:
+            time.sleep(15)
+            try:
+                p.goto(NAIAFLOW, wait_until="domcontentloaded")
+                p.wait_for_timeout(4000)
+                new = [t for t in self._stream_thumbs() if t not in before]
+                if not new:
+                    continue
+                p.locator(f"img[src='{new[0]}']").first.click()
+                p.wait_for_timeout(6000)
+                srcs = p.eval_on_selector_all("video, video source", "els => els.map(e => e.currentSrc || e.src).filter(Boolean)")
+                mp4 = next((x for x in srcs if x.startswith("http") and x.endswith(".mp4")), None)
+                if mp4:
+                    return mp4
+            except Exception:
+                continue
+        raise RuntimeError("A Naiaflow nao terminou a dancinha em 25 minutos.")
+
+    def _stream_thumbs(self) -> list[str]:
+        # miniaturas dos videos da galeria (Cloudflare Stream)
+        return self.page.evaluate("() => [...document.querySelectorAll('img')].map(e => e.currentSrc || e.src).filter(s => s.includes('cloudflarestream'))")
+
+
     def _wait_results(self, before: set[str], count: int, skip_job: str = "") -> list[str]:
         """Varias fotos de uma acao (carrossel): espera `count` fotos novas.
         A galeria pode empilhar as fotos de um job num cartao so ("+3"), entao
@@ -618,6 +719,47 @@ class Naiaflow:
 
 
 # --- um item da fila -----------------------------------------------------------------------------------
+
+def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video: Path | None) -> None:
+    """Dancinha: video da Naiaflow (ou o de teste) -> quadro em JPEG para a
+    biblioteca -> Reels e TikTok com o mesmo MP4."""
+    m = item["motion"]
+    log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): dancinha {m.get('seconds')} s pelo {'link' if m.get('link') else 'video enviado'}"
+        + (f", roupa {m['outfit']}" if m.get("outfit") else ""))
+    folder = STUDIO_ROOT / item["folder"]
+    folder.mkdir(parents=True, exist_ok=True)
+    mp4 = folder / item["file"].replace(".jpg", ".mp4")
+    if mp4.exists() and mp4.stat().st_size > 10000:
+        log(f"Dancinha ja estava pronta: {mp4.name} (nao gasta credito de novo).")
+    elif test_video:
+        mp4.write_bytes(test_video.read_bytes())
+    else:
+        source = None
+        if m.get("file_url"):
+            source = folder / f"referencia-{item['id'][:8]}{Path(m.get('file_name') or 'video.mp4').suffix}"
+            r = requests.get(m["file_url"], timeout=300)
+            r.raise_for_status()
+            source.write_bytes(r.content)
+        url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"))
+        r = requests.get(url, timeout=300)
+        r.raise_for_status()
+        mp4.write_bytes(r.content)
+        if source and source.exists():
+            source.unlink()
+    import imageio_ffmpeg
+    jpg = folder / item["file"]
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-ss", "1", "-i", str(mp4), "-frames:v", "1", "-q:v", "3", str(jpg)], check=True)
+    local_path = f"{item['folder']}/{item['file']}"
+    video_path = f"{item['folder']}/{mp4.name}"
+    data = mp4.read_bytes()
+    log(f"Dancinha salva em {video_path}")
+    done = studio.call("done", id=item["id"], local_path=local_path, size_bytes=jpg.stat().st_size, video_path=video_path, video_size=len(data))
+    for t in done["targets"]:
+        up = studio.call("upload-url", id=item["id"], post_id=t["post_id"], version=t["version"], size_bytes=len(data), mime_type="video/mp4")
+        put_copy(up["url"], data, "video/mp4")
+    sent = studio.call("uploaded", id=item["id"])
+    log(f"Mandada para você aprovar no Telegram ({sent['sent']} publicação(ões)).")
+
 
 def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path | None) -> None:
     edit = item.get("edit")
@@ -723,7 +865,7 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
             for u in up["urls"]:
                 put_copy(u["url"], datas[u["position"]], "image/jpeg")
             continue
-        if video is not None and t["format"] == "Reels":
+        if video is not None and t["format"] in ("Reels", "Vídeo"):
             data, mime = video, "video/mp4"
         else:
             data, mime = copy_for(img, t["network"], t["format"]), "image/jpeg"
@@ -790,6 +932,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Luna Studio - automacao local da Naiaflow")
     ap.add_argument("--uma-vez", action="store_true", help="processa a fila e sai")
     ap.add_argument("--imagem-teste", type=Path, help="usa esta imagem em vez de gerar na Naiaflow (teste)")
+    ap.add_argument("--video-teste", type=Path, help="usa este video em vez da dancinha da Naiaflow (teste)")
     args = ap.parse_args()
 
     url, token = load_config()
@@ -798,7 +941,7 @@ def main() -> None:
     log(f"Conectado ao estúdio ({url}). Itens na fila: {queue}.")
     naia: Naiaflow | None = None
     try:
-        if not args.imagem_teste:
+        if not (args.imagem_teste or args.video_teste):
             naia = Naiaflow()
             naia.open()
             log("Naiaflow pronta.")
@@ -819,7 +962,10 @@ def main() -> None:
                 time.sleep(QUEUE_POLL_S)
                 continue
             try:
-                process(studio, item, naia, args.imagem_teste)
+                if item.get("motion"):
+                    process_motion(studio, item, naia, args.video_teste)
+                else:
+                    process(studio, item, naia, args.imagem_teste)
             except Exception as e:  # o item volta para a fila (ou falha de vez, com aviso no Telegram)
                 log(f"Erro no item {item['id'][:8]}: {e}")
                 try:

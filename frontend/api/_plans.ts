@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
 import { ADULT_NOTE, AiError, PERSONA, STYLE_GUIDE, askAi, type Mode } from "./_assistant.js";
-import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, supabaseConfigured } from "./_supabase.js";
+import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
+import { UPLOAD_BUCKET } from "./_posts.js";
+import { randomUUID } from "crypto";
 
 // /api/studio?r=plans - planejamento feito pelo chat (parte A do fluxo).
 // O estudio monta a grade (dias x quantidades x horarios padrao); a IA so
@@ -275,6 +277,65 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     // Foto avulsa pedida na Conversa do Assistente: um plano de 1 item, ja
     // aprovado, direto na fila do robo do PC (gera, cria a publicacao e manda
     // para a analise no Telegram, igual aos itens de um plano).
+    // Dancinha pelo chat: o video de referencia sobe para o armazenamento
+    // temporario (o robo baixa de la) ou vai so o link (TikTok, Instagram...)
+    if (body.action === "dance-url") {
+      const mime = String(body.mime_type ?? "");
+      const ext = mime === "video/mp4" ? "mp4" : mime === "video/quicktime" ? "mov" : mime === "video/webm" ? "webm" : "";
+      if (!ext) throw new Problem(400, "Mande o vídeo em MP4, MOV ou WEBM.");
+      const size = Number(body.size_bytes);
+      if (!Number.isFinite(size) || size <= 0 || size > 50 * 1024 * 1024) throw new Problem(400, "O vídeo pode ter no máximo 50 MB.");
+      const path = `danca/${randomUUID()}.${ext}`;
+      return reply(200, { path, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
+    }
+
+    if (body.action === "dance") {
+      const link = typeof body.link === "string" ? body.link.trim() : "";
+      const file = typeof body.path === "string" ? body.path : "";
+      if (link && !/^https:\/\/\S+$/.test(link)) throw new Problem(400, "Link inválido.");
+      if (file && !/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
+      if (!link === !file) throw new Problem(400, "Mande o link ou o vídeo da dancinha.");
+      const seconds = Number(body.seconds ?? 5);
+      if (![5, 8, 10].includes(seconds)) throw new Problem(400, "A dancinha tem 5, 8 ou 10 segundos.");
+      const outfit = typeof body.outfit === "string" ? body.outfit.trim().slice(0, 60) : "";
+      const raw: unknown[] = Array.isArray(body.slots) ? body.slots : ["reels", "tiktok"];
+      const keys = [...new Set(raw.map(String))].filter((k) => k === "reels" || k === "tiktok");
+      if (!keys.length) throw new Problem(400, "Marque Reels, TikTok ou os dois.");
+      const when = typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
+      if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
+      const caption = typeof body.caption === "string" ? body.caption.slice(0, 2200) : "";
+      const hashtags = cleanTags(body.hashtags);
+      const motion = { ...(link ? { link } : { path: file }), seconds, ...(outfit ? { outfit } : {}) };
+      const plan = await dbInsert<PlanRow>("content_plans", {
+        title: `Dancinha do chat (${keys.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}${outfit ? `, roupa ${outfit}` : ""})`,
+        request: { source: "chat-dance", slots: keys, motion },
+        status: "aprovado",
+        approved_at: new Date().toISOString(),
+      });
+      const items: ItemRow[] = [];
+      for (const [position, key] of keys.entries()) {
+        items.push(
+          await dbInsert<ItemRow>("content_plan_items", {
+            plan_id: plan.id,
+            position,
+            scheduled_at: new Date(when).toISOString(),
+            network: key === "reels" ? "instagram" : "tiktok",
+            format: key === "reels" ? "Reels" : "Vídeo",
+            kind: "video",
+            adult: false,
+            prompt: `Dancinha (Copiar movimento${outfit ? `, roupa ${outfit}` : ""})`,
+            caption,
+            hashtags,
+            status: "na_fila",
+            ...(items[0] ? { source_item_id: items[0].id } : {}),
+          })
+        );
+      }
+      await audit("dancinha", "content_plan_items", items[0].id, { destino: keys.join(","), fonte: link ? "link" : "video", segundos: seconds });
+      // Copiar movimento: 1 credito por segundo + 1 do clone
+      return reply(200, { item: items[0], items, estimate: { images: 0, videos: 1, credits: seconds + 1 } });
+    }
+
     if (body.action === "quick") {
       // um ou mais destinos; uma foto por proporcao (Feed quadrado; Stories,
       // TikTok e +18 em 9:16) e os destinos da mesma proporcao reaproveitam

@@ -3,7 +3,8 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { isAuthenticated } from "./_auth.js";
 import { Problem, cancelDraftPost, cancelUnpublishedPost, createDraftPost, reviewOnTelegram, submitPost, uploadUrlsFor } from "./_posts_api.js";
 import { storeConfigured, storeGet, storeIncr, storeSet } from "./_store.js";
-import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, supabaseConfigured } from "./_supabase.js";
+import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageReadUrl, storageRemove, supabaseConfigured } from "./_supabase.js";
+import { UPLOAD_BUCKET } from "./_posts.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
 import type { IgAudioFlag } from "./_flags.js";
 import { igAudioSearch, igConnection } from "./_instagram.js";
@@ -193,6 +194,20 @@ function carouselPrompts(prompt: string, n: number): string[] {
   );
 }
 
+// Dancinha (plano "chat-dance"): o robo faz o Copiar movimento da Naiaflow com o
+// link ou com o video enviado (link de leitura de 2 h), sem som, com a luna e a
+// roupa escolhida; o mesmo video vai para o Reels e o TikTok.
+interface Motion {
+  link?: string;
+  path?: string;
+  seconds: number;
+  outfit?: string;
+}
+async function motionOf(item: Pick<ItemRow, "plan_id">): Promise<Motion | null> {
+  const [plan] = await dbSelect<{ request: { source?: string; motion?: Motion } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
+  return plan?.request?.source === "chat-dance" && plan.request.motion ? plan.request.motion : null;
+}
+
 async function queueSize(): Promise<number> {
   const rows = await dbSelect<{ id: string }>("content_plan_items", `select=id&${QUEUE_FILTER}`);
   return rows.length;
@@ -317,6 +332,27 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (!item) return reply(200, { item: null });
       const claimed = await dbUpdate<ItemRow>("content_plan_items", `id=eq.${item.id}&status=eq.na_fila`, { status: "gerando", attempts: item.attempts + 1, updated_at: now() });
       if (!claimed) return reply(200, { item: null });
+      const motion = await motionOf(item);
+      if (motion) {
+        return reply(200, {
+          item: {
+            id: item.id,
+            prompt: item.prompt,
+            adult: false,
+            kind: "video",
+            attempt: claimed.attempts,
+            folder: folderFor(item),
+            file: fileNameFor(item),
+            targets: (await familyOf(item)).map((i) => ({ network: i.network, format: i.format })),
+            motion: {
+              ...(motion.link ? { link: motion.link } : {}),
+              ...(motion.path ? { file_url: await storageReadUrl(UPLOAD_BUCKET, motion.path, 7200), file_name: motion.path.split("/").pop() } : {}),
+              seconds: motion.seconds,
+              ...(motion.outfit ? { outfit: motion.outfit } : {}),
+            },
+          },
+        });
+      }
       const spec = actionOf(item);
       const sources = spec && item.post_id ? await postPhotoPaths(item.post_id) : [];
       const photos = isCorrection(item) || spec ? 1 : await photosOf(item);
@@ -449,6 +485,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         targets.push({ item_id: it.id, post_id: post.id, version: submitted.version, network: it.network, format: it.format, photos: ids.length });
       }
       await audit(correction ? "corrigir_item" : "gerar_item", "content_plan_items", item.id, { publicacoes: targets.length });
+      // dancinha pronta: o video de referencia enviado sai do armazenamento
+      const motion = video ? await motionOf(item) : null;
+      if (motion?.path) await storageRemove(UPLOAD_BUCKET, [motion.path]).catch(() => undefined);
       return reply(200, { media_id: media.id, targets });
     }
 

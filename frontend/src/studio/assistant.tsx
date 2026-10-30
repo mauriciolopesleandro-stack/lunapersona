@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
+import { DANCE_LINK, DanceCard } from "./dance";
 import { NETWORKS } from "./shared";
 import { useStudio, type Post } from "./store";
 
@@ -17,12 +18,14 @@ interface Message {
   display?: string; // o que o administrador escreveu
   refs?: string[]; // miniaturas das fotos/videos mandados
   reading?: string; // leitura das referencias (abre e fecha na conversa)
+  dance?: { link?: string }; // video ou link de dancinha: mostra o "Fazer dancinha"
 }
 // foto ou video anexado, ja reduzido no navegador
 interface Attachment {
   kind: "foto" | "video";
   thumb: string;
   images: string[];
+  file?: File; // o video inteiro (para a dancinha), so enquanto a pagina esta aberta
 }
 interface Status {
   configured: boolean;
@@ -116,6 +119,8 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // arquivos de video das dancinhas pedidas nesta visita (indice da mensagem)
+  const danceFiles = useRef(new Map<number, File>());
 
   useEffect(() => {
     fetch("/api/studio?r=assistant")
@@ -181,8 +186,14 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       }
       if (link) {
         setStage(/instagram\.com/i.test(link) ? "Lendo a página do Instagram…" : "Lendo o link…");
-        const out = await post<{ title: string; analysis: string }>({ action: "link", url: link });
-        reads.push({ label: out.title, text: out.analysis });
+        try {
+          const out = await post<{ title: string; analysis: string }>({ action: "link", url: link });
+          reads.push({ label: out.title, text: out.analysis });
+        } catch (e) {
+          // link de dancinha (TikTok, Reels...) costuma bloquear a leitura: segue
+          // sem ela, o "Fazer dancinha" usa o link direto
+          if (!DANCE_LINK.test(link)) throw e;
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -203,6 +214,11 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     const message: Message = reads.length
       ? { role: "user", content: `${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
       : { role: "user", content: typed };
+    // dancinha: o video enviado (o arquivo fica so na memoria) ou o link de rede social
+    const danceFile = room !== "18" ? attachments.find((a) => a.kind === "video")?.file : undefined;
+    const danceLink = room !== "18" ? typed.match(DANCE_LINK)?.[0] : undefined;
+    if (danceFile || danceLink) message.dance = danceLink && !danceFile ? { link: danceLink } : {};
+    if (danceFile) danceFiles.current.set(messages.length, danceFile);
     const next: Message[] = [...messages, message];
     update(next);
     setText("");
@@ -296,6 +312,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
                     <p>{m.reading}</p>
                   </details>
                 )}
+                {m.role === "user" && m.dance && <DanceCard link={m.dance.link} file={danceFiles.current.get(i)} />}
                 {m.role === "assistant" && (
                   <button type="button" className="st-link" onClick={() => copy(i)}>
                     {copied === i ? "Copiado" : "Copiar"}
@@ -436,7 +453,7 @@ async function videoRef(file: File): Promise<Attachment> {
       await new Promise<void>((ok) => (video.onseeked = () => ok()));
       frames.push(shrink(video, video.videoWidth, video.videoHeight, 768, 0.8));
     }
-    return { kind: "video", thumb: shrink(video, video.videoWidth, video.videoHeight, 160, 0.7), images: frames };
+    return { kind: "video", thumb: shrink(video, video.videoWidth, video.videoHeight, 160, 0.7), images: frames, file };
   } finally {
     URL.revokeObjectURL(url);
   }

@@ -1045,3 +1045,11 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
   - **Post ou outra página:** título, texto e imagem de prévia (og:image). O Instagram costuma bloquear: aí a resposta pede um print.
   - Endereços internos (localhost, IPs privados) são recusados.
 - A leitura vai junto com o pedido para a IA da Conversa, que termina com os blocos PROMPT/LEGENDA/HASHTAGS/DESTINO (botões "Gerar esta foto"). Na conversa, a mensagem mostra a miniatura e a "Leitura da referência" recolhida.
+
+## 44. Chat +18, formatos de foto e dancinha automática (30/10/2026)
+
+- **Chat +18** (Monetização → Chat +18): conversa separada da normal, só para o canal VIP, com o guia da Naia (Modo Spice, **retoque grátis**, Ações de 1 crédito, prompt de cena real). Ver `docs/NAIA_18_E_FORMATOS.md`.
+- **Formatos de foto** (janelinha de destinos da Conversa e plano): **Feed em foto Quadrada**; **Stories (9:16)**, TikTok e +18 em Vertical. O robô escolhe a proporção no composer da Naiaflow antes do Criar. Destinos da mesma proporção dividem a foto; o TikTok usa a vertical dos Stories e, sem Stories, a do Feed. Feed sai 1080×1080.
+- **Dancinha** (Conversa): mandou vídeo (📎) ou link de TikTok/Instagram/Shorts → botão **"💃 Fazer dancinha (Reels + TikTok)"**: destinos, roupa (manter a do vídeo ou uma salva na galeria), 5/8/10 s, horário, legenda. O vídeo enviado vai ao armazenamento temporário (`danca/…`, apagado depois). O robô faz o Copiar movimento (sem som, luna, roupa), baixa o MP4, tira um quadro para a biblioteca e cria o Reels (com música do Instagram) e o TikTok Vídeo com o mesmo arquivo. Custo: 1 crédito por segundo + 1.
+- Ferramentas sem gastar crédito: `worker/ferramentas/naia_proporcao.py`, `worker/ferramentas/naia_dancinha_seco.py`.
+- Depois do deploy, reiniciar o robô do PC.

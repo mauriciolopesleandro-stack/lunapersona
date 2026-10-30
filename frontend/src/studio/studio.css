@@ -4694,3 +4694,13 @@
 .st-chat18 .st-chat-input textarea {
   resize: none;
 }
+
+/* Fazer dancinha (Conversa) */
+.st-dance-open {
+  margin-top: 8px;
+}
+
+.st-msg-user .st-dance,
+.st-msg-user .st-dance-open {
+  text-align: left;
+}
