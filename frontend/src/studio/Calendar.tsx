@@ -122,13 +122,15 @@ export function Calendar({ onOpenPost, onNew }: Props) {
                     return h >= block.from && h < end;
                   });
                   const slot = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.max(block.from, 9));
-                  const msg = cta.get(brDay(d));
+                  const msgs = (cta.get(brDay(d)) ?? []).filter((m) => m.hour >= block.from && m.hour < end);
                   return (
                     <div key={i} className="st-week-cell">
                       {here.map((p) => (
                         <PostChip key={p.id} post={p} onOpen={onOpenPost} />
                       ))}
-                      {msg && msg.hour >= block.from && msg.hour < end && <CtaChip d={msg} onOpen={setCtaOpen} />}
+                      {msgs.map((m) => (
+                        <CtaChip key={m.hour} d={m} onOpen={setCtaOpen} />
+                      ))}
                       <button type="button" className="st-cell-add" onClick={() => onNew(slot)} aria-label="Agendar aqui">
                         <Icon name="plus" size={14} />
                         Agendar
@@ -149,7 +151,7 @@ export function Calendar({ onOpenPost, onNew }: Props) {
           ))}
           {Array.from({ length: 42 }, (_, i) => addDays(monthStart, i)).map((d, i) => {
             const list = on(d);
-            const msg = cta.get(brDay(d));
+            const msgs = cta.get(brDay(d)) ?? [];
             const outside = d.getMonth() !== anchor.getMonth();
             return (
               <div key={i} className={`st-month-cell${outside ? " outside" : ""}${sameDay(d, today) ? " today" : ""}`}>
@@ -160,7 +162,9 @@ export function Calendar({ onOpenPost, onNew }: Props) {
                   <PostChip key={p.id} post={p} onOpen={onOpenPost} mini />
                 ))}
                 {list.length > 3 && <span className="st-month-more">+{list.length - 3}</span>}
-                {msg && <CtaChip d={msg} mini onOpen={setCtaOpen} />}
+                {msgs.map((m) => (
+                  <CtaChip key={m.hour} d={m} mini onOpen={setCtaOpen} />
+                ))}
               </div>
             );
           })}

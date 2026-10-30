@@ -8,9 +8,10 @@ import type { FanRow, ProductRow } from "./_sales_bot.js";
 // pelo administrador na aba Telegram -> Previas) e os botoes dos pacotes:
 //   boas-vindas    logo depois de confirmar os 18 anos
 //   Pix esquecido  20 min depois de gerar o Pix sem pagar (uma vez)
-//   diaria         uma por dia, no horario escolhido, para quem nao e VIP
-//                  (para com /parar, bloqueio ou VIP ativo); o texto muda todo
-//                  dia, a previa pode repetir
+//   diaria         nos horarios escolhidos (padrao 12h e 19h), para quem nao e VIP
+//                  (para com /parar, bloqueio ou VIP ativo); cada fa recebe os
+//                  modelos em sequencia (1, 2, ... o ultimo e volta ao 1), a
+//                  previa pode repetir
 //   renovacao      VIP perto de vencer (3 dias antes) e vencido (3 dias de folga
 //                  no canal): uma por dia, com previa e "Renovar agora" (_sales_pay.ts)
 // Os textos ficam no Upstash (luna:cta) e o administrador edita em Vendas. Nas
@@ -20,12 +21,13 @@ import type { FanRow, ProductRow } from "./_sales_bot.js";
 const CONFIG_KEY = "luna:cta";
 const PREVIEWS_KEY = "luna:sales-previews";
 const PIX_REMINDER_MS = 20 * 60_000;
-const DAILY_GAP_MS = 20 * 3600_000; // no maximo uma diaria a cada 20 h
+const MIN_GAP_MS = 3 * 3600_000; // boas-vindas ou diaria ha menos de 3 h: espera o proximo horario
 const BATCH = 25; // fas por minuto (o processador roda a cada minuto)
 
 export interface CtaConfig {
   enabled: boolean; // mensagem diaria ligada
-  hour: number; // a partir de que hora (Brasilia) sai a diaria
+  hours: number[]; // horarios (Brasilia) da diaria, em ordem; cada um manda uma mensagem
+  hour: number; // o primeiro horario (compatibilidade com telas antigas)
   welcome: string;
   pixReminder: string;
   daily: string[];
@@ -42,7 +44,8 @@ export interface Preview {
 
 export const DEFAULT_CTA: CtaConfig = {
   enabled: true,
-  hour: 19,
+  hours: [12, 19],
+  hour: 12,
   welcome: "Oi {nome}! Que bom que você veio 😘\n\nAqui eu mostro o que não posso mostrar em nenhum outro lugar… Escolhe o seu pacote e vem me ver 🔥",
   pixReminder: "Oi {nome}, vi que você quase garantiu o {pacote} 👀\n\nSeu Pix ainda está aqui em cima esperando… paga rapidinho que eu te mando tudo na hora 💛",
   daily: [
@@ -56,6 +59,11 @@ export const DEFAULT_CTA: CtaConfig = {
     "Saudade de você por aqui, {nome} 🥺 Liberei um ensaio novinho, vem conferir 🔥",
     "{nome}, meu VIP tá cada dia mais quente 🌶️ Conteúdo novo quase todo dia, só pra quem tá lá dentro.",
     "Ei {nome} 😘 Hoje eu tô só de lingerie e com vontade de ser vista… mas só no VIP 🔒",
+    "{nome}, tô de biquíni novo e ninguém aqui fora viu ainda 👙 Quer ser o primeiro? Te espero no VIP 😏",
+    "Acabei de sair do banho, {nome}… 🚿 e tirei umas fotos que só vão pro meu VIP 🤭",
+    "{nome}, hoje é dia de te mimar 💛 Escolhe o seu pacote e vem ver o que eu preparei só pra você.",
+    "Confesso, {nome}: gravei uma coisa ontem à noite que me deixou com vergonha 🙈 Tá lá no VIP…",
+    "{nome}, quem entrou no VIP essa semana não se arrependeu 😈 Só falta você.",
   ],
   renewal: [
     "⏰ {nome}, seu VIP vence em {data}. Não vai perder o que vem por aí: tô preparando um ensaio novinho 📸🔥",
@@ -64,6 +72,13 @@ export const DEFAULT_CTA: CtaConfig = {
   ],
   renewalGrace: "{nome}, seu VIP venceu 😢 Você ainda tá no canal até {data}… renova agora pra não perder o ensaio novo que tá chegando 🔥",
 };
+
+// 1 a 4 horarios inteiros (0-23), sem repetir, em ordem
+function cleanHours(raw: unknown, fallback: unknown): number[] {
+  const list = (Array.isArray(raw) ? raw : [fallback]).map(Number).filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+  const hours = [...new Set(list)].sort((a, b) => a - b).slice(0, 4);
+  return hours.length ? hours : DEFAULT_CTA.hours;
+}
 
 function clean(text: unknown, max: number): string {
   return typeof text === "string" ? text.trim().slice(0, max) : "";
@@ -75,9 +90,11 @@ export async function ctaConfig(): Promise<CtaConfig> {
     const saved = JSON.parse((await storeGet(CONFIG_KEY)) ?? "null") as Partial<CtaConfig> | null;
     if (!saved) return DEFAULT_CTA;
     const daily = Array.isArray(saved.daily) ? saved.daily.map((t) => clean(t, 900)).filter(Boolean) : [];
+    const hours = cleanHours(saved.hours, saved.hour);
     return {
       enabled: saved.enabled !== false,
-      hour: Number.isInteger(saved.hour) && saved.hour! >= 0 && saved.hour! <= 23 ? saved.hour! : DEFAULT_CTA.hour,
+      hours,
+      hour: hours[0],
       welcome: clean(saved.welcome, 900) || DEFAULT_CTA.welcome,
       pixReminder: clean(saved.pixReminder, 900) || DEFAULT_CTA.pixReminder,
       daily: daily.length ? daily : DEFAULT_CTA.daily,
@@ -92,11 +109,12 @@ export async function ctaConfig(): Promise<CtaConfig> {
 export async function saveCtaConfig(raw: Record<string, unknown>): Promise<CtaConfig> {
   const daily = Array.isArray(raw.daily) ? raw.daily.map((t) => clean(t, 900)).filter(Boolean).slice(0, 60) : [];
   if (!daily.length) throw new Error("Deixe pelo menos uma frase para a mensagem diária.");
-  const hour = Number(raw.hour);
+  const hours = cleanHours(raw.hours, raw.hour);
   const renewal = Array.isArray(raw.renewal) ? raw.renewal.map((t) => clean(t, 900)).filter(Boolean).slice(0, 30) : [];
   const config: CtaConfig = {
     enabled: raw.enabled !== false,
-    hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_CTA.hour,
+    hours,
+    hour: hours[0],
     welcome: clean(raw.welcome, 900) || DEFAULT_CTA.welcome,
     pixReminder: clean(raw.pixReminder, 900) || DEFAULT_CTA.pixReminder,
     daily,
@@ -220,14 +238,14 @@ function dayNumber(at = Date.now()): number {
 // calendario mostra em cada dia a mensagem das {hour}h com ✓ (saiu) ou ✗ (falhou).
 const LOG_TTL = 90 * 86400;
 const LOG_SINCE_KEY = "luna:cta-registro-desde";
-const logKey = (day: string, field: string) => `luna:cta-dia:${day}:${field}`;
+const logKey = (day: string, hour: number, field: string) => `luna:cta-dia:${day}:${hour}h:${field}`;
 const brDay = (at = Date.now()) => new Date(at).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
 
-async function logDaily(field: "ok" | "erro", sample?: { text: string; media_id: string | null }, reason?: string): Promise<void> {
+async function logDaily(hour: number, field: "ok" | "erro", sample?: { text: string; media_id: string | null }, reason?: string): Promise<void> {
   const day = brDay();
-  await storeIncrWithTtl(logKey(day, field), LOG_TTL).catch(() => undefined);
-  if (sample) await storeSetIfAbsent(logKey(day, "amostra"), JSON.stringify(sample), LOG_TTL).catch(() => undefined);
-  if (reason) await storeSetIfAbsent(logKey(day, "motivo"), reason.slice(0, 200), LOG_TTL).catch(() => undefined);
+  await storeIncrWithTtl(logKey(day, hour, field), LOG_TTL).catch(() => undefined);
+  if (sample) await storeSetIfAbsent(logKey(day, hour, "amostra"), JSON.stringify(sample), LOG_TTL).catch(() => undefined);
+  if (reason) await storeSetIfAbsent(logKey(day, hour, "motivo"), reason.slice(0, 200), LOG_TTL).catch(() => undefined);
 }
 
 export type CtaDayStatus = "enviada" | "falhou" | "nao-rodou" | "sem-fas" | "desligada" | "programada" | "aguardando" | "sem-registro";
@@ -256,33 +274,37 @@ export async function ctaDays(start: string, days: number): Promise<CtaDay[]> {
     const noon = Date.parse(`${start}T12:00:00-03:00`) + i * 86400_000;
     const day = brDay(noon);
     const n = dayNumber(noon);
-    const preview = list.length ? list[n % list.length] : null;
-    const example = { text: preview?.text || config.daily[n % config.daily.length], media_id: preview?.media_id ?? null, kind: preview?.kind ?? null };
-    const base = { day, hour: config.hour, sent: 0, failed: 0, reason: null as string | null, ...example };
-    const future = day > today || (day === today && nowHour < config.hour);
-    if (future) {
-      out.push({ ...base, status: config.enabled ? "programada" : "desligada" });
-      continue;
+    for (const [k, hour] of config.hours.entries()) {
+      // exemplo: frases e previas girando por horario
+      const turn = n * config.hours.length + k;
+      const preview = list.length ? list[turn % list.length] : null;
+      const example = { text: preview?.text || config.daily[turn % config.daily.length], media_id: preview?.media_id ?? null, kind: preview?.kind ?? null };
+      const base = { day, hour, sent: 0, failed: 0, reason: null as string | null, ...example };
+      const future = day > today || (day === today && nowHour < hour);
+      if (future) {
+        out.push({ ...base, status: config.enabled ? "programada" : "desligada" });
+        continue;
+      }
+      if (!storeConfigured() || !since || day < since) {
+        out.push({ ...base, status: "sem-registro" });
+        continue;
+      }
+      const [ran, ok, err, sample, reason] = await Promise.all(
+        ["rodou", "ok", "erro", "amostra", "motivo"].map((f) => storeGet(logKey(day, hour, f)).catch(() => null))
+      );
+      const sent = Number(ok ?? 0);
+      const failed = Number(err ?? 0);
+      let used = example;
+      try {
+        const s = JSON.parse(sample ?? "null") as { text: string; media_id: string | null } | null;
+        if (s) used = { text: s.text, media_id: s.media_id, kind: list.find((p) => p.media_id === s.media_id)?.kind ?? (s.media_id ? "photo" : null) };
+      } catch {
+        // amostra quebrada: fica o exemplo
+      }
+      const status: CtaDayStatus =
+        sent > 0 ? "enviada" : failed > 0 ? "falhou" : ran ? "sem-fas" : !config.enabled ? "desligada" : day === today && nowHour === hour ? "aguardando" : "nao-rodou";
+      out.push({ ...base, ...used, sent, failed, reason: reason ?? null, status });
     }
-    if (!storeConfigured() || !since || day < since) {
-      out.push({ ...base, status: "sem-registro" });
-      continue;
-    }
-    const [ran, ok, err, sample, reason] = await Promise.all(
-      ["rodou", "ok", "erro", "amostra", "motivo"].map((f) => storeGet(logKey(day, f)).catch(() => null))
-    );
-    const sent = Number(ok ?? 0);
-    const failed = Number(err ?? 0);
-    let used = example;
-    try {
-      const s = JSON.parse(sample ?? "null") as { text: string; media_id: string | null } | null;
-      if (s) used = { text: s.text, media_id: s.media_id, kind: list.find((p) => p.media_id === s.media_id)?.kind ?? (s.media_id ? "photo" : null) };
-    } catch {
-      // amostra quebrada: fica o exemplo
-    }
-    const status: CtaDayStatus =
-      sent > 0 ? "enviada" : failed > 0 ? "falhou" : ran ? "sem-fas" : !config.enabled ? "desligada" : day === today ? "aguardando" : "nao-rodou";
-    out.push({ ...base, ...used, sent, failed, reason: reason ?? null, status });
   }
   return out;
 }
@@ -326,10 +348,14 @@ export async function ctaTick(): Promise<number> {
     // a partir de quando ha registro por dia (dias anteriores aparecem "sem registro")
     if (storeConfigured() && !(await storeGet(LOG_SINCE_KEY))) await storeSet(LOG_SINCE_KEY, brDay());
 
-    // mensagem diaria
-    if (!config.enabled || hourInBrazil() < config.hour) return sent;
-    await storeSetIfAbsent(logKey(brDay(), "rodou"), "1", LOG_TTL).catch(() => undefined);
-    const since = new Date(now - DAILY_GAP_MS).toISOString();
+    // mensagem diaria: o horario da vez e o ultimo que ja chegou hoje (12h ou 19h, no padrao)
+    const nowHour = hourInBrazil();
+    const slot = [...config.hours].reverse().find((h) => h <= nowHour);
+    if (!config.enabled || slot === undefined) return sent;
+    await storeSetIfAbsent(logKey(brDay(), slot, "rodou"), "1", LOG_TTL).catch(() => undefined);
+    // uma por horario: quem recebeu depois do inicio do horario (ou ha menos de 3 h) espera o proximo
+    const slotStart = Date.parse(`${brDay()}T${String(slot).padStart(2, "0")}:00:00-03:00`);
+    const since = new Date(Math.min(slotStart, now - MIN_GAP_MS)).toISOString();
     const fans = await dbSelect<CtaFan>(
       "fans",
       `select=*&adult_confirmed_at=not.is.null&opted_out_at=is.null&blocked_at=is.null&or=(cta_sent_at.is.null,cta_sent_at.lt.${since})&order=cta_sent_at.asc&limit=${BATCH}`
@@ -345,18 +371,19 @@ export async function ctaTick(): Promise<number> {
       const turn = fan.cta_count + 1;
       const list = await previews();
       const own = list.length ? list[turn % list.length].text : undefined;
-      const text = own || config.daily[(dayNumber() + fan.cta_count) % config.daily.length];
+      // modelos em sequencia por fa: a 1a diaria e o modelo 1; depois do ultimo, volta ao 1
+      const text = own || config.daily[fan.cta_count % config.daily.length];
       try {
         await sendCta(token, fan.telegram_id, fill(text, fan), turn);
         sent++;
-        await logDaily("ok", { text, media_id: list.length ? list[Math.abs(turn) % list.length].media_id : null });
+        await logDaily(slot, "ok", { text, media_id: list.length ? list[Math.abs(turn) % list.length].media_id : null });
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         // o fa bloqueou o bot: para de mandar (nao conta como falha da mensagem)
         if (/blocked|deactivated|chat not found/i.test(message)) {
           await dbUpdateWhere("fans", `id=eq.${fan.id}`, { blocked_at: new Date().toISOString() });
         } else {
-          await logDaily("erro", undefined, message);
+          await logDaily(slot, "erro", undefined, message);
         }
       }
     }

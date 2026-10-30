@@ -24,6 +24,7 @@ export interface Product {
 }
 export interface Cta {
   enabled: boolean;
+  hours: number[];
   hour: number;
   welcome: string;
   pixReminder: string;
@@ -403,19 +404,35 @@ function CtaEditor({
           <input type="checkbox" checked={draft.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
           Mensagem diária ligada
         </label>
-        <label className="st-field st-cta-hour">
-          <span>a partir das</span>
-          <select className="st-input" value={draft.hour} onChange={(e) => set({ hour: Number(e.target.value) })}>
-            {Array.from({ length: 24 }, (_, h) => (
-              <option key={h} value={h}>
-                {String(h).padStart(2, "0")}:00
-              </option>
-            ))}
-          </select>
-        </label>
+        {draft.hours.map((hour, i) => (
+          <label key={i} className="st-field st-cta-hour">
+            <span>{i === 0 ? "às" : "e às"}</span>
+            <select
+              className="st-input"
+              value={hour}
+              onChange={(e) => set({ hours: draft.hours.map((h, j) => (j === i ? Number(e.target.value) : h)) })}
+            >
+              {Array.from({ length: 24 }, (_, h) => (
+                <option key={h} value={h}>
+                  {String(h).padStart(2, "0")}:00
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+        {draft.hours.length > 1 && (
+          <button type="button" className="st-btn st-btn-small" onClick={() => set({ hours: draft.hours.slice(0, -1) })}>
+            − horário
+          </button>
+        )}
+        {draft.hours.length < 4 && (
+          <button type="button" className="st-btn st-btn-small" onClick={() => set({ hours: [...draft.hours, Math.min(23, (draft.hours.at(-1) ?? 18) + 3)] })}>
+            + horário
+          </button>
+        )}
       </div>
       <p className="st-hint">
-        Uma por dia para quem ainda não é VIP (para com /parar). A frase muda todo dia, na ordem abaixo; a prévia pode repetir.
+        Uma em cada horário para quem ainda não é VIP (para com /parar). Cada fã recebe as frases na ordem abaixo (1, 2, 3…) e, depois da última, volta para a primeira; a prévia pode repetir.
       </p>
       <PhraseList label="Frase" items={draft.daily} onChange={(daily) => set({ daily })} />
       <div className="st-row st-row-tight">

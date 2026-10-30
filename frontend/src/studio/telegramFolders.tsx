@@ -37,6 +37,8 @@ const ACTIONS = {
   previa: { url: "preview-url", add: "preview-add", remove: "preview-remove", adding: "guardando" },
 } as const;
 const REMOVED_DIR = "vendas/_removidos";
+// previas que o robo do PC ainda vai borrar (worker/borrar.py)
+const BLUR_DIR = "vendas/previa-borrar";
 const ACCEPT = "image/jpeg,image/png,image/webp,video/mp4";
 
 interface Plan {
@@ -89,6 +91,15 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [picking, setPicking] = useState<Folder | null>(null);
   const [captioning, setCaptioning] = useState<Item | null>(null);
+  // previas: o robo do PC borra as partes intimas antes (padrao ligado)
+  const [blurPreview, setBlurPreview] = useState(true);
+  const waitingBlur = items.filter((i) => i.path.startsWith(`${BLUR_DIR}/`));
+  // enquanto o robo borra, rele a pasta a cada 15 s para a versao borrada aparecer sozinha
+  useEffect(() => {
+    if (!waitingBlur.length) return;
+    const t = window.setInterval(() => void refresh(), 15_000);
+    return () => window.clearInterval(t);
+  }, [waitingBlur.length, refresh]);
   const fileInput = useRef<HTMLInputElement>(null);
   const target = useRef<Folder | null>(null);
   // os itens mudam depois de copiar arquivos; o "Atualizar" logo em seguida le daqui
@@ -165,6 +176,21 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
   }
 
   async function addTo(folder: Folder, files: File[]) {
+    // previa com "Borrar partes intimas": vai para vendas/previa-borrar; o robo do PC
+    // borra e poe em vendas/previa, e ela aparece aqui como nova para conferir
+    if (folder.key === "previa" && blurPreview) {
+      await run(async () => {
+        setStep(`Copiando ${files.length} arquivo(s) para o robô borrar...`);
+        const { added, skipped } = await addFiles(files, BLUR_DIR);
+        return [
+          added ? `${added} arquivo(s) na fila do robô para borrar. Em 1 a 3 min (vídeo demora mais) a versão borrada aparece aqui em Prévias: confira e toque em Atualizar.` : "",
+          skipped.length ? `Ignorados (tipo não aceito): ${skipped.join(", ")}` : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+      });
+      return;
+    }
     await run(async () => {
       setStep(`${folder.label}: copiando ${files.length} arquivo(s) para a pasta...`);
       const { added, skipped } = await addFiles(files, folder.dir.replace(/\/$/, ""));
@@ -303,6 +329,19 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
                       {plan.folder.key === "vip" ? "Vai apagar do canal" : plan.folder.key === "previa" ? "Vai sair das prévias" : "Vai sair do pacote"}:{" "}
                       {plan.remove.map((r) => r.label).join(", ")}
                     </p>
+                  )}
+                  {plan.folder.key === "previa" && (
+                    <>
+                      <label className="st-check">
+                        <input type="checkbox" checked={blurPreview} onChange={(e) => setBlurPreview(e.target.checked)} />
+                        Borrar as partes íntimas antes (o robô do PC faz sozinho)
+                      </label>
+                      {waitingBlur.length > 0 && (
+                        <p className="st-hint">
+                          ⏳ {waitingBlur.length} esperando o robô borrar: {waitingBlur.map((i) => i.path.split("/").pop()).join(", ")} (o robô precisa estar aberto)
+                        </p>
+                      )}
+                    </>
                   )}
                   <div className="st-row st-row-tight">
                     <button

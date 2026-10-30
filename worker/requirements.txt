@@ -2,3 +2,4 @@ playwright==1.48.0
 pillow==10.4.0
 requests==2.32.3
 imageio-ffmpeg==0.5.1
+nudenet==3.4.2

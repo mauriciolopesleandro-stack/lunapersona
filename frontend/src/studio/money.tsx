@@ -103,7 +103,7 @@ export function TelegramCards({ onOpen }: { onOpen: (page: string) => void }) {
           <span className="st-tg-label">Prévias e chamadas</span>
           <b>{status.previews.length}</b>
           <small>
-            {withText} com mini-história · diária {status.cta.enabled ? `às ${status.cta.hour}h` : "desligada"}
+            {withText} com mini-história · diária {status.cta.enabled ? `às ${(status.cta.hours ?? [status.cta.hour]).map((h) => `${h}h`).join(" e ")}` : "desligada"}
           </small>
         </button>
       </div>

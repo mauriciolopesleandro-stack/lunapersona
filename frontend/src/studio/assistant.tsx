@@ -559,9 +559,10 @@ function Agenda({
       {days.map((d) => {
         const list = onDay(d);
         const isToday = d.getTime() === today.getTime();
-        const msg = cta.get(brDay(d));
-        // a mensagem do dia entra entre os posts, pelo horario
-        const firstAfter = msg ? list.find((p) => new Date(p.scheduledAt!).getHours() >= msg.hour) : undefined;
+        // as mensagens do dia (bot de vendas) entram entre os posts, pelo horario
+        const msgs = cta.get(brDay(d)) ?? [];
+        const before = (p: Post) => msgs.filter((m) => m.hour <= new Date(p.scheduledAt!).getHours() && list.find((q) => new Date(q.scheduledAt!).getHours() >= m.hour) === p);
+        const after = msgs.filter((m) => !list.some((p) => new Date(p.scheduledAt!).getHours() >= m.hour));
         return (
           <section key={d.toISOString()} className={list.length ? "st-agenda-day" : "st-agenda-day empty"}>
             <header>
@@ -573,7 +574,9 @@ function Agenda({
             </header>
             {list.map((p) => (
               <Fragment key={p.id}>
-                {msg && p === firstAfter && <CtaRow d={msg} onOpen={setCtaOpen} />}
+                {before(p).map((m) => (
+                  <CtaRow key={m.hour} d={m} onOpen={setCtaOpen} />
+                ))}
                 <button type="button" className="st-agenda-post" onClick={() => onOpenPost(p)}>
                   <time>{new Date(p.scheduledAt!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time>
                   <Icon name={NETWORKS[p.network].icon} size={14} />
@@ -582,7 +585,9 @@ function Agenda({
                 </button>
               </Fragment>
             ))}
-            {msg && !firstAfter && <CtaRow d={msg} onOpen={setCtaOpen} />}
+            {after.map((m) => (
+              <CtaRow key={m.hour} d={m} onOpen={setCtaOpen} />
+            ))}
           </section>
         );
       })}
