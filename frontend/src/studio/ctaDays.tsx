@@ -3,8 +3,8 @@ import { Icon } from "./Icon";
 import { Modal, NETWORKS, Thumb } from "./shared";
 import { useStudio } from "./store";
 
-// Mensagem diaria do bot de vendas (CTA das 19h) no calendario e na Agenda:
-// em cada dia, o que saiu (✓ / ✗) ou um exemplo do que vai sair. Cada fa recebe
+// Mensagem diaria do bot de vendas (CTA, padrao 12h e 19h) no calendario e na
+// Agenda: em cada horario, o que saiu (✓ / ✗) ou um exemplo do que vai sair. Cada fa recebe
 // a sua (as frases e as previas giram), entao o futuro e so um exemplo.
 
 export type CtaStatus = "enviada" | "falhou" | "nao-rodou" | "sem-fas" | "desligada" | "programada" | "aguardando" | "sem-registro";
@@ -57,14 +57,20 @@ export function ctaStatusText(d: CtaDay): string {
 export const brDay = (d: Date) =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
 
-export function useCtaDays(start: Date, days: number): Map<string, CtaDay> {
-  const [map, setMap] = useState<Map<string, CtaDay>>(new Map());
+// dia (AAAA-MM-DD) -> as mensagens do dia, em ordem de horario
+export function useCtaDays(start: Date, days: number): Map<string, CtaDay[]> {
+  const [map, setMap] = useState<Map<string, CtaDay[]>>(new Map());
   const key = brDay(start);
   useEffect(() => {
     let alive = true;
     fetch("/api/studio?r=sales", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cta-days", start: key, days }) })
       .then((r) => (r.ok ? r.json() : { days: [] }))
-      .then((b: { days?: CtaDay[] }) => alive && setMap(new Map((b.days ?? []).map((d) => [d.day, d]))))
+      .then((b: { days?: CtaDay[] }) => {
+        if (!alive) return;
+        const next = new Map<string, CtaDay[]>();
+        for (const d of b.days ?? []) next.set(d.day, [...(next.get(d.day) ?? []), d]);
+        setMap(next);
+      })
       .catch(() => undefined); // bot de vendas nao configurado: o calendario fica sem a linha
     return () => {
       alive = false;
