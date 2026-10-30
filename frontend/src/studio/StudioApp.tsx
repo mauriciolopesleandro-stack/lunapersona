@@ -9,6 +9,7 @@ import { ComingSoon, Modal, formatBytes } from "./shared";
 import { AccountsPage, InstagramPage, TikTokPage } from "./social";
 import { MusicPage } from "./music";
 import { Dock } from "./dock";
+import { Chat18Page } from "./assistant";
 import { FinancePage, PlansPage, SubscriptionsPage, useSalesStatus } from "./money";
 import { SalesPage } from "./sales";
 import { TelegramFoldersPage } from "./telegramFolders";
@@ -42,6 +43,7 @@ const GROUPS: Record<string, Group> = {
     text: "Bot de vendas, conteúdo do Telegram, assinantes do VIP e o dinheiro.",
     tabs: [
       { id: "vendas", label: "Vendas" },
+      { id: "chat18", label: "Chat +18" },
       { id: "planos", label: "Planos e preços" },
       { id: "telegram", label: "Conteúdo do Telegram" },
       { id: "assinaturas", label: "Assinaturas" },
@@ -261,6 +263,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           {page === "vendas" && <SalesPage onFolders={() => go("telegram")} />}
           {page === "telegram" && <TelegramFoldersPage onSales={() => go("vendas")} />}
           {page === "planos" && <PlansPage />}
+          {page === "chat18" && <Chat18Page />}
           {page === "assinaturas" && <SubscriptionsPage />}
           {page === "financeiro" && <FinancePage />}
           {page === "contas" && <AccountsPage nav={nav} />}

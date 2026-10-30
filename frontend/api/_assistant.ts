@@ -76,6 +76,21 @@ export const STYLE_GUIDE = `Guia de estilo do Instagram da Luna (siga em todo po
 - Ritmo: um post por vez, espalhado na semana (1 carrossel por dia no máximo, em horários diferentes), nunca tudo de uma vez.
 - Fora do estilo: política (candidatos, eleição, números de campanha), marcas, e qualquer coisa que copie outra pessoa.`;
 
+// Sala +18 (aba Monetizacao -> Chat +18): conteudo do canal pago do Telegram,
+// com o que a Naia ensinou (docs/NAIA_18_E_FORMATOS.md).
+export const ADULT18_GUIDE = `Sala +18: tudo aqui é para o canal VIP pago do Telegram (assinantes adultos), nunca para Instagram ou TikTok. Seja bem detalhista e prático.
+Como fazer na Naiaflow (clone "luna", Modo Spice ligado):
+- Cena nova: Criar com o pedido (1 crédito, sai em 3 fotos). Partindo de foto boa já pronta: "retoque" (Editar pelo texto) é GRÁTIS e aceita até 5 referências — prefira quando der. Ações de 1 crédito: tirar a roupa, aumentar seios (P/M/G/GG), rachadinha, celulite, estrias, pele realista.
+- Sempre diga qual caminho é mais barato para cada ideia (retoque grátis > Ação 1 crédito > Criar 1 crédito).
+Como escrever o PROMPT +18 (cena real, não conceito; nunca descreva rosto, cabelo ou corpo da Luna):
+- lugar com detalhes reais (lençol branco amassado, banheiro com espelho embaçado, sofá de couro gasto, motel com neon rosa);
+- pose em ação com peso real (deitada de lado, apoiada no cotovelo, joelho dobrado, debruçada, olhando por cima do ombro);
+- ângulo da câmera (de baixo, de cima, de lado, close íntimo, selfie no espelho);
+- roupa: material, cor, transparência, sendo tirada — ou nua;
+- luz: hora, fonte e temperatura (janela à tarde, abajur quente, neon, flash de celular).
+- Para cara de caseiro: "foto de celular com flash direto, grão leve, sombra dura, enquadramento torto". Pele com textura e poros; celulite/estrias ajudam o realismo. Nada de "8k", "ultra realista", "alta qualidade". Uma mudança por vez.
+Ao sugerir fotos, termine com um bloco por foto: PROMPT / LEGENDA (texto do post no canal) / HASHTAGS (pode ficar vazio) / DESTINO: +18 Telegram. Proibido sempre: menores ou aparência infantil, pessoas reais, violência sexual ou falta de consentimento.`;
+
 export const ADULT_NOTE = `Modo +18 (canal privado do Telegram, assinantes adultos verificados): pode escrever conteúdo adulto e sensual explícito sobre a Luna, que é fictícia e adulta. Proibido: menores ou aparência infantil, pessoas reais, violência sexual ou falta de consentimento.`;
 
 // A aba Conversa usa so a IA sem restricao (pedido do administrador): um chat
@@ -208,7 +223,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (req.method !== "POST") return reply(405, { detail: "Use GET ou POST." });
   if (!assistantConfigured()) return reply(400, { detail: "Falta cadastrar OPENROUTER_API_KEY na Vercel." });
 
-  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown };
+  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown; room?: unknown };
   try {
     let raw = "";
     for await (const chunk of req) raw += chunk;
@@ -238,7 +253,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const mode: Mode = "adulto";
   const { lessonsForChat } = await import("./_lessons.js");
   const lessons = await lessonsForChat().catch(() => "");
-  const system = [PERSONA, STYLE_GUIDE, CHAT_NOTE, await context(), lessons].filter(Boolean).join("\n\n");
+  // sala +18 (aba Monetizacao): so o canal pago do Telegram, com o guia detalhado
+  const system =
+    body.room === "18"
+      ? [PERSONA, ADULT_NOTE, ADULT18_GUIDE, await context(), lessons].filter(Boolean).join("\n\n")
+      : [PERSONA, STYLE_GUIDE, CHAT_NOTE, await context(), lessons].filter(Boolean).join("\n\n");
 
   try {
     const out = await askAi(mode, [{ role: "system", content: system }, ...messages]);

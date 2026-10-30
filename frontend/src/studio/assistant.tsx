@@ -55,7 +55,23 @@ const CONTEXT: Record<string, string[]> = {
   visao: ["O que está faltando nesta semana para a Luna não ficar sem post?", "Resuma o que está agendado para os próximos 3 dias."],
 };
 
-function load(): Message[] {
+// sala +18 (aba Monetizacao): conversa separada, so para o canal pago
+const ROOM18_KEY = "luna-assistente-18";
+const QUICK18 = [
+  "Monte 5 ideias de fotos +18 para o canal VIP desta semana, com prompt detalhado de cena real e o caminho mais barato na Naiaflow (retoque grátis, Ação ou Criar).",
+  "Como transformar uma foto sensual já aprovada do Feed numa versão +18 usando o retoque grátis? Escreva o pedido do retoque.",
+  "Escreva 3 textos curtos para posts do canal VIP que façam o assinante comentar e não cancelar.",
+];
+
+function load(room: string): Message[] {
+  if (room === "18") {
+    try {
+      const saved = JSON.parse(localStorage.getItem(ROOM18_KEY) ?? "null");
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  }
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) ?? "null");
     if (Array.isArray(saved)) return saved;
@@ -67,9 +83,9 @@ function load(): Message[] {
   }
 }
 
-function save(messages: Message[]) {
+function save(messages: Message[], room: string) {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(messages));
+    localStorage.setItem(room === "18" ? ROOM18_KEY : STORE_KEY, JSON.stringify(messages));
   } catch {
     // navegador sem armazenamento: a conversa vale so ate fechar a pagina
   }
@@ -85,11 +101,12 @@ interface Props {
   onOpenPost: (post: Post) => void;
   onNewPost: (date?: Date) => void;
   onFullCalendar: () => void;
+  room?: "geral" | "18"; // "18": sala do canal pago (so a conversa, historico proprio)
 }
 
-export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onReply, onOpenPost, onNewPost, onFullCalendar }: Props) {
+export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onReply, onOpenPost, onNewPost, onFullCalendar, room = "geral" }: Props) {
   const [status, setStatus] = useState<Status | null>(null);
-  const [messages, setMessages] = useState<Message[]>(load);
+  const [messages, setMessages] = useState<Message[]>(() => load(room));
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +140,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
 
   function update(next: Message[]) {
     setMessages(next);
-    save(next);
+    save(next, room);
   }
 
   async function attach(files: File[]) {
@@ -180,6 +197,8 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       ? "Esta é uma foto/Reels da própria Luna gerado pela Naiaflow. Com a revisão acima, diga em tópicos curtos o que está errado (ou se está pronta para postar) e como acertar: se der para corrigir editando, escreva o pedido curto para o ✏️ Pedir correção do Telegram (Editar pelo texto da Naiaflow); se for melhor gerar de novo, escreva o prompt corrigido com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO, seguindo as regras de prompt (roupa completa, enquadramento, mãos simples)."
       : profile
       ?"Use a leitura da página para criar 5 conteúdos para a Luna no mesmo estilo (inspire-se, não copie a pessoa, o rosto nem a marca). Termine com um bloco PROMPT/LEGENDA/HASHTAGS/DESTINO para cada um."
+      : room === "18"
+      ? "Recrie a ideia da referência em versão +18 com a Luna para o canal VIP do Telegram (inspire-se no clima, cenário, pose e ângulo; nunca a pessoa da referência). Diga o caminho mais barato na Naiaflow e termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO: +18 Telegram (um por foto)."
       : "Recrie a ideia da referência com a Luna (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).";
     const message: Message = reads.length
       ? { role: "user", content: `${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
@@ -193,7 +212,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       const r = await fetch("/api/studio?r=assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next.map((m) => ({ role: m.role, content: m.content })) }),
+        body: JSON.stringify({ messages: next.map((m) => ({ role: m.role, content: m.content })), ...(room === "18" ? { room: "18" } : {}) }),
       });
       const b = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(b.detail ?? `Erro HTTP ${r.status}`);
@@ -216,11 +235,12 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     }
   }
 
-  const ideas = CONTEXT[context] ?? CONTEXT.visao;
+  const ideas = room === "18" ? QUICK18.slice(0, 2) : (CONTEXT[context] ?? CONTEXT.visao);
+  const quick = room === "18" ? QUICK18 : [...ideas, ...QUICK];
 
   return (
-    <div className="st-assistant">
-      <div className="st-drawer-tabs" role="tablist" aria-label="Assistente">
+    <div className={room === "18" ? "st-assistant st-assistant-18" : "st-assistant"}>
+      {room !== "18" && <div className="st-drawer-tabs" role="tablist" aria-label="Assistente">
         {(
           [
             ["conversa", "Conversa", "comment"],
@@ -233,7 +253,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
             {label}
           </button>
         ))}
-      </div>
+      </div>}
 
       {status && !status.configured && <p className="st-warn">Falta cadastrar a chave do OpenRouter (OPENROUTER_API_KEY) na Vercel e fazer um novo deploy.</p>}
 
@@ -249,10 +269,11 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
             {messages.length === 0 && (
               <div className="st-chat-quick">
                 <span className="st-hint">
-                  Peça o plano da semana, prompts para a Naiaflow, legendas e ideias. Mande uma foto ou vídeo de referência (📎) ou cole o link de um perfil do
-                  Instagram: a IA faz a leitura e recria a ideia com a Luna.
+                  {room === "18"
+                    ? "Sala +18: só para o canal VIP do Telegram. Peça ideias, prompts detalhados e textos; mande uma foto de referência (📎) e a IA diz o caminho mais barato na Naiaflow (retoque grátis, Ação ou Criar)."
+                    : "Peça o plano da semana, prompts para a Naiaflow, legendas e ideias. Mande uma foto ou vídeo de referência (📎) ou cole o link de um perfil do Instagram: a IA faz a leitura e recria a ideia com a Luna."}
                 </span>
-                {[...ideas, ...QUICK].map((q) => (
+                {quick.map((q) => (
                   <button key={q} type="button" className="st-btn st-btn-small" disabled={busy || !status?.configured} onClick={() => send(q)}>
                     {q}
                   </button>
@@ -419,6 +440,27 @@ async function videoRef(file: File): Promise<Attachment> {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+// --- Sala +18 (aba Monetizacao -> Chat +18) --------------------------------------------------
+
+export function Chat18Page() {
+  return (
+    <section className="st-panel st-chat18">
+      <AssistantPanel
+        room="18"
+        context="money"
+        tab="conversa"
+        onTab={() => undefined}
+        draft={null}
+        onDraftUsed={() => undefined}
+        onReply={() => undefined}
+        onOpenPost={() => undefined}
+        onNewPost={() => undefined}
+        onFullCalendar={() => undefined}
+      />
+    </section>
+  );
 }
 
 // --- Agenda: os proximos 14 dias, por dia ------------------------------------------------
