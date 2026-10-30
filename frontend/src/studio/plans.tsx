@@ -31,9 +31,9 @@ interface Plan {
 }
 
 const SLOT_LABEL: Record<SlotKey, string> = {
-  feed: "Instagram Feed",
-  stories: "Instagram Stories",
-  reels: "Instagram Reels (vídeo)",
+  feed: "Feed (quadrado)",
+  stories: "Stories (9:16)",
+  reels: "Reels (foto com zoom)",
   tiktok: "TikTok",
   telegram18: "Telegram +18",
 };
@@ -170,7 +170,7 @@ export function PlanPanel() {
           </div>
           <label className="st-check">
             <input type="checkbox" checked={reuse} onChange={(e) => setReuse(e.target.checked)} />
-            TikTok usa a mesma foto do Feed do dia (gera uma vez, posta nas duas redes)
+            TikTok usa a mesma foto vertical dos Stories do dia (sem Stories, a do Feed): gera uma vez, posta nas duas redes
           </label>
           <label className="st-field">
             <span>Tema ou pedido (opcional)</span>
@@ -227,7 +227,9 @@ export function PlanPanel() {
                         {plan.status !== "rascunho" && <span className="st-hint">· {STATUS[it.status] ?? it.status}</span>}
                       </div>
                       {src ? (
-                        <p className="st-hint">Mesma foto e legenda do Feed das {when(src.scheduled_at).split(", ").pop()}.</p>
+                        <p className="st-hint">
+                          Mesma foto e legenda do {src.format === "Feed" ? "Feed" : src.format} das {when(src.scheduled_at).split(", ").pop()}.
+                        </p>
                       ) : isEditing ? (
                         <div className="st-plan-edit">
                           <textarea className="st-input" rows={2} value={editing.prompt} onChange={(e) => setEditing({ ...editing, prompt: e.target.value })} aria-label="Pedido para a Naiaflow" />
