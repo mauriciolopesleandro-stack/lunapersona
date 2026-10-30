@@ -991,6 +991,24 @@ def learn(studio: Studio, item: dict, img: Image.Image, prompt: str) -> None:
         log(f"Aprendizado: não consegui analisar a foto ({str(exc)[:160]}).")
 
 
+_blur_off = False
+
+
+def blur_previews() -> None:
+    """Previas do bot de vendas: borra as partes intimas do que estiver em
+    conteudos/vendas/previa-borrar (NudeNet, gratis, no PC) e poe em vendas/previa."""
+    global _blur_off
+    if _blur_off or not (STUDIO_ROOT / "conteudos" / "vendas" / "previa-borrar").is_dir():
+        return
+    try:
+        import borrar
+    except ImportError as e:  # NudeNet nao instalado: avisa uma vez e segue sem borrar
+        _blur_off = True
+        log(f"Borrar prévias desligado (falta instalar: pip install nudenet). {e}")
+        return
+    borrar.processar_pasta(STUDIO_ROOT / "conteudos", log)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Luna Studio - automacao local da Naiaflow")
     ap.add_argument("--uma-vez", action="store_true", help="processa a fila e sai")
@@ -1017,6 +1035,7 @@ def main() -> None:
                         break
                     time.sleep(10 * QUEUE_POLL_S)
                     continue
+            blur_previews()
             item = studio.call("next")["item"]
             if not item:
                 if args.uma_vez:
