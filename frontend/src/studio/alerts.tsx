@@ -50,7 +50,8 @@ function useAlerts(nav: Nav): Alert[] {
       });
     }
     if (p.status === "falhou") alerts.push({ key: `falhou:${p.id}:${p.version}`, text: `Publicação falhou: ${p.failureReason ?? "sem motivo"}`, post: p });
-    const failed = p.jobs?.find((j) => j.status === "falhou");
+    // so a tarefa da versao atual (trocar a midia cria versao nova e tarefa nova)
+    const failed = p.jobs?.find((j) => j.status === "falhou" && (j.version === undefined || j.version === p.version));
     if (failed && p.status !== "publicado" && p.status !== "cancelado") {
       alerts.push({ key: `job:${p.id}:${p.version}`, text: `Lembrete do Telegram não saiu: ${failed.lastError ?? ""}`, post: p });
     }
