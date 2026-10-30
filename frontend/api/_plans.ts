@@ -28,7 +28,8 @@ import { randomUUID } from "crypto";
 const TZ_OFFSET = "-03:00"; // horario de Brasilia (sem horario de verao desde 2019)
 const MAX_DAYS = 92; // trimestre
 const MAX_ITEMS = 400;
-const FILL_BATCH = 20;
+// lotes pequenos: com 20 itens a resposta passava do limite e a IA devolvia vazio (30/10)
+const FILL_BATCH = 6;
 // creditos da Naiaflow (estimativa): foto 1; Reels 1 (a foto; o video com zoom
 // e montado no PC, de graca)
 const CREDITS = { image: 1, video: 1 };
@@ -183,7 +184,7 @@ async function writeBatch(mode: Mode, plan: PlanRow, batch: ItemRow[]): Promise<
     "Varie roupas, lugares e momentos entre os itens; nada repetido.",
     ...batch.map((it, i) => `${i}) ${weekday(it.scheduled_at)} · ${SLOTS[(Object.keys(SLOTS) as SlotKey[]).find((k) => SLOTS[k].network === it.network && SLOTS[k].format === it.format)!].label}${it.kind === "video" ? " (foto que vira Reels com zoom leve)" : " (foto)"}`),
   ].join("\n");
-  const out = await askAi(mode, [{ role: "system", content: system }, { role: "user", content: user }], { json: true, maxTokens: 3000, timeoutMs: 50_000 });
+  const out = await askAi(mode, [{ role: "system", content: system }, { role: "user", content: user }], { json: true, maxTokens: 6000, timeoutMs: 50_000 });
   const parsed = parseJson(out.text);
   let written = 0;
   for (const r of parsed.items ?? []) {
