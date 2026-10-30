@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AlertsBell } from "./alerts";
 import { ProfilePage } from "../components/ProfilePage";
 import { Composer } from "./Composer";
 import { PostarPage, type PostarStart } from "./PostarPage";
@@ -214,6 +215,7 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
             <Icon name="plus" size={18} />
             <span>Novo Conteúdo</span>
           </button>
+          <AlertsBell nav={nav} />
           <button type="button" className="st-icon-btn" onClick={onToggleTheme} aria-label={theme === "dark" ? "Tema claro" : "Tema escuro"}>
             <Icon name={theme === "dark" ? "sun" : "moon"} size={18} />
           </button>
