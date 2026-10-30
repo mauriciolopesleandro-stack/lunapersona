@@ -9,12 +9,16 @@ Copiar movimento da Naiaflow, 5 s, personagem luna, 6 créditos cada (1 por segu
 | Link do TikTok | `conteudos/dancinha_link.mp4` | Movimento muito natural; mão borrada no 1º meio segundo (cortar no PC); copia roupa e banheiro. |
 | Enviar vídeo (arquivo do administrador) | `conteudos/dancinha_envio.mp4` | Melhor nitidez; movimento natural; rosto estável; copia roupa e cenário. |
 
+| Enviar vídeo + Roupa e Cenário | `conteudos/dancinha_roupa.mp4` | Roupa trocou certinho (biquíni animal print da galeria), estável nos 5 s; dança igual. **Cenário não trocou**: continuou o quarto da referência (foto enviada era da Luna na piscina). |
+
 ## Conclusões
 
 - A qualidade vem do **vídeo de referência**, não da fonte. O custo é o mesmo (Naia confirmou).
 - Sem mexer em **Roupa** e **Cenário**, o vídeo copia a roupa e o lugar da referência. Esses botões aceitam uma foto de referência da roupa e do lugar; não mudam o custo nem o movimento (Naia).
 - Referência ideal (Naia + testes): 5 a 12 s; corpo inteiro, centralizado; uma pessoa; câmera parada; luz uniforme; boa resolução; sem texto na tela; movimentos moderados; evitar giros, gestos muito rápidos e roupa transparente.
 - Vídeo de criadora real: trocar Roupa e Cenário para não virar cópia do vídeo dela.
+- **Roupa**: botão abre menu "Abrir galeria / Copiar do vídeo". Galeria tem "Minhas roupas" e categorias (Praia, Academia, Baile funk, Lingerie…); escolher clicando na imagem da peça. Não muda o custo (6).
+- **Cenário**: mesma galeria; a seção "Cenários" não tem catálogo, só "Enviar do dispositivo". Uma foto com a Luna na piscina foi ignorada; próximo teste: foto do lugar **sem pessoa**.
 
 ## Fluxo recomendado (a automatizar)
 

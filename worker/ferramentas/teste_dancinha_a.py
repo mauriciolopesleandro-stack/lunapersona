@@ -126,6 +126,55 @@ if not ok_luna:
     print("A personagem nao e a luna: nao gerei.")
     naia.close()
     os._exit(2)
+# Roupa e Cenario: referencia por cima (senao copia os da referencia). Cada
+# botao abre um menu "Abrir galeria / Copiar do video"; a galeria tem as roupas
+# salvas (pelo nome, --roupa=Nome) ou "Enviar do dispositivo" (--cenario=foto.jpg).
+def pick(label, value):
+    p.get_by_role("button", name=label, exact=True).last.click()
+    p.wait_for_timeout(1500)
+    p.get_by_role("menuitem", name="Abrir galeria").first.click()
+    p.wait_for_timeout(3500)
+    if Path(value).suffix.lower() in (".jpg", ".jpeg", ".png", ".webp") and Path(value).exists():
+        before = p.evaluate("() => [...document.querySelectorAll('img')].map(i => i.currentSrc || i.src)")
+        with p.expect_file_chooser(timeout=15000) as chooser:
+            p.get_by_role("button", name="Enviar do dispositivo").last.click()
+        chooser.value.set_files(value)
+        p.wait_for_timeout(10000)
+        show(f"3_{label.lower()}_enviada")
+        # se a galeria continua aberta, escolhe a foto que acabou de subir
+        if p.get_by_role("button", name="Enviar do dispositivo").count() and p.get_by_role("button", name="Enviar do dispositivo").last.is_visible():
+            new_src = p.evaluate("(b) => [...document.querySelectorAll('img')].map(i => i.currentSrc || i.src).find(s => s && !b.includes(s))", before)
+            if new_src:
+                p.locator(f"img[src='{new_src}']").first.click()
+            else:
+                p.get_by_text("Enviadas", exact=True).last.click()
+                p.wait_for_timeout(2500)
+                tiles = [t for t in p.locator("img").all() if t.is_visible() and (t.bounding_box() or {}).get("height", 0) > 60]
+                tiles[0].click()
+            p.wait_for_timeout(3000)
+    else:
+        # o clique vale na imagem da peca (o nome embaixo nao seleciona)
+        p.get_by_text(value, exact=True).first.locator("xpath=ancestor::*[.//img][1]").locator("img").first.click()
+        p.wait_for_timeout(3000)
+    show(f"3_{label.lower()}_pronto")
+    # o botao ganha a miniatura quando a escolha pegou
+    return p.evaluate("(l) => !!document.querySelector(`[role=dialog] button[aria-label='${l}'] img`)", label)
+
+
+for flag, label in (("--roupa=", "Roupa"), ("--cenario=", "Cenário")):
+    value = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith(flag)), None)
+    if not value:
+        continue
+    ok = pick(label, value)
+    print(f"{label} escolhida:", ok)
+    if not ok:
+        print(f"{label} nao ficou escolhida: nao gerei.")
+        naia.close()
+        os._exit(4)
+if "--explorar" in sys.argv:
+    print("Explorei Roupa/Cenario: nao gerei.")
+    naia.close()
+    os._exit(0)
 labels =[final.nth(i).inner_text().replace("\n", " ") for i in range(final.count())]
 print("botoes com custo:", labels)
 if not GERAR:
