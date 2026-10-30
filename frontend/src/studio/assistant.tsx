@@ -123,7 +123,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
   const fileRef = useRef<HTMLInputElement>(null);
   // arquivos de video das dancinhas pedidas nesta visita (indice da mensagem)
   const danceFiles = useRef(new Map<number, File>());
-  // sala +18: foto mandada (indice da mensagem) vira referencia (IMG1) do Criar
+  // foto mandada (indice da mensagem) vira referencia (IMG1) do Criar
   const refPhotos = useRef(new Map<number, string>());
 
   useEffect(() => {
@@ -212,6 +212,9 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       return;
     }
     const profile = reads.some((r) => r.label.startsWith("perfil @"));
+    // uma foto mandada (nao a revisao de uma foto da Luna nem um perfil) vira
+    // referencia IMG1 do Criar, nas duas salas (no "Gerar esta foto" da para desmarcar)
+    const refPhoto = review || profile ? undefined : attachments.find((a) => a.kind === "foto")?.images[0];
     const ask = typed || (profile ? "Analise essa página e crie conteúdos para a Luna nesse estilo." : "Recria essa ideia com a Luna.");
     const reading = reads.map((r) => `[Referência: ${r.label}]\n${r.text}`).join("\n\n");
     const recreate = review
@@ -220,6 +223,8 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       ?"Use a leitura da página para criar 5 conteúdos para a Luna no mesmo estilo (inspire-se, não copie a pessoa, o rosto nem a marca). Termine com um bloco PROMPT/LEGENDA/HASHTAGS/DESTINO para cada um."
       : room === "18"
       ? "A foto que mandei vai como referência IMG1 no Criar da Naiaflow: a luna copia a pose, o ângulo e o enquadramento dela. Escreva o PROMPT no padrão da Naia para referência: NÃO descreva a pose de novo; escreva com bastante detalhe o que a foto não entrega — roupa (ou nua), cenário, expressão, luz, textura da pele e estilo da foto. Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO: +18 Telegram."
+      : refPhoto
+      ? "A foto que mandei vai como referência IMG1 no Criar da Naiaflow: a luna copia a pose, o ângulo e o enquadramento dela (nunca a pessoa). Escreva o PROMPT no padrão da Naia para referência: NÃO descreva a pose de novo; escreva com detalhe o que a foto não entrega, seguindo o guia de estilo — roupa inteira, cenário, expressão, luz e estilo da foto. Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO."
       : "Recrie a ideia da referência com a Luna (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).";
     const message: Message = reads.length
       ? { role: "user", content: `${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
@@ -229,7 +234,6 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     const danceLink = room !== "18" ? typed.match(DANCE_LINK)?.[0] : undefined;
     if (danceFile || danceLink) message.dance = danceLink && !danceFile ? { link: danceLink } : {};
     if (danceFile) danceFiles.current.set(messages.length, danceFile);
-    const refPhoto = room === "18" ? attachments.find((a) => a.kind === "foto")?.images[0] : undefined;
     if (refPhoto) refPhotos.current.set(messages.length, refPhoto);
     const next: Message[] = [...messages, message];
     update(next);
@@ -332,7 +336,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
                 )}
                 {m.role === "assistant" &&
                   parsePhotoBlocks(m.content).map((b, j) => (
-                    <QuickPhoto key={`${i}-${j}`} block={b} reference={room === "18" ? refPhotos.current.get(i - 1) : undefined} />
+                    <QuickPhoto key={`${i}-${j}`} block={b} reference={refPhotos.current.get(i - 1)} />
                   ))}
               </div>
             ))}
