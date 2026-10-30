@@ -6,7 +6,7 @@ import { storeConfigured, storeGet, storeIncr, storeSet } from "./_store.js";
 import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageReadUrl, storageRemove, supabaseConfigured } from "./_supabase.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
-import type { IgAudioFlag } from "./_flags.js";
+import { normalizeFlags, type AdultDest, type IgAudioFlag } from "./_flags.js";
 import { igAudioSearch, igConnection } from "./_instagram.js";
 import { forgetLessons, learnFromCorrection, learnFromPhoto, listLessons } from "./_lessons.js";
 
@@ -209,6 +209,12 @@ async function referenceOf(item: Pick<ItemRow, "plan_id">): Promise<string | nul
   const [plan] = await dbSelect<{ request: { reference?: string } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
   const ref = plan?.request?.reference;
   return typeof ref === "string" && /^refs\/[0-9a-f-]{36}\.jpg$/.test(ref) ? ref : null;
+}
+
+// +18: destinos escolhidos na hora (canal VIP e/ou pacotes); sem nada = so o canal
+async function adultDestOf(item: Pick<ItemRow, "plan_id">): Promise<AdultDest | undefined> {
+  const [plan] = await dbSelect<{ request: { adultDest?: unknown } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
+  return normalizeFlags({ adultDest: plan?.request?.adultDest }, 1).adultDest;
 }
 
 async function motionOf(item: Pick<ItemRow, "plan_id">): Promise<Motion | null> {
@@ -479,6 +485,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const targets = [];
       for (const it of family) {
         const igAudio = it.network === "instagram" && it.format === "Reels" ? await reelsAudio() : undefined;
+        const adultDest = it.network === "telegram" ? await adultDestOf(it) : undefined;
         // carrossel: Feed e TikTok com todas as fotos; Stories so com a primeira
         const ids = it.format === "Stories" ? [media.id] : mediaIds;
         const post = await createDraftPost({
@@ -490,7 +497,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           scheduled_at: it.scheduled_at,
           // +18 vai para o canal do Telegram (postagem manual, com lembrete); o resto e automatico
           publish_mode: it.network === "telegram" ? "manual" : "api",
-          flags: { aiGenerated: true, ...(igAudio ? { igAudio } : {}) },
+          flags: { aiGenerated: true, ...(igAudio ? { igAudio } : {}), ...(adultDest ? { adultDest } : {}) },
           ...(groupId ? { group_id: groupId } : {}),
         });
         const submitted = await submitPost(post.id);

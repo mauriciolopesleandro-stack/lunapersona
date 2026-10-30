@@ -103,8 +103,16 @@ async function runReminder(job: JobRow, url: string): Promise<"ok" | "obsoleta" 
     // so passa se continuar agendada na mesma versao (outra execucao pode ter mexido)
     await dbUpdate("posts", `id=eq.${post.id}&status=eq.agendado&version=eq.${post.version}`, { status: "publicando" });
   }
-  // +18 com o canal conectado: o bot posta sozinho, sem lembrete
   if (post.network === "telegram") {
+    // +18 com pacotes: primeiro guarda nos pacotes (a copia aprovada ainda esta no armazenamento)
+    const dest = post.flags?.adultDest;
+    if (dest?.packs.length) {
+      const outcome = await runPacks(job, post, dest.packs);
+      if (outcome !== "ok") return outcome;
+      // so os pacotes (sem canal): terminou
+      if (!dest.channel) return finishWithoutChannel(job, post, dest.packs);
+    }
+    // +18 com o canal conectado: o bot posta sozinho, sem lembrete
     const channel = await telegramChannel().catch(() => null);
     if (channel) return runChannel(job, post, channel);
   }
@@ -180,6 +188,46 @@ async function runChannel(job: JobRow, post: PostRow, channel: TelegramChannel):
     await finish(job, { status: "pendente", run_at: new Date(Date.now() + 2 ** job.attempts * 60_000).toISOString(), last_error: error });
     return "nova_tentativa";
   }
+}
+
+// +18: guarda a midia aprovada nos pacotes do bot de vendas (Ensaio, Album VIP).
+// Falhou: tenta de novo em 2, 4, 8 min; na ultima avisa e segue (o canal ainda sai).
+async function runPacks(job: JobRow, post: PostRow, packs: string[]): Promise<"ok" | "nova_tentativa" | "falhou"> {
+  try {
+    const { addPostToPacks } = await import("./_sales.js");
+    const names = await addPostToPacks(post.id, post.version, packs);
+    await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "api", outcome: "ok", detail: `pacotes: ${names.join(", ")}` });
+    for (const m of await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${post.id}`)) {
+      await dbInsert("media_usage", { media_id: m.media_id, channel: "telegram", context: "pack", reference: post.id });
+    }
+    await notify(`📦 Guardado em: ${names.join(" + ")}.`);
+    return "ok";
+  } catch (e) {
+    const error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+    await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "api", outcome: "erro", detail: `pacotes: ${error}` });
+    if (job.attempts < job.max_attempts) {
+      await finish(job, { status: "pendente", run_at: new Date(Date.now() + 2 ** job.attempts * 60_000).toISOString(), last_error: `pacotes: ${error}` });
+      return "nova_tentativa";
+    }
+    await notify(`⚠️ Não consegui guardar nos pacotes: ${error}\n\nAdicione à mão em Monetização → Conteúdo do Telegram.`);
+    if (!post.flags?.adultDest?.channel) {
+      await finish(job, { status: "falhou", finished_at: new Date().toISOString(), last_error: `pacotes: ${error}` });
+      await dbUpdate("posts", `id=eq.${post.id}&version=eq.${post.version}`, { status: "falhou", failure_reason: `Não entrou nos pacotes: ${error}`.slice(0, 500) });
+      return "falhou";
+    }
+    return "ok"; // o canal ainda sai
+  }
+}
+
+// +18 so para os pacotes (sem canal): a publicacao termina aqui
+async function finishWithoutChannel(job: JobRow, post: PostRow, packs: string[]): Promise<"ok"> {
+  const now = new Date().toISOString();
+  await dbUpdateWhere("post_destinations", `post_id=eq.${post.id}&status=eq.pendente`, { status: "publicado", confirmed_at: now, confirmed_by: "api" });
+  await dbUpdate("posts", `id=eq.${post.id}&version=eq.${post.version}`, { status: "publicado", published_at: now });
+  await finish(job, { status: "concluido", finished_at: now, last_error: null });
+  await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "api", outcome: "ok", detail: `só pacotes (${packs.join(", ")}), sem canal` });
+  await cleanupUploads(post.id);
+  return "ok";
 }
 
 async function retryOrFail(job: JobRow, post: PostRow, error: string, retryable: boolean): Promise<Outcome> {

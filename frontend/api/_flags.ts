@@ -13,6 +13,16 @@ export interface PostFlags {
   aspect?: Aspect; // recorte das fotos (centro), feito no navegador antes de enviar
   location?: string; // localizacao (texto)
   igAudio?: IgAudioFlag; // musica da biblioteca do Instagram (so Reels, conexao pelo Facebook)
+  adultDest?: AdultDest; // +18: alem do canal VIP, entra nos pacotes do bot de vendas
+}
+
+// +18 (Telegram): onde o conteudo entra no horario. channel = posta no canal VIP;
+// packs = guarda no conteudo do pacote (Ensaio, Album VIP) do bot de vendas.
+export type SalesPack = "ensaio" | "album-vip";
+export const SALES_PACKS: Record<SalesPack, string> = { ensaio: "Pacote Ensaio", "album-vip": "Pacote Álbum VIP" };
+export interface AdultDest {
+  channel: boolean;
+  packs: SalesPack[];
 }
 
 export interface IgAudioFlag {
@@ -36,6 +46,7 @@ export const FLAG_LABELS: Record<keyof PostFlags, string> = {
   aspect: "Enquadramento",
   location: "Localização",
   igAudio: "Música do Instagram",
+  adultDest: "Destinos +18",
 };
 
 // Le e valida o que veio do navegador; guarda so o que esta ligado (assim uma
@@ -55,6 +66,13 @@ export function normalizeFlags(raw: unknown, mediaCount: number): PostFlags {
   if (a && typeof a === "object" && typeof a.id === "string" && /^\d{5,30}$/.test(a.id)) {
     out.igAudio = { id: a.id, title: String(a.title ?? "").slice(0, 120), artist: String(a.artist ?? "").slice(0, 120) };
   }
+  const d = r.adultDest as Record<string, unknown> | undefined;
+  if (d && typeof d === "object") {
+    const packs = (Array.isArray(d.packs) ? d.packs : []).filter((k): k is SalesPack => typeof k === "string" && k in SALES_PACKS);
+    const dest = { channel: d.channel !== false, packs: [...new Set(packs)].sort() };
+    // so o canal = o padrao de sempre (sem flag)
+    if (dest.packs.length || !dest.channel) out.adultDest = dest;
+  }
   return out;
 }
 
@@ -63,6 +81,8 @@ export function flagProblem(network: FlagNetwork, formats: string[], flags: Post
   if (flags.igAudio && !(network === "instagram" && formats.length === 1 && formats[0] === "Reels")) {
     return "A música do Instagram só vai em Reels (a API não põe música em foto, carrossel ou Stories).";
   }
+  if (flags.adultDest && network !== "telegram") return "Pacotes e canal VIP são só do Telegram (+18).";
+  if (flags.adultDest && !flags.adultDest.channel && !flags.adultDest.packs.length) return "Escolha pelo menos um destino +18 (canal VIP ou um pacote).";
   if (network === "instagram" && formats.includes("Feed") && flags.aspect === "9:16") {
     return "O Feed do Instagram aceita fotos de 4:5 até 1,91:1: use 4:5 ou 1:1 no Feed (9:16 serve para Stories e Reels).";
   }
@@ -116,6 +136,10 @@ export function translateFlags(network: FlagNetwork, formats: string[], mode: "m
   if (flags.aspect) {
     if (auto) add("aspect", "automatico", `as fotos são recortadas no centro em ${flags.aspect} antes de enviar`);
     else add("aspect", "no_app", `recorte as fotos em ${flags.aspect} no app ao publicar`);
+  }
+  if (flags.adultDest) {
+    const where = [...(flags.adultDest.channel ? ["canal VIP"] : []), ...flags.adultDest.packs.map((k) => SALES_PACKS[k])].join(" + ");
+    add("adultDest", "automatico", `no horário entra em: ${where}`);
   }
   if (flags.coverIndex) {
     const n = flags.coverIndex + 1;

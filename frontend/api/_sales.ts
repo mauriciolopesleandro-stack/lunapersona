@@ -114,7 +114,8 @@ async function adminChat(): Promise<number> {
 
 // O bot de vendas manda a copia para o administrador (sem som), guarda o file_id
 // do Telegram, apaga a mensagem e a copia: o arquivo fica no Telegram, nao aqui.
-async function storeOnTelegram(token: string, path: string, caption: string): Promise<{ fileId: string; kind: "photo" | "video" }> {
+// keep: a copia continua no armazenamento (publicacao +18 que ainda vai para o canal)
+async function storeOnTelegram(token: string, path: string, caption: string, keep = false): Promise<{ fileId: string; kind: "photo" | "video" }> {
   const chat = await adminChat();
   const video = path.endsWith(".mp4");
   try {
@@ -130,8 +131,43 @@ async function storeOnTelegram(token: string, path: string, caption: string): Pr
     await telegram(token, "deleteMessage", { chat_id: chat, message_id: sent.message_id }).catch(() => undefined);
     return { fileId, kind: video ? "video" : "photo" };
   } finally {
-    await storageRemove(UPLOAD_BUCKET, [path]).catch(() => undefined);
+    if (!keep) await storageRemove(UPLOAD_BUCKET, [path]).catch(() => undefined);
   }
+}
+
+// Publicacao +18 aprovada com pacotes (flags.adultDest): no horario, cada foto
+// ou video da versao aprovada entra no conteudo do pacote (como o media-add da
+// pasta do Telegram). Repetir nao duplica: a mesma midia so troca de lugar.
+// Devolve o nome dos pacotes; erro (bot de vendas desligado etc.) sobe.
+export async function addPostToPacks(postId: string, version: number, slugs: string[]): Promise<string[]> {
+  const token = await salesToken();
+  if (!token) throw new Error("o bot de vendas não está conectado");
+  const [uploads, media] = await Promise.all([
+    dbSelect<{ position: number; storage_path: string }>(
+      "post_uploads",
+      `select=position,storage_path&post_id=eq.${postId}&post_version=eq.${version}&deleted_at=is.null&order=position.asc`
+    ),
+    dbSelect<{ media_id: string; position: number }>("post_media", `select=media_id,position&post_id=eq.${postId}&order=position.asc`),
+  ]);
+  if (!uploads.length) throw new Error("a cópia aprovada da mídia não está mais no armazenamento");
+  const done: string[] = [];
+  for (const slug of slugs) {
+    const [p] = await dbSelect<ProductRow>("sales_products", `select=*&slug=eq.${encodeURIComponent(slug)}`);
+    if (!p) throw new Error(`pacote “${slug}” não existe`);
+    for (const up of uploads) {
+      const mediaId = media.find((m) => m.position === up.position)?.media_id;
+      if (!mediaId) continue;
+      const current = await dbSelect<ProductMediaRow>("sales_product_media", `select=product_id,media_id,position,kind&product_id=eq.${p.id}`);
+      const others = current.filter((m) => m.media_id !== mediaId);
+      if (others.length >= MEDIA_MAX) throw new Error(`o pacote “${p.title}” já tem ${MEDIA_MAX} fotos e vídeos`);
+      const { fileId, kind } = await storeOnTelegram(token, up.storage_path, `Guardado no pacote “${p.title}”.`, true);
+      await dbDelete("sales_product_media", `product_id=eq.${p.id}&media_id=eq.${mediaId}`);
+      await dbInsert("sales_product_media", { product_id: p.id, media_id: mediaId, position: others.length, kind, telegram_file_id: fileId });
+    }
+    await audit("pacote_midia", "sales_products", p.id, { post_id: postId });
+    done.push(p.title);
+  }
+  return done;
 }
 
 async function status() {
