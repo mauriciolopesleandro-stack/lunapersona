@@ -1,7 +1,9 @@
 """TESTE (6 creditos): dancinha pelo caminho A - Copiar movimento com o link do
 TikTok, 5 s, Som original, personagem "luna". Mostra cada tela e so confirma
 se o custo for 6. Depois espera o video, baixa e tira quadros.
-Uso: py teste_dancinha_a.py [link]   (sem "--gerar" so mostra as telas)"""
+Uso: py teste_dancinha_a.py [link] [--biblioteca=N] [--arquivo=video.mp4] [--saida=nome] [--gerar]
+(sem "--gerar" so mostra as telas)"""
+import os
 import re
 import subprocess
 import sys
@@ -17,6 +19,8 @@ import luna_worker as lw  # noqa: E402
 OUT = ROOT / "conteudos"
 LINK = next((a for a in sys.argv[1:] if a.startswith("http")), "https://vt.tiktok.com/ZSgt4XUpm/")
 GERAR = "--gerar" in sys.argv
+ARQUIVO = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--arquivo=")), None)
+SAIDA = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--saida=")), "dancinha_a")
 lw.log = print
 naia = lw.Naiaflow()
 naia.open()
@@ -26,7 +30,7 @@ UI_JS = """() => [...document.querySelectorAll('button,input')].filter(e => e.ge
 
 
 def show(step):
-    p.screenshot(path=str(OUT / f"dancinha_a_{step}.png"))
+    p.screenshot(path=str(OUT / f"{SAIDA}_{step}.png"))
     print(f"\n== {step}:", p.evaluate(UI_JS)[-22:])
 
 
@@ -63,34 +67,75 @@ if LIB is not None:
     tiles[LIB].click()
     p.wait_for_timeout(1500)
     show("0b_escolhida")
+elif ARQUIVO:
+    # Enviar video: o arquivo do PC vai pelo campo de arquivo da janela
+    p.get_by_role("button", name=re.compile(r"Enviar v[ií]deo")).first.click()
+    p.wait_for_timeout(1500)
+    # o campo de arquivo certo e o do botao "Escolher arquivo" da janela (a
+    # pagina tem outros campos de arquivo, do composer)
+    with p.expect_file_chooser(timeout=15000) as chooser:
+        p.get_by_role("button", name="Escolher arquivo", exact=True).last.click()
+    chooser.value.set_files(ARQUIVO)
+    p.wait_for_timeout(15000)
+    show("0c_enviado")
 else:
     # link (TikTok, Instagram...): a janela lembra a escolha anterior
     p.get_by_role("button", name=re.compile(r"Importar por link")).first.click()
     p.wait_for_timeout(1500)
     p.locator("input[placeholder^='https']").first.fill(LINK)
-p.get_by_role("button", name="Continuar", exact=True).last.click()
-p.wait_for_timeout(20000)
-p.get_by_role("button", name="5s", exact=True).first.click()
+# link e biblioteca pedem Continuar; o video enviado ja cai no trecho
+five = p.get_by_role("button", name="5s", exact=True)
+if not (five.count() and five.first.is_visible()):
+    p.get_by_role("button", name="Continuar", exact=True).last.click()
+    p.wait_for_timeout(20000)
+five.first.click()
 p.get_by_text("Som original", exact=True).first.click()
 p.wait_for_timeout(800)
 show("1_trecho")
 p.get_by_role("button", name="Continuar", exact=True).last.click()
 p.wait_for_timeout(5000)
 show("2_personagem")
-# personagem: o clone luna
-# "Quem vai aparecer" ja vem com o clone escolhido no composer (luna); clicar
-# nele abre a lista de clones, entao so confere
-ok_luna = p.get_by_text("Quem vai aparecer").count() > 0 and p.get_by_text("luna", exact=True).count() > 0
-print("luna em 'Quem vai aparecer':", ok_luna)
-if not ok_luna:
-    sys.exit("A personagem nao e a luna: nao gerei.")
+# personagem: o clone luna. As vezes vem escolhido; as vezes so com o botao
+# "Selecionar clone" (e o Gerar fica desligado). A palavra "luna" tambem aparece
+# na barra do fundo, entao a conferencia e pelo botao e pelo Gerar ligado.
+dialog = p.locator("[role=dialog]").last
 final = p.get_by_role("button", name=re.compile(r"Gerar v[ií]deo", re.I))
-labels = [final.nth(i).inner_text().replace("\n", " ") for i in range(final.count())]
+
+
+def clone_pending():
+    b = dialog.get_by_text("Selecionar clone", exact=True)
+    return b.count() > 0 and b.first.is_visible()
+
+
+if clone_pending():
+    dialog.get_by_text("Selecionar clone", exact=True).first.click()
+    p.wait_for_timeout(2500)
+    show("2a_clones")
+    p.locator("[role=dialog]").last.get_by_text("luna", exact=True).first.click()
+    p.wait_for_timeout(2500)
+    for name in ("Confirmar", "Usar", "Selecionar", "Usar clone"):
+        b = p.locator("[role=dialog]").last.get_by_role("button", name=name, exact=True)
+        if b.count() and b.last.is_visible():
+            b.last.click()
+            p.wait_for_timeout(2000)
+            break
+    show("2b_luna")
+ok_luna = not clone_pending() and final.count() == 1 and final.first.is_enabled()
+print("luna escolhida e Gerar ligado:", ok_luna)
+if not ok_luna:
+    print("A personagem nao e a luna: nao gerei.")
+    naia.close()
+    os._exit(2)
+labels =[final.nth(i).inner_text().replace("\n", " ") for i in range(final.count())]
 print("botoes com custo:", labels)
 if not GERAR:
-    sys.exit("So olhei (sem --gerar).")
+    print("So olhei (sem --gerar).")
+    naia.close()
+    os._exit(0)
 if len(labels) != 1 or not labels[0].strip().endswith("6"):
-    sys.exit("Custo diferente de 6: nao cliquei.")
+    print("Custo diferente de 6: nao cliquei.")
+    naia.close()
+    os._exit(3)
 clicked = time.time()
 final.first.click(timeout=15000, force=True)
 print("cliquei:", labels[0])
@@ -117,11 +162,12 @@ for i in range(90):  # ate 15 min
     except Exception as exc:
         print("erro:", str(exc)[:100])
 if video:
-    dest = OUT / "dancinha_a.mp4"
+    dest = OUT / f"{SAIDA}.mp4"
     dest.write_bytes(requests.get(video, timeout=180).content)
     import imageio_ffmpeg
-    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(dest), "-vf", "fps=1.2,scale=270:-1,tile=6x1", "-frames:v", "1", str(OUT / "dancinha_a_quadros.jpg")], check=True)
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(dest), "-vf", "fps=1.2,scale=270:-1,tile=6x1", "-frames:v", "1", str(OUT / f"{SAIDA}_quadros.jpg")], check=True)
     print("salvo:", dest)
 p.goto(lw.NAIAFLOW, wait_until="domcontentloaded")
 p.wait_for_timeout(3000)
 print("creditos depois:", naia.credits())
+naia.close()
