@@ -4716,3 +4716,94 @@
   border-radius: 8px;
   object-fit: cover;
 }
+
+/* Metas do Instagram */
+.st-metas {
+  margin-bottom: 14px;
+}
+
+.st-metas-loading {
+  min-height: 120px;
+}
+
+.st-metas .st-panel-head h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+}
+
+.st-metas-next {
+  margin: 8px 0 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(236, 72, 153, 0.12);
+  font-size: 13.5px;
+}
+
+.st-metas-next.ok {
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.st-metas-days {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st-metas-days li {
+  display: grid;
+  grid-template-columns: 78px repeat(3, auto) 1fr;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 12.5px;
+  text-transform: capitalize;
+}
+
+.st-metas-days li.next {
+  border-color: var(--st-pink);
+}
+
+.st-metas-days li.ok {
+  opacity: 0.75;
+}
+
+.st-metas-days .chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(236, 72, 153, 0.14);
+  color: var(--text);
+  white-space: nowrap;
+  text-transform: none;
+}
+
+.st-metas-days .chip.ok {
+  background: rgba(52, 211, 153, 0.16);
+}
+
+.st-metas-days i {
+  justify-self: end;
+  color: var(--text-muted);
+  font-style: normal;
+  text-transform: none;
+}
+
+.st-metas.compact .st-metas-days {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+@media (max-width: 560px) {
+  .st-metas-days li {
+    grid-template-columns: 70px repeat(3, auto);
+  }
+
+  .st-metas-days i {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}

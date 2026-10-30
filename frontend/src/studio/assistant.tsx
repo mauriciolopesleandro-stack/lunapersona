@@ -3,6 +3,7 @@ import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
 import { DANCE_LINK, DanceCard } from "./dance";
+import { MetasPanel } from "./metas";
 import { NETWORKS } from "./shared";
 import { useStudio, type Post } from "./store";
 
@@ -521,6 +522,7 @@ function Agenda({
 
   return (
     <div className="st-drawer-scroll st-agenda">
+      <MetasPanel days={14} />
       <div className="st-agenda-head">
         <button type="button" className="st-btn st-btn-small" onClick={() => onNewPost()}>
           <Icon name="plus" size={14} />

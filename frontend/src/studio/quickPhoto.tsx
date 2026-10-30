@@ -67,6 +67,14 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
   return blocks.filter((b) => b.prompt);
 }
 
+// "Feed: sáb 31/10 15:30" para cada publicacao criada (onde o conteudo foi encaixado)
+export function placedText(items: { format: string; scheduled_at: string }[]): string[] {
+  return items.map(
+    (i) =>
+      `${i.format === "Foto" || i.format === "Vídeo" ? "TikTok" : i.format}: ${new Date(i.scheduled_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`
+  );
+}
+
 // marca/desmarca um destino; o +18 nao se mistura com as redes
 function toggle(slots: Slot[], k: Slot): Slot[] {
   if (slots.includes(k)) return slots.filter((s) => s !== k);
@@ -90,6 +98,9 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
   // padrao do administrador: Feed sai em carrossel de 2 fotos
   const [photos, setPhotos] = useState(block.slot === "feed" ? FEED_PHOTOS : 1);
   const [when, setWhen] = useState(defaultWhen);
+  // padrao: o conteudo vai para o proximo horario vazio do formato (metas do dia)
+  const [auto, setAuto] = useState(true);
+  const [placed, setPlaced] = useState<string[]>([]);
   const [prompt, setPrompt] = useState(block.prompt);
   const [caption, setCaption] = useState(block.caption);
   const [hashtags, setHashtags] = useState(block.hashtags);
@@ -122,12 +133,13 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
           prompt,
           caption,
           hashtags: hashtags.split(/[\s,]+/).filter(Boolean),
-          scheduled_at: new Date(when).toISOString(),
+          scheduled_at: auto ? "auto" : new Date(when).toISOString(),
           ...(refPath ? { ref_path: refPath } : {}),
         }),
       });
       const b = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(b.detail ?? `Erro HTTP ${r.status}`);
+      setPlaced(placedText(b.items ?? []));
       setDone(true);
       setOpen(false);
     } catch (e) {
@@ -148,7 +160,7 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
   if (done) {
     return (
       <p className="st-ok">
-        Na fila do robô ({slots.map((k) => SLOT_LABEL[k]).join(" + ")}{total > 1 ? `, carrossel de ${total} fotos` : ""}). A foto chega no Telegram para você aprovar — o robô do PC precisa estar aberto.
+        Na fila do robô ({slots.map((k) => SLOT_LABEL[k]).join(" + ")}{total > 1 ? `, carrossel de ${total} fotos` : ""}){placed.length ? ` · ${placed.join(" · ")}` : ""}. A foto chega no Telegram para você aprovar — o robô do PC precisa estar aberto.
       </p>
     );
   }
@@ -199,9 +211,18 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
       )}
       <div className="st-row">
         <label className="st-field">
-          <span>Publicar em</span>
-          <input type="datetime-local" className="st-input" value={when} onChange={(e) => setWhen(e.target.value)} />
+          <span>Quando</span>
+          <select className="st-input" value={auto ? "auto" : "data"} onChange={(e) => setAuto(e.target.value === "auto")}>
+            <option value="auto">Próximo horário vazio (metas do dia)</option>
+            <option value="data">Escolher data e hora</option>
+          </select>
         </label>
+        {!auto && (
+          <label className="st-field">
+            <span>Publicar em</span>
+            <input type="datetime-local" className="st-input" value={when} onChange={(e) => setWhen(e.target.value)} />
+          </label>
+        )}
       </div>
       {reference && (
         <label className="st-check st-ref-check">

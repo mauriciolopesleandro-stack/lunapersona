@@ -519,6 +519,17 @@ async function runTiktok(job: JobRow, baseUrl: string): Promise<Outcome> {
   }
 }
 
+async function goalsReminder(): Promise<string | null> {
+  const { goalsNotice, todayInBrazil } = await import("./_metas.js");
+  const { storeConfigured, storeSetIfAbsent } = await import("./_store.js");
+  const hour = Number(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false })) % 24;
+  if (hour !== 9 && hour !== 20) return null;
+  if (!storeConfigured() || !(await storeSetIfAbsent(`luna:metas-aviso:${todayInBrazil()}-${hour}`, "1", 2 * 86400).catch(() => false))) return null;
+  const text = await goalsNotice(hour === 9 ? "hoje" : "amanha");
+  await sendNotice(await telegramConfig(), text).catch(() => undefined);
+  return hour === 9 ? "hoje" : "amanha";
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Cache-Control", "no-store");
@@ -542,6 +553,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     token_instagram: null as string | null,
     acessos_vencidos: 0,
     cta_mensagens: 0,
+    aviso_metas: null as string | null,
     erro: null as string | null,
   };
   try {
@@ -570,6 +582,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     result.acessos_vencidos = await salesTick(url);
     // vendas: lembrete do Pix esquecido e a mensagem diaria para os fas
     result.cta_mensagens = await ctaTick();
+    // metas do Instagram: aviso as 9h (hoje) e as 20h (amanha), uma vez por dia cada
+    result.aviso_metas = await goalsReminder();
   } catch (e) {
     result.erro = (e instanceof Error ? e.message : String(e)).slice(0, 300);
   }
