@@ -40,6 +40,9 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [auto, setAuto] = useState(initial?.publishMode === "api");
+  // tudo que vai para o Instagram vai tambem para o TikTok (pedido de 30/10):
+  // publicacao nova do Instagram cria junto a do TikTok (rascunho automatico)
+  const [alsoTiktok, setAlsoTiktok] = useState(true);
 
   const byPath = useMemo(() => new Map(items.map((i) => [i.path, i])), [items]);
   const chosen = media.map((p) => byPath.get(p)).filter((i): i is NonNullable<typeof i> => Boolean(i));
@@ -131,10 +134,29 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
       const publishMode = network !== "telegram" && auto ? "api" : "manual";
       const { post, needsApproval } = await saveCloudPost({ network, formats, media, caption, hashtags, scheduledAt: when, publishMode }, live);
       if (submit && (post.status === "rascunho" || post.status === "falhou")) await postAction("submit", post.id);
+      let copy = "";
+      if (!live && network === "instagram" && alsoTiktok && chosen.length) {
+        // TikTok: 1 video (destino Video) ou as fotos (destino Foto)
+        const video = chosen.find((i) => i.kind === "video");
+        const tt = await saveCloudPost(
+          {
+            network: "tiktok",
+            formats: [video ? "Vídeo" : "Foto"],
+            media: video ? [video.path] : chosen.filter((i) => i.kind === "image").slice(0, 35).map((i) => i.path),
+            caption,
+            hashtags,
+            scheduledAt: when,
+            publishMode: "api",
+          },
+          undefined
+        );
+        if (submit) await postAction("submit", tt.post.id);
+        copy = " Uma cópia foi junto para o TikTok.";
+      }
       setMessage({
         ok: true,
         text: submit
-          ? "Enviada para aprovação. Aprove em Publicações (ou abrindo a publicação)."
+          ? `Enviada para aprovação.${copy} Aprove em Publicações (ou abrindo a publicação).`
           : needsApproval
             ? `Salvo como versão ${post.version}: o conteúdo mudou, então precisa ser aprovado de novo.`
             : `Salvo (versão ${post.version}).`,
@@ -260,6 +282,16 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
                   ? `para ${tiktok.name ?? "a sua conta"}: 1 vídeo (destino Vídeo) ou até 35 fotos (destino Foto). No horário chega nas notificações do TikTok; você põe a música e publica.`
                   : "conecte o TikTok na página TikTok para poder aprovar."}
               </span>
+            </div>
+          )}
+
+          {source === "banco" && network === "instagram" && !live && (
+            <div className="st-row">
+              <label className="st-check" title="Cria junto uma publicação do TikTok com a mesma mídia, legenda e horário (vai como rascunho no app do TikTok)">
+                <input type="checkbox" checked={alsoTiktok} onChange={(e) => setAlsoTiktok(e.target.checked)} />
+                Também no TikTok
+              </label>
+              <span className="st-hint st-inline-hint">mesma mídia, legenda e horário; o vídeo (ou as fotos) chega como rascunho no app do TikTok.</span>
             </div>
           )}
 

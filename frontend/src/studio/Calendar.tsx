@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CtaChip, CtaModal, brDay, useCtaDays, type CtaDay } from "./ctaDays";
 import { Icon } from "./Icon";
 import { POST_STATUS } from "./PostFlow";
 import { NETWORKS } from "./shared";
@@ -64,6 +65,10 @@ export function Calendar({ onOpenPost, onNew }: Props) {
   const today = new Date();
   const dated = posts.filter((p) => p.scheduledAt && p.status !== "cancelado").sort((a, b) => (a.scheduledAt! < b.scheduledAt! ? -1 : 1));
   const on = (day: Date) => dated.filter((p) => sameDay(new Date(p.scheduledAt!), day));
+  // mensagem do dia do bot de vendas (19h) em cada dia visivel
+  const monthStart = startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
+  const cta = useCtaDays(mode === "semana" ? startOfWeek(anchor) : monthStart, mode === "semana" ? 7 : 42);
+  const [ctaOpen, setCtaOpen] = useState<CtaDay | null>(null);
 
   function move(step: number) {
     setAnchor((a) => (mode === "semana" ? addDays(a, step * 7) : new Date(a.getFullYear(), a.getMonth() + step, 1)));
@@ -117,11 +122,13 @@ export function Calendar({ onOpenPost, onNew }: Props) {
                     return h >= block.from && h < end;
                   });
                   const slot = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.max(block.from, 9));
+                  const msg = cta.get(brDay(d));
                   return (
                     <div key={i} className="st-week-cell">
                       {here.map((p) => (
                         <PostChip key={p.id} post={p} onOpen={onOpenPost} />
                       ))}
+                      {msg && msg.hour >= block.from && msg.hour < end && <CtaChip d={msg} onOpen={setCtaOpen} />}
                       <button type="button" className="st-cell-add" onClick={() => onNew(slot)} aria-label="Agendar aqui">
                         <Icon name="plus" size={14} />
                         Agendar
@@ -140,8 +147,9 @@ export function Calendar({ onOpenPost, onNew }: Props) {
               {w}
             </div>
           ))}
-          {Array.from({ length: 42 }, (_, i) => addDays(startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1)), i)).map((d, i) => {
+          {Array.from({ length: 42 }, (_, i) => addDays(monthStart, i)).map((d, i) => {
             const list = on(d);
+            const msg = cta.get(brDay(d));
             const outside = d.getMonth() !== anchor.getMonth();
             return (
               <div key={i} className={`st-month-cell${outside ? " outside" : ""}${sameDay(d, today) ? " today" : ""}`}>
@@ -152,11 +160,13 @@ export function Calendar({ onOpenPost, onNew }: Props) {
                   <PostChip key={p.id} post={p} onOpen={onOpenPost} mini />
                 ))}
                 {list.length > 3 && <span className="st-month-more">+{list.length - 3}</span>}
+                {msg && <CtaChip d={msg} mini onOpen={setCtaOpen} />}
               </div>
             );
           })}
         </div>
       )}
+      {ctaOpen && <CtaModal d={ctaOpen} onClose={() => setCtaOpen(null)} />}
     </div>
   );
 }

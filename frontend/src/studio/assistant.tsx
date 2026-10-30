@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
 import { DANCE_LINK, DanceCard } from "./dance";
+import { CtaModal, CtaRow, brDay, useCtaDays, type CtaDay } from "./ctaDays";
 import { MetasPanel } from "./metas";
 import { NETWORKS } from "./shared";
 import { useStudio, type Post } from "./store";
@@ -517,6 +518,9 @@ function Agenda({
       .filter((p) => new Date(p.scheduledAt!).toDateString() === d.toDateString())
       .sort((a, b) => (a.scheduledAt! < b.scheduledAt! ? -1 : 1));
   const empty = days.slice(0, 7).filter((d) => onDay(d).length === 0);
+  // mensagem do dia do bot de vendas (19h), entre os posts pelo horario
+  const cta = useCtaDays(today, 14);
+  const [ctaOpen, setCtaOpen] = useState<CtaDay | null>(null);
 
   if (state !== "ready") return <div className="st-empty st-empty-small">Conecte a pasta do estúdio para ver a agenda.</div>;
 
@@ -551,6 +555,9 @@ function Agenda({
       {days.map((d) => {
         const list = onDay(d);
         const isToday = d.getTime() === today.getTime();
+        const msg = cta.get(brDay(d));
+        // a mensagem do dia entra entre os posts, pelo horario
+        const firstAfter = msg ? list.find((p) => new Date(p.scheduledAt!).getHours() >= msg.hour) : undefined;
         return (
           <section key={d.toISOString()} className={list.length ? "st-agenda-day" : "st-agenda-day empty"}>
             <header>
@@ -561,16 +568,21 @@ function Agenda({
               </button>
             </header>
             {list.map((p) => (
-              <button key={p.id} type="button" className="st-agenda-post" onClick={() => onOpenPost(p)}>
-                <time>{new Date(p.scheduledAt!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time>
-                <Icon name={NETWORKS[p.network].icon} size={14} />
-                <span>{p.caption || p.formats.join(", ") || "Sem legenda"}</span>
-                <i className={`st-agenda-status st-agenda-${p.status}`} title={p.status} />
-              </button>
+              <Fragment key={p.id}>
+                {msg && p === firstAfter && <CtaRow d={msg} onOpen={setCtaOpen} />}
+                <button type="button" className="st-agenda-post" onClick={() => onOpenPost(p)}>
+                  <time>{new Date(p.scheduledAt!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time>
+                  <Icon name={NETWORKS[p.network].icon} size={14} />
+                  <span>{p.caption || p.formats.join(", ") || "Sem legenda"}</span>
+                  <i className={`st-agenda-status st-agenda-${p.status}`} title={p.status} />
+                </button>
+              </Fragment>
             ))}
+            {msg && !firstAfter && <CtaRow d={msg} onOpen={setCtaOpen} />}
           </section>
         );
       })}
+      {ctaOpen && <CtaModal d={ctaOpen} onClose={() => setCtaOpen(null)} />}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { storeConfigured, storeGet, storeSet } from "./_store.js";
+import { storeConfigured, storeGet, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
 import { dbSelect, dbUpdate, dbUpdateWhere } from "./_supabase.js";
 import { telegram } from "./_telegram.js";
 import type { FanRow, ProductRow } from "./_sales_bot.js";
@@ -211,8 +211,80 @@ function hourInBrazil(): number {
   return Number(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hour12: false })) % 24;
 }
 
-function dayNumber(): number {
-  return Math.floor(Date.now() / 86400_000);
+function dayNumber(at = Date.now()): number {
+  return Math.floor(at / 86400_000);
+}
+
+// --- registro da diaria por dia (calendario) -------------------------------------------------------
+// luna:cta-dia:<AAAA-MM-DD>:rodou|ok|erro|amostra|motivo, guardados 90 dias. O
+// calendario mostra em cada dia a mensagem das {hour}h com ✓ (saiu) ou ✗ (falhou).
+const LOG_TTL = 90 * 86400;
+const LOG_SINCE_KEY = "luna:cta-registro-desde";
+const logKey = (day: string, field: string) => `luna:cta-dia:${day}:${field}`;
+const brDay = (at = Date.now()) => new Date(at).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+
+async function logDaily(field: "ok" | "erro", sample?: { text: string; media_id: string | null }, reason?: string): Promise<void> {
+  const day = brDay();
+  await storeIncrWithTtl(logKey(day, field), LOG_TTL).catch(() => undefined);
+  if (sample) await storeSetIfAbsent(logKey(day, "amostra"), JSON.stringify(sample), LOG_TTL).catch(() => undefined);
+  if (reason) await storeSetIfAbsent(logKey(day, "motivo"), reason.slice(0, 200), LOG_TTL).catch(() => undefined);
+}
+
+export type CtaDayStatus = "enviada" | "falhou" | "nao-rodou" | "sem-fas" | "desligada" | "programada" | "aguardando" | "sem-registro";
+export interface CtaDay {
+  day: string;
+  hour: number;
+  status: CtaDayStatus;
+  sent: number;
+  failed: number;
+  reason: string | null;
+  text: string; // a mensagem que saiu (ou um exemplo da que vai sair), com {nome}
+  media_id: string | null; // previa que foi junto
+  kind: "photo" | "video" | null;
+}
+
+// Os dias de start (AAAA-MM-DD) ate start + days - 1: o que saiu (passado) ou o
+// exemplo do que vai sair (futuro: cada fa recebe a sua, girando frases e previas).
+export async function ctaDays(start: string, days: number): Promise<CtaDay[]> {
+  const config = await ctaConfig();
+  const list = await previews();
+  const since = storeConfigured() ? await storeGet(LOG_SINCE_KEY).catch(() => null) : null;
+  const today = brDay();
+  const nowHour = hourInBrazil();
+  const out: CtaDay[] = [];
+  for (let i = 0; i < days; i++) {
+    const noon = Date.parse(`${start}T12:00:00-03:00`) + i * 86400_000;
+    const day = brDay(noon);
+    const n = dayNumber(noon);
+    const preview = list.length ? list[n % list.length] : null;
+    const example = { text: preview?.text || config.daily[n % config.daily.length], media_id: preview?.media_id ?? null, kind: preview?.kind ?? null };
+    const base = { day, hour: config.hour, sent: 0, failed: 0, reason: null as string | null, ...example };
+    const future = day > today || (day === today && nowHour < config.hour);
+    if (future) {
+      out.push({ ...base, status: config.enabled ? "programada" : "desligada" });
+      continue;
+    }
+    if (!storeConfigured() || !since || day < since) {
+      out.push({ ...base, status: "sem-registro" });
+      continue;
+    }
+    const [ran, ok, err, sample, reason] = await Promise.all(
+      ["rodou", "ok", "erro", "amostra", "motivo"].map((f) => storeGet(logKey(day, f)).catch(() => null))
+    );
+    const sent = Number(ok ?? 0);
+    const failed = Number(err ?? 0);
+    let used = example;
+    try {
+      const s = JSON.parse(sample ?? "null") as { text: string; media_id: string | null } | null;
+      if (s) used = { text: s.text, media_id: s.media_id, kind: list.find((p) => p.media_id === s.media_id)?.kind ?? (s.media_id ? "photo" : null) };
+    } catch {
+      // amostra quebrada: fica o exemplo
+    }
+    const status: CtaDayStatus =
+      sent > 0 ? "enviada" : failed > 0 ? "falhou" : ran ? "sem-fas" : !config.enabled ? "desligada" : day === today ? "aguardando" : "nao-rodou";
+    out.push({ ...base, ...used, sent, failed, reason: reason ?? null, status });
+  }
+  return out;
 }
 
 interface CtaFan extends FanRow {
@@ -251,8 +323,12 @@ export async function ctaTick(): Promise<number> {
       sent++;
     }
 
+    // a partir de quando ha registro por dia (dias anteriores aparecem "sem registro")
+    if (storeConfigured() && !(await storeGet(LOG_SINCE_KEY))) await storeSet(LOG_SINCE_KEY, brDay());
+
     // mensagem diaria
     if (!config.enabled || hourInBrazil() < config.hour) return sent;
+    await storeSetIfAbsent(logKey(brDay(), "rodou"), "1", LOG_TTL).catch(() => undefined);
     const since = new Date(now - DAILY_GAP_MS).toISOString();
     const fans = await dbSelect<CtaFan>(
       "fans",
@@ -273,10 +349,14 @@ export async function ctaTick(): Promise<number> {
       try {
         await sendCta(token, fan.telegram_id, fill(text, fan), turn);
         sent++;
+        await logDaily("ok", { text, media_id: list.length ? list[Math.abs(turn) % list.length].media_id : null });
       } catch (e) {
-        // o fa bloqueou o bot: para de mandar
-        if (/blocked|deactivated|chat not found/i.test(e instanceof Error ? e.message : String(e))) {
+        const message = e instanceof Error ? e.message : String(e);
+        // o fa bloqueou o bot: para de mandar (nao conta como falha da mensagem)
+        if (/blocked|deactivated|chat not found/i.test(message)) {
           await dbUpdateWhere("fans", `id=eq.${fan.id}`, { blocked_at: new Date().toISOString() });
+        } else {
+          await logDaily("erro", undefined, message);
         }
       }
     }
