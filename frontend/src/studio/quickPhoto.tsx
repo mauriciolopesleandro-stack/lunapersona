@@ -15,8 +15,8 @@ type Slot = "feed" | "stories" | "tiktok" | "telegram18";
 const FEED_PHOTOS = 3;
 const creditsFor = (photos: number) => (photos > 3 ? 1 + 3 * Math.ceil((photos - 3) / 3) : 1);
 const SLOT_LABEL: Record<Slot, string> = {
-  feed: "Instagram Feed",
-  stories: "Instagram Stories",
+  feed: "Feed (quadrado)",
+  stories: "Stories (9:16)",
   tiktok: "TikTok",
   telegram18: "+18 Telegram",
 };
@@ -124,7 +124,11 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
 
   const canCarousel = slots.some((k) => k === "feed" || k === "tiktok") && !slots.includes("telegram18");
   const total = canCarousel ? photos : 1;
-  const cost = creditsFor(total);
+  // uma foto por proporcao: Feed quadrado; Stories/TikTok/+18 em 9:16 (o TikTok
+  // sem Stories reaproveita a foto do Feed)
+  const vertical = slots.some((k) => k === "stories" || k === "telegram18") || (slots.includes("tiktok") && !slots.includes("feed"));
+  const groups = (slots.includes("feed") ? 1 : 0) + (vertical ? 1 : 0);
+  const cost = creditsFor(total) * Math.max(1, groups);
 
   if (done) {
     return (
@@ -200,7 +204,13 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
         <p className="st-hint">+18: vai só para o canal do Telegram, por isso não junta com Instagram e TikTok.</p>
       ) : (
         <>
-          {slots.length > 1 && <p className="st-hint">{total > 1 ? "As mesmas fotos vão" : "A mesma foto vai"} para os {slots.length} destinos, cada um com a sua publicação para aprovar.</p>}
+          {slots.length > 1 && (
+            <p className="st-hint">
+              {groups > 1
+                ? "O Feed ganha a foto quadrada e Stories/TikTok a vertical 9:16 (duas gerações); cada destino vira uma publicação para aprovar."
+                : `${total > 1 ? "As mesmas fotos vão" : "A mesma foto vai"} para os ${slots.length} destinos, cada um com a sua publicação para aprovar.`}
+            </p>
+          )}
           {total > 1 && slots.includes("stories") && <p className="st-hint">Stories não tem carrossel: vai só a primeira foto (a base).</p>}
           {total > 1 && <p className="st-hint">Carrossel: a Naiaflow entrega 3 fotos da mesma cena por crédito; passando de 3, o robô usa o "Gerar um carrossel" (3 créditos a cada 3 fotos).</p>}
         </>

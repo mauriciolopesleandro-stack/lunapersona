@@ -4684,3 +4684,23 @@
   margin-top: 6px;
   color: var(--text-muted);
 }
+
+/* Chat +18 (Monetizacao) */
+.st-chat18 .st-chat-list {
+  min-height: 320px;
+  max-height: 60vh;
+}
+
+.st-chat18 .st-chat-input textarea {
+  resize: none;
+}
+
+/* Fazer dancinha (Conversa) */
+.st-dance-open {
+  margin-top: 8px;
+}
+
+.st-msg-user .st-dance,
+.st-msg-user .st-dance-open {
+  text-align: left;
+}
