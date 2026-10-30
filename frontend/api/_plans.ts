@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
+import { coverage, nextSlot } from "./_metas.js";
 import { isAuthenticated } from "./_auth.js";
 import { ADULT_NOTE, AiError, PERSONA, STYLE_GUIDE, askAi, type Mode } from "./_assistant.js";
 import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
@@ -292,6 +293,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       return reply(200, { path, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
     }
 
+    // metas do dia: o que ja esta garantido nos proximos dias (painel)
+    if (body.action === "coverage") {
+      const days = Math.min(30, Math.max(1, Number(body.days ?? 14) || 14));
+      return reply(200, { days: await coverage(days) });
+    }
+
     // foto de referencia (IMG1) da foto avulsa: o robo baixa e anexa no Criar
     if (body.action === "ref-url") {
       const path = `refs/${randomUUID()}.jpg`;
@@ -310,8 +317,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const raw: unknown[] = Array.isArray(body.slots) ? body.slots : ["reels", "tiktok"];
       const keys = [...new Set(raw.map(String))].filter((k) => k === "reels" || k === "tiktok");
       if (!keys.length) throw new Problem(400, "Marque Reels, TikTok ou os dois.");
-      const when = typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
+      // "auto": vai para o proximo horario vazio do formato (metas do dia)
+      const auto = body.scheduled_at === "auto";
+      const when = auto ? Date.now() + 2 * 3600_000 : typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
       if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
+      const taken: string[] = [];
       const caption = typeof body.caption === "string" ? body.caption.slice(0, 2200) : "";
       const hashtags = cleanTags(body.hashtags);
       const motion = { ...(link ? { link } : { path: file }), seconds, ...(outfit ? { outfit } : {}) };
@@ -327,7 +337,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           await dbInsert<ItemRow>("content_plan_items", {
             plan_id: plan.id,
             position,
-            scheduled_at: new Date(when).toISOString(),
+            scheduled_at: items[0] ? items[0].scheduled_at : auto && key === "reels" ? await nextSlot("Reels", taken) : new Date(when).toISOString(),
             network: key === "reels" ? "instagram" : "tiktok",
             format: key === "reels" ? "Reels" : "Vídeo",
             kind: "video",
@@ -354,8 +364,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (keys.includes("telegram18") && keys.length > 1) throw new Problem(400, "Foto +18 vai só para o canal do Telegram: não dá para juntar com Instagram ou TikTok.");
       const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 2000) : "";
       if (!prompt) throw new Problem(400, "Escreva o pedido da foto.");
-      const when = typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
+      // "auto": vai para o proximo horario vazio do formato (metas do dia)
+      const auto = body.scheduled_at === "auto";
+      const when = auto ? Date.now() + 2 * 3600_000 : typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
       if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
+      const taken: string[] = [];
       const refPath = typeof body.ref_path === "string" ? body.ref_path : "";
       if (refPath && !/^refs\/[0-9a-f-]{36}\.jpg$/.test(refPath)) throw new Problem(400, "Foto de referência inválida.");
       // carrossel: varias fotos do mesmo ensaio (1 credito cada) no Feed e no TikTok
@@ -378,7 +391,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           await dbInsert<ItemRow>("content_plan_items", {
             plan_id: plan.id,
             position,
-            scheduled_at: new Date(when).toISOString(),
+            scheduled_at:
+              auto && (key === "feed" || key === "stories")
+                ? await nextSlot(key === "feed" ? "Feed" : "Stories", taken)
+                : auto && items[0]
+                  ? items[items.length - 1].scheduled_at
+                  : new Date(when).toISOString(),
             network: slot.network,
             format: slot.format,
             kind: "image",

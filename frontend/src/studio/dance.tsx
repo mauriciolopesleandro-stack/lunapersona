@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { putSignedUpload } from "./cloud";
+import { placedText } from "./quickPhoto";
 
 // "Fazer dancinha" na Conversa: com o video (📎) ou o link de uma dancinha
 // (TikTok, Instagram...), o robo do PC faz o Copiar movimento da Naiaflow com a
@@ -45,6 +46,8 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
   const [seconds, setSeconds] = useState(5);
   const [slots, setSlots] = useState<string[]>(["reels", "tiktok"]);
   const [when, setWhen] = useState(defaultWhen);
+  const [auto, setAuto] = useState(true);
+  const [placed, setPlaced] = useState<string[]>([]);
   const [caption, setCaption] = useState("");
   const [hashtags, setHashtags] = useState("#dancinha #trend #reelsbrasil");
   const [busy, setBusy] = useState<string | null>(null);
@@ -68,7 +71,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
         source = { path: up.path };
       }
       setBusy("Mandando para o robô…");
-      await post({
+      const res = await post<{ items: { format: string; scheduled_at: string }[] }>({
         action: "dance",
         ...source,
         seconds,
@@ -76,8 +79,9 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
         slots,
         caption,
         hashtags: hashtags.split(/[\s,]+/).filter(Boolean),
-        scheduled_at: new Date(when).toISOString(),
+        scheduled_at: auto ? "auto" : new Date(when).toISOString(),
       });
+      setPlaced(placedText(res.items ?? []));
       setDone(true);
       setOpen(false);
     } catch (e) {
@@ -91,7 +95,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
     return (
       <p className="st-ok">
         Dancinha na fila do robô ({slots.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}
-        {chosen ? `, roupa ${chosen}` : ""}). O vídeo chega no Telegram para você aprovar — o robô do PC precisa estar aberto.
+        {chosen ? `, roupa ${chosen}` : ""}){placed.length ? ` · ${placed.join(" · ")}` : ""}. O vídeo chega no Telegram para você aprovar — o robô do PC precisa estar aberto.
       </p>
     );
   }
@@ -149,9 +153,18 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
         </label>
       )}
       <label className="st-field">
-        <span>Publicar em</span>
-        <input type="datetime-local" className="st-input" value={when} onChange={(e) => setWhen(e.target.value)} />
+        <span>Quando</span>
+        <select className="st-input" value={auto ? "auto" : "data"} onChange={(e) => setAuto(e.target.value === "auto")}>
+          <option value="auto">Próximo horário vazio de Reels (metas do dia)</option>
+          <option value="data">Escolher data e hora</option>
+        </select>
       </label>
+      {!auto && (
+        <label className="st-field">
+          <span>Publicar em</span>
+          <input type="datetime-local" className="st-input" value={when} onChange={(e) => setWhen(e.target.value)} />
+        </label>
+      )}
       <label className="st-field">
         <span>Legenda</span>
         <textarea className="st-input" rows={2} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Ex.: Sextou pedindo dancinha 💃" />

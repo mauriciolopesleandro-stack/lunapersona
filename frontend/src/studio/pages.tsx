@@ -5,6 +5,7 @@ import { Composer } from "./Composer";
 import { POST_STATUS, PostStatusBadge } from "./PostFlow";
 import { Icon } from "./Icon";
 import { TelegramCards } from "./money";
+import { MetasPanel } from "./metas";
 import { cloudAudit } from "./cloud";
 import { FolderGate, Modal, NETWORKS, WhenReady, StatusBadge, Thumb, formatBytes, formatDate } from "./shared";
 import { metaProblem, useStudio, type Audience, type Campaign, type Character, type Item, type ItemStatus, type MetaPatch, type Network, type Post, type PostStatus } from "./store";
@@ -174,6 +175,7 @@ export function OverviewPage({ nav }: { nav: Nav }) {
         <Stat icon="send" tone="pink" label="Publicados" value={publishedThisMonth} sub="neste mês (confirmados)" />
       </div>
 
+      {source === "banco" && <MetasPanel days={7} compact />}
       {source === "banco" && <TelegramCards onOpen={nav.go} />}
 
       {alerts.length > 0 && (
