@@ -176,6 +176,9 @@ def fit_blur(img: Image.Image, size: tuple[int, int]) -> Image.Image:
 
 
 def copy_for(img: Image.Image, network: str, fmt: str) -> bytes:
+    if network == "instagram" and fmt == "Feed" and abs(img.width / img.height - 1) < 0.05:
+        # foto gerada em Quadrado na Naiaflow: Feed 1:1, sem corte
+        return to_jpeg(img.resize((1080, 1080), Image.LANCZOS))
     if network == "instagram" and fmt == "Feed":
         # a Naiaflow gera em pe (9:16; nao tem 4:5): no Feed a foto entra
         # inteira, sem cortar cabeca nem pernas, como no Stories
@@ -399,13 +402,36 @@ class Naiaflow:
             except Exception:
                 pass
 
-    def generate(self, prompt: str) -> list[str]:
+    def _set_aspect(self, aspect: str | None) -> None:
+        """Proporcao do Criar (botao Vertical/Quadrado/Horizontal do composer).
+        A Naiaflow lembra a ultima escolha: o robo sempre escolhe a do item."""
+        name = {"quadrado": "Quadrado", "vertical": "Vertical", "horizontal": "Horizontal"}.get((aspect or "").lower())
+        if not name:
+            return
+        button = self.page.get_by_role("button", name=re.compile(r"^\s*(Vertical|Quadrado|Horizontal)\s*$"))
+        if not button.count():
+            log("Nao achei o botao de proporcao da Naiaflow: segue com a atual.")
+            return
+        if button.first.inner_text().strip() == name:
+            return
+        button.first.click()
+        self.page.wait_for_timeout(1000)
+        self.page.get_by_text(name, exact=True).last.click()
+        self.page.wait_for_timeout(800)
+        self._close_popovers()
+        now = button.first.inner_text().strip()
+        if now != name:
+            raise RuntimeError(f"Nao consegui escolher a proporcao {name} na Naiaflow (ficou {now}).")
+        log(f"Proporcao: {name}.")
+
+    def generate(self, prompt: str, aspect: str | None = None) -> list[str]:
         """Gera pelo prompt; devolve as fotos do mesmo Criar (3 desde 29/10)."""
         self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
         self.page.wait_for_selector("text=Modo imagem", timeout=60000)
         self.page.wait_for_timeout(1500)  # os avisos aparecem logo depois de carregar
         self._dismiss_overlays()
         self._ensure_clone()
+        self._set_aspect(aspect)
         before = self._job_images()
         box = self.page.get_by_placeholder("Digite seu prompt", exact=False).first
         if not box.count():
@@ -649,7 +675,7 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
                 spare = naia.carousel(base_job, missing)
                 url = spare.pop(0)
             else:
-                urls = naia.generate(prompt)
+                urls = naia.generate(prompt, item.get("aspect"))
                 url = urls[0]
                 if carousel:
                     spare = urls[1:]

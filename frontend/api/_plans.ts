@@ -96,8 +96,14 @@ function days(start: string, end: string): string[] {
   return out;
 }
 
+// Proporcao gerada na Naiaflow: o Feed sai quadrado (foto propria); Stories,
+// TikTok, +18 e a foto do Reels saem em 9:16 e podem compartilhar a mesma foto.
+export function aspectOf(format: string): "quadrado" | "vertical" {
+  return format === "Feed" ? "quadrado" : "vertical";
+}
+
 // Grade do plano: cada dia, cada destino, na quantidade pedida, nos horarios padrao.
-// TikTok reaproveita a foto do Feed do mesmo dia (mesmo conteudo nas duas redes).
+// TikTok reaproveita a foto vertical dos Stories do mesmo dia (sem Stories, a do Feed).
 export function buildSlots(start: string, end: string, perDay: Partial<Record<SlotKey, number>>, tiktokReuse: boolean) {
   const list = days(start, end);
   const counts = Object.fromEntries(
@@ -109,13 +115,17 @@ export function buildSlots(start: string, end: string, perDay: Partial<Record<Sl
   ) as Record<SlotKey, number>;
   const slots: { key: SlotKey; day: string; scheduled_at: string; reuseOf: number | null }[] = [];
   for (const day of list) {
+    const storiesIndex: number[] = [];
     const feedIndex: number[] = [];
     for (const key of Object.keys(SLOTS) as SlotKey[]) {
       for (let i = 0; i < counts[key]; i++) {
         const time = [...SLOTS[key].times].slice(0, counts[key]).sort()[i];
         let reuseOf: number | null = null;
-        if (key === "tiktok" && tiktokReuse && feedIndex[i] !== undefined) reuseOf = feedIndex[i];
+        // TikTok usa a foto vertical dos Stories; sem Stories no dia, a do Feed
+        const source = storiesIndex[i] ?? feedIndex[i];
+        if (key === "tiktok" && tiktokReuse && source !== undefined) reuseOf = source;
         slots.push({ key, day, scheduled_at: `${day}T${time}:00${TZ_OFFSET}`, reuseOf });
+        if (key === "stories") storiesIndex.push(slots.length - 1);
         if (key === "feed") feedIndex.push(slots.length - 1);
       }
     }
@@ -266,8 +276,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     // aprovado, direto na fila do robo do PC (gera, cria a publicacao e manda
     // para a analise no Telegram, igual aos itens de um plano).
     if (body.action === "quick") {
-      // um ou mais destinos; a foto e gerada uma vez so e os outros destinos
-      // reaproveitam (mesma foto e legenda, uma publicacao para cada)
+      // um ou mais destinos; uma foto por proporcao (Feed quadrado; Stories,
+      // TikTok e +18 em 9:16) e os destinos da mesma proporcao reaproveitam
       const raw: unknown[] = Array.isArray(body.slots) ? body.slots : [body.slot];
       const keys = [...new Set(raw.map((k) => String(k ?? "")))] as SlotKey[];
       if (!keys.length || keys.length > 4 || keys.some((k) => !SLOTS[k] || SLOTS[k].kind !== "image")) throw new Problem(400, "Escolha o destino da foto.");
@@ -305,7 +315,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
             caption,
             hashtags,
             status: "na_fila",
-            ...(items[0] ? { source_item_id: items[0].id } : {}),
+            ...(() => {
+              // mesma proporcao reaproveita; o TikTok sem foto vertical usa a do Feed
+              const lead =
+                items.find((it) => !it.source_item_id && aspectOf(it.format) === aspectOf(slot.format)) ??
+                (key === "tiktok" && !keys.some((k) => k === "stories" || k === "telegram18") ? items.find((it) => !it.source_item_id) : undefined);
+              return lead ? { source_item_id: lead.id } : {};
+            })(),
           })
         );
       }

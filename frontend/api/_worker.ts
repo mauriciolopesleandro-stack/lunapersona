@@ -337,6 +337,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           // carrossel: o PC gera a foto base e usa "Gerar um carrossel" da Naiaflow
           // (3 variacoes do mesmo look e lugar); prompts fica para robos antigos
           ...(photos > 1 ? { prompts: carouselPrompts(item.prompt, photos), carousel_action: true } : {}),
+          // proporcao na Naiaflow: Feed quadrado, o resto em 9:16
+          aspect: item.format === "Feed" ? "quadrado" : "vertical",
         },
       });
     }
