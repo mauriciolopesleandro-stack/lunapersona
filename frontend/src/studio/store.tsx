@@ -114,7 +114,7 @@ export interface Post {
   publishedAt?: string | null;
   destinations?: { format: string; status: string; url: string | null; confirmedAt: string | null; confirmedBy: string | null }[];
   approvals?: { version: number; decision: string; note: string | null; at: string }[];
-  jobs?: { runAt: string; status: string; attempts: number; maxAttempts: number; lastError: string | null }[];
+  jobs?: { version?: number; runAt: string; status: string; attempts: number; maxAttempts: number; lastError: string | null }[];
   attempts?: { channel: string; outcome: string; detail: string | null; at: string }[];
 }
 
@@ -161,7 +161,7 @@ function fromDto(d: PostDto, pathOf: Map<string, string>): Post {
       confirmedBy: x.confirmed_by,
     })),
     approvals: d.approvals.map((a) => ({ version: a.version, decision: a.decision, note: a.note, at: a.decided_at })),
-    jobs: d.jobs.map((j) => ({ runAt: j.run_at, status: j.status, attempts: j.attempts, maxAttempts: j.max_attempts, lastError: j.last_error })),
+    jobs: d.jobs.map((j) => ({ version: j.post_version, runAt: j.run_at, status: j.status, attempts: j.attempts, maxAttempts: j.max_attempts, lastError: j.last_error })),
     attempts: d.attempts.map((a) => ({ channel: a.channel, outcome: a.outcome, detail: a.detail, at: a.started_at })),
   };
 }

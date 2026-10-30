@@ -149,7 +149,7 @@ export interface PostDto {
   media_ids: string[];
   destinations: { format: string; status: string; external_url: string | null; confirmed_at: string | null; confirmed_by: string | null }[];
   approvals: { version: number; decision: string; note: string | null; decided_at: string }[];
-  jobs: { id: string; run_at: string; status: string; attempts: number; max_attempts: number; last_error: string | null }[];
+  jobs: { id: string; post_version?: number; run_at: string; status: string; attempts: number; max_attempts: number; last_error: string | null }[];
   attempts: { channel: string; outcome: string; detail: string | null; started_at: string }[];
 }
 

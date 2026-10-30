@@ -2,7 +2,7 @@ import { WorkerPcPanel } from "./workerpc";
 import { useEffect, useState } from "react";
 import { Calendar } from "./Calendar";
 import { Composer } from "./Composer";
-import { POST_STATUS, PostStatusBadge } from "./PostFlow";
+import { PostStatusBadge } from "./PostFlow";
 import { Icon } from "./Icon";
 import { TelegramCards } from "./money";
 import { MetasPanel } from "./metas";
@@ -106,7 +106,7 @@ function Stat({ icon, tone, label, value, sub }: { icon: string; tone: string; l
 }
 
 export function OverviewPage({ nav }: { nav: Nav }) {
-  const { items, posts, source, worker, postsError, instagram, tiktok } = useStudio();
+  const { items, posts, source, worker, instagram, tiktok } = useStudio();
   const [filter, setFilter] = useState<Filter>("todos");
   const live = items.filter((i) => i.display !== "arquivado");
   const now = Date.now();
@@ -126,23 +126,6 @@ export function OverviewPage({ nav }: { nav: Nav }) {
     return d.getMonth() === month.getMonth() && d.getFullYear() === month.getFullYear();
   }).length;
   const awaiting = source === "banco" ? posts.filter((p) => p.status === "aguardando_aprovacao").length : live.filter((i) => i.display === "rascunho").length;
-
-  // Alertas operacionais (so no modo banco, onde ha fila e confirmacao).
-  const alerts: { text: string; post?: Post; action?: () => void }[] = [];
-  if (postsError) alerts.push({ text: postsError, action: () => nav.go("publicacoes") });
-  if (source === "banco") {
-    for (const p of posts) {
-      if (p.status === "publicando" && p.scheduledAt && now - new Date(p.scheduledAt).getTime() > 3600_000) {
-        alerts.push({ text: `${POST_STATUS.publicando} desde ${new Date(p.scheduledAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}: confirme ou marque a falha.`, post: p });
-      }
-      if (p.status === "falhou") alerts.push({ text: `Publicação falhou: ${p.failureReason ?? "sem motivo"}`, post: p });
-      const failed = p.jobs?.find((j) => j.status === "falhou");
-      if (failed && p.status !== "publicado" && p.status !== "cancelado") alerts.push({ text: `Lembrete do Telegram não saiu: ${failed.lastError ?? ""}`, post: p });
-    }
-    const due = posts.some((p) => p.status === "agendado" && p.scheduledAt && new Date(p.scheduledAt).getTime() < now - 5 * 60_000);
-    const stale = !worker || now - new Date(worker.last_run_at).getTime() > 10 * 60_000;
-    if (due && stale) alerts.push({ text: "Há publicação agendada que já passou da hora e a automação não rodou: confira o agendador do Supabase.", action: () => nav.go("publicacoes") });
-  }
 
   return (
     <FolderGate>
@@ -177,22 +160,6 @@ export function OverviewPage({ nav }: { nav: Nav }) {
 
       {source === "banco" && <MetasPanel days={7} compact />}
       {source === "banco" && <TelegramCards onOpen={nav.go} />}
-
-      {alerts.length > 0 && (
-        <section className="st-panel st-alerts">
-          <h2>Alertas</h2>
-          <ul>
-            {alerts.map((a, i) => (
-              <li key={i}>
-                <button type="button" className="st-link" onClick={() => (a.post ? nav.openComposer({ post: a.post }) : a.action?.())}>
-                  {a.post ? `${NETWORKS[a.post.network].label} · ` : ""}
-                  {a.text}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       <div className="st-dash">
         <section className="st-panel st-dash-recent">
