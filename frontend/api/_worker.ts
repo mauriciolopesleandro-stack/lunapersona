@@ -170,9 +170,10 @@ const QUEUE_FILTER = "status=eq.na_fila&or=(source_item_id.is.null,media_path.no
 // Carrossel: o plano da foto do chat guarda quantas fotos (request.photos). O
 // robo gera todas no mesmo item (mesmo ensaio, pose e angulo diferentes); Feed e
 // TikTok levam todas, Stories so a primeira.
-async function photosOf(item: Pick<ItemRow, "plan_id">): Promise<number> {
-  const [plan] = await dbSelect<{ request: { photos?: unknown } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
-  const n = Number(plan?.request?.photos ?? 1);
+async function photosOf(item: Pick<ItemRow, "plan_id" | "format">): Promise<number> {
+  const [plan] = await dbSelect<{ request: { photos?: unknown; feedPhotos?: unknown } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
+  // plano da semana: o Feed sai em carrossel (feedPhotos); a foto avulsa usa photos
+  const n = Number((item.format === "Feed" ? plan?.request?.feedPhotos : undefined) ?? plan?.request?.photos ?? 1);
   return Number.isInteger(n) && n > 1 && n <= 10 ? n : 1;
 }
 

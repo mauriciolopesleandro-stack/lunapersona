@@ -250,10 +250,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const end = String(body.end ?? "");
       const perDay = (body.perDay ?? {}) as Partial<Record<SlotKey, number>>;
       const tiktokReuse = body.tiktokReuse !== false;
+      // Feed em carrossel de 3 (um Criar da Naiaflow entrega 3 fotos: 1 credito)
+      const feedPhotos = body.feedCarousel === false ? 1 : 3;
       const slots = buildSlots(start, end, perDay, tiktokReuse);
       const theme = typeof body.theme === "string" ? body.theme.slice(0, 1000) : "";
       const title = `${start.split("-").reverse().join("/")} a ${end.split("-").reverse().join("/")}`;
-      const plan = await dbInsert<PlanRow>("content_plans", { title, request: { start, end, perDay, theme, tiktokReuse } });
+      const plan = await dbInsert<PlanRow>("content_plans", { title, request: { start, end, perDay, theme, tiktokReuse, feedPhotos } });
       const rows = slots.map((s, position) => ({
         plan_id: plan.id,
         position,
