@@ -31,16 +31,17 @@ const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T12:00:00
 // canceladas, falhas e rascunhos) e itens de planos aprovados ainda sem
 // publicacao (na fila ou gerando).
 export async function coverage(days = 14, start = todayInBrazil()): Promise<DayCoverage[]> {
-  const from = new Date(Date.parse(`${start}T00:00:00${OFFSET}`)).toISOString();
+  // gt com 1 s de folga (= a partir da meia-noite)
+  const from = new Date(Date.parse(`${start}T00:00:00${OFFSET}`) - 1000).toISOString();
   const to = new Date(Date.parse(`${addDays(start, days)}T00:00:00${OFFSET}`)).toISOString();
   const [posts, items] = await Promise.all([
     dbSelect<{ id: string; scheduled_at: string }>(
       "posts",
-      `select=id,scheduled_at&network=eq.instagram&status=not.in.(cancelado,falhou,rascunho)&scheduled_at=gte.${from}&scheduled_at=lt.${to}`
+      `select=id,scheduled_at&network=eq.instagram&status=not.in.(cancelado,falhou,rascunho)&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
     ),
     dbSelect<{ scheduled_at: string; format: string }>(
       "content_plan_items",
-      `select=scheduled_at,format&network=eq.instagram&status=in.(na_fila,gerando)&post_id=is.null&scheduled_at=gte.${from}&scheduled_at=lt.${to}`
+      `select=scheduled_at,format&network=eq.instagram&status=in.(na_fila,gerando)&post_id=is.null&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
     ),
   ]);
   const dests = posts.length
@@ -61,7 +62,14 @@ export async function coverage(days = 14, start = todayInBrazil()): Promise<DayC
       counts[e.format as Goal]++;
       times[e.format as Goal].push(hhmm(e.at));
     }
-    const missing = Object.fromEntries((Object.keys(GOALS) as Goal[]).map((g) => [g, Math.max(0, GOALS[g] - counts[g])])) as Record<Goal, number>;
+    // hoje: horario padrao que ja passou nao da mais para preencher (nao conta como falta)
+    const isToday = day === todayInBrazil();
+    const nowMs = Date.now();
+    const open = (g: Goal) =>
+      isToday ? GOAL_TIMES[g].filter((t) => Date.parse(`${day}T${t}:00${OFFSET}`) > nowMs && !times[g].includes(t)).length : Infinity;
+    const missing = Object.fromEntries(
+      (Object.keys(GOALS) as Goal[]).map((g) => [g, Math.min(Math.max(0, GOALS[g] - counts[g]), open(g))])
+    ) as Record<Goal, number>;
     out.push({ day, counts, times, missing, complete: Object.values(missing).every((n) => n === 0) });
   }
   return out;
