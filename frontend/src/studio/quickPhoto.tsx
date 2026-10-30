@@ -75,6 +75,13 @@ export function placedText(items: { format: string; scheduled_at: string }[]): s
   );
 }
 
+// destinos do +18: o post no canal VIP e o conteudo dos pacotes do bot de vendas
+const ADULT_DESTS = [
+  { key: "canal", label: "Canal VIP" },
+  { key: "ensaio", label: "Pacote Ensaio" },
+  { key: "album-vip", label: "Pacote Álbum VIP" },
+];
+
 // tudo que vai para o Instagram vai tambem para o TikTok (pedido de 30/10): o
 // TikTok ja vem marcado e da para desmarcar
 const withTiktok = (slots: Slot[]): Slot[] => (slots.some((k) => k === "feed" || k === "stories") && !slots.includes("tiktok") ? [...slots, "tiktok"] : slots);
@@ -106,6 +113,8 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
   // padrao: o conteudo vai para o proximo horario vazio do formato (metas do dia)
   const [auto, setAuto] = useState(true);
   const [placed, setPlaced] = useState<string[]>([]);
+  // +18: canal VIP e os dois pacotes do bot de vendas, todos marcados (pedido de 30/10)
+  const [adult, setAdult] = useState<string[]>(ADULT_DESTS.map((d) => d.key));
   const [prompt, setPrompt] = useState(block.prompt);
   const [caption, setCaption] = useState(block.caption);
   const [hashtags, setHashtags] = useState(block.hashtags);
@@ -140,6 +149,7 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
           hashtags: hashtags.split(/[\s,]+/).filter(Boolean),
           scheduled_at: auto ? "auto" : new Date(when).toISOString(),
           ...(refPath ? { ref_path: refPath } : {}),
+          ...(slots.includes("telegram18") ? { adultDest: { channel: adult.includes("canal"), packs: adult.filter((k) => k !== "canal") } } : {}),
         }),
       });
       const b = await r.json().catch(() => ({}));
@@ -165,7 +175,7 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
   if (done) {
     return (
       <p className="st-ok">
-        Na fila do robô ({slots.map((k) => SLOT_LABEL[k]).join(" + ")}{total > 1 ? `, carrossel de ${total} fotos` : ""}){placed.length ? ` · ${placed.join(" · ")}` : ""}. A foto chega no Telegram para você aprovar — o robô do PC precisa estar aberto.
+        Na fila do robô ({slots.includes("telegram18") ? `+18 → ${ADULT_DESTS.filter((d) => adult.includes(d.key)).map((d) => d.label).join(" + ")}` : slots.map((k) => SLOT_LABEL[k]).join(" + ")}{total > 1 ? `, carrossel de ${total} fotos` : ""}){placed.length ? ` · ${placed.join(" · ")}` : ""}. A foto chega no Telegram para você aprovar — o robô do PC precisa estar aberto.
       </p>
     );
   }
@@ -249,7 +259,24 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
         <input className="st-input" value={hashtags} onChange={(e) => setHashtags(e.target.value)} />
       </label>
       {slots.includes("telegram18") ? (
-        <p className="st-hint">+18: vai só para o canal do Telegram, por isso não junta com Instagram e TikTok.</p>
+        <div className="st-field">
+          <span>Onde entra o +18 (no horário)</span>
+          <div className="st-quick-slots" role="group" aria-label="Destinos +18">
+            {ADULT_DESTS.map((d) => (
+              <button
+                key={d.key}
+                type="button"
+                aria-pressed={adult.includes(d.key)}
+                className={adult.includes(d.key) ? "on" : ""}
+                onClick={() => setAdult((cur) => (cur.includes(d.key) ? cur.filter((k) => k !== d.key) : [...cur, d.key]))}
+              >
+                {adult.includes(d.key) ? "✓ " : ""}
+                {d.label}
+              </button>
+            ))}
+          </div>
+          <p className="st-hint">Só no Telegram (não junta com Instagram e TikTok). Os pacotes recebem a foto no conteúdo do bot de vendas; o canal VIP recebe o post.</p>
+        </div>
       ) : (
         <>
           {slots.length > 1 && (
@@ -265,7 +292,12 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
       )}
       {error && <p className="st-error">{error}</p>}
       <div className="st-row">
-        <button type="button" className="st-btn st-btn-small st-btn-primary" disabled={busy || !prompt.trim() || !slots.length} onClick={queue}>
+        <button
+          type="button"
+          className="st-btn st-btn-small st-btn-primary"
+          disabled={busy || !prompt.trim() || !slots.length || (slots.includes("telegram18") && !adult.length)}
+          onClick={queue}
+        >
           {busy ? "Mandando…" : `Gerar (${cost} crédito${cost > 1 ? "s" : ""})${slots.length > 1 ? ` · ${slots.length} destinos` : ""}`}
         </button>
         <button type="button" className="st-btn st-btn-small" disabled={busy} onClick={() => setOpen(false)}>

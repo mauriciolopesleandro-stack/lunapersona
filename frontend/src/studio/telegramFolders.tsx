@@ -14,6 +14,8 @@ import { useStudio, type Item } from "./store";
 // "Adicionar" copia o arquivo (do computador ou da biblioteca) para a pasta e
 // ja atualiza o Telegram; o "x" tira do pacote/canal e move o arquivo para
 // vendas/_removidos (nada e apagado). "Atualizar" aplica o que mudou a mao.
+// Foto +18 agendada com pacotes entra direto no pacote (api/_jobs.ts) sem passar
+// pela pasta; "Atualizar" nao tira essas.
 
 interface Folder {
   key: "ensaio" | "album" | "vip" | "previa";
@@ -68,7 +70,11 @@ function plansFor(status: Status, items: Item[]): Plan[] {
       product,
       inFolder,
       add: inFolder.filter((i) => !inPack.has(i.id!)),
-      remove: (product?.media ?? []).filter((m) => !ids.has(m.media_id)).map((m) => ({ media_id: m.media_id, label: label(m.media_id, m.path) })),
+      // so sai do pacote o que veio desta pasta: foto +18 que entrou pelo agendamento
+      // (pacotes escolhidos no pedido) mora em conteudos/<mes>/+18 e fica no pacote
+      remove: (product?.media ?? [])
+        .filter((m) => !ids.has(m.media_id) && (!m.path || m.path.startsWith(folder.dir)))
+        .map((m) => ({ media_id: m.media_id, label: label(m.media_id, m.path) })),
     };
   });
 }

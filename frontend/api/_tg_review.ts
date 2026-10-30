@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
+import { SALES_PACKS } from "./_flags.js";
 import { createHmac, timingSafeEqual } from "crypto";
 import { NETWORK_RULES, UPLOAD_BUCKET, type PostRow } from "./_posts.js";
 import { Problem, decidePost } from "./_posts_api.js";
@@ -92,6 +93,9 @@ export async function sendForReview(post: PostRow, formats: string[]): Promise<v
     `📝 Para aprovar — ${label}${post.network === "telegram" ? " +18" : ""} ${formats.join(", ")} (versão ${post.version})`,
     `🕒 ${fmt(post.scheduled_at)}`,
     ...(post.flags?.igAudio ? [`🎵 ${post.flags.igAudio.title} — ${post.flags.igAudio.artist}`] : []),
+    ...(post.flags?.adultDest
+      ? [`📦 Vai para: ${[...(post.flags.adultDest.channel ? ["Canal VIP"] : []), ...post.flags.adultDest.packs.map((k) => SALES_PACKS[k])].join(" + ")}`]
+      : []),
     "",
     [post.caption, post.hashtags.join(" ")].filter(Boolean).join("\n\n") || "(sem legenda)",
   ]

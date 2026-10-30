@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
+import { flagProblem, normalizeFlags } from "./_flags.js";
 import { coverage, nextSlot } from "./_metas.js";
 import { isAuthenticated } from "./_auth.js";
 import { ADULT_NOTE, AiError, PERSONA, STYLE_GUIDE, askAi, type Mode } from "./_assistant.js";
@@ -359,7 +360,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       // um ou mais destinos; uma foto por proporcao (Feed quadrado; Stories,
       // TikTok e +18 em 9:16) e os destinos da mesma proporcao reaproveitam
       const raw: unknown[] = Array.isArray(body.slots) ? body.slots : [body.slot];
-      const keys = [...new Set(raw.map((k) => String(k ?? "")))] as SlotKey[];
+      // ordem fixa (Feed, Stories, ..., TikTok): quem gera e quem reaproveita nao depende da ordem dos cliques
+      const order = Object.keys(SLOTS);
+      const keys = ([...new Set(raw.map((k) => String(k ?? "")))] as SlotKey[]).sort((a, b) => order.indexOf(a) - order.indexOf(b));
       if (!keys.length || keys.length > 4 || keys.some((k) => !SLOTS[k] || SLOTS[k].kind !== "image")) throw new Problem(400, "Escolha o destino da foto.");
       if (keys.includes("telegram18") && keys.length > 1) throw new Problem(400, "Foto +18 vai só para o canal do Telegram: não dá para juntar com Instagram ou TikTok.");
       const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 2000) : "";
@@ -375,10 +378,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const photos = body.photos === undefined ? 1 : Number(body.photos);
       if (!Number.isInteger(photos) || photos < 1 || photos > 10) throw new Problem(400, "O carrossel vai de 2 a 10 fotos.");
       if (photos > 1 && !keys.some((k) => k === "feed" || k === "tiktok")) throw new Problem(400, "Carrossel só no Instagram Feed ou no TikTok.");
+      // +18: canal VIP e/ou pacotes do bot de vendas (Ensaio, Album VIP)
+      const adultDest = keys.includes("telegram18") ? normalizeFlags({ adultDest: body.adultDest }, 1).adultDest : undefined;
+      if (adultDest) {
+        const problem = flagProblem("telegram", ["Canal"], { adultDest });
+        if (problem) throw new Problem(400, problem);
+      }
       const stamp = new Date().toISOString();
       const plan = await dbInsert<PlanRow>("content_plans", {
         title: `Foto avulsa do chat (${keys.map((k) => SLOTS[k].label).join(" + ")}${photos > 1 ? `, carrossel de ${photos}` : ""})`,
-        request: { source: "chat", slot: keys[0], slots: keys, ...(photos > 1 ? { photos } : {}), ...(refPath ? { reference: refPath } : {}) },
+        request: { source: "chat", slot: keys[0], slots: keys, ...(photos > 1 ? { photos } : {}), ...(refPath ? { reference: refPath } : {}), ...(adultDest ? { adultDest } : {}) },
         status: "aprovado",
         approved_at: stamp,
       });
