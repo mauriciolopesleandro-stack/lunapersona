@@ -75,11 +75,16 @@ export function placedText(items: { format: string; scheduled_at: string }[]): s
   );
 }
 
+// tudo que vai para o Instagram vai tambem para o TikTok (pedido de 30/10): o
+// TikTok ja vem marcado e da para desmarcar
+const withTiktok = (slots: Slot[]): Slot[] => (slots.some((k) => k === "feed" || k === "stories") && !slots.includes("tiktok") ? [...slots, "tiktok"] : slots);
+
 // marca/desmarca um destino; o +18 nao se mistura com as redes
 function toggle(slots: Slot[], k: Slot): Slot[] {
   if (slots.includes(k)) return slots.filter((s) => s !== k);
   if (k === "telegram18") return ["telegram18"];
-  return [...slots.filter((s) => s !== "telegram18"), k];
+  const next = [...slots.filter((s) => s !== "telegram18"), k];
+  return k === "feed" || k === "stories" ? withTiktok(next) : next;
 }
 
 // valor de <input type="datetime-local"> daqui a 2 h, na hora/meia hora seguinte
@@ -94,7 +99,7 @@ function defaultWhen(): string {
 export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?: string }) {
   const [open, setOpen] = useState(false);
   const [useRef, setUseRef] = useState(Boolean(reference));
-  const [slots, setSlots] = useState<Slot[]>([block.slot]);
+  const [slots, setSlots] = useState<Slot[]>(() => withTiktok([block.slot]));
   // padrao do administrador: Feed sai em carrossel de 2 fotos
   const [photos, setPhotos] = useState(block.slot === "feed" ? FEED_PHOTOS : 1);
   const [when, setWhen] = useState(defaultWhen);

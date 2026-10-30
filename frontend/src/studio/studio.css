@@ -4807,3 +4807,67 @@
     justify-self: start;
   }
 }
+
+/* mensagem do dia do bot de vendas (19h) no calendario e na Agenda */
+.st-chip-cta {
+  border-left-style: dashed;
+}
+
+.st-cta-mark {
+  margin-left: auto;
+  padding-left: 3px;
+}
+
+.cta-enviada .st-cta-mark,
+.st-cta-state.cta-enviada {
+  color: var(--st-green);
+}
+
+.cta-falhou .st-cta-mark,
+.cta-nao-rodou .st-cta-mark,
+.st-cta-state.cta-falhou,
+.st-cta-state.cta-nao-rodou {
+  color: var(--danger);
+}
+
+.st-chip-cta.cta-programada,
+.st-agenda-cta.cta-programada {
+  opacity: 0.8;
+}
+
+.st-agenda-cta {
+  border-left: 3px dashed var(--st-tg);
+}
+
+.st-agenda-cta.cta-falhou span,
+.st-agenda-cta.cta-nao-rodou span {
+  color: var(--danger);
+}
+
+.st-cta-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.st-cta-state {
+  margin: 0;
+  font-weight: 600;
+}
+
+.st-cta-preview {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.st-cta-preview p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 520px) {
+  .st-cta-preview {
+    grid-template-columns: 1fr;
+  }
+}

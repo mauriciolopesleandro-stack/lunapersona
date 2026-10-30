@@ -15,7 +15,7 @@ import {
   type ProductRow,
 } from "./_sales_bot.js";
 import { forgetPix, pixConfig, savePixConfig } from "./_sales_pay.js";
-import { ctaConfig, fill, previews, saveCtaConfig, savePreviews, sendCta, suggestCaptions } from "./_sales_cta.js";
+import { ctaConfig, ctaDays, fill, previews, saveCtaConfig, savePreviews, sendCta, suggestCaptions } from "./_sales_cta.js";
 import { storeConfigured, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
@@ -44,6 +44,7 @@ import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 //   POST { action: "cta-test" }                        manda uma mensagem diaria de teste para voce
 //   POST { action: "preview-suggest", image }          a IA (com visao) olha a previa e sugere 3 chamadas
 //   POST { action: "preview-text", media_id, text }    guarda a chamada daquela previa (vazio tira)
+//   POST { action: "cta-days", start, days }           calendario: a diaria de cada dia (✓ saiu / ✗ falhou)
 //   POST { action: "promo-save", enabled, days, label, prices }  promocao (ex.: de domingo) por pacote
 //
 // Pastas do Telegram (pagina Telegram): conteudos/vendas/ensaio e album-vip viram
@@ -233,6 +234,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     let raw = "";
     for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw || "{}") as Record<string, unknown>;
+    // calendario: a mensagem diaria de cada dia (so leitura)
+    if (body.action === "cta-days") {
+      const start = typeof body.start === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.start) ? body.start : new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+      const days = Math.min(42, Math.max(1, Number(body.days ?? 14) || 14));
+      return reply(200, { days: await ctaDays(start, days) });
+    }
     const token = await salesToken();
     const needToken = () => {
       if (!token) throw new Problem(400, "Cole o token do bot de vendas primeiro.");
