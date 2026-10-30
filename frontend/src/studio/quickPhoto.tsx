@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { putSignedUpload } from "./cloud";
 
 // "Gerar esta foto" na Conversa do Assistente: a IA termina a resposta com
 // linhas PROMPT / LEGENDA / HASHTAGS / DESTINO (ver CHAT_NOTE em
@@ -81,8 +82,10 @@ function defaultWhen(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function QuickPhoto({ block }: { block: PhotoBlock }) {
+// reference: foto mandada na conversa (JPEG reduzido); vai como IMG1 no Criar
+export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?: string }) {
   const [open, setOpen] = useState(false);
+  const [useRef, setUseRef] = useState(Boolean(reference));
   const [slots, setSlots] = useState<Slot[]>([block.slot]);
   // padrao do administrador: Feed sai em carrossel de 2 fotos
   const [photos, setPhotos] = useState(block.slot === "feed" ? FEED_PHOTOS : 1);
@@ -98,6 +101,17 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
     setBusy(true);
     setError(null);
     try {
+      // foto de referencia: sobe para o armazenamento temporario; o robo baixa e anexa como IMG1
+      let refPath: string | undefined;
+      if (reference && useRef) {
+        const up = await fetch("/api/studio?r=plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ref-url" }) }).then(async (x) => {
+          const b = await x.json().catch(() => ({}));
+          if (!x.ok) throw new Error(b.detail ?? `Erro HTTP ${x.status}`);
+          return b as { path: string; url: string };
+        });
+        await putSignedUpload(up.url, await fetch(reference).then((x) => x.blob()));
+        refPath = up.path;
+      }
       const r = await fetch("/api/studio?r=plans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,6 +123,7 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
           caption,
           hashtags: hashtags.split(/[\s,]+/).filter(Boolean),
           scheduled_at: new Date(when).toISOString(),
+          ...(refPath ? { ref_path: refPath } : {}),
         }),
       });
       const b = await r.json().catch(() => ({}));
@@ -188,6 +203,13 @@ export function QuickPhoto({ block }: { block: PhotoBlock }) {
           <input type="datetime-local" className="st-input" value={when} onChange={(e) => setWhen(e.target.value)} />
         </label>
       </div>
+      {reference && (
+        <label className="st-check st-ref-check">
+          <input type="checkbox" checked={useRef} onChange={(e) => setUseRef(e.target.checked)} />
+          <img src={reference} alt="" />
+          Usar a foto de referência (vai como IMG1: a luna copia a pose e o ângulo)
+        </label>
+      )}
       <label className="st-field">
         <span>Pedido para a Naiaflow</span>
         <textarea className="st-input" rows={2} value={prompt} onChange={(e) => setPrompt(e.target.value)} />

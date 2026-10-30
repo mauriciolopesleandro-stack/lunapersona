@@ -292,6 +292,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       return reply(200, { path, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
     }
 
+    // foto de referencia (IMG1) da foto avulsa: o robo baixa e anexa no Criar
+    if (body.action === "ref-url") {
+      const path = `refs/${randomUUID()}.jpg`;
+      return reply(200, { path, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
+    }
+
     if (body.action === "dance") {
       const link = typeof body.link === "string" ? body.link.trim() : "";
       const file = typeof body.path === "string" ? body.path : "";
@@ -350,6 +356,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (!prompt) throw new Problem(400, "Escreva o pedido da foto.");
       const when = typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
       if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
+      const refPath = typeof body.ref_path === "string" ? body.ref_path : "";
+      if (refPath && !/^refs\/[0-9a-f-]{36}\.jpg$/.test(refPath)) throw new Problem(400, "Foto de referência inválida.");
       // carrossel: varias fotos do mesmo ensaio (1 credito cada) no Feed e no TikTok
       const photos = body.photos === undefined ? 1 : Number(body.photos);
       if (!Number.isInteger(photos) || photos < 1 || photos > 10) throw new Problem(400, "O carrossel vai de 2 a 10 fotos.");
@@ -357,7 +365,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const stamp = new Date().toISOString();
       const plan = await dbInsert<PlanRow>("content_plans", {
         title: `Foto avulsa do chat (${keys.map((k) => SLOTS[k].label).join(" + ")}${photos > 1 ? `, carrossel de ${photos}` : ""})`,
-        request: { source: "chat", slot: keys[0], slots: keys, ...(photos > 1 ? { photos } : {}) },
+        request: { source: "chat", slot: keys[0], slots: keys, ...(photos > 1 ? { photos } : {}), ...(refPath ? { reference: refPath } : {}) },
         status: "aprovado",
         approved_at: stamp,
       });

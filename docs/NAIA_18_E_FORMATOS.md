@@ -15,3 +15,10 @@
 ## Formatos
 - Gerar **direto** no formato final: Quadrado (1:1) para o Feed, Vertical (9:16) para Stories/TikTok. Custo igual; cortar depois arrisca cortar cabeça/pés.
 - Vídeo: 9:16 para Reels/TikTok.
+
+## Foto de referência no Criar (IMG1)
+- Composer → **Adicionar → Enviar imagem → Enviar do dispositivo**: a foto entra como **IMG1** ao lado do clone. Custo do Criar não muda (1).
+- Por padrão a IMG1 é **referência de pose**: a luna copia pose, ângulo e enquadramento com o rosto e o corpo dela.
+- **O texto vence a foto**: não descrever de novo a pose da IMG1. Escrever o que a foto não entrega: roupa (ou nua), cenário, expressão, luz, textura da pele, estilo da foto.
+- Exemplo da Naia: "Luna com expressão provocante, olhar intenso por cima do ombro, pele realista com brilho suave, luz quente de fim de tarde entrando pela janela, sombras delicadas no corpo, fotografia íntima e natural, textura de pele com poros visíveis, clima sensual e explícito."
+- A IMG1 não fica no composer depois de recarregar a página (o robô limpa antes de cada Criar).

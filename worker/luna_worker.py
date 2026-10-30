@@ -424,7 +424,41 @@ class Naiaflow:
             raise RuntimeError(f"Nao consegui escolher a proporcao {name} na Naiaflow (ficou {now}).")
         log(f"Proporcao: {name}.")
 
-    def generate(self, prompt: str, aspect: str | None = None) -> list[str]:
+    def clear_references(self) -> int:
+        """Tira as imagens extras (IMG1, IMG2...) do composer: a Naiaflow guarda
+        a ultima referencia e ela entraria no proximo Criar sem querer."""
+        removed = 0
+        for _ in range(6):
+            if not self.page.get_by_text(re.compile(r"^\s*IMG\d+\s*$")).count():
+                break
+            label = self.page.get_by_text(re.compile(r"^\s*IMG\d+\s*$")).first
+            box = label.bounding_box()
+            if not box:
+                break
+            # o "x" fica logo a direita do nome
+            self.page.mouse.click(box["x"] + box["width"] + 12, box["y"] + box["height"] / 2)
+            self.page.wait_for_timeout(700)
+            removed += 1
+        return removed
+
+    def attach_reference(self, photo: Path) -> None:
+        """Imagem de referencia no Criar: Adicionar -> Enviar imagem -> Enviar do
+        dispositivo. Ela entra no composer como IMG1, ao lado do clone."""
+        self._close_popovers()
+        self.page.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
+        self.page.wait_for_timeout(1200)
+        self.page.get_by_text(re.compile(r"^\s*Enviar imagem\s*$", re.I)).first.click()
+        self.page.wait_for_timeout(2500)
+        with self.page.expect_file_chooser(timeout=15000) as chooser:
+            self.page.get_by_role("button", name=re.compile(r"Enviar do dispositivo", re.I)).last.click()
+        chooser.value.set_files(str(photo))
+        self.page.wait_for_timeout(8000)
+        self._close_popovers()
+        if not self.page.get_by_text(re.compile(r"^\s*IMG1\s*$")).count():
+            raise RuntimeError("A foto de referencia nao entrou no composer da Naiaflow (IMG1).")
+        log("Referência anexada (IMG1).")
+
+    def generate(self, prompt: str, aspect: str | None = None, reference: Path | None = None) -> list[str]:
         """Gera pelo prompt; devolve as fotos do mesmo Criar (3 desde 29/10)."""
         self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
         self.page.wait_for_selector("text=Modo imagem", timeout=60000)
@@ -432,6 +466,10 @@ class Naiaflow:
         self._dismiss_overlays()
         self._ensure_clone()
         self._set_aspect(aspect)
+        # referencia (IMG1): so a do item; nunca uma que tenha sobrado no composer
+        self.clear_references()
+        if reference:
+            self.attach_reference(reference)
         before = self._job_images()
         box = self.page.get_by_placeholder("Digite seu prompt", exact=False).first
         if not box.count():
@@ -769,6 +807,13 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
         log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): {item['prompt'][:90]}")
     folder = STUDIO_ROOT / item["folder"]
     folder.mkdir(parents=True, exist_ok=True)
+    # foto de referencia mandada na conversa (vai como IMG1 no Criar)
+    reference: Path | None = None
+    if item.get("reference_url") and not test_image:
+        reference = folder / f"referencia-{item['id'][:8]}.jpg"
+        r = requests.get(item["reference_url"], timeout=120)
+        r.raise_for_status()
+        reference.write_bytes(r.content)
     # carrossel: uma variacao do pedido por foto (a 1a e o proprio pedido)
     prompts = item.get("prompts") or [item["prompt"]]
     carousel = len(prompts) > 1
@@ -817,7 +862,7 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
                 spare = naia.carousel(base_job, missing)
                 url = spare.pop(0)
             else:
-                urls = naia.generate(prompt, item.get("aspect"))
+                urls = naia.generate(prompt, item.get("aspect"), reference)
                 url = urls[0]
                 if carousel:
                     spare = urls[1:]
@@ -849,6 +894,9 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
         video = mp4.read_bytes()
         extra = {"video_path": f"{item['folder']}/{mp4.name}", "video_size": len(video)}
         log(f"Vídeo do Reels montado no PC: {extra['video_path']}")
+    # a referencia ja foi usada: nao fica na pasta (nem entra na biblioteca)
+    if reference and reference.exists():
+        reference.unlink()
     done = studio.call("done", id=item["id"], local_path=local_path, size_bytes=path.stat().st_size, **extra, **extra_more)
     for t in done["targets"]:
         photos = int(t.get("photos") or 1)
