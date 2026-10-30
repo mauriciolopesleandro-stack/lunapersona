@@ -785,6 +785,21 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
         if source and source.exists():
             source.unlink()
     import imageio_ffmpeg
+    # o Instagram recusa Reels sem trilha de audio (ERROR no conteiner, 30/10):
+    # 1080x1920 com trilha muda, como o make_reels (a musica entra no Instagram)
+    raw = mp4.with_name(mp4.stem + "-naia.mp4")
+    if not raw.exists():
+        mp4.replace(raw)
+        subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(raw),
+             "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+             "-map", "0:v:0", "-map", "1:a:0", "-shortest",
+             "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", "30", "-g", "60",
+             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(mp4)],
+            check=True,
+        )
+        raw.unlink()
     jpg = folder / item["file"]
     subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-ss", "1", "-i", str(mp4), "-frames:v", "1", "-q:v", "3", str(jpg)], check=True)
     local_path = f"{item['folder']}/{item['file']}"
