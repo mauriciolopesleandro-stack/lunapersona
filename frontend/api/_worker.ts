@@ -204,6 +204,13 @@ interface Motion {
   seconds: number;
   outfit?: string;
 }
+// foto de referencia (IMG1) mandada na conversa: caminho no armazenamento temporario
+async function referenceOf(item: Pick<ItemRow, "plan_id">): Promise<string | null> {
+  const [plan] = await dbSelect<{ request: { reference?: string } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
+  const ref = plan?.request?.reference;
+  return typeof ref === "string" && /^refs\/[0-9a-f-]{36}\.jpg$/.test(ref) ? ref : null;
+}
+
 async function motionOf(item: Pick<ItemRow, "plan_id">): Promise<Motion | null> {
   const [plan] = await dbSelect<{ request: { source?: string; motion?: Motion } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
   return plan?.request?.source === "chat-dance" && plan.request.motion ? plan.request.motion : null;
@@ -376,6 +383,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           ...(photos > 1 ? { prompts: carouselPrompts(item.prompt, photos), carousel_action: true } : {}),
           // proporcao na Naiaflow: Feed quadrado, o resto em 9:16
           aspect: item.format === "Feed" ? "quadrado" : "vertical",
+          // foto de referencia: o robo anexa como IMG1 (a luna copia pose e angulo)
+          ...(await (async () => {
+            const ref = isCorrection(item) ? null : await referenceOf(item);
+            return ref ? { reference_url: await storageReadUrl(UPLOAD_BUCKET, ref, 7200) } : {};
+          })()),
         },
       });
     }
@@ -489,6 +501,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       // dancinha pronta: o video de referencia enviado sai do armazenamento
       const motion = video ? await motionOf(item) : null;
       if (motion?.path) await storageRemove(UPLOAD_BUCKET, [motion.path]).catch(() => undefined);
+      // a foto de referencia ja foi usada
+      const ref = video ? null : await referenceOf(item);
+      if (ref) await storageRemove(UPLOAD_BUCKET, [ref]).catch(() => undefined);
       return reply(200, { media_id: media.id, targets });
     }
 

@@ -4704,3 +4704,15 @@
 .st-msg-user .st-dance-open {
   text-align: left;
 }
+
+.st-ref-check {
+  align-items: center;
+  gap: 8px;
+}
+
+.st-ref-check img {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+}
