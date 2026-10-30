@@ -9,8 +9,9 @@ import type { FanRow, ProductRow } from "./_sales_bot.js";
 //   boas-vindas    logo depois de confirmar os 18 anos
 //   Pix esquecido  20 min depois de gerar o Pix sem pagar (uma vez)
 //   diaria         uma por dia, no horario escolhido, para quem nao e VIP
-//                  (para com /parar, bloqueio ou VIP ativo); o texto muda todo
-//                  dia, a previa pode repetir
+//                  (para com /parar, bloqueio ou VIP ativo); cada fa recebe os
+//                  modelos em sequencia (1, 2, ... o ultimo e volta ao 1), a
+//                  previa pode repetir
 //   renovacao      VIP perto de vencer (3 dias antes) e vencido (3 dias de folga
 //                  no canal): uma por dia, com previa e "Renovar agora" (_sales_pay.ts)
 // Os textos ficam no Upstash (luna:cta) e o administrador edita em Vendas. Nas
@@ -56,6 +57,11 @@ export const DEFAULT_CTA: CtaConfig = {
     "Saudade de você por aqui, {nome} 🥺 Liberei um ensaio novinho, vem conferir 🔥",
     "{nome}, meu VIP tá cada dia mais quente 🌶️ Conteúdo novo quase todo dia, só pra quem tá lá dentro.",
     "Ei {nome} 😘 Hoje eu tô só de lingerie e com vontade de ser vista… mas só no VIP 🔒",
+    "{nome}, tô de biquíni novo e ninguém aqui fora viu ainda 👙 Quer ser o primeiro? Te espero no VIP 😏",
+    "Acabei de sair do banho, {nome}… 🚿 e tirei umas fotos que só vão pro meu VIP 🤭",
+    "{nome}, hoje é dia de te mimar 💛 Escolhe o seu pacote e vem ver o que eu preparei só pra você.",
+    "Confesso, {nome}: gravei uma coisa ontem à noite que me deixou com vergonha 🙈 Tá lá no VIP…",
+    "{nome}, quem entrou no VIP essa semana não se arrependeu 😈 Só falta você.",
   ],
   renewal: [
     "⏰ {nome}, seu VIP vence em {data}. Não vai perder o que vem por aí: tô preparando um ensaio novinho 📸🔥",
@@ -345,7 +351,8 @@ export async function ctaTick(): Promise<number> {
       const turn = fan.cta_count + 1;
       const list = await previews();
       const own = list.length ? list[turn % list.length].text : undefined;
-      const text = own || config.daily[(dayNumber() + fan.cta_count) % config.daily.length];
+      // modelos em sequencia por fa: a 1a diaria e o modelo 1; depois do ultimo, volta ao 1
+      const text = own || config.daily[fan.cta_count % config.daily.length];
       try {
         await sendCta(token, fan.telegram_id, fill(text, fan), turn);
         sent++;

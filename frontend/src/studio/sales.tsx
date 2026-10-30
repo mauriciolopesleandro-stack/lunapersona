@@ -415,7 +415,7 @@ function CtaEditor({
         </label>
       </div>
       <p className="st-hint">
-        Uma por dia para quem ainda não é VIP (para com /parar). A frase muda todo dia, na ordem abaixo; a prévia pode repetir.
+        Uma por dia para quem ainda não é VIP (para com /parar). Cada fã recebe as frases na ordem abaixo (1, 2, 3…) e, depois da última, volta para a primeira; a prévia pode repetir.
       </p>
       <PhraseList label="Frase" items={draft.daily} onChange={(daily) => set({ daily })} />
       <div className="st-row st-row-tight">
