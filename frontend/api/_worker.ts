@@ -423,9 +423,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       // o PC pode ter caido no meio: item preso em "gerando" ha mais de 30 min volta para a fila
       const stale = new Date(Date.now() - 30 * 60_000).toISOString();
       await dbUpdateWhere("content_plan_items", `status=eq.gerando&updated_at=lt.${stale}`, { status: "na_fila", updated_at: now() });
+      // pedido que ja falhou (ou caiu no meio) vai para o fim da fila: os outros
+      // nao ficam esperando ele tentar de novo (31/10)
       const [item] = await dbSelect<ItemRow>(
         "content_plan_items",
-        `select=*&${QUEUE_FILTER}&order=scheduled_at.asc&limit=1`
+        `select=*&${QUEUE_FILTER}&order=attempts.asc,scheduled_at.asc&limit=1`
       );
       if (!item) return reply(200, { item: null });
       const claimed = await dbUpdate<ItemRow>("content_plan_items", `id=eq.${item.id}&status=eq.na_fila`, { status: "gerando", attempts: item.attempts + 1, updated_at: now() });
