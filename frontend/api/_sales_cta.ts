@@ -1,4 +1,4 @@
-import { storeConfigured, storeGet, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
+import { storeConfigured, storeGet, storeIncr, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
 import { dbSelect, dbUpdate, dbUpdateWhere } from "./_supabase.js";
 import { telegram } from "./_telegram.js";
 import type { FanRow, ProductRow } from "./_sales_bot.js";
@@ -220,7 +220,9 @@ export async function sendCta(token: string, chatId: number, text: string, turn:
 export async function sendWelcome(token: string, fan: FanRow, chatId: number): Promise<boolean> {
   if (!(await buyButtons()).length) return false;
   const config = await ctaConfig();
-  await sendCta(token, chatId, fill(config.welcome, fan), 0);
+  // a previa gira a cada fa novo (antes ia sempre a primeira): usa todas as que estiverem na pasta
+  const turn = storeConfigured() ? await storeIncr("luna:cta-boasvindas-giro").catch(() => Date.now()) : Date.now();
+  await sendCta(token, chatId, fill(config.welcome, fan), turn);
   await dbUpdateWhere("fans", `id=eq.${fan.id}`, { cta_sent_at: new Date().toISOString() });
   return true;
 }
@@ -282,7 +284,9 @@ export async function ctaDays(start: string, days: number): Promise<CtaDay[]> {
       const base = { day, hour, sent: 0, failed: 0, reason: null as string | null, ...example };
       const future = day > today || (day === today && nowHour < hour);
       if (future) {
-        out.push({ ...base, status: config.enabled ? "programada" : "desligada" });
+        // sem previa a mensagem nao sai (so vai com foto ou video): o calendario ja avisa
+        if (config.enabled && !list.length) out.push({ ...base, status: "falhou", reason: "não vai sair: não tem foto/vídeo nas prévias" });
+        else out.push({ ...base, status: config.enabled ? "programada" : "desligada" });
         continue;
       }
       if (!storeConfigured() || !since || day < since) {
@@ -352,6 +356,19 @@ export async function ctaTick(): Promise<number> {
     const nowHour = hourInBrazil();
     const slot = [...config.hours].reverse().find((h) => h <= nowHour);
     if (!config.enabled || slot === undefined) return sent;
+    // a mensagem do dia sempre vai com foto ou video (pedido de 31/10): sem previa nao sai so o texto
+    if (!(await previews()).length) {
+      const reason = "sem foto/vídeo de prévia (a mensagem não sai só com texto)";
+      if (await storeSetIfAbsent(logKey(brDay(), slot, "motivo"), reason, LOG_TTL).catch(() => false)) {
+        await storeIncrWithTtl(logKey(brDay(), slot, "erro"), LOG_TTL).catch(() => undefined);
+        const { sendNotice, telegramConfig } = await import("./_telegram.js");
+        await sendNotice(
+          await telegramConfig(),
+          `📣 A mensagem das ${slot}h do bot de vendas não saiu: não tem nenhuma foto ou vídeo nas prévias e ela não vai só com texto. Adicione em Monetização → Conteúdo do Telegram → Prévias.`
+        ).catch(() => undefined);
+      }
+      return sent;
+    }
     await storeSetIfAbsent(logKey(brDay(), slot, "rodou"), "1", LOG_TTL).catch(() => undefined);
     // uma por horario: quem recebeu depois do inicio do horario (ou ha menos de 3 h) espera o proximo
     const slotStart = Date.parse(`${brDay()}T${String(slot).padStart(2, "0")}:00:00-03:00`);

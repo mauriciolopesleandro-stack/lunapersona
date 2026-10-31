@@ -4992,3 +4992,8 @@
   min-width: 0;
   flex: 1 1 260px;
 }
+
+/* arquivo da pasta esperando a aprovacao no Telegram */
+.st-folder-badge.st-folder-wait {
+  background: var(--st-tg);
+}

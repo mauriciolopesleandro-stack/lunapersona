@@ -61,7 +61,7 @@ export function TelegramCards({ onOpen }: { onOpen: (page: string) => void }) {
     : !status.pix.configured
       ? { card: "vendas", text: "Pix desligado: ninguém consegue comprar." }
       : status.previews.length === 0
-        ? { card: "previas", text: "Sem prévias: a mensagem diária sai só com texto." }
+        ? { card: "previas", text: "Sem prévias: a mensagem do dia não sai (ela só vai com foto ou vídeo)." }
         : expiring
           ? { card: "vip", text: `${expiring} VIP vence${expiring > 1 ? "m" : ""} em até 3 dias (o bot já está cobrando).` }
           : null;

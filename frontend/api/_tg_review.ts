@@ -341,6 +341,12 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
         // +18 aprovado: o 📣 continua a um toque (os botoes do card somem)
         const chamada = kind === "ap" && post.network === "telegram" ? { reply_markup: { inline_keyboard: [[{ text: "📣 Usar na chamada (borrar)", callback_data: `bc:${post.id}:${post.version}` }]] } } : {};
         await say(decided(post), { ...replyTo, ...chamada });
+      } else if (kind === "fa" || kind === "fr" || kind === "fk") {
+        // arquivo novo das pastas de vendas (Ensaio, Album VIP, VIP canal, Previas)
+        const { decideFolder } = await import("./_sales.js");
+        const answer = await decideFolder(id, kind === "fa" ? "approve" : kind === "fk" ? "already" : "reject");
+        if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
+        await say(answer, replyTo);
       } else if (kind === "ao") {
         const post = await approveWithoutMusic(id, version);
         if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
@@ -360,7 +366,7 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
         const queued = await queueBlur(id, which);
         await say(
           queued
-            ? `📣 Mandei ${queued > 1 ? `${queued} fotos` : "a foto"} para o robô do PC borrar. Quando ficar pronta, ela entra sozinha nas prévias da chamada e eu te aviso aqui (o robô precisa estar aberto).`
+            ? `📣 Mandei ${queued > 1 ? `${queued} fotos` : "a foto"} para o robô do PC borrar. Quando ficar pronta, a versão borrada chega aqui para você aprovar antes de entrar na chamada (o robô precisa estar aberto).`
             : "📣 Essa foto já está na fila do borrão.",
           replyTo
         );
