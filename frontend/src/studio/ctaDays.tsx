@@ -116,7 +116,7 @@ export function CtaModal({ d, onClose }: { d: CtaDay; onClose: () => void }) {
       <div className="st-cta-detail">
         <p className={`st-cta-state cta-${d.status}`}>{ctaStatusText(d)}</p>
         <div className="st-cta-preview">
-          {item ? <Thumb item={item} /> : <span className="st-hint">{d.media_id ? "Prévia fora da pasta do estúdio" : "Sem prévia (vai só o texto)"}</span>}
+          {item ? <Thumb item={item} /> : <span className="st-hint">{d.media_id ? "Prévia fora da pasta do estúdio" : "Sem prévia: não sai (a mensagem só vai com foto ou vídeo)"}</span>}
           <p>{d.text.split("{nome}").join("(nome do fã)")}</p>
         </div>
         <p className="st-hint">

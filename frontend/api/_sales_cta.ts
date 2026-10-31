@@ -282,7 +282,9 @@ export async function ctaDays(start: string, days: number): Promise<CtaDay[]> {
       const base = { day, hour, sent: 0, failed: 0, reason: null as string | null, ...example };
       const future = day > today || (day === today && nowHour < hour);
       if (future) {
-        out.push({ ...base, status: config.enabled ? "programada" : "desligada" });
+        // sem previa a mensagem nao sai (so vai com foto ou video): o calendario ja avisa
+        if (config.enabled && !list.length) out.push({ ...base, status: "falhou", reason: "não vai sair: não tem foto/vídeo nas prévias" });
+        else out.push({ ...base, status: config.enabled ? "programada" : "desligada" });
         continue;
       }
       if (!storeConfigured() || !since || day < since) {
@@ -352,6 +354,19 @@ export async function ctaTick(): Promise<number> {
     const nowHour = hourInBrazil();
     const slot = [...config.hours].reverse().find((h) => h <= nowHour);
     if (!config.enabled || slot === undefined) return sent;
+    // a mensagem do dia sempre vai com foto ou video (pedido de 31/10): sem previa nao sai so o texto
+    if (!(await previews()).length) {
+      const reason = "sem foto/vídeo de prévia (a mensagem não sai só com texto)";
+      if (await storeSetIfAbsent(logKey(brDay(), slot, "motivo"), reason, LOG_TTL).catch(() => false)) {
+        await storeIncrWithTtl(logKey(brDay(), slot, "erro"), LOG_TTL).catch(() => undefined);
+        const { sendNotice, telegramConfig } = await import("./_telegram.js");
+        await sendNotice(
+          await telegramConfig(),
+          `📣 A mensagem das ${slot}h do bot de vendas não saiu: não tem nenhuma foto ou vídeo nas prévias e ela não vai só com texto. Adicione em Monetização → Conteúdo do Telegram → Prévias.`
+        ).catch(() => undefined);
+      }
+      return sent;
+    }
     await storeSetIfAbsent(logKey(brDay(), slot, "rodou"), "1", LOG_TTL).catch(() => undefined);
     // uma por horario: quem recebeu depois do inicio do horario (ou ha menos de 3 h) espera o proximo
     const slotStart = Date.parse(`${brDay()}T${String(slot).padStart(2, "0")}:00:00-03:00`);

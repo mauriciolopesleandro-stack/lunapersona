@@ -120,14 +120,19 @@ async function storeOnTelegram(token: string, path: string, caption: string, kee
   const video = path.endsWith(".mp4");
   try {
     const url = await storageReadUrl(UPLOAD_BUCKET, path, 600);
-    const sent = await telegram<{ message_id: number; photo?: { file_id: string }[]; video?: { file_id: string } }>(token, video ? "sendVideo" : "sendPhoto", {
+    const sent = await telegram<{ message_id: number; photo?: { file_id: string }[]; video?: { file_id: string }; animation?: { file_id: string } }>(token, video ? "sendVideo" : "sendPhoto", {
       chat_id: chat,
       [video ? "video" : "photo"]: url,
       caption,
       disable_notification: true,
     });
     const fileId = video ? sent.video?.file_id : sent.photo?.at(-1)?.file_id;
-    if (!fileId) throw new Problem(502, "O Telegram não devolveu o arquivo.");
+    if (!fileId) {
+      await telegram(token, "deleteMessage", { chat_id: chat, message_id: sent.message_id }).catch(() => undefined);
+      // MP4 sem faixa de som: o Telegram transforma em GIF e nao guarda como video
+      if (video && sent.animation) throw new Problem(400, "Esse vídeo está sem som: o Telegram trata como GIF. Deixe o robô do PC aberto (ele põe uma trilha muda nos vídeos borrados) ou use um vídeo com som.");
+      throw new Problem(502, "O Telegram não devolveu o arquivo.");
+    }
     await telegram(token, "deleteMessage", { chat_id: chat, message_id: sent.message_id }).catch(() => undefined);
     return { fileId, kind: video ? "video" : "photo" };
   } finally {

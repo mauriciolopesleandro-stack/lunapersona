@@ -156,7 +156,20 @@ def borrar_video(src: Path, dst: Path) -> tuple[int, int]:
         writer.send(apply(np.frombuffer(raw, np.uint8).reshape(h, w, 3), regions))
     reader.close()
     writer.close()
-    tmp.replace(dst)
+    if has_audio:
+        tmp.replace(dst)
+    else:
+        # sem som o Telegram trata o MP4 como GIF e nao guarda como video (31/10): trilha muda
+        import subprocess
+
+        subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(tmp),
+             "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+             "-map", "0:v:0", "-map", "1:a:0", "-shortest", "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+             "-movflags", "+faststart", str(dst)],
+            check=True,
+        )
+        tmp.unlink()
     return len(found), with_blur
 
 
