@@ -109,6 +109,23 @@ ENQUADRAMENTO (obrigatório): a Luna aparece de corpo inteiro ou pelo menos da c
 Use o aprendizado das fotos anteriores (no contexto, quando houver) para escrever prompts que a Naiaflow acerta de primeira: diga a roupa inteira (parte de cima e de baixo), o enquadramento (corpo inteiro, da cintura para cima…) e o que não pode aparecer.
 Com foto de referência (o administrador mandou uma foto para recriar): ela vai como IMG1 no Criar e a luna copia a pose, o ângulo e o enquadramento. Então NÃO descreva a pose de novo (o texto vence a foto); escreva com detalhe o que a foto não entrega, seguindo o guia de estilo — roupa inteira (cor, tecido, parte de cima e de baixo), cenário brasileiro real, expressão, luz e estilo da foto de celular. Exemplo no padrão da Naia: "Luna sorrindo para a câmera, biquíni verde-limão de amarrar, areia clara e mar azul ao fundo, luz dourada de fim de tarde, pele natural com leve brilho de sol, foto de celular tirada por amiga."`;
 
+// Condutor da Conversa (31/10): o administrador controla tudo falando. A IA
+// entende o formato pedido, pergunta o que falta (uma coisa por vez) e so
+// entao escreve os blocos que viram os cartoes de gerar; aprende com as
+// correcoes dele (APRENDI/ESQUECI, guardado em _memory.ts).
+export const CONDUCTOR = `COMO CONDUZIR (você é o motor do estúdio: o administrador fala e você faz acontecer, como um assistente de verdade):
+1. Entenda o que ele quer e para onde vai. Palavras dele → destino: "feed"/"post"/"carrossel" = Feed (carrossel de 3); "stories"/"storie"/"sotries" = Stories; "reels"/"dancinha"/"trend"/"vídeo" = Reels (+ TikTok); "tiktok" = TikTok; "+18"/"18+"/"vip"/"canal"/"spice"/"pelada"/"explícito" = +18 Telegram. Entenda erro de digitação.
+2. Se faltar algo importante, PERGUNTE antes de fazer — uma pergunta curta por vez, com 2 ou 3 opções prontas para ele só escolher. Não pergunte o que dá para decidir sozinho seguindo o estilo e o que ele já te ensinou; quando ele disser "decide você"/"tanto faz", decida.
+   - Feed/Stories: pergunte o tema ou lugar só se ele não deu nenhuma pista (ex.: "Praia, academia ou rolê à noite?"); ele mandou foto de referência = já pode fazer.
+   - Reels/dancinha: SEMPRE pergunte primeiro "Você vai me mandar o vídeo ou o link do Reels/TikTok que é para copiar?". Quando ele mandar, aparece embaixo da mensagem dele o cartão "💃 Fazer dancinha": diga a roupa, a duração (5, 8 ou 10 s; 1 crédito por segundo + 1) e a legenda que você sugere, e peça para ele conferir e tocar em Fazer. Sem vídeo nem link não dá para fazer dancinha.
+   - +18: pergunte o clima/cenário só se ele não deu nenhum (ex.: "Quarto, banho ou motel?"); siga o guia da Sala +18 (prompt bem detalhado) e o DESTINO é "+18 Telegram".
+3. Quando tiver o suficiente, FAÇA: escreva os blocos PROMPT/LEGENDA/HASHTAGS/DESTINO. Embaixo da sua resposta aparece o botão "Gerar esta foto"; avise em uma linha o custo (Feed carrossel de 3 = 1 crédito; Stories = 1 crédito) e que ele confere e toca para gerar. Tudo que é gerado ainda passa pela aprovação dele no Telegram antes de publicar.
+4. Agenda: para "o que tem amanhã", "o que falta na semana", use a agenda do contexto e responda direto.
+5. APRENDER: quando ele reclamar, corrigir ou disser um gosto ("ficou ruim", "não gostei", "muito escuro", "não quero mais X", "sempre faça Y", "prefiro…", "isso ficou ótimo, faz assim"), entenda o motivo, corrija na hora e termine a resposta com UMA linha:
+APRENDI: <regra curta, geral e prática para as próximas vezes, em 1 frase>
+   Ex.: ele diz "essa foto ficou com cara de estúdio" → "APRENDI: Nas fotos do Feed, sempre luz natural e cara de foto de celular; nada de luz de estúdio." Não escreva APRENDI para pedidos comuns, só para gosto/correção que vale para o futuro. Se ele mandar esquecer uma regra, termine com "ESQUECI: <número da regra>" (ou "ESQUECI: tudo"). Nunca invente regra que ele não disse.
+6. Seja curto e direto, como uma conversa de WhatsApp. Nada de explicação longa.`;
+
 interface PostRow {
   network: string;
   caption: string;
@@ -240,6 +257,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   } catch {
     return reply(400, { detail: "JSON inválido." });
   }
+  // memoria da Conversa: o painel lista o que a IA aprendeu e deixa esquecer
+  if (body.action === "memory" || body.action === "forget") {
+    const { listRules, forgetRules } = await import("./_memory.js");
+    if (body.action === "memory") return reply(200, { rules: await listRules() });
+    const which = (body as { which?: unknown }).which;
+    const nums = Array.isArray(which) ? which.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+    if (which !== "all" && !nums.length) return reply(400, { detail: "Diga qual regra esquecer." });
+    return reply(200, { rules: await forgetRules(which === "all" ? "all" : nums) });
+  }
   // referencia mandada na Conversa: foto/video (quadros) ou link -> leitura da ideia
   if (body.action === "analyze" || body.action === "link") {
     const { analyzeImages, analyzeLink, RefError } = await import("./_assistant_refs.js");
@@ -262,15 +288,22 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const mode: Mode = "adulto";
   const { lessonsForChat } = await import("./_lessons.js");
   const lessons = await lessonsForChat().catch(() => "");
-  // sala +18 (aba Monetizacao): so o canal pago do Telegram, com o guia detalhado
+  const { addRules, extractMemory, forgetRules, rulesForChat } = await import("./_memory.js");
+  const rules = await rulesForChat().catch(() => "");
+  // sala +18 (aba Monetizacao): so o canal pago do Telegram, com o guia detalhado.
+  // A Conversa geral tambem faz +18 quando ele pede (o guia vai junto).
   const system =
     body.room === "18"
-      ? [PERSONA, ADULT_NOTE, ADULT18_GUIDE, await context(), lessons].filter(Boolean).join("\n\n")
-      : [PERSONA, STYLE_GUIDE, CHAT_NOTE, await context(), lessons].filter(Boolean).join("\n\n");
+      ? [PERSONA, ADULT_NOTE, ADULT18_GUIDE, CONDUCTOR, await context(), lessons, rules].filter(Boolean).join("\n\n")
+      : [PERSONA, STYLE_GUIDE, CHAT_NOTE, ADULT18_GUIDE, CONDUCTOR, await context(), lessons, rules].filter(Boolean).join("\n\n");
 
   try {
     const out = await askAi(mode, [{ role: "system", content: system }, ...messages]);
-    return reply(200, { reply: out.text, model: out.model, mode, usage: out.usage });
+    const mem = extractMemory(out.text);
+    // esquece antes de aprender: os numeros do ESQUECI sao os do contexto desta resposta
+    const forgot = mem.forget ? (await forgetRules(mem.forget).catch(() => null)) !== null : false;
+    const learned = mem.learn.length ? (await addRules(mem.learn).catch(() => [])).map((r) => r.rule) : [];
+    return reply(200, { reply: mem.reply || out.text, model: out.model, mode, usage: out.usage, learned, forgot });
   } catch (e) {
     if (e instanceof AiError) return reply(e.status, { detail: e.message });
     throw e;
