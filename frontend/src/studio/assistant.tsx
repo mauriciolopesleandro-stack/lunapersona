@@ -199,6 +199,8 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     // "o que esta errado?" numa foto/Reels da Luna vira revisao (defeitos)
     const review = attachments.length > 0 && REVIEW_ASK.test(typed);
     const reads: { label: string; text: string }[] = [];
+    // foto do post do Instagram lido pelo link: vira a referencia IMG1, como uma foto anexada
+    let linkPhoto: string | undefined;
     try {
       for (const a of attachments) {
         setStage(review ? "Revisando…" : a.kind === "video" ? "Assistindo o vídeo…" : "Olhando a foto…");
@@ -214,12 +216,14 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       if (link) {
         setStage(/instagram\.com/i.test(link) ? "Lendo a página do Instagram…" : "Lendo o link…");
         try {
-          const out = await post<{ title: string; analysis: string }>({ action: "link", url: link });
+          const out = await post<{ title: string; analysis: string; image?: string }>({ action: "link", url: link, note: typed });
           reads.push({ label: out.title, text: out.analysis });
+          linkPhoto = out.image;
         } catch (e) {
           // link de dancinha (TikTok, Reels...) costuma bloquear a leitura: segue
-          // sem ela, o "Fazer dancinha" usa o link direto
-          if (!DANCE_LINK.test(link)) throw e;
+          // sem ela, o "Fazer dancinha" usa o link direto. Post de foto (/p/)
+          // sem leitura nao serve para nada: avisa (pede o print)
+          if (!DANCE_LINK.test(link) || /instagram\.com\/(?:[^/]+\/)?p\//i.test(link)) throw e;
         }
       }
     } catch (e) {
@@ -231,7 +235,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     const profile = reads.some((r) => r.label.startsWith("perfil @"));
     // uma foto mandada (nao a revisao de uma foto da Luna nem um perfil) vira
     // referencia IMG1 do Criar, nas duas salas (no "Gerar esta foto" da para desmarcar)
-    const refPhoto = review || profile ? undefined : attachments.find((a) => a.kind === "foto")?.images[0];
+    const refPhoto = review || profile ? undefined : (attachments.find((a) => a.kind === "foto")?.images[0] ?? linkPhoto);
     const ask = typed || (profile ? "Analise essa página e crie conteúdos para a Luna nesse estilo." : "Recria essa ideia com a Luna.");
     const reading = reads.map((r) => `[Referência: ${r.label}]\n${r.text}`).join("\n\n");
     const recreate = review
