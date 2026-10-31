@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { SALES_PACKS } from "./_flags.js";
 import { createHmac, timingSafeEqual } from "crypto";
 import { NETWORK_RULES, UPLOAD_BUCKET, type PostRow } from "./_posts.js";
-import { Problem, decidePost } from "./_posts_api.js";
+import { Problem, approveChosen, decidePost } from "./_posts_api.js";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbSelect, storageReadUrl } from "./_supabase.js";
 import { forgetChannel, saveChannel, telegram, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
@@ -36,6 +36,9 @@ const CORRECTION_TAG = "#correcao";
 const PENDING_KEY = "luna:tg-correcao";
 const PENDING_TTL_MS = 30 * 60_000;
 const ACTION_KEY = "luna:tg-acao";
+// "Escolher fotos": publicacao com varias fotos (o +18 chega com as 3 do Criar),
+// aprova so as marcadas
+const CHOOSE_KEY = "luna:tg-escolher";
 interface PendingAction {
   ref: string;
   total: number;
@@ -62,14 +65,15 @@ function fmt(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }) : "sem horário (escolha no estúdio)";
 }
 
-function buttons(post: PostRow) {
+function buttons(post: PostRow, photos = 1) {
   const ref = `${post.id}:${post.version}`;
   return {
     inline_keyboard: [
       [
-        { text: "✅ Aprovar", callback_data: `ap:${ref}` },
+        { text: photos > 1 ? "✅ Aprovar todas" : "✅ Aprovar", callback_data: `ap:${ref}` },
         { text: "❌ Reprovar", callback_data: `rp:${ref}` },
       ],
+      ...(photos > 1 ? [[{ text: "🖼️ Escolher fotos", callback_data: `ef:${ref}` }]] : []),
       [
         { text: "✏️ Pedir correção", callback_data: `cr:${ref}` },
         { text: "🍑 Rachadinha", callback_data: `rc:${ref}` },
@@ -104,14 +108,15 @@ export async function sendForReview(post: PostRow, formats: string[]): Promise<v
   const base = { chat_id: config.chatId };
   if (media.length === 1) {
     const [m] = media;
-    await telegram(config.token, m.type === "video" ? "sendVideo" : "sendPhoto", { ...base, [m.type]: m.url, caption: text, reply_markup: buttons(post) });
+    await telegram(config.token, m.type === "video" ? "sendVideo" : "sendPhoto", { ...base, [m.type]: m.url, caption: text, reply_markup: buttons(post, 1) });
     return;
   }
   // carrossel: o album vai junto, os botoes ficam na mensagem logo depois
   if (media.length > 1) {
     await telegram(config.token, "sendMediaGroup", { ...base, media: media.slice(0, 10).map((m) => ({ type: m.type, media: m.url })) });
   }
-  await telegram(config.token, "sendMessage", { ...base, text, reply_markup: buttons(post) });
+  const photos = media.filter((m) => m.type === "photo").length;
+  await telegram(config.token, "sendMessage", { ...base, text, reply_markup: buttons(post, media.length > 1 && photos === media.length ? photos : 1) });
 }
 
 // Aviso com as midias (ex.: rascunho do TikTok que chegou no app): as copias
@@ -240,6 +245,24 @@ async function loadAction(): Promise<PendingAction | null> {
   }
 }
 
+// escolha das fotos para aprovar: comeca com todas marcadas
+interface PendingChoice {
+  ref: string;
+  total: number;
+  photos: number[];
+  at: number;
+}
+
+function chooseButtons(p: PendingChoice) {
+  const nums = Array.from({ length: p.total }, (_, i) => i + 1);
+  const rows = [];
+  for (let i = 0; i < nums.length; i += 4) {
+    rows.push(nums.slice(i, i + 4).map((n) => ({ text: `${p.photos.includes(n) ? "✅" : "▫️"} Foto ${n}`, callback_data: `es:${n}` })));
+  }
+  rows.push([{ text: `✅ Aprovar ${p.photos.length === p.total ? "todas" : `${p.photos.length} escolhida(s)`}`, callback_data: "es:ok" }]);
+  return { inline_keyboard: rows };
+}
+
 function photoButtons(p: PendingAction) {
   const nums = Array.from({ length: p.total }, (_, i) => i + 1);
   const rows = [];
@@ -305,6 +328,47 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
         const post = await decidePost(id, version, kind === "ap" ? "approve" : "reject", kind === "rp" ? "Reprovada pelo Telegram" : null);
         if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
         await say(decided(post), replyTo);
+      } else if (kind === "ef") {
+        const total = (await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${id}`)).length;
+        if (total < 2) {
+          await say("Essa publicação tem uma foto só: use ✅ Aprovar ou ❌ Reprovar.", replyTo);
+        } else if (!storeConfigured()) {
+          await say("⚠️ Falta o Upstash Redis na Vercel para guardar a escolha.", replyTo);
+        } else {
+          const pending: PendingChoice = { ref: `${id}:${version}`, total, photos: Array.from({ length: total }, (_, i) => i + 1), at: Date.now() };
+          await storeSet(CHOOSE_KEY, JSON.stringify(pending));
+          await say("🖼️ Quais fotos vão? Toque para desmarcar as que ficaram ruins e depois em Aprovar (as foto(s) estão no álbum acima, na ordem).", { ...replyTo, reply_markup: chooseButtons(pending) });
+        }
+      } else if (kind === "es") {
+        let pending: PendingChoice | null = null;
+        try {
+          const p = JSON.parse((await storeGet(CHOOSE_KEY)) ?? "null") as PendingChoice | null;
+          pending = p && Date.now() - p.at < PENDING_TTL_MS ? p : null;
+        } catch {
+          pending = null;
+        }
+        if (!pending) {
+          await say("⏱️ Essa escolha expirou. Toque em 🖼️ Escolher fotos de novo.", replyTo);
+          return done();
+        }
+        if (id !== "ok") {
+          const n = Number(id);
+          pending.photos = pending.photos.includes(n) ? pending.photos.filter((x) => x !== n) : [...pending.photos, n].sort((a, b) => a - b);
+          await storeSet(CHOOSE_KEY, JSON.stringify(pending));
+          if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: chooseButtons(pending) }).catch(() => undefined);
+          return done();
+        }
+        if (!pending.photos.length) {
+          await say("Marque pelo menos uma foto (ou use ❌ Reprovar na publicação).", replyTo);
+          return done();
+        }
+        const [postId, postVersion] = pending.ref.split(":");
+        const post = await approveChosen(postId, Number(postVersion), pending.photos);
+        await storeDelete(CHOOSE_KEY).catch(() => undefined);
+        if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
+        const which = pending.photos.length === pending.total ? "todas as fotos" : `foto(s) ${pending.photos.join(", ")}`;
+        await say(`${decided(post)}
+🖼️ Vão: ${which}.`, replyTo);
       } else if (kind === "rc") {
         // rachadinha: so em foto que veio do robo (ele precisa aplicar na Naiaflow)
         const target = await actionTarget(id);

@@ -172,8 +172,10 @@ const QUEUE_FILTER = "status=eq.na_fila&or=(source_item_id.is.null,media_path.no
 // TikTok levam todas, Stories so a primeira.
 async function photosOf(item: Pick<ItemRow, "plan_id" | "format">): Promise<number> {
   const [plan] = await dbSelect<{ request: { photos?: unknown; feedPhotos?: unknown } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
-  // plano da semana: o Feed sai em carrossel (feedPhotos); a foto avulsa usa photos
-  const n = Number((item.format === "Feed" ? plan?.request?.feedPhotos : undefined) ?? plan?.request?.photos ?? 1);
+  // plano da semana: o Feed sai em carrossel (feedPhotos); a foto avulsa usa photos.
+  // +18 (Canal): as 3 fotos do mesmo Criar (1 credito) vao para o Telegram e o
+  // administrador escolhe quais aprovar (pedido de 30/10)
+  const n = Number((item.format === "Feed" ? plan?.request?.feedPhotos : undefined) ?? plan?.request?.photos ?? (item.format === "Canal" ? 3 : 1));
   return Number.isInteger(n) && n > 1 && n <= 10 ? n : 1;
 }
 
