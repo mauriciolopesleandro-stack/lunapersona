@@ -21,6 +21,12 @@ interface Message {
   refs?: string[]; // miniaturas das fotos/videos mandados
   reading?: string; // leitura das referencias (abre e fecha na conversa)
   dance?: { link?: string }; // video ou link de dancinha: mostra o "Fazer dancinha"
+  learned?: string[]; // regras que a IA guardou com esta resposta (memoria da Conversa)
+  forgot?: boolean; // a IA esqueceu uma regra com esta resposta
+}
+interface Rule {
+  at: string;
+  rule: string;
 }
 // foto ou video anexado, ja reduzido no navegador
 interface Attachment {
@@ -122,6 +128,8 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
   const [copied, setCopied] = useState<number | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [stage, setStage] = useState<string | null>(null);
+  // "O que aprendi": a lista de regras que o administrador ensinou (null = fechada)
+  const [rules, setRules] = useState<Rule[] | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -252,12 +260,29 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       });
       const b = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(b.detail ?? `Erro HTTP ${r.status}`);
-      update([...next, { role: "assistant", content: b.reply }]);
+      update([...next, { role: "assistant", content: b.reply, ...(b.learned?.length ? { learned: b.learned } : {}), ...(b.forgot ? { forgot: true } : {}) }]);
+      if (rules !== null && (b.learned?.length || b.forgot)) openRules();
       onReply();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function openRules() {
+    try {
+      setRules((await post<{ rules: Rule[] }>({ action: "memory" })).rules);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function forget(which: number[] | "all") {
+    try {
+      setRules((await post<{ rules: Rule[] }>({ action: "forget", which })).rules);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -307,7 +332,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
                 <span className="st-hint">
                   {room === "18"
                     ? "Sala +18: só para o canal VIP do Telegram. Peça ideias, prompts detalhados e textos; mande uma foto de referência (📎) e a IA diz o caminho mais barato na Naiaflow (retoque grátis, Ação ou Criar)."
-                    : "Peça o plano da semana, prompts para a Naiaflow, legendas e ideias. Mande uma foto ou vídeo de referência (📎) ou cole o link de um perfil do Instagram: a IA faz a leitura e recria a ideia com a Luna."}
+                    : "Fale do seu jeito: \"vamos fazer Feed\", \"bora um Reels\", \"conteúdo +18\", \"o que tem amanhã?\". Ela pergunta o que faltar e prepara para gerar. Se algo ficar ruim, é só falar: ela aprende e melhora nas próximas."}
                 </span>
                 {quick.map((q) => (
                   <button key={q} type="button" className="st-btn st-btn-small" disabled={busy || !status?.configured} onClick={() => send(q)}>
@@ -332,6 +357,12 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
                     <p>{m.reading}</p>
                   </details>
                 )}
+                {m.learned?.map((r, j) => (
+                  <p key={j} className="st-msg-learned" title="Guardei isso e vou seguir nas próximas conversas">
+                    🧠 Aprendi: {r}
+                  </p>
+                ))}
+                {m.forgot && <p className="st-msg-learned">🧠 Esqueci o que você pediu.</p>}
                 {m.role === "user" && m.dance && <DanceCard link={m.dance.link} file={danceFiles.current.get(i)} />}
                 {m.role === "assistant" && (
                   <button type="button" className="st-link" onClick={() => copy(i)}>
@@ -424,8 +455,37 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
               <Icon name="send" size={16} />
             </button>
           </form>
+          {rules !== null && (
+            <div className="st-chat-rules">
+              <div className="st-chat-rules-head">
+                <strong>🧠 O que aprendi com você ({rules.length})</strong>
+                <button type="button" className="st-link" onClick={() => setRules(null)}>
+                  Fechar
+                </button>
+              </div>
+              {rules.length === 0 && <small className="st-hint">Nada ainda. Quando algo ficar ruim, fale na conversa (ex.: "ficou com cara de estúdio") e eu guardo a regra.</small>}
+              <ol>
+                {rules.map((r, i) => (
+                  <li key={r.at + i}>
+                    <span>{r.rule}</span>
+                    <button type="button" className="st-link" onClick={() => forget([i + 1])}>
+                      Esquecer
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              {rules.length > 1 && (
+                <button type="button" className="st-link" onClick={() => window.confirm("Esquecer tudo o que a IA aprendeu com você?") && forget("all")}>
+                  Esquecer tudo
+                </button>
+              )}
+            </div>
+          )}
           <div className="st-chat-foot">
             {status?.configured && <small className="st-hint">IA sem restrição: {status.adultModel}. Explícito só vale para o canal +18.</small>}
+            <button type="button" className="st-link" onClick={() => (rules === null ? openRules() : setRules(null))}>
+              🧠 O que aprendi
+            </button>
             {messages.length > 0 && (
               <button type="button" className="st-link" disabled={busy} onClick={() => window.confirm("Apagar esta conversa?") && update([])}>
                 Limpar conversa
