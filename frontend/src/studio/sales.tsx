@@ -46,6 +46,9 @@ export interface Status {
   sales: { count30: number; total30: number; pending: number };
   vipPosts: { media_id: string; path: string | null }[]; // arquivos da pasta do VIP ja postados no canal
   previews: { media_id: string; kind: "photo" | "video"; path: string | null; text: string }[]; // previas das mensagens (CTA) e a chamada de cada uma
+  // arquivos novos das pastas esperando a aprovacao no Telegram, e os recusados la
+  folderPending?: { media_id: string; target: "pack" | "vip" | "previa"; product_id: string | null }[];
+  folderRejected?: { media_id: string; target: "pack" | "vip" | "previa" }[];
   cta: Cta;
   orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; access_until: string | null; product: string; fan: string; note: string | null }[];
   vipMembers: { fan: string; until: string }[]; // quem esta no canal VIP agora (vencido ha ate 3 dias ainda conta)
@@ -395,7 +398,7 @@ function CtaEditor({
         <div>
           <b>📣 Fotos e vídeos da chamada: {previews}</b>
           <span className="st-hint">
-            Adicione aqui (o robô do PC borra as partes íntimas sozinho e ela entra nas mensagens) ou toque em “📣 Usar na chamada (borrar)” numa foto +18 no Telegram.
+            Adicione aqui (o robô do PC borra as partes íntimas sozinho e a versão borrada chega no Telegram para você aprovar) ou toque em “📣 Usar na chamada (borrar)” numa foto +18 no Telegram.
           </span>
         </div>
         <button type="button" className="st-btn st-btn-primary st-btn-small" onClick={onFolders}>

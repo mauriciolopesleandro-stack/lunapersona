@@ -12,8 +12,10 @@ import { useStudio, type Item } from "./store";
 //   vip/        -> postado no canal VIP; tirou da pasta, o post sai do canal
 //   previa/     -> previas das mensagens que chamam o fa para comprar (CTA)
 // "Adicionar" copia o arquivo (do computador ou da biblioteca) para a pasta e
-// ja atualiza o Telegram; o "x" tira do pacote/canal e move o arquivo para
-// vendas/_removidos (nada e apagado). "Atualizar" aplica o que mudou a mao.
+// manda para aprovar no Telegram (pedido de 30/10): so entra no pacote, no
+// canal ou nas previas quando voce aprova la; recusado, o estudio move o
+// arquivo para vendas/_removidos. O "x" tira do pacote/canal na hora (nada e
+// apagado). "Enviar para aprovar" manda o que mudou a mao.
 // Foto +18 agendada com pacotes entra direto no pacote (api/_jobs.ts) sem passar
 // pela pasta; "Atualizar" nao tira essas.
 
@@ -46,13 +48,21 @@ interface Plan {
   product: Product | null;
   inFolder: Item[];
   add: Item[];
+  waiting: Item[]; // mandados para aprovar no Telegram
   remove: { media_id: string; label: string }[];
 }
+
+const targetOf = (folder: Folder) => (folder.key === "vip" ? "vip" : folder.key === "previa" ? "previa" : "pack");
 
 function plansFor(status: Status, items: Item[]): Plan[] {
   return FOLDERS.map((folder) => {
     const inFolder = items.filter((i) => i.id && i.path.startsWith(folder.dir));
     const ids = new Set(inFolder.map((i) => i.id));
+    const product0 = folder.slug ? status.products.find((p) => p.slug === folder.slug) ?? null : null;
+    const pendingIds = new Set(
+      (status.folderPending ?? []).filter((p) => p.target === targetOf(folder) && (p.target !== "pack" || p.product_id === product0?.id)).map((p) => p.media_id)
+    );
+    const waiting = inFolder.filter((i) => pendingIds.has(i.id!));
     const label = (id: string, path: string | null) => (path ? path.split("/").pop()! : `arquivo ${id.slice(0, 8)}`);
     if (folder.key === "vip" || folder.key === "previa") {
       const done = folder.key === "vip" ? status.vipPosts : status.previews;
@@ -61,7 +71,8 @@ function plansFor(status: Status, items: Item[]): Plan[] {
         folder,
         product: null,
         inFolder,
-        add: inFolder.filter((i) => !posted.has(i.id!)),
+        add: inFolder.filter((i) => !posted.has(i.id!) && !pendingIds.has(i.id!)),
+        waiting,
         remove: done.filter((p) => !ids.has(p.media_id)).map((p) => ({ media_id: p.media_id, label: label(p.media_id, p.path) })),
       };
     }
@@ -71,7 +82,8 @@ function plansFor(status: Status, items: Item[]): Plan[] {
       folder,
       product,
       inFolder,
-      add: inFolder.filter((i) => !inPack.has(i.id!)),
+      add: inFolder.filter((i) => !inPack.has(i.id!) && !pendingIds.has(i.id!)),
+      waiting,
       // so sai do pacote o que veio desta pasta: foto +18 que entrou pelo agendamento
       // (pacotes escolhidos no pedido) mora em conteudos/<mes>/+18 e fica no pacote
       remove: (product?.media ?? [])
@@ -112,6 +124,22 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
+  // recusados no Telegram: saem da pasta (vendas/_removidos) e a lista do servidor e limpa
+  const rejectedKey = (status?.folderRejected ?? []).map((r) => r.media_id).join(",");
+  useEffect(() => {
+    const rejected = status?.folderRejected ?? [];
+    if (!rejected.length || state !== "ready") return;
+    const gone = items.filter(
+      (i) => i.id && rejected.some((r) => r.media_id === i.id && FOLDERS.some((f) => targetOf(f) === r.target && i.path.startsWith(f.dir)))
+    );
+    void (async () => {
+      for (const item of gone) await moveItem(item.path, REMOVED_DIR).catch(() => undefined);
+      setStatus(await call({ action: "review-clear", media_ids: rejected.map((r) => r.media_id) }));
+      if (gone.length) setNotice(`${gone.length} arquivo(s) recusado(s) no Telegram foram para vendas\\_removidos.`);
+    })().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rejectedKey, state]);
+
   const plans = useMemo(() => (status ? plansFor(status, items) : []), [status, items]);
   const pending = plans.reduce((n, p) => n + p.add.length + p.remove.length, 0);
   const blocked = (f: Folder) =>
@@ -143,6 +171,7 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
     let current = await call();
     const warnings: string[] = [];
     let done = 0;
+    let sent = 0;
     for (const plan of plansFor(current, itemsRef.current)) {
       if ((only && plan.folder.key !== only) || blocked(plan.folder) || (!plan.add.length && !plan.remove.length)) continue;
       for (const r of plan.remove) {
@@ -162,17 +191,20 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
           ? await call({ action: special.url, mime_type: mime, size_bytes: blob.size })
           : await call({ action: "media-url", product_id: plan.product!.id, mime_type: mime, size_bytes: blob.size });
         await putSignedUpload(up.url!, blob);
-        await call(
-          special
-            ? { action: special.add, media_id: item.id, path: up.path }
-            : { action: "media-add", product_id: plan.product!.id, media_id: item.id, path: up.path }
-        );
-        done++;
+        // nao entra direto: chega no Telegram para aprovar
+        await call({ action: "review-add", target: targetOf(plan.folder), product_id: plan.product?.id, media_id: item.id, path: up.path });
+        sent++;
       }
     }
     current = await call();
     setStatus(current);
-    return `Pronto: ${done} mudança(s) aplicada(s).${warnings.length ? ` ${[...new Set(warnings)].join(" ")}` : ""}`;
+    return [
+      sent ? `📁 ${sent} arquivo(s) mandado(s) para você aprovar no Telegram: só entram depois que você aprovar lá.` : "",
+      done ? `${done} tirado(s) na hora.` : "",
+      warnings.length ? [...new Set(warnings)].join(" ") : "",
+    ]
+      .filter(Boolean)
+      .join(" ") || "Nada para mudar.";
   }
 
   async function addTo(folder: Folder, files: File[]) {
@@ -183,7 +215,7 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
         setStep(`Copiando ${files.length} arquivo(s) para o robô borrar...`);
         const { added, skipped } = await addFiles(files, BLUR_DIR);
         return [
-          added ? `${added} arquivo(s) na fila do robô para borrar. Em 1 a 3 min (vídeo demora mais) a versão borrada aparece aqui e já entra nas mensagens; o bot te avisa no Telegram. Se o robô não achar partes íntimas, ela fica só na pasta para você conferir.` : "",
+          added ? `${added} arquivo(s) na fila do robô para borrar. Em 1 a 3 min (vídeo demora mais) a versão borrada chega no Telegram para você aprovar (só entra nas mensagens se aprovar). Se o robô não achar partes íntimas, ela fica só na pasta para você conferir.` : "",
           skipped.length ? `Ignorados (tipo não aceito): ${skipped.join(", ")}` : "",
         ]
           .filter(Boolean)
@@ -275,7 +307,7 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
               Ler as pastas de novo
             </button>
             <button type="button" className="st-btn st-btn-primary" disabled={busy || pending === 0} onClick={() => run(() => applyNow())}>
-              {pending ? `Atualizar (${pending} mudança${pending > 1 ? "s" : ""})` : "Tudo atualizado"}
+              {pending ? `Enviar para aprovar no Telegram (${pending})` : "Tudo atualizado"}
             </button>
             {step && <span className="st-hint">{step}</span>}
           </div>
@@ -300,6 +332,7 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
                         <div key={item.path} className={plan.add.includes(item) ? "st-pick st-folder-new" : "st-pick"} title={item.path}>
                           <Thumb item={item} />
                           {plan.add.includes(item) && <span className="st-folder-badge">{plan.folder.key === "vip" ? "vai postar" : "vai entrar"}</span>}
+                          {plan.waiting.includes(item) && <span className="st-folder-badge st-folder-wait">⏳ no Telegram</span>}
                           {plan.folder.key === "previa" && !plan.add.includes(item) && (
                             <button
                               type="button"

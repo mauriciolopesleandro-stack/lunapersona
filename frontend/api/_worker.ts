@@ -383,12 +383,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const mediaId = String(body.media_id ?? "");
       const path = String(body.path ?? "");
       if (!/^[0-9a-f-]{36}$/.test(mediaId) || !/^vendas\/previa\/[0-9a-f-]{36}\.(jpg|mp4)$/.test(path)) throw new Problem(400, "Prévia inválida.");
-      const { addPreviewFromStorage } = await import("./_sales.js");
-      const added = await addPreviewFromStorage(mediaId, path);
-      const name = String(body.name ?? "").slice(0, 120);
-      if (added) await sendNotice(await telegramConfig(), `📣 Prévia borrada nova na chamada: ${name || "foto"}.
-Ela já entra nas próximas mensagens do bot de vendas (Conteúdo do Telegram → Prévias para tirar).`).catch(() => undefined);
-      return reply(200, { added });
+      // passa pela aprovacao no Telegram, como tudo que entra nas pastas de vendas
+      const { sendFolderReview } = await import("./_sales.js");
+      const sent = await sendFolderReview({ target: "previa", media_id: mediaId, path, label: "Prévias da chamada (CTA) — borrada pelo robô" });
+      return reply(200, { added: sent, review: true });
     }
     // aviso curto do robo para o administrador (ex.: "nao achei partes intimas")
     if (body.action === "notice") {

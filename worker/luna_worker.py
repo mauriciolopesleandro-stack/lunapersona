@@ -1012,7 +1012,8 @@ _blur_off = False
 def blur_previews(studio: "Studio") -> None:
     """Previas do bot de vendas: borra as partes intimas (NudeNet, gratis, no PC)
     do que estiver em conteudos/vendas/previa-borrar e do que foi pedido pelo
-    📣 do Telegram, poe em vendas/previa e ja manda para as mensagens (CTA)."""
+    📣 do Telegram, poe em vendas/previa e manda para aprovar no Telegram (so
+    entra na chamada depois de aprovada)."""
     global _blur_off
     if _blur_off:
         return
@@ -1054,7 +1055,7 @@ def blur_previews(studio: "Studio") -> None:
             up = studio.call("preview-url", local_path=dst.relative_to(conteudos).as_posix(), mime_type=mime, size_bytes=len(data))
             put_copy(up["url"], data, mime)
             studio.call("preview-add", media_id=up["media_id"], path=up["path"], name=dst.name)
-            log(f"📣 Prévia na chamada: vendas/previa/{dst.name}")
+            log(f"📣 Prévia borrada mandada para aprovar no Telegram: vendas/previa/{dst.name}")
         except Exception as e:  # a previa borrada fica na pasta; da para mandar pela tela de Previas
             log(f"Não consegui pôr {dst.name} na chamada: {e}")
 
