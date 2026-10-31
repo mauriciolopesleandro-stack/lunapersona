@@ -1090,8 +1090,16 @@ def main() -> None:
                         break
                     time.sleep(10 * QUEUE_POLL_S)
                     continue
-            blur_previews(studio)
-            item = studio.call("next")["item"]
+            # erro do estudio (ou sem internet) nao derruba o robo: espera e tenta de novo
+            try:
+                blur_previews(studio)
+                item = studio.call("next")["item"]
+            except Exception as e:  # noqa: BLE001
+                log(f"Não consegui pegar o próximo pedido: {e}")
+                if args.uma_vez:
+                    break
+                time.sleep(QUEUE_POLL_S)
+                continue
             if not item:
                 if args.uma_vez:
                     log("Fila vazia: terminei.")

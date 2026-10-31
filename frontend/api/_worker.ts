@@ -463,9 +463,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           // proporcao na Naiaflow: Feed quadrado, o resto em 9:16
           aspect: item.format === "Feed" ? "quadrado" : "vertical",
           // foto de referencia: o robo anexa como IMG1 (a luna copia pose e angulo)
+          // (correcao e acao, como a rachadinha, partem da foto pronta: sem referencia; e a
+          // referencia ja apagada nao derruba o pedido - 31/10 o robo caia em loop)
           ...(await (async () => {
-            const ref = isCorrection(item) ? null : await referenceOf(item);
-            return ref ? { reference_url: await storageReadUrl(UPLOAD_BUCKET, ref, 7200) } : {};
+            const ref = isRework(item) ? null : await referenceOf(item);
+            const url = ref ? await storageReadUrl(UPLOAD_BUCKET, ref, 7200).catch(() => null) : null;
+            return url ? { reference_url: url } : {};
           })()),
         },
       });
