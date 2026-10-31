@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { putSignedUpload } from "./cloud";
 import { placedText } from "./quickPhoto";
 
@@ -8,7 +8,7 @@ import { placedText } from "./quickPhoto";
 // (cada um com a sua publicacao para aprovar no Telegram).
 
 // roupas salvas na galeria da Naiaflow ("Minhas roupas"); o robo procura pelo nome
-const OUTFITS = [
+export const OUTFITS = [
   "Biquíni animal print",
   "Biquíni azul dourado",
   "Biquíni branco",
@@ -32,6 +32,27 @@ function defaultWhen(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// duracao do video (s) lida no navegador; null se nao der para ler
+export function videoSeconds(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    v.preload = "metadata";
+    v.muted = true;
+    const end = (n: number | null) => {
+      URL.revokeObjectURL(url);
+      resolve(n);
+    };
+    v.onloadedmetadata = () => end(Number.isFinite(v.duration) && v.duration > 0 ? v.duration : null);
+    v.onerror = () => end(null);
+    v.src = url;
+  });
+}
+
+// dancinha com o video mandado (31/10): a duracao segue o video - a maior da
+// Naiaflow (5, 8 ou 10 s) que cabe nele
+export const danceSecondsFor = (video: number) => (video >= 10 ? 10 : video >= 8 ? 8 : 5);
+
 async function post<T>(body: object): Promise<T> {
   const r = await fetch("/api/studio?r=plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const b = await r.json().catch(() => ({}));
@@ -44,6 +65,15 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
   const [outfit, setOutfit] = useState(KEEP);
   const [other, setOther] = useState("");
   const [seconds, setSeconds] = useState(5);
+  // video mandado: a duracao vem dele (o administrador ainda pode trocar)
+  const [videoLength, setVideoLength] = useState<number | null>(null);
+  useEffect(() => {
+    if (!file) return;
+    void videoSeconds(file).then((n) => {
+      setVideoLength(n);
+      if (n) setSeconds(danceSecondsFor(n));
+    });
+  }, [file]);
   // som original da dancinha: na aprovacao do Telegram escolhe entre ele e a musica do Instagram
   const [sound, setSound] = useState<"original" | "sem">("original");
   const [slots, setSlots] = useState<string[]>(["reels", "tiktok"]);
@@ -141,7 +171,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
           </select>
         </label>
         <label className="st-field">
-          <span>Duração</span>
+          <span>Duração{videoLength ? ` (o vídeo tem ${videoLength.toFixed(1).replace(".", ",")} s)` : ""}</span>
           <select className="st-input" value={seconds} onChange={(e) => setSeconds(Number(e.target.value))}>
             <option value={5}>5 s (6 créditos)</option>
             <option value={8}>8 s (9 créditos)</option>
@@ -183,6 +213,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
         <span>Hashtags</span>
         <input className="st-input" value={hashtags} onChange={(e) => setHashtags(e.target.value)} />
       </label>
+      {videoLength !== null && videoLength < 5 && <p className="st-warn">O vídeo tem menos de 5 s: a Naiaflow não faz a dancinha. Mande um vídeo de pelo menos 5 s.</p>}
       <p className="st-hint">
         O robô faz o Copiar movimento sem som (a música do Instagram entra no Reels). Sem trocar a roupa, a Luna sai com a roupa e o cenário do vídeo de
         referência.

@@ -3,6 +3,7 @@ import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
 import { DANCE_LINK, DanceCard } from "./dance";
+import { LongVideoCard } from "./longVideo";
 import { CtaModal, CtaRow, brDay, useCtaDays, type CtaDay } from "./ctaDays";
 import { MetasPanel } from "./metas";
 import { NETWORKS } from "./shared";
@@ -21,6 +22,7 @@ interface Message {
   refs?: string[]; // miniaturas das fotos/videos mandados
   reading?: string; // leitura das referencias (abre e fecha na conversa)
   dance?: { link?: string }; // video ou link de dancinha: mostra o "Fazer dancinha"
+  long?: boolean; // video na sala +18: mostra o "Fazer video longo"
 }
 // foto ou video anexado, ja reduzido no navegador
 interface Attachment {
@@ -289,6 +291,12 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     const danceLink = linkMatch && (!/instagram\.com\/(?:[^/]+\/)?p\//i.test(linkMatch) || linkVideo) ? linkMatch : undefined;
     if (danceFile || danceLink) message.dance = danceLink && !danceFile ? { link: danceLink } : {};
     if (danceFile) danceFiles.current.set(messages.length, danceFile);
+    // sala +18: o video vira o video longo com a Luna (cortado em trechos de 5 s)
+    const longFile = room === "18" ? attachments.find((a) => a.kind === "video")?.file : undefined;
+    if (longFile) {
+      message.long = true;
+      danceFiles.current.set(messages.length, longFile);
+    }
     if (refPhoto) {
       refPhotos.current.set(messages.length, refPhoto);
       saveRefs(refPhotos.current, room);
@@ -420,6 +428,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
                   </details>
                 )}
                 {m.role === "user" && m.dance && <DanceCard link={m.dance.link} file={danceFiles.current.get(i)} />}
+                {m.role === "user" && m.long && <LongVideoCard file={danceFiles.current.get(i)} />}
                 {m.role === "assistant" && (
                   <button type="button" className="st-link" onClick={() => copy(i)}>
                     {copied === i ? "Copiado" : "Copiar"}
