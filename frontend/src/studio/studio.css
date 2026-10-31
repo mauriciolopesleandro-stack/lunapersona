@@ -5000,6 +5000,26 @@
 }
 
 /* arquivo da pasta esperando a aprovacao no Telegram */
+/* "Do Chat +18": fotos da sala +18 que nao moram na pasta do PC */
+.st-folder-chat {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+
+/* foto do Chat +18 que nao esta neste PC: so o nome */
+.st-folder-missing {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--bg-panel-2);
+  font-size: 10px;
+  text-align: center;
+  word-break: break-all;
+  opacity: 0.8;
+}
+
 .st-folder-badge.st-folder-wait {
   background: var(--st-tg);
 }

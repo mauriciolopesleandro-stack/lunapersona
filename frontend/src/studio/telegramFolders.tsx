@@ -16,8 +16,9 @@ import { useStudio, type Item } from "./store";
 // canal ou nas previas quando voce aprova la; recusado, o estudio move o
 // arquivo para vendas/_removidos. O "x" tira do pacote/canal na hora (nada e
 // apagado). "Enviar para aprovar" manda o que mudou a mao.
-// Foto +18 agendada com pacotes entra direto no pacote (api/_jobs.ts) sem passar
-// pela pasta; "Atualizar" nao tira essas.
+// Foto +18 do Chat +18 entra direto no pacote quando aprovada (e no canal no
+// horario) sem passar pela pasta; "Enviar para aprovar" nao tira essas. Desde
+// 31/10 elas aparecem em cada pasta na fileira "Do Chat +18" (o x tira do pacote).
 
 interface Folder {
   key: "ensaio" | "album" | "vip" | "previa";
@@ -94,6 +95,43 @@ function plansFor(status: Status, items: Item[]): Plan[] {
 }
 
 const nextTick = () => new Promise((r) => setTimeout(r, 0));
+
+interface ChatEntry {
+  media_id: string;
+  path: string | null;
+  when: string | null; // ainda vai entrar/sair (hora); null = ja esta
+  removable: boolean; // ja no pacote: o x tira do pacote
+}
+
+const hourOf = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+
+// "Do Chat +18" (31/10): o que veio da sala +18 e nao mora na pasta do PC
+function chatEntries(status: Status, plan: Plan): ChatEntry[] {
+  const out: ChatEntry[] = [];
+  const seen = new Set<string>();
+  const push = (e: ChatEntry) => {
+    if (seen.has(e.media_id)) return;
+    seen.add(e.media_id);
+    out.push(e);
+  };
+  const outside = (path: string | null) => !path || !path.startsWith(plan.folder.dir);
+  if (plan.folder.key === "vip") {
+    for (const p of status.chat18 ?? []) {
+      if (!p.channel) continue;
+      for (const m of p.media) if (outside(m.path)) push({ ...m, when: p.status === "publicado" ? null : p.scheduled_at, removable: false });
+    }
+    return out;
+  }
+  if (!plan.product) return out;
+  for (const m of plan.product.media) if (m.path && outside(m.path)) push({ media_id: m.media_id, path: m.path, when: null, removable: true });
+  // aprovada antes de 31/10 (ou se o pacote falhou na aprovacao): entra no horario
+  for (const p of status.chat18 ?? []) {
+    if (p.status === "publicado" || !p.packs.includes(plan.folder.slug!)) continue;
+    for (const m of p.media) if (outside(m.path)) push({ ...m, when: p.scheduled_at, removable: false });
+  }
+  return out;
+}
 
 export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
   const { items, refresh, state, addFiles, moveItem } = useStudio();
@@ -357,6 +395,45 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
                       ))}
                     </div>
                   )}
+                  {(() => {
+                    const chat = chatEntries(status, plan);
+                    if (!chat.length) return null;
+                    return (
+                      <div className="st-folder-chat">
+                        <p className="st-hint">Do Chat +18 ({chat.length}) — {plan.folder.key === "vip" ? "postadas pelo agendamento" : "entraram ao aprovar no Telegram"}, fora desta pasta:</p>
+                        <div className="st-sales-media">
+                          {chat.map((e) => {
+                            const local = items.find((i) => i.id === e.media_id);
+                            return (
+                              <div key={e.media_id} className="st-pick" title={e.path ?? e.media_id}>
+                                {local ? <Thumb item={local} /> : <span className="st-folder-missing">{(e.path ?? e.media_id).split("/").pop()}</span>}
+                                {e.when && <span className="st-folder-badge st-folder-wait">⏰ {hourOf(e.when)}</span>}
+                                {e.removable && plan.product && (
+                                  <button
+                                    type="button"
+                                    className="st-icon-btn st-sales-remove"
+                                    aria-label="Tirar do pacote"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      const name = (e.path ?? "").split("/").pop();
+                                      if (!window.confirm(`Tirar do pacote ${plan.folder.label}: ${name}?\n\nO arquivo continua no PC.`)) return;
+                                      void run(async () => {
+                                        await call({ action: "media-remove", product_id: plan.product!.id, media_id: e.media_id });
+                                        setStatus(await call());
+                                        return `${name} saiu do pacote ${plan.folder.label}.`;
+                                      });
+                                    }}
+                                  >
+                                    <Icon name="close" size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {plan.remove.length > 0 && (
                     <p className="st-warn">
                       {plan.folder.key === "vip" ? "Vai apagar do canal" : plan.folder.key === "previa" ? "Vai sair das prévias" : "Vai sair do pacote"}:{" "}

@@ -267,7 +267,28 @@ export async function decidePost(id: string, version: unknown, decision: "approv
   if (saved.status === "agendado") await scheduleReminder(saved);
   await dbUpdateWhere("content_plan_items", `post_id=eq.${post.id}`, { status: "aprovado", updated_at: new Date().toISOString() }).catch(() => undefined);
   await audit("aprovar", "posts", post.id, { version: post.version, agendado: saved.status === "agendado" });
+  await packsOnApproval(saved);
   return saved;
+}
+
+// +18 com pacotes (pedido de 31/10): entra nos pacotes na hora da aprovacao; o
+// post do canal continua no horario. Se falhar, o agendamento tenta de novo.
+async function packsOnApproval(post: PostRow): Promise<void> {
+  const packs = post.network === "telegram" ? post.flags?.adultDest?.packs ?? [] : [];
+  if (!packs.length || post.status !== "agendado") return;
+  const { sendNotice, telegramConfig } = await import("./_telegram.js");
+  const config = await telegramConfig();
+  try {
+    const { packPostNow } = await import("./_sales.js");
+    const names = await packPostNow(post.id, post.version, packs);
+    const when = post.flags?.adultDest?.channel && post.scheduled_at
+      ? ` O post do canal sai ${new Date(post.scheduled_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.`
+      : "";
+    await sendNotice(config, `📦 Já guardado em: ${names.join(" + ")}.${when}`).catch(() => undefined);
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    await sendNotice(config, `⚠️ Não consegui guardar nos pacotes agora (${error.slice(0, 200)}). Tento de novo no horário do post.`).catch(() => undefined);
+  }
 }
 
 // Aprovar so algumas fotos (botao "Escolher fotos" do Telegram, pedido de 30/10:

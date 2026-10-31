@@ -330,6 +330,26 @@ export async function addPostToPacks(postId: string, version: number, slugs: str
   return done;
 }
 
+// Pacotes na hora da aprovacao (pedido de 31/10): a publicacao +18 aprovada ja
+// entra nos pacotes escolhidos; so o post do canal espera o horario. O registro
+// em media_usage (context "pack") marca que entrou, e o agendamento nao repete.
+export async function postInPacks(postId: string): Promise<boolean> {
+  const [media, used] = await Promise.all([
+    dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${postId}`),
+    dbSelect<{ media_id: string }>("media_usage", `select=media_id&reference=eq.${postId}&context=eq.pack`),
+  ]);
+  const done = new Set(used.map((u) => u.media_id));
+  return media.length > 0 && media.every((m) => done.has(m.media_id));
+}
+
+export async function packPostNow(postId: string, version: number, slugs: string[]): Promise<string[]> {
+  const names = await addPostToPacks(postId, version, slugs);
+  for (const m of await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${postId}`)) {
+    await dbInsert("media_usage", { media_id: m.media_id, channel: "telegram", context: "pack", reference: postId });
+  }
+  return names;
+}
+
 async function status() {
   const token = await salesToken();
   let bot: string | null = null;
@@ -352,7 +372,17 @@ async function status() {
   ]);
   const vipIds = Object.keys(await vipPosts());
   const previewList = await previews();
-  const ids = [...new Set([...media.map((m) => m.media_id), ...vipIds, ...previewList.map((p) => p.media_id)])];
+  // publicacoes do Chat +18 (31/10): a tela das pastas mostra o que veio de la
+  // (fora das pastas do PC) e o que ainda vai sair no horario
+  const since = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const chatPosts = await dbSelect<{ id: string; status: string; scheduled_at: string | null; flags: { adultDest?: { channel?: boolean; packs?: string[] } } | null }>(
+    "posts",
+    `select=id,status,scheduled_at,flags&network=eq.telegram&status=in.(agendado,publicando,publicado)&created_at=gt.${since}&order=scheduled_at.desc&limit=30`
+  );
+  const chatMedia = chatPosts.length
+    ? await dbSelect<{ post_id: string; media_id: string; position: number }>("post_media", `select=post_id,media_id,position&post_id=in.(${chatPosts.map((p) => p.id).join(",")})&order=position.asc`)
+    : [];
+  const ids = [...new Set([...media.map((m) => m.media_id), ...vipIds, ...previewList.map((p) => p.media_id), ...chatMedia.map((m) => m.media_id)])];
   const paths = ids.length ? await dbSelect<{ id: string; local_path: string }>("media_assets", `select=id,local_path&id=in.(${ids.join(",")})`) : [];
   const pathOf = new Map(paths.map((m) => [m.id, m.local_path]));
   const channel = await telegramChannel().catch(() => null);
@@ -404,6 +434,15 @@ async function status() {
     folderRejected: storeConfigured() ? await folderRejected() : [],
     // arquivo da pasta do VIP ja postado no canal (o caminho fica no banco mesmo se o arquivo sair da pasta)
     vipPosts: vipIds.map((id) => ({ media_id: id, path: pathOf.get(id) ?? null })),
+    chat18: chatPosts.map((p) => ({
+      post_id: p.id,
+      status: p.status,
+      scheduled_at: p.scheduled_at,
+      // sem escolha (pedido antigo): so o canal
+      channel: p.flags?.adultDest ? p.flags.adultDest.channel !== false : true,
+      packs: p.flags?.adultDest?.packs ?? [],
+      media: chatMedia.filter((m) => m.post_id === p.id).map((m) => ({ media_id: m.media_id, path: pathOf.get(m.media_id) ?? null })),
+    })),
     sales: {
       count30: sold.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).length,
       total30: sold.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).reduce((t, o) => t + o.amount_cents, 0),

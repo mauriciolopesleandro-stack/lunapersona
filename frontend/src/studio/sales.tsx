@@ -45,6 +45,8 @@ export interface Status {
   pix: { configured: boolean; env: "producao" | "sandbox" };
   sales: { count30: number; total30: number; pending: number };
   vipPosts: { media_id: string; path: string | null }[]; // arquivos da pasta do VIP ja postados no canal
+  // publicacoes do Chat +18: entram nos pacotes ao aprovar e no canal no horario
+  chat18?: { post_id: string; status: string; scheduled_at: string | null; channel: boolean; packs: string[]; media: { media_id: string; path: string | null }[] }[];
   previews: { media_id: string; kind: "photo" | "video"; path: string | null; text: string }[]; // previas das mensagens (CTA) e a chamada de cada uma
   // arquivos novos das pastas esperando a aprovacao no Telegram, e os recusados la
   folderPending?: { media_id: string; target: "pack" | "vip" | "previa"; product_id: string | null; text?: string }[];
