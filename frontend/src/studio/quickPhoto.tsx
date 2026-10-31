@@ -54,11 +54,15 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
     if (!m) {
       // continuacao de um rotulo que veio vazio (para na linha em branco)
       if (open && cur && line) cur[open] = cur[open] ? `${cur[open]} ${line}` : line;
-      else if (!line) open = null;
+      // (linha em branco logo depois do rotulo vazio nao fecha: o texto vem depois)
+      else if (!line && (!open || !cur || cur[open])) open = null;
       continue;
     }
     const label = m[1].toUpperCase();
-    const value = m[2].replace(/^["“]|["”]$/g, "").trim();
+    let value = m[2].replace(/^["“]|["”]$/g, "").trim();
+    // "PROMPT para a Foto 1 (Feed - Carrossel):" e titulo, nao o prompt: o texto
+    // vem na linha de baixo (31/10 saiu uma foto com esse titulo de prompt)
+    if (/[:：]$/.test(value)) value = "";
     open = null;
     if (label === "PROMPT") {
       // PROMPT logo depois de outro PROMPT (sem legenda no meio) = outra pose
