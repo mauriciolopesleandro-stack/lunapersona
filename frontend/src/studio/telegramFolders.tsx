@@ -341,7 +341,7 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
                               onClick={() => setCaptioning(item)}
                               title={status.previews.find((p) => p.media_id === item.id)?.text || "Criar a chamada desta prévia com IA"}
                             >
-                              {status.previews.find((p) => p.media_id === item.id)?.text ? "💬 Chamada" : "✨ Chamada"}
+                              {chamadaOf(status, item.id) ? "💬 Chamada" : "✨ Chamada"}
                             </button>
                           )}
                           <button
@@ -404,12 +404,16 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
       {captioning && status && (
         <CaptionEditor
           item={captioning}
-          current={status.previews.find((p) => p.media_id === captioning.id)?.text ?? ""}
+          current={chamadaOf(status, captioning.id)}
           onClose={() => setCaptioning(null)}
           onSaved={(s) => {
             setStatus(s);
             setCaptioning(null);
-            setNotice("Chamada da prévia salva: ela vai na mensagem diária quando esta prévia sair.");
+            setNotice(
+              s.previews.some((p) => p.media_id === captioning.id)
+                ? "Chamada da prévia salva: ela vai na mensagem diária quando esta prévia sair."
+                : "Chamada salva: ela entra junto quando você aprovar esta prévia no Telegram."
+            );
           }}
         />
       )}
@@ -459,6 +463,11 @@ async function visionImage(item: Item): Promise<string> {
     draw(bitmap, bitmap.width, bitmap.height);
   }
   return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+// chamada da previa: a salva ou a guardada na previa que espera aprovacao no Telegram
+function chamadaOf(status: Status, mediaId: string | undefined): string {
+  return status.previews.find((p) => p.media_id === mediaId)?.text ?? status.folderPending?.find((p) => p.media_id === mediaId && p.target === "previa")?.text ?? "";
 }
 
 // Chamada da previa: a IA olha a foto e sugere 3; o administrador escolhe ou escreve.

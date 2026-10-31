@@ -47,7 +47,7 @@ export interface Status {
   vipPosts: { media_id: string; path: string | null }[]; // arquivos da pasta do VIP ja postados no canal
   previews: { media_id: string; kind: "photo" | "video"; path: string | null; text: string }[]; // previas das mensagens (CTA) e a chamada de cada uma
   // arquivos novos das pastas esperando a aprovacao no Telegram, e os recusados la
-  folderPending?: { media_id: string; target: "pack" | "vip" | "previa"; product_id: string | null }[];
+  folderPending?: { media_id: string; target: "pack" | "vip" | "previa"; product_id: string | null; text?: string }[];
   folderRejected?: { media_id: string; target: "pack" | "vip" | "previa" }[];
   cta: Cta;
   orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; access_until: string | null; product: string; fan: string; note: string | null }[];

@@ -1069,8 +1069,12 @@ def main() -> None:
 
     url, token = load_config()
     studio = Studio(url, token)
-    queue = studio.call("ping")["queue"]
+    # start: o que ficou "gerando" quando o robo foi fechado no meio volta para a fila
+    pong = studio.call("ping", start=True)
+    queue = pong["queue"]
     log(f"Conectado ao estúdio ({url}). Itens na fila: {queue}.")
+    if pong.get("released"):
+        log(f"{pong['released']} pedido(s) que ficaram no meio quando o robô foi fechado voltaram para a fila.")
     naia: Naiaflow | None = None
     try:
         if not (args.imagem_teste or args.video_teste):

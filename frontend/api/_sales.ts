@@ -154,6 +154,8 @@ export interface FolderPending {
   path: string;
   label: string;
   at: number;
+  // previa: chamada escrita antes de aprovar no Telegram (vale quando aprovar)
+  text?: string;
 }
 const FOLDER_KEY = (id: string) => `luna:pasta:${id}`;
 const FOLDER_INDEX = "luna:pasta-pendentes";
@@ -246,7 +248,7 @@ async function applyFolderAdd(p: FolderPending): Promise<void> {
       return;
     }
     const { fileId, kind } = await storeOnTelegram(token, p.path, "Guardada nas prévias das mensagens.");
-    await savePreviews([...list, { media_id: p.media_id, kind, file_id: fileId }]);
+    await savePreviews([...list, { media_id: p.media_id, kind, file_id: fileId, ...(p.text ? { text: p.text } : {}) }]);
     await audit("previa_cta", "media_assets", p.media_id);
     return;
   }
@@ -398,7 +400,7 @@ async function status() {
     cta: await ctaConfig(),
     previews: previewList.map((p) => ({ media_id: p.media_id, kind: p.kind, path: pathOf.get(p.media_id) ?? null, text: p.text ?? "" })),
     // pastas: esperando a aprovacao no Telegram e recusadas (o estudio move para _removidos)
-    folderPending: storeConfigured() ? (await folderPending()).map((p) => ({ media_id: p.media_id, target: p.target, product_id: p.product_id ?? null })) : [],
+    folderPending: storeConfigured() ? (await folderPending()).map((p) => ({ media_id: p.media_id, target: p.target, product_id: p.product_id ?? null, ...(p.text ? { text: p.text } : {}) })) : [],
     folderRejected: storeConfigured() ? await folderRejected() : [],
     // arquivo da pasta do VIP ja postado no canal (o caminho fica no banco mesmo se o arquivo sair da pasta)
     vipPosts: vipIds.map((id) => ({ media_id: id, path: pathOf.get(id) ?? null })),
@@ -616,8 +618,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const mediaId = uuid(body.media_id, "Mídia");
       const text = typeof body.text === "string" ? body.text.trim().slice(0, 900) : "";
       const list = await previews();
-      if (!list.some((p) => p.media_id === mediaId)) throw new Problem(404, "Essa prévia não está nas mensagens.");
-      await savePreviews(list.map((p) => (p.media_id === mediaId ? { ...p, text: text || undefined } : p)));
+      if (list.some((p) => p.media_id === mediaId)) {
+        await savePreviews(list.map((p) => (p.media_id === mediaId ? { ...p, text: text || undefined } : p)));
+      } else {
+        // previa ainda esperando a aprovacao no Telegram (31/10): a chamada fica
+        // guardada no pedido e entra junto quando aprovar
+        const waiting = storeConfigured() ? (await folderPending()).filter((p) => p.media_id === mediaId && p.target === "previa") : [];
+        if (!waiting.length) throw new Problem(404, "Essa prévia não está nas mensagens.");
+        for (const w of waiting) await storeSet(FOLDER_KEY(w.id), JSON.stringify({ ...w, text: text || undefined }));
+        await storeSet(FOLDER_INDEX, JSON.stringify((await folderPending()).map((p) => (waiting.some((w) => w.id === p.id) ? { ...p, text: text || undefined } : p))));
+      }
       await audit("previa_chamada", "media_assets", mediaId);
     } else if (body.action === "promo-save") {
       const products = await dbSelect<ProductRow>("sales_products", "select=id,price_cents,title");
