@@ -13,13 +13,16 @@ const JPEG = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 
 const READ_RULES = `Descreva só o que aparece de verdade na imagem; não invente pessoa, roupa ou cenário que não estão lá (se não houver pessoa, diga). Não identifique a pessoa nem descreva rosto, corpo ou traços físicos dela: a ideia vai ser recriada com outra personagem (a Luna). Não leia nem repita nomes de marcas. Responda em português do Brasil, em tópicos curtos, sem introdução.`;
 
-const PHOTO_PROMPT = `Você ajuda a recriar ideias de conteúdo para redes sociais. Faça a leitura desta referência para recriar a IDEIA:
-- Lugar e cenário
-- Roupa (peças, cores, tecidos) e acessórios
-- Pose e o que a pessoa está fazendo
-- Enquadramento e ângulo da câmera (selfie, espelho, corpo inteiro, close…)
+// a foto vai ser recriada IGUAL (31/10): a leitura precisa ser exata, peca por peca
+const PHOTO_PROMPT = `Você ajuda a recriar fotos para redes sociais o mais IGUAL possível à referência. Olhe com atenção e faça a leitura exata:
+- Lugar e cenário, objeto por objeto (parede e do que é feita, móveis, cama, cortina e cor, porta ou janela e o que aparece lá fora)
+- Roupa: o tipo exato de cada peça (maiô, biquíni, body, vestido…), cores, estampa (oncinha, zebra, floral…), recortes, tiras e amarrações, e o corte da parte de baixo (fio dental, asa-delta, normal)
+- Acessórios com o tipo exato (chapéu de caubói, chapéu de praia, boné…; material e detalhes)
+- Pose: de frente, de costas ou de lado para a câmera; para onde olha (câmera, por cima do ombro, para baixo); onde estão braços e mãos; em pé, sentada ou deitada
+- Enquadramento e ângulo da câmera (corpo inteiro, da cintura para cima; altura da câmera; selfie, espelho só se houver espelho, foto tirada por outra pessoa) e se a foto é vertical ou horizontal
 - Luz, hora do dia, cores e clima
-- Estilo da foto (amadora, profissional, flash, celular…) e texto que aparece na imagem
+- Estilo da foto (amadora, profissional, flash, celular…) e texto escrito na cena
+Ignore o que é do aplicativo e não da foto (ícones, botões de som, números, barras, marcas d'água do print): não mencione.
 ${READ_RULES}`;
 
 const VIDEO_PROMPT = `Você ajuda a recriar ideias de conteúdo para redes sociais. Estes são quadros de um vídeo, em ordem. Faça a leitura para recriar a IDEIA:

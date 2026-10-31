@@ -62,6 +62,10 @@ const CONTEXT: Record<string, string[]> = {
 
 // sala +18 (aba Monetizacao): conversa separada, so para o canal pago
 const ROOM18_KEY = "luna-assistente-18";
+// foto de referencia: a foto sai IGUAL (31/10). A Naiaflow segue mais o texto do
+// que a IMG1, entao o prompt repete pose, roupa e cenario da leitura
+const REF_ASK =
+  "Quero a foto IGUAL a esta referência, só que com a Luna (nunca a pessoa da foto). Ela vai como IMG1 no Criar da Naiaflow, mas escreva o PROMPT descrevendo tudo o que está na leitura, sem trocar nada: a mesma pose e o mesmo ângulo (de frente/de costas/de lado, para onde olha, braços e mãos), cada peça e acessório com o tipo exato, o mesmo cenário objeto por objeto, a luz e o estilo da foto. Nada de ícones ou números do print no prompt.";
 // a IA respondeu so com ideias: pede os blocos que viram o botao "Gerar esta foto"
 const MAKE_BLOCKS =
   "Pode gerar. Para cada ideia acima escreva o bloco pronto para a Naiaflow, exatamente com os rótulos PROMPT, LEGENDA, HASHTAGS e DESTINO (um bloco por post, no destino que combinamos).";
@@ -100,6 +104,36 @@ function save(messages: Message[], room: string) {
   }
 }
 
+// fotos de referencia (IMG1) das ultimas mensagens: ficam guardadas para o
+// "Gerar esta foto" nao perder a referencia ao recarregar a pagina (31/10)
+const MAX_REFS = 3;
+// a referencia vale para a resposta logo abaixo e para as 2 conversas seguintes
+// ("agora gera para o Feed"); no "Gerar esta foto" da para desmarcar
+const REF_REACH = 5;
+
+function loadRefs(room: string): Map<number, string> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(room === "18" ? `${ROOM18_KEY}-refs` : `${STORE_KEY}-refs`) ?? "[]");
+    return new Map(Array.isArray(saved) ? saved : []);
+  } catch {
+    return new Map();
+  }
+}
+
+function saveRefs(refs: Map<number, string>, room: string) {
+  try {
+    localStorage.setItem(room === "18" ? `${ROOM18_KEY}-refs` : `${STORE_KEY}-refs`, JSON.stringify([...refs].slice(-MAX_REFS)));
+  } catch {
+    // sem espaco: a referencia vale so ate fechar a pagina
+  }
+}
+
+// referencia da resposta i: a ultima foto mandada pouco antes dela
+function refBefore(refs: Map<number, string>, i: number): string | undefined {
+  for (let j = i - 1; j >= Math.max(0, i - REF_REACH); j--) if (refs.has(j)) return refs.get(j);
+  return undefined;
+}
+
 interface Props {
   context: string; // grupo da tela aberta (visao, creator, money...)
   tab: AssistantTab;
@@ -128,7 +162,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
   // arquivos de video das dancinhas pedidas nesta visita (indice da mensagem)
   const danceFiles = useRef(new Map<number, File>());
   // foto mandada (indice da mensagem) vira referencia (IMG1) do Criar
-  const refPhotos = useRef(new Map<number, string>());
+  const refPhotos = useRef(loadRefs(room));
 
   useEffect(() => {
     fetch("/api/studio?r=assistant")
@@ -154,6 +188,11 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
   function update(next: Message[]) {
     setMessages(next);
     save(next, room);
+    // conversa apagada: as referencias dela tambem
+    if (!next.length && refPhotos.current.size) {
+      refPhotos.current.clear();
+      saveRefs(refPhotos.current, room);
+    }
   }
 
   async function attach(files: File[]) {
@@ -226,9 +265,9 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       : profile
       ?"Use a leitura da página para criar 5 conteúdos para a Luna no mesmo estilo (inspire-se, não copie a pessoa, o rosto nem a marca). Termine com um bloco PROMPT/LEGENDA/HASHTAGS/DESTINO para cada um."
       : room === "18"
-      ? "A foto que mandei vai como referência IMG1 no Criar da Naiaflow: a luna copia a pose, o ângulo e o enquadramento dela. Escreva o PROMPT no padrão da Naia para referência: NÃO descreva a pose de novo; escreva com bastante detalhe o que a foto não entrega — roupa (ou nua), cenário, expressão, luz, textura da pele e estilo da foto. Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO: +18 Telegram."
+      ? `${REF_ASK} Diga também a nudez (o que aparece), a expressão e a textura da pele. Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO: +18 Telegram.`
       : refPhoto
-      ? "A foto que mandei vai como referência IMG1 no Criar da Naiaflow: a luna copia a pose, o ângulo e o enquadramento dela (nunca a pessoa). Escreva o PROMPT no padrão da Naia para referência: NÃO descreva a pose de novo; escreva com detalhe o que a foto não entrega, seguindo o guia de estilo — roupa inteira, cenário, expressão, luz e estilo da foto. Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO."
+      ? `${REF_ASK} Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO.`
       : "Recrie a ideia da referência com a Luna (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).";
     const message: Message = reads.length
       ? { role: "user", content: `${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
@@ -238,7 +277,10 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     const danceLink = room !== "18" ? typed.match(DANCE_LINK)?.[0] : undefined;
     if (danceFile || danceLink) message.dance = danceLink && !danceFile ? { link: danceLink } : {};
     if (danceFile) danceFiles.current.set(messages.length, danceFile);
-    if (refPhoto) refPhotos.current.set(messages.length, refPhoto);
+    if (refPhoto) {
+      refPhotos.current.set(messages.length, refPhoto);
+      saveRefs(refPhotos.current, room);
+    }
     const next: Message[] = [...messages, message];
     update(next);
     setText("");
@@ -340,7 +382,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
                 )}
                 {m.role === "assistant" &&
                   parsePhotoBlocks(m.content).map((b, j) => (
-                    <QuickPhoto key={`${i}-${j}`} block={b} reference={refPhotos.current.get(i - 1)} />
+                    <QuickPhoto key={`${i}-${j}`} block={b} reference={refBefore(refPhotos.current, i)} />
                   ))}
                 {/* a IA deu so ideias (sem o bloco PROMPT): um toque pede os blocos prontos para gerar */}
                 {m.role === "assistant" && i === messages.length - 1 && !busy && parsePhotoBlocks(m.content).length === 0 && m.content.length > 200 && (

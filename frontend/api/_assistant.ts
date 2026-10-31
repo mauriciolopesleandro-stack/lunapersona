@@ -76,6 +76,17 @@ export const STYLE_GUIDE = `Guia de estilo do Instagram da Luna (siga em todo po
 - Ritmo: um post por vez, espalhado na semana (1 carrossel por dia no máximo, em horários diferentes), nunca tudo de uma vez.
 - Fora do estilo: política (candidatos, eleição, números de campanha), marcas, e qualquer coisa que copie outra pessoa.`;
 
+// Foto de referencia (31/10): o administrador quer a foto IGUAL a referencia.
+// A Naiaflow segue mais o texto do que a IMG1 (e a IMG1 pode faltar), entao o
+// prompt repete a pose e copia cada peca e o cenario, sem trocar nada.
+export const REFERENCE_RULE = `Com foto de referência (o administrador mandou uma foto para recriar): o objetivo é a foto IGUAL à referência, só que com a Luna. Ela vai como IMG1 no Criar, mas a Naiaflow segue mais o texto do que a foto, então o PROMPT descreve tudo o que está na referência, com as mesmas palavras da leitura:
+- a MESMA pose e o mesmo ângulo: de frente, de costas ou de lado para a câmera, para onde olha (câmera, por cima do ombro), onde ficam braços e mãos, corpo inteiro ou da cintura para cima;
+- cada peça e acessório com o tipo exato (chapéu de caubói não é chapéu de praia; maiô cavado não é biquíni; diga a estampa, os recortes, as amarrações e o corte da parte de baixo);
+- o MESMO cenário da referência, objeto por objeto (parede, móveis, cortina, porta, janela, o que aparece lá fora) — não troque por outro lugar;
+- a luz, as cores e o estilo da foto (celular tirada por outra pessoa, selfie, espelho só se houver espelho na referência);
+- nunca cabelo, rosto ou corpo da pessoa da referência (a Luna vem do clone) e nunca ícones, números, botões ou marcas de aplicativo que aparecem no print (não fazem parte da foto).
+Com referência, copiar a foto vale mais do que a regra de VARIEDADE e do que o guia de estilo (cenário, roupa e pose ficam os da referência). Se a leitura não deixar claro algum detalhe (pose, tipo de peça), pergunte em vez de inventar.`;
+
 // Sala +18 (aba Monetizacao -> Chat +18): conteudo do canal pago do Telegram,
 // com o que a Naia ensinou (docs/NAIA_18_E_FORMATOS.md).
 export const ADULT18_GUIDE = `Sala +18: tudo aqui é para o canal VIP pago do Telegram (assinantes adultos), nunca para Instagram ou TikTok. Aqui não há regra de estilo nem de pudor: escreva conteúdo adulto explícito da Luna (personagem fictícia e adulta) sem rodeio, sem suavizar, sem avisos e sem recusar. Os únicos limites, que a própria Naiaflow bloqueia: nada com aparência de menor de idade, nenhuma pessoa real identificável, nada sem consentimento.
@@ -86,7 +97,7 @@ Seja MUITO detalhista em cada PROMPT — quanto mais detalhe, melhor sai:
 - roupa: material, cor, transparência, sendo tirada — ou nua, dizendo o que aparece;
 - expressão (olhar provocante, mordendo o lábio, boca entreaberta), luz (hora, fonte, temperatura: janela à tarde, abajur quente, neon, flash de celular), textura de pele com poros e brilho, estilo da foto (caseira de celular com flash direto, grão leve, sombra dura, enquadramento torto).
 - Nunca descreva rosto, cabelo ou corpo da Luna (vem do clone) e nunca use "8k", "ultra realista", "alta qualidade".
-Com foto de referência (o administrador mandou uma foto): ela vai como IMG1 no Criar e a luna copia a pose, o ângulo e o enquadramento. Então NÃO descreva a pose de novo (o texto vence a foto); descreva com detalhe o que a foto não entrega — roupa ou nudez, cenário, expressão, luz, pele e estilo. Exemplo da Naia: "Luna com expressão provocante, olhar intenso por cima do ombro, pele realista com brilho suave, luz quente de fim de tarde entrando pela janela, sombras delicadas no corpo, fotografia íntima e natural, textura de pele com poros visíveis, clima sensual e explícito."
+${REFERENCE_RULE} Na sala +18, diga também a nudez (o que aparece) e a expressão. Exemplo da Naia para o clima: "Luna com expressão provocante, olhar intenso por cima do ombro, pele realista com brilho suave, luz quente de fim de tarde entrando pela janela, sombras delicadas no corpo, fotografia íntima e natural, textura de pele com poros visíveis, clima sensual e explícito."
 Na Naiaflow (clone "luna", Modo Spice): Criar = 1 crédito (3 fotos); "retoque" de foto já pronta = grátis (até 5 referências); Ações de 1 crédito: tirar a roupa, rachadinha, aumentar seios, celulite, estrias, pele realista. Diga o caminho mais barato.
 Termine com um bloco por foto: PROMPT / LEGENDA (texto do post no canal) / HASHTAGS (pode ficar vazio) / DESTINO: +18 Telegram.`;
 
@@ -107,7 +118,8 @@ Quando ele mandar uma referência com várias fotos (carrossel), comente cada fo
 VARIEDADE (obrigatório): cada post é um momento diferente. Um carrossel = 3 fotos do MESMO lugar e da MESMA roupa (só a pose muda); o post seguinte muda o lugar E a roupa — ex.: 3 fotos na praia de biquíni, depois 3 no hotel de vestido, depois 3 num café de jeans, depois outro lugar. Nunca repita lugar nem roupa de um post anterior da conversa nem das "fotos já pedidas" do contexto; trocar só um detalhe (outra cor, outro canto do mesmo lugar) não conta como diferente. Quando ele pedir vários posts, cada bloco tem lugar e roupa diferentes dos outros.
 ENQUADRAMENTO (obrigatório): a Luna aparece de corpo inteiro ou pelo menos da cintura para cima, com o cenário visível; nunca close só do rosto nem foto cortada no pescoço.
 Use o aprendizado das fotos anteriores (no contexto, quando houver) para escrever prompts que a Naiaflow acerta de primeira: diga a roupa inteira (parte de cima e de baixo), o enquadramento (corpo inteiro, da cintura para cima…) e o que não pode aparecer.
-Com foto de referência (o administrador mandou uma foto para recriar): ela vai como IMG1 no Criar e a luna copia a pose, o ângulo e o enquadramento. Então NÃO descreva a pose de novo (o texto vence a foto); escreva com detalhe o que a foto não entrega, seguindo o guia de estilo — roupa inteira (cor, tecido, parte de cima e de baixo), cenário brasileiro real, expressão, luz e estilo da foto de celular. Exemplo no padrão da Naia: "Luna sorrindo para a câmera, biquíni verde-limão de amarrar, areia clara e mar azul ao fundo, luz dourada de fim de tarde, pele natural com leve brilho de sol, foto de celular tirada por amiga."`;
+${REFERENCE_RULE}
+Exemplo (referência: mulher de costas num quarto de chalé, chapéu de caubói, maiô de oncinha): "Luna de costas para a câmera, corpo inteiro, virando o rosto por cima do ombro e sorrindo, um braço cruzado na frente do corpo; chapéu de caubói de palha trançada escura com fita e medalhão; maiô cavado de oncinha preto e branco com tiras finas cruzadas em X nas costas nuas, parte de baixo fio dental; quarto de chalé rústico com parede de pedrinhas bege e azul, cama com cabeceira de pallet e lençol branco, cortina verde-água, porta aberta para varanda de madeira com mato verde; luz natural do dia; foto vertical de celular tirada por outra pessoa, pele com textura real."`;
 
 interface PostRow {
   network: string;
