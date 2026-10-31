@@ -307,7 +307,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const { analyzeImages, analyzeLink, RefError } = await import("./_assistant_refs.js");
     try {
       if (body.action === "analyze") return reply(200, { analysis: await analyzeImages(body.images, body.kind, body.purpose) });
-      return reply(200, await analyzeLink(body.url));
+      return reply(200, await analyzeLink(body.url, (body as { note?: unknown }).note));
     } catch (e) {
       if (e instanceof RefError) return reply(e.status, { detail: e.message });
       throw e;

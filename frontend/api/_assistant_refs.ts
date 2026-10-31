@@ -156,6 +156,51 @@ async function instagramProfile(username: string): Promise<{ title: string; anal
   return { title: `perfil @${p.username} do Instagram`, analysis: `${facts.split("\n").slice(0, 2).join("\n")}\n${analysis}` };
 }
 
+// Post do Instagram (/p/, /reel/): pela API oficial, pela conexao do estudio
+// via Facebook. 1) oEmbed (da o dono e, quando a Meta manda, a miniatura);
+// 2) com o dono (do oEmbed, do link instagram.com/<usuario>/p/... ou do @ que
+// ele escreveu), Business Discovery acha o post nos recentes e baixa a foto.
+// Conta pessoal/privada ou post antigo: avisa para mandar o print.
+async function instagramPost(url: URL, shortcode: string, owner: string): Promise<{ title: string; analysis: string; image: string } | null> {
+  const conn = await igConnection().catch(() => null);
+  if (!conn || conn.provider !== "facebook_login") return null;
+  const auth = { Authorization: `Bearer ${conn.token}` };
+  const link = `https://www.instagram.com/p/${shortcode}/`;
+  let thumb = "";
+  try {
+    const r = await fetch(`${conn.host}/instagram_oembed?url=${encodeURIComponent(link)}&fields=author_name,thumbnail_url,title`, { headers: auth, signal: AbortSignal.timeout(12_000) });
+    const o = (await r.json().catch(() => ({}))) as { author_name?: string; thumbnail_url?: string };
+    if (r.ok) {
+      owner ||= o.author_name ?? "";
+      thumb = o.thumbnail_url ?? "";
+    }
+  } catch {
+    // sem oEmbed: segue pelo dono
+  }
+  type Media = { caption?: string; media_type: string; media_url?: string; thumbnail_url?: string; permalink?: string; like_count?: number; children?: { data: { media_type: string; media_url?: string; thumbnail_url?: string }[] } };
+  let post: Media | undefined;
+  if (/^[A-Za-z0-9._]{1,30}$/.test(owner)) {
+    const fields = `business_discovery.username(${owner}){media.limit(50){caption,media_type,media_url,thumbnail_url,permalink,like_count,children{media_type,media_url,thumbnail_url}}}`;
+    try {
+      const r = await fetch(`${conn.host}/${conn.userId}?fields=${encodeURIComponent(fields)}`, { headers: auth, signal: AbortSignal.timeout(20_000) });
+      const data = (await r.json().catch(() => ({}))) as { business_discovery?: { media?: { data: Media[] } } };
+      post = data.business_discovery?.media?.data.find((m) => m.permalink?.includes(`/${shortcode}`));
+    } catch {
+      // perfil fora do alcance da API: fica so com a miniatura do oEmbed
+    }
+  }
+  // carrossel: ate 4 fotos (a IA comenta cada uma); video: a capa
+  const pic = (m: { media_type: string; media_url?: string; thumbnail_url?: string }) => (m.media_type === "VIDEO" ? m.thumbnail_url : m.media_url) ?? "";
+  const urls = post ? (post.children?.data.length ? post.children.data.slice(0, 4).map(pic) : [pic(post)]) : thumb ? [thumb] : [];
+  const images = (await Promise.all(urls.filter(Boolean).map(asDataUrl))).filter((x): x is string => Boolean(x));
+  if (!images.length) return null;
+  const kind = post?.media_type === "CAROUSEL_ALBUM" ? `carrossel (${images.length} fotos, em ordem)` : post?.media_type === "VIDEO" ? "Reels/vídeo (capa)" : "foto";
+  const facts = [`Post do Instagram${owner ? ` de @${owner}` : ""}: ${url.toString()}`, `Formato: ${kind}`, post?.caption ? `Legenda: ${post.caption.replace(/\s+/g, " ").slice(0, 400)}` : ""].filter(Boolean).join("\n");
+  const analysis = await read(PHOTO_PROMPT, images, images.length > 1 ? `${facts}\nAs imagens são as fotos do carrossel, em ordem: leia cada uma (Foto 1, Foto 2…).` : facts);
+  // a 1a foto volta para o painel: vira a referencia IMG1 do Criar (a luna copia pose e angulo)
+  return { title: `post${owner ? ` de @${owner}` : ""} do Instagram`, analysis: `${facts}\n${analysis}`, image: images[0] };
+}
+
 function meta(html: string, name: string): string | null {
   const re = new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]*>`, "i");
   const tag = html.match(re)?.[0];
@@ -186,7 +231,8 @@ async function pagePreview(url: string): Promise<{ title: string; analysis: stri
   return { title: title.slice(0, 80), analysis: `${facts}\n${analysis}` };
 }
 
-export async function analyzeLink(raw: unknown): Promise<{ title: string; analysis: string }> {
+// note: o texto que ele escreveu junto (pode ter o @ do dono do post)
+export async function analyzeLink(raw: unknown, note?: unknown): Promise<{ title: string; analysis: string; image?: string }> {
   let url: URL;
   try {
     url = new URL(String(raw ?? "").trim());
@@ -203,6 +249,18 @@ export async function analyzeLink(raw: unknown): Promise<{ title: string; analys
   if (host === "instagram.com" || host.endsWith(".instagram.com")) {
     const first = url.pathname.split("/").filter(Boolean)[0] ?? "";
     // instagram.com/<usuario>/ e um perfil; /p/, /reel/, /tv/, /stories/ sao posts
+    const parts = url.pathname.split("/").filter(Boolean);
+    // post: /p/<codigo>, /reel/<codigo> ou /<usuario>/p/<codigo>
+    const at = parts.findIndex((s) => ["p", "reel", "reels", "tv"].includes(s.toLowerCase()));
+    if (at >= 0 && parts[at + 1]) {
+      const owner = at > 0 ? parts[0] : (String(note ?? "").match(/@([A-Za-z0-9._]{1,30})/)?.[1] ?? "");
+      const post = await instagramPost(url, parts[at + 1], owner);
+      if (post) return post;
+      throw new RefError(
+        400,
+        `Não consegui ver esse post do Instagram (só consigo abrir posts de contas profissionais e públicas${owner ? "" : "; se souber, escreva o @ da conta junto com o link"}). Manda um print da foto pelo 📎 que eu monto igual.`
+      );
+    }
     if (first && !["p", "reel", "reels", "tv", "stories", "explore"].includes(first.toLowerCase()) && /^[A-Za-z0-9._]{1,30}$/.test(first)) {
       return instagramProfile(first);
     }
