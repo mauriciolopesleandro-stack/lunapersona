@@ -225,6 +225,8 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     // "o que esta errado?" numa foto/Reels da Luna vira revisao (defeitos)
     const review = attachments.length > 0 && REVIEW_ASK.test(typed);
     const reads: { label: string; text: string }[] = [];
+    // post do Feed (/p/) pode ser foto ou video: so vira dancinha se a leitura disser que e video
+    let linkVideo = false;
     try {
       for (const a of attachments) {
         setStage(review ? "Revisando…" : a.kind === "video" ? "Assistindo o vídeo…" : "Olhando a foto…");
@@ -240,8 +242,9 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       if (link) {
         setStage(/instagram\.com/i.test(link) ? "Lendo a página do Instagram…" : "Lendo o link…");
         try {
-          const out = await post<{ title: string; analysis: string }>({ action: "link", url: link });
+          const out = await post<{ title: string; analysis: string; video?: boolean }>({ action: "link", url: link });
           reads.push({ label: out.title, text: out.analysis });
+          linkVideo = out.video === true;
         } catch (e) {
           // link de dancinha (TikTok, Reels...) costuma bloquear a leitura: segue
           // sem ela, o "Fazer dancinha" usa o link direto
@@ -274,7 +277,8 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       : { role: "user", content: typed };
     // dancinha: o video enviado (o arquivo fica so na memoria) ou o link de rede social
     const danceFile = room !== "18" ? attachments.find((a) => a.kind === "video")?.file : undefined;
-    const danceLink = room !== "18" ? typed.match(DANCE_LINK)?.[0] : undefined;
+    const linkMatch = room !== "18" ? typed.match(DANCE_LINK)?.[0] : undefined;
+    const danceLink = linkMatch && (!/instagram\.com\/(?:[^/]+\/)?p\//i.test(linkMatch) || linkVideo) ? linkMatch : undefined;
     if (danceFile || danceLink) message.dance = danceLink && !danceFile ? { link: danceLink } : {};
     if (danceFile) danceFiles.current.set(messages.length, danceFile);
     if (refPhoto) {

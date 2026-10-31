@@ -167,7 +167,8 @@ function meta(html: string, name: string): string | null {
 }
 
 // Qualquer pagina (inclusive post do Instagram): titulo, descricao e a imagem de previa.
-async function pagePreview(url: string): Promise<{ title: string; analysis: string }> {
+// video: a pagina e de video (og:video / og:type) - o painel so oferece a dancinha nesse caso
+async function pagePreview(url: string): Promise<{ title: string; analysis: string; video: boolean }> {
   let html = "";
   try {
     const r = await fetch(url, {
@@ -186,10 +187,11 @@ async function pagePreview(url: string): Promise<{ title: string; analysis: stri
   if (!image && !description) throw new RefError(400, "A página não deixou eu ver a imagem nem o texto (o Instagram costuma bloquear). Mande um print ou a foto.");
   const facts = `Link: ${url}\nTítulo: ${title.slice(0, 200)}\nTexto: ${description.slice(0, 600)}`;
   const analysis = await read(PHOTO_PROMPT, image ? [image] : [], facts);
-  return { title: title.slice(0, 80), analysis: `${facts}\n${analysis}` };
+  const video = Boolean(meta(html, "og:video") ?? meta(html, "og:video:secure_url")) || /video/i.test(meta(html, "og:type") ?? "");
+  return { title: title.slice(0, 80), analysis: `${facts}\n${video ? "Formato: vídeo" : "Formato: foto"}\n${analysis}`, video };
 }
 
-export async function analyzeLink(raw: unknown): Promise<{ title: string; analysis: string }> {
+export async function analyzeLink(raw: unknown): Promise<{ title: string; analysis: string; video?: boolean }> {
   let url: URL;
   try {
     url = new URL(String(raw ?? "").trim());
