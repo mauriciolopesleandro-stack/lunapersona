@@ -1,4 +1,4 @@
-import { storeConfigured, storeGet, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
+import { storeConfigured, storeGet, storeIncr, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
 import { dbSelect, dbUpdate, dbUpdateWhere } from "./_supabase.js";
 import { telegram } from "./_telegram.js";
 import type { FanRow, ProductRow } from "./_sales_bot.js";
@@ -220,7 +220,9 @@ export async function sendCta(token: string, chatId: number, text: string, turn:
 export async function sendWelcome(token: string, fan: FanRow, chatId: number): Promise<boolean> {
   if (!(await buyButtons()).length) return false;
   const config = await ctaConfig();
-  await sendCta(token, chatId, fill(config.welcome, fan), 0);
+  // a previa gira a cada fa novo (antes ia sempre a primeira): usa todas as que estiverem na pasta
+  const turn = storeConfigured() ? await storeIncr("luna:cta-boasvindas-giro").catch(() => Date.now()) : Date.now();
+  await sendCta(token, chatId, fill(config.welcome, fan), turn);
   await dbUpdateWhere("fans", `id=eq.${fan.id}`, { cta_sent_at: new Date().toISOString() });
   return true;
 }
