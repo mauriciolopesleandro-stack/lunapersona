@@ -125,7 +125,7 @@ function rememberAsked(prompt: string) {
 }
 
 // destinos do +18: o post no canal VIP e o conteudo dos pacotes do bot de vendas
-const ADULT_DESTS = [
+export const ADULT_DESTS = [
   { key: "canal", label: "Canal VIP" },
   { key: "ensaio", label: "Pacote Ensaio" },
   { key: "album-vip", label: "Pacote Álbum VIP" },

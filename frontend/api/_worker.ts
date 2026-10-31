@@ -224,6 +224,9 @@ interface Motion {
   seconds: number;
   outfit?: string;
   sound?: "original" | "sem";
+  // video longo +18: quantos trechos de `seconds` o administrador aprovou (custo)
+  segments?: number;
+  long?: boolean;
 }
 // foto de referencia (IMG1) mandada na conversa: caminho no armazenamento temporario
 async function referenceOf(item: Pick<ItemRow, "plan_id">): Promise<string | null> {
@@ -240,7 +243,8 @@ async function adultDestOf(item: Pick<ItemRow, "plan_id">): Promise<AdultDest | 
 
 async function motionOf(item: Pick<ItemRow, "plan_id">): Promise<Motion | null> {
   const [plan] = await dbSelect<{ request: { source?: string; motion?: Motion } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
-  return plan?.request?.source === "chat-dance" && plan.request.motion ? plan.request.motion : null;
+  const source = plan?.request?.source;
+  return (source === "chat-dance" || source === "chat18-long") && plan?.request?.motion ? plan.request.motion : null;
 }
 
 async function queueSize(): Promise<number> {
@@ -401,6 +405,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const sent = await sendFolderReview({ target: "previa", media_id: mediaId, path, label: "Prévias da chamada (CTA) — borrada pelo robô" });
       return reply(200, { added: sent, review: true });
     }
+    // robo trabalhando num pedido longo (video +18 em trechos): segura o item como
+    // "gerando" (sem isso, depois de 30 min ele voltaria para a fila no meio)
+    if (body.action === "progress") {
+      const id = String(body.id ?? "");
+      if (!/^[0-9a-f-]{36}$/.test(id)) throw new Problem(400, "Item inválido.");
+      await dbUpdateWhere("content_plan_items", `id=eq.${id}&status=eq.gerando`, { updated_at: now() });
+      return reply(200, { ok: true });
+    }
     // aviso curto do robo para o administrador (ex.: "nao achei partes intimas")
     if (body.action === "notice") {
       await sendNotice(await telegramConfig(), String(body.text ?? "").slice(0, 500)).catch(() => undefined);
@@ -424,7 +436,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           item: {
             id: item.id,
             prompt: item.prompt,
-            adult: false,
+            adult: item.adult,
             kind: "video",
             attempt: claimed.attempts,
             folder: folderFor(item),
@@ -436,6 +448,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
               seconds: motion.seconds,
               ...(motion.outfit ? { outfit: motion.outfit } : {}),
               sound: motion.sound ?? "sem",
+              ...(motion.long ? { long: true, segments: motion.segments } : {}),
             },
           },
         });

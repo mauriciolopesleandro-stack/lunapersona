@@ -26,6 +26,7 @@ import argparse
 import base64
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -626,7 +627,7 @@ class Naiaflow:
 
     # --- dancinha: Copiar movimento --------------------------------------------------------------
 
-    def copy_motion(self, link: str | None, video_file: Path | None, seconds: int, outfit: str | None, dry: bool = False, sound: str = "original") -> str:
+    def copy_motion(self, link: str | None, video_file: Path | None, seconds: int, outfit: str | None, dry: bool = False, sound: str = "original", on_wait=None) -> str:
         """Copiar movimento (Modo imagem -> Copiar movimento): o movimento vem do
         link ou do video enviado, a pessoa e o clone luna, sem som (a musica entra
         no Instagram), com a roupa escolhida da galeria (ou a do video). So gera
@@ -726,6 +727,8 @@ class Naiaflow:
         deadline = time.time() + 25 * 60
         while time.time() < deadline:
             time.sleep(15)
+            if on_wait:
+                on_wait()
             try:
                 p.goto(NAIAFLOW, wait_until="domcontentloaded")
                 p.wait_for_timeout(4000)
@@ -786,6 +789,9 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
     """Dancinha: video da Naiaflow (ou o de teste) -> quadro em JPEG para a
     biblioteca -> Reels e TikTok com o mesmo MP4."""
     m = item["motion"]
+    if m.get("long"):
+        process_long_motion(studio, item, naia, test_video)
+        return
     log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): dancinha {m.get('seconds')} s pelo {'link' if m.get('link') else 'video enviado'}"
         + (f", roupa {m['outfit']}" if m.get("outfit") else ""))
     folder = STUDIO_ROOT / item["folder"]
@@ -829,18 +835,156 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
             check=True,
         )
         raw.unlink()
+    send_motion(studio, item, folder, mp4, "Dancinha salva")
+
+
+def send_motion(studio: Studio, item: dict, folder: Path, mp4: Path, what: str) -> None:
+    """Video pronto: quadro em JPEG para a biblioteca, cadastra no estudio e sobe
+    uma copia para cada publicacao (que chega no Telegram para aprovar)."""
+    import imageio_ffmpeg
+
     jpg = folder / item["file"]
     subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-ss", "1", "-i", str(mp4), "-frames:v", "1", "-q:v", "3", str(jpg)], check=True)
     local_path = f"{item['folder']}/{item['file']}"
     video_path = f"{item['folder']}/{mp4.name}"
     data = mp4.read_bytes()
-    log(f"Dancinha salva em {video_path}")
+    log(f"{what} em {video_path}")
     done = studio.call("done", id=item["id"], local_path=local_path, size_bytes=jpg.stat().st_size, video_path=video_path, video_size=len(data))
     for t in done["targets"]:
         up = studio.call("upload-url", id=item["id"], post_id=t["post_id"], version=t["version"], size_bytes=len(data), mime_type="video/mp4")
         put_copy(up["url"], data, "video/mp4")
     sent = studio.call("uploaded", id=item["id"])
     log(f"Mandada para você aprovar no Telegram ({sent['sent']} publicação(ões)).")
+
+
+LONG_SEGMENT_S = 5
+LONG_CREDITS_PER_SEGMENT = LONG_SEGMENT_S + 1  # 1 por segundo + 1 do clone
+TELEGRAM_VIDEO_MAX = 18 * 1024 * 1024  # o Telegram so busca video por link ate 20 MB
+
+
+def video_seconds(path: Path) -> float:
+    import imageio_ffmpeg
+
+    reader = imageio_ffmpeg.read_frames(str(path))
+    meta = next(reader)
+    reader.close()
+    return float(meta.get("duration") or 0)
+
+
+def has_audio(path: Path) -> bool:
+    import imageio_ffmpeg
+
+    reader = imageio_ffmpeg.read_frames(str(path))
+    meta = next(reader)
+    reader.close()
+    return bool(meta.get("audio_codec"))
+
+
+def run_ff(args: list[str]) -> None:
+    """ffmpeg com o erro dele na mensagem (para o log e o aviso no Telegram)."""
+    r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if r.returncode != 0:
+        raise RuntimeError(f"ffmpeg falhou: {(r.stderr or '').strip()[-400:]}")
+
+
+def process_long_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video: Path | None) -> None:
+    """Video longo +18 (31/10): corta o video em trechos de 5 s, faz o Copiar
+    movimento da luna em cada um (o trecho pronto fica salvo: se cair no meio,
+    nao gasta credito de novo), emenda tudo e poe o som do video original
+    inteiro por cima. O ultimo trecho comeca 5 s antes do fim e a emenda tira a
+    parte repetida."""
+    import imageio_ffmpeg
+
+    ff = imageio_ffmpeg.get_ffmpeg_exe()
+    m = item["motion"]
+    approved = int(m.get("segments") or 0)
+    log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): vídeo longo +18 em {approved} trechos de {LONG_SEGMENT_S} s"
+        + (f", roupa {m['outfit']}" if m.get("outfit") else ""))
+    folder = STUDIO_ROOT / item["folder"]
+    folder.mkdir(parents=True, exist_ok=True)
+    mp4 = folder / item["file"].replace(".jpg", ".mp4")
+    if mp4.exists() and mp4.stat().st_size > 10000:
+        log(f"Vídeo longo já estava pronto: {mp4.name} (não gasta crédito de novo).")
+        send_motion(studio, item, folder, mp4, "Vídeo longo salvo")
+        return
+    parts = folder / f"trechos-{item['id'][:8]}"
+    parts.mkdir(exist_ok=True)
+    source = parts / f"original{Path(m.get('file_name') or 'video.mp4').suffix}"
+    if not source.exists():
+        r = requests.get(m["file_url"], timeout=600)
+        r.raise_for_status()
+        source.write_bytes(r.content)
+    total = video_seconds(source)
+    count = max(1, math.ceil(total / LONG_SEGMENT_S - 0.02))
+    if total < LONG_SEGMENT_S:
+        raise RuntimeError(f"O vídeo tem {total:.1f} s: precisa de pelo menos {LONG_SEGMENT_S} s.")
+    if count > approved:
+        # nunca gasta mais do que o administrador confirmou no estudio
+        raise RuntimeError(f"O vídeo tem {total:.1f} s ({count} trechos), mas foram aprovados {approved}: mande de novo pelo estúdio.")
+    starts = [min(i * LONG_SEGMENT_S, max(0.0, total - LONG_SEGMENT_S)) for i in range(count)]
+    clip = lambda i: parts / f"luna-{i + 1:02d}.mp4"  # noqa: E731
+    missing = [i for i in range(count) if not (clip(i).exists() and clip(i).stat().st_size > 10000)]
+    if missing and naia and not test_video:
+        have = naia.credits()
+        need = len(missing) * LONG_CREDITS_PER_SEGMENT
+        if have is not None and have < need + MIN_CREDITS:
+            raise RuntimeError(f"Faltam créditos na Naiaflow: o vídeo precisa de {need} ({len(missing)} trechos) e tem {have}. Os trechos prontos ficam guardados.")
+    last_beat = [0.0]
+
+    def beat() -> None:
+        # segura o item como "gerando" no estudio enquanto trabalha (a cada 5 min)
+        if time.time() - last_beat[0] > 300:
+            last_beat[0] = time.time()
+            try:
+                studio.call("progress", id=item["id"])
+            except Exception:  # noqa: BLE001
+                pass
+
+    for i in missing:
+        beat()
+        cut = parts / f"corte-{i + 1:02d}.mp4"
+        run_ff([ff, "-y", "-loglevel", "error", "-ss", f"{starts[i]:.3f}", "-i", str(source), "-t", str(LONG_SEGMENT_S),
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-an", "-movflags", "+faststart", str(cut)])
+        if test_video:
+            clip(i).write_bytes(test_video.read_bytes())
+        else:
+            log(f"Trecho {i + 1} de {count} na Naiaflow…")
+            url = naia.copy_motion(None, cut, LONG_SEGMENT_S, m.get("outfit"), sound="sem", on_wait=beat)
+            r = requests.get(url, timeout=300)
+            r.raise_for_status()
+            clip(i).write_bytes(r.content)
+        cut.unlink(missing_ok=True)
+        log(f"Trecho {i + 1} de {count} pronto.")
+    # emenda: cada trecho entra a partir de onde o anterior parou (o ultimo
+    # tira a parte repetida), tudo em 720x1280 30 fps, sem som
+    joined = parts / "emendado.mp4"
+    listing = parts / "lista.txt"
+    pieces = []
+    covered = 0.0
+    for i in range(count):
+        skip = max(0.0, covered - starts[i])
+        length = min(starts[i] + LONG_SEGMENT_S, total) - max(covered, starts[i])
+        if length <= 0.05:
+            continue
+        piece = parts / f"parte-{i + 1:02d}.mp4"
+        run_ff([ff, "-y", "-loglevel", "error", "-ss", f"{skip:.3f}", "-i", str(clip(i)), "-t", f"{length:.3f}",
+                        "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30",
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-an", str(piece)])
+        pieces.append(piece)
+        covered = starts[i] + LONG_SEGMENT_S
+    # caminho inteiro com / (o concat do ffmpeg nao achava o trecho na pasta "+18")
+    listing.write_text("".join(f"file '{p.resolve().as_posix()}'\n" for p in pieces), encoding="utf-8", newline="\n")
+    run_ff([ff, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(joined)])
+    # som do video original inteiro; video que cabe no Telegram (ate ~18 MB)
+    kbps = max(500, min(4000, int(TELEGRAM_VIDEO_MAX * 8 / 1024 / max(total, 1)) - 160))
+    audio = ["-map", "0:v:0", "-map", "1:a:0"] if has_audio(source) else [
+        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100", "-map", "0:v:0", "-map", "2:a:0"]
+    run_ff([ff, "-y", "-loglevel", "error", "-i", str(joined), "-i", str(source), *audio, "-shortest",
+                    "-c:v", "libx264", "-preset", "veryfast", "-b:v", f"{kbps}k", "-maxrate", f"{kbps}k", "-bufsize", f"{kbps * 2}k",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(mp4)])
+    log(f"Vídeo longo emendado: {len(pieces)} trechos, {video_seconds(mp4):.1f} s, {mp4.stat().st_size / 1024 / 1024:.1f} MB, com o som original.")
+    send_motion(studio, item, folder, mp4, "Vídeo longo salvo")
+    shutil.rmtree(parts, ignore_errors=True)
 
 
 def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path | None) -> None:

@@ -54,6 +54,12 @@ class Problem extends Error {
   }
 }
 
+// video longo +18: trechos de 5 s (o tamanho em que a luna se perde menos no
+// Copiar movimento); o ultimo comeca 5 s antes do fim e a emenda tira a sobra
+export const LONG_SEGMENT = 5;
+export const LONG_MAX_SECONDS = 300;
+export const longSegments = (duration: number) => Math.max(1, Math.ceil(duration / LONG_SEGMENT - 0.02));
+
 interface PlanRow {
   id: string;
   title: string;
@@ -304,6 +310,52 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (body.action === "ref-url") {
       const path = `refs/${randomUUID()}.jpg`;
       return reply(200, { path, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
+    }
+
+    // Video longo +18 (pedido de 31/10): o robo corta o video em trechos de 5 s,
+    // faz o Copiar movimento da luna em cada um e junta tudo com o som original.
+    // So para o canal +18 / pacotes. Custo: 6 creditos por trecho (5 s + 1 do clone).
+    if (body.action === "long-video") {
+      const file = typeof body.path === "string" ? body.path : "";
+      if (!/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
+      const duration = Number(body.duration);
+      if (!Number.isFinite(duration) || duration < LONG_SEGMENT) throw new Problem(400, `O vídeo precisa ter pelo menos ${LONG_SEGMENT} segundos.`);
+      if (duration > LONG_MAX_SECONDS) throw new Problem(400, `O vídeo pode ter no máximo ${LONG_MAX_SECONDS / 60} minutos (corte antes de mandar).`);
+      const segments = longSegments(duration);
+      const credits = segments * (LONG_SEGMENT + 1);
+      // o estudio mostra o custo e o administrador confirma: o pedido traz o mesmo numero
+      if (Number(body.credits) !== credits) throw new Problem(409, `O custo mudou: são ${segments} trechos (${credits} créditos). Confira e confirme de novo.`);
+      const outfit = typeof body.outfit === "string" ? body.outfit.trim().slice(0, 60) : "";
+      const adultDest = normalizeFlags({ adultDest: body.adultDest }, 1).adultDest;
+      if (adultDest) {
+        const problem = flagProblem("telegram", ["Canal"], { adultDest });
+        if (problem) throw new Problem(400, problem);
+      }
+      const when = body.scheduled_at === "auto" || body.scheduled_at === undefined ? Date.now() + 3 * 3600_000 : typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
+      if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
+      const caption = typeof body.caption === "string" ? body.caption.slice(0, 4000) : "";
+      const motion = { path: file, seconds: LONG_SEGMENT, segments, long: true, ...(outfit ? { outfit } : {}), sound: "original" as const };
+      const plan = await dbInsert<PlanRow>("content_plans", {
+        title: `Vídeo longo +18 (${segments} trechos de ${LONG_SEGMENT} s${outfit ? `, roupa ${outfit}` : ""})`,
+        request: { source: "chat18-long", slots: ["telegram18"], motion, ...(adultDest ? { adultDest } : {}) },
+        status: "aprovado",
+        approved_at: new Date().toISOString(),
+      });
+      const item = await dbInsert<ItemRow>("content_plan_items", {
+        plan_id: plan.id,
+        position: 0,
+        scheduled_at: new Date(when).toISOString(),
+        network: "telegram",
+        format: "Canal",
+        kind: "video",
+        adult: true,
+        prompt: `Vídeo longo +18 (Copiar movimento em ${segments} trechos${outfit ? `, roupa ${outfit}` : ""})`,
+        caption,
+        hashtags: [],
+        status: "na_fila",
+      });
+      await audit("video_longo_18", "content_plan_items", item.id, { trechos: segments, creditos: credits, segundos: Math.round(duration) });
+      return reply(200, { item, items: [item], estimate: { images: 0, videos: segments, credits } });
     }
 
     if (body.action === "dance") {
