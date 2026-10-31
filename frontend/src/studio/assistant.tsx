@@ -78,6 +78,11 @@ const QUICK18 = [
   "Escreva 3 textos curtos para posts do canal VIP que façam o assinante comentar e não cancelar.",
 ];
 
+// a resposta sem as marcas de markdown (**negrito**, # titulo) que a IA ainda escapa
+function plain(text: string): string {
+  return text.replace(/\*\*|__/g, "").replace(/^#{1,6}\s+/gm, "");
+}
+
 function load(room: string): Message[] {
   if (room === "18") {
     try {
@@ -350,7 +355,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
                     ))}
                   </div>
                 )}
-                <p>{m.display ?? m.content}</p>
+                <p>{m.display ?? (m.role === "assistant" ? plain(m.content) : m.content)}</p>
                 {m.reading && (
                   <details className="st-msg-reading">
                     <summary>Leitura da referência</summary>
@@ -482,7 +487,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
             </div>
           )}
           <div className="st-chat-foot">
-            {status?.configured && <small className="st-hint">IA sem restrição: {status.adultModel}. Explícito só vale para o canal +18.</small>}
+            {status?.configured && <small className="st-hint">Conversa: {status.model} · +18: {status.adultModel}. Explícito só vale para o canal +18.</small>}
             <button type="button" className="st-link" onClick={() => (rules === null ? openRules() : setRules(null))}>
               🧠 O que aprendi
             </button>
