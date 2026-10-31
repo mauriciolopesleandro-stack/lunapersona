@@ -26,6 +26,7 @@ import {
   dbSelectAll,
   dbUpdate,
   dbUpdateWhere,
+  storageCopy,
   storageObjectSize,
   storageReadUrl,
   storageUploadUrl,
@@ -265,6 +266,63 @@ export async function decidePost(id: string, version: unknown, decision: "approv
   await dbUpdateWhere("content_plan_items", `post_id=eq.${post.id}`, { status: "aprovado", updated_at: new Date().toISOString() }).catch(() => undefined);
   await audit("aprovar", "posts", post.id, { version: post.version, agendado: saved.status === "agendado" });
   return saved;
+}
+
+// Aprovar so algumas fotos (botao "Escolher fotos" do Telegram, pedido de 30/10:
+// o +18 chega com as 3 fotos do Criar e as ruins nao vao). positions: 1 = primeira.
+// Todas escolhidas = aprovar normal. Senao: nova versao so com as escolhidas (as
+// copias delas sao duplicadas para a versao nova) e ja aprovada.
+export async function approveChosen(id: string, version: unknown, positions: number[]): Promise<PostRow> {
+  const post = await getPost(uuid(id));
+  requireStatus(post, ["aguardando_aprovacao"], "aprovar");
+  if (version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}). Revise de novo antes de decidir.`);
+  const mediaIds = await postMediaIds(post.id);
+  const keep = [...new Set(positions)].filter((n) => Number.isInteger(n) && n >= 1 && n <= mediaIds.length).sort((a, b) => a - b);
+  if (!keep.length) throw new Problem(400, "Escolha pelo menos uma foto.");
+  if (keep.length === mediaIds.length) return decidePost(post.id, post.version, "approve");
+  return approveAsNewVersion(post, mediaIds, keep, post.flags, `Escolhidas no Telegram: foto(s) ${keep.join(", ")}`, { de: mediaIds.length, ficaram: keep });
+}
+
+// Reels com a musica do Instagram (flags.igAudio): "Aprovar com som original" tira a
+// musica e o Reels sai com o som do proprio video (a dancinha com o Som original).
+export async function approveWithoutMusic(id: string, version: unknown): Promise<PostRow> {
+  const post = await getPost(uuid(id));
+  requireStatus(post, ["aguardando_aprovacao"], "aprovar");
+  if (version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}). Revise de novo antes de decidir.`);
+  if (!post.flags?.igAudio) return decidePost(post.id, post.version, "approve");
+  const mediaIds = await postMediaIds(post.id);
+  const { igAudio: _music, ...flags } = post.flags;
+  return approveAsNewVersion(post, mediaIds, mediaIds.map((_, i) => i + 1), flags, "Aprovada com o som original (sem a música do Instagram)", { som: "original" });
+}
+
+// Nova versao ja aprovada a partir da revisada: so as midias keep (1 = primeira),
+// com as flags dadas; as copias das midias sao duplicadas para a versao nova.
+async function approveAsNewVersion(post: PostRow, mediaIds: string[], keep: number[], flags: PostFlags, note: string, details: object): Promise<PostRow> {
+  const uploads = await dbSelect<{ position: number; storage_path: string; mime_type: string; size_bytes: number | null }>(
+    "post_uploads",
+    `select=position,storage_path,mime_type,size_bytes&post_id=eq.${post.id}&post_version=eq.${post.version}&deleted_at=is.null&order=position.asc`
+  );
+  const next = post.version + 1;
+  const copies = [];
+  for (const [k, n] of keep.entries()) {
+    const up = uploads.find((u) => u.position === n - 1);
+    if (!up) throw new Problem(400, "A cópia de uma das fotos não está mais no armazenamento.");
+    const to = `${post.id}/v${next}/${k}.${up.storage_path.split(".").pop()}`;
+    await storageCopy(UPLOAD_BUCKET, up.storage_path, to);
+    copies.push({ post_id: post.id, post_version: next, position: k, storage_path: to, mime_type: up.mime_type, size_bytes: up.size_bytes ?? 1 });
+  }
+  const chosen = keep.map((n) => mediaIds[n - 1]);
+  const formats = (await destinations(post.id)).filter((d) => d.status !== "cancelado").map((d) => d.format);
+  const hash = contentHash({ network: post.network, formats, mediaIds: chosen, caption: post.caption, hashtags: post.hashtags, mode: post.publish_mode, flags });
+  // a versao revisada vira a nova; as copias antigas saem
+  await dbInsert("approvals", { post_id: post.id, version: post.version, content_hash: post.content_hash, decision: "reprovado", note });
+  const saved = await guardedUpdate(post, { version: next, content_hash: hash, status: "aguardando_aprovacao", flags });
+  await replaceMedia(post.id, chosen);
+  await cancelJobs(post.id);
+  await cleanupUploads(post.id);
+  await dbInsert("post_uploads", copies);
+  await audit("aprovar_nova_versao", "posts", post.id, details);
+  return decidePost(saved.id, saved.version, "approve");
 }
 
 // --- operacoes reaproveitadas pela automacao local (api/_worker.ts) ----------------------

@@ -183,7 +183,7 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
         setStep(`Copiando ${files.length} arquivo(s) para o robô borrar...`);
         const { added, skipped } = await addFiles(files, BLUR_DIR);
         return [
-          added ? `${added} arquivo(s) na fila do robô para borrar. Em 1 a 3 min (vídeo demora mais) a versão borrada aparece aqui em Prévias: confira e toque em Atualizar.` : "",
+          added ? `${added} arquivo(s) na fila do robô para borrar. Em 1 a 3 min (vídeo demora mais) a versão borrada aparece aqui e já entra nas mensagens; o bot te avisa no Telegram. Se o robô não achar partes íntimas, ela fica só na pasta para você conferir.` : "",
           skipped.length ? `Ignorados (tipo não aceito): ${skipped.join(", ")}` : "",
         ]
           .filter(Boolean)

@@ -28,6 +28,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -43,7 +44,8 @@ HERE = Path(__file__).resolve().parent
 STUDIO_ROOT = Path(os.environ.get("LUNA_STUDIO_ROOT", HERE.parent))
 CONFIG_FILE = Path(os.environ.get("LUNA_WORKER_CONFIG", HERE / "luna-worker.env"))
 PROFILE_DIR = HERE / ".perfil-naiaflow"
-LOG_FILE = HERE / "luna-worker.log"
+# teste (outra pasta do estudio): o log fica junto do teste, nao mistura com o do robo de verdade
+LOG_FILE = CONFIG_FILE.with_name("luna-worker.log") if "LUNA_WORKER_CONFIG" in os.environ else HERE / "luna-worker.log"
 NAIAFLOW = "https://app.naiaflow.com/generations"
 # a foto pronta abre direto por este link (painel de Acoes: Editar pelo texto)
 NAIAFLOW_JOB = "https://app.naiaflow.com/generations/preview/job/"
@@ -624,7 +626,7 @@ class Naiaflow:
 
     # --- dancinha: Copiar movimento --------------------------------------------------------------
 
-    def copy_motion(self, link: str | None, video_file: Path | None, seconds: int, outfit: str | None, dry: bool = False) -> str:
+    def copy_motion(self, link: str | None, video_file: Path | None, seconds: int, outfit: str | None, dry: bool = False, sound: str = "original") -> str:
         """Copiar movimento (Modo imagem -> Copiar movimento): o movimento vem do
         link ou do video enviado, a pessoa e o clone luna, sem som (a musica entra
         no Instagram), com a roupa escolhida da galeria (ou a do video). So gera
@@ -662,7 +664,15 @@ class Naiaflow:
             p.get_by_role("button", name="Continuar", exact=True).last.click()
             dur.first.wait_for(state="visible", timeout=90000)
         dur.first.click()
-        p.get_by_text("Sem som", exact=True).first.click()
+        # "Som original" mantem a musica da dancinha (na aprovacao do Telegram da para
+        # trocar pela musica do Instagram); "Sem som" so se pedido. O custo e conferido
+        # no botao Gerar (segundos + 1): se a opcao mudar o custo, o robo nao gera.
+        choice = p.get_by_text("Som original", exact=True)
+        if sound == "original" and choice.count():
+            choice.first.click()
+            log("Som: original da dancinha.")
+        else:
+            p.get_by_text("Sem som", exact=True).first.click()
         p.wait_for_timeout(800)
         p.get_by_role("button", name="Continuar", exact=True).last.click()
         p.wait_for_timeout(5000)
@@ -778,7 +788,7 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
             r = requests.get(m["file_url"], timeout=300)
             r.raise_for_status()
             source.write_bytes(r.content)
-        url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"))
+        url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original")
         r = requests.get(url, timeout=300)
         r.raise_for_status()
         mp4.write_bytes(r.content)
@@ -786,14 +796,19 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
             source.unlink()
     import imageio_ffmpeg
     # o Instagram recusa Reels sem trilha de audio (ERROR no conteiner, 30/10):
-    # 1080x1920 com trilha muda, como o make_reels (a musica entra no Instagram)
+    # 1080x1920 com o som da dancinha (Som original) ou, sem som, com trilha muda
     raw = mp4.with_name(mp4.stem + "-naia.mp4")
     if not raw.exists():
         mp4.replace(raw)
+        reader = imageio_ffmpeg.read_frames(str(raw))
+        has_audio = bool(next(reader).get("audio_codec"))
+        reader.close()
+        audio = ["-map", "0:v:0", "-map", "0:a:0"] if has_audio else [
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100", "-map", "0:v:0", "-map", "1:a:0", "-shortest"]
+        if has_audio:
+            log("Dancinha com o som original.")
         subprocess.run(
-            [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(raw),
-             "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-             "-map", "0:v:0", "-map", "1:a:0", "-shortest",
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(raw), *audio,
              "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
              "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", "30", "-g", "60",
              "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(mp4)],
@@ -994,11 +1009,12 @@ def learn(studio: Studio, item: dict, img: Image.Image, prompt: str) -> None:
 _blur_off = False
 
 
-def blur_previews() -> None:
-    """Previas do bot de vendas: borra as partes intimas do que estiver em
-    conteudos/vendas/previa-borrar (NudeNet, gratis, no PC) e poe em vendas/previa."""
+def blur_previews(studio: "Studio") -> None:
+    """Previas do bot de vendas: borra as partes intimas (NudeNet, gratis, no PC)
+    do que estiver em conteudos/vendas/previa-borrar e do que foi pedido pelo
+    📣 do Telegram, poe em vendas/previa e ja manda para as mensagens (CTA)."""
     global _blur_off
-    if _blur_off or not (STUDIO_ROOT / "conteudos" / "vendas" / "previa-borrar").is_dir():
+    if _blur_off:
         return
     try:
         import borrar
@@ -1006,7 +1022,41 @@ def blur_previews() -> None:
         _blur_off = True
         log(f"Borrar prévias desligado (falta instalar: pip install nudenet). {e}")
         return
-    borrar.processar_pasta(STUDIO_ROOT / "conteudos", log)
+    conteudos = STUDIO_ROOT / "conteudos"
+    entrada = conteudos / "vendas" / "previa-borrar"
+    try:
+        tasks = studio.call("blur-next").get("tasks", [])
+    except Exception as e:  # estudio antigo ou fora do ar: so a pasta
+        tasks = []
+        if "desconhecida" not in str(e):
+            log(f"Fila do borrão indisponível: {e}")
+    for t in tasks:
+        lp = str(t.get("local_path", ""))
+        src = STUDIO_ROOT / lp if lp.startswith("conteudos/") else conteudos / lp
+        if ".." in lp or not src.is_file():
+            log(f"📣 Não achei {lp} no PC para borrar.")
+            continue
+        entrada.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, entrada / src.name)  # mantem a data: o borrao pega no mesmo ciclo
+    if not entrada.is_dir():
+        return
+    for dst, found in borrar.processar_pasta(conteudos, log):
+        if not found:
+            # sem parte intima achada: fica na pasta para conferir, nao entra sozinha na chamada
+            try:
+                studio.call("notice", text=f"📣 Não achei partes íntimas em {dst.name}: ficou em vendas/previa para você conferir (não entrou sozinha na chamada).")
+            except Exception:
+                pass
+            continue
+        try:
+            data = dst.read_bytes()
+            mime = "video/mp4" if dst.suffix.lower() == ".mp4" else "image/jpeg"
+            up = studio.call("preview-url", local_path=dst.relative_to(conteudos).as_posix(), mime_type=mime, size_bytes=len(data))
+            put_copy(up["url"], data, mime)
+            studio.call("preview-add", media_id=up["media_id"], path=up["path"], name=dst.name)
+            log(f"📣 Prévia na chamada: vendas/previa/{dst.name}")
+        except Exception as e:  # a previa borrada fica na pasta; da para mandar pela tela de Previas
+            log(f"Não consegui pôr {dst.name} na chamada: {e}")
 
 
 def main() -> None:
@@ -1035,7 +1085,7 @@ def main() -> None:
                         break
                     time.sleep(10 * QUEUE_POLL_S)
                     continue
-            blur_previews()
+            blur_previews(studio)
             item = studio.call("next")["item"]
             if not item:
                 if args.uma_vez:

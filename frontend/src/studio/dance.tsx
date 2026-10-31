@@ -44,6 +44,8 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
   const [outfit, setOutfit] = useState(KEEP);
   const [other, setOther] = useState("");
   const [seconds, setSeconds] = useState(5);
+  // som original da dancinha: na aprovacao do Telegram escolhe entre ele e a musica do Instagram
+  const [sound, setSound] = useState<"original" | "sem">("original");
   const [slots, setSlots] = useState<string[]>(["reels", "tiktok"]);
   const [when, setWhen] = useState(defaultWhen);
   const [auto, setAuto] = useState(true);
@@ -76,6 +78,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
         ...source,
         seconds,
         outfit: chosen,
+        sound,
         slots,
         caption,
         hashtags: hashtags.split(/[\s,]+/).filter(Boolean),
@@ -143,6 +146,13 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
             <option value={5}>5 s (6 créditos)</option>
             <option value={8}>8 s (9 créditos)</option>
             <option value={10}>10 s (11 créditos)</option>
+          </select>
+        </label>
+        <label className="st-field">
+          <span>Som</span>
+          <select className="st-input" value={sound} onChange={(e) => setSound(e.target.value as "original" | "sem")}>
+            <option value="original">Original da dancinha (escolho na aprovação)</option>
+            <option value="sem">Sem som (só a música do Instagram)</option>
           </select>
         </label>
       </div>

@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { isAuthenticated } from "./_auth.js";
 import { Problem, cancelDraftPost, cancelUnpublishedPost, createDraftPost, reviewOnTelegram, submitPost, uploadUrlsFor } from "./_posts_api.js";
 import { storeConfigured, storeGet, storeIncr, storeSet } from "./_store.js";
-import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageReadUrl, storageRemove, supabaseConfigured } from "./_supabase.js";
+import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
 import { normalizeFlags, type AdultDest, type IgAudioFlag } from "./_flags.js";
@@ -163,6 +163,21 @@ export async function queueAction(postId: string, spec: ActionSpec): Promise<boo
   return true;
 }
 
+// 📣 do Telegram: fotos da publicacao (+18) que vao virar previa da chamada.
+// O robo do PC pega a fila (blur-next), borra e manda de volta (preview-url/add).
+const BLUR_KEY = "luna:borrar-fila";
+export async function queueBlur(postId: string, positions: number[] | "all"): Promise<number> {
+  if (!storeConfigured()) throw new Problem(501, "Falta o Upstash Redis na Vercel para a fila do borrão.");
+  const media = await dbSelect<{ media_id: string; position: number }>("post_media", `select=media_id,position&post_id=eq.${postId}&order=position.asc`);
+  const chosen = positions === "all" ? media : media.filter((m) => positions.includes(m.position + 1));
+  if (!chosen.length) return 0;
+  const assets = await dbSelect<{ id: string; local_path: string }>("media_assets", `select=id,local_path&id=in.(${chosen.map((m) => m.media_id).join(",")})`);
+  const list = JSON.parse((await storeGet(BLUR_KEY).catch(() => null)) ?? "[]") as { local_path: string }[];
+  const fresh = assets.filter((a) => !list.some((t) => t.local_path === a.local_path)).map((a) => ({ local_path: a.local_path, at: Date.now() }));
+  await storeSet(BLUR_KEY, JSON.stringify([...list, ...fresh].slice(-50)));
+  return fresh.length;
+}
+
 // fotos e Reels novos (sem reaproveitar outro item) e correcoes, que tem foto
 // propria (no Reels, media_path e a foto de onde o video sai)
 const QUEUE_FILTER = "status=eq.na_fila&or=(source_item_id.is.null,media_path.not.is.null)";
@@ -172,8 +187,10 @@ const QUEUE_FILTER = "status=eq.na_fila&or=(source_item_id.is.null,media_path.no
 // TikTok levam todas, Stories so a primeira.
 async function photosOf(item: Pick<ItemRow, "plan_id" | "format">): Promise<number> {
   const [plan] = await dbSelect<{ request: { photos?: unknown; feedPhotos?: unknown } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
-  // plano da semana: o Feed sai em carrossel (feedPhotos); a foto avulsa usa photos
-  const n = Number((item.format === "Feed" ? plan?.request?.feedPhotos : undefined) ?? plan?.request?.photos ?? 1);
+  // plano da semana: o Feed sai em carrossel (feedPhotos); a foto avulsa usa photos.
+  // +18 (Canal): as 3 fotos do mesmo Criar (1 credito) vao para o Telegram e o
+  // administrador escolhe quais aprovar (pedido de 30/10)
+  const n = Number((item.format === "Feed" ? plan?.request?.feedPhotos : undefined) ?? plan?.request?.photos ?? (item.format === "Canal" ? 3 : 1));
   return Number.isInteger(n) && n > 1 && n <= 10 ? n : 1;
 }
 
@@ -182,7 +199,8 @@ async function photosOf(item: Pick<ItemRow, "plan_id" | "format">): Promise<numb
 // (maos simples: gesto complicado perto do rosto costuma sair com defeito)
 const CAROUSEL_POSES = [
   "de lado ou de costas, olhando por cima do ombro para a câmera, sorrindo, mãos na cintura",
-  "uma mão no cabelo, um pouco mais perto da câmera, do peito para cima, rosto e ombros completos",
+  // nunca "mais perto da camera"/"do peito para cima": saia foto so do rosto (30/10)
+  "uma mão no cabelo, da cintura para cima, com o cenário aparecendo atrás",
   "piscando para a câmera, mãos apoiadas, outro ângulo",
   "corpo inteiro dentro do quadro, da cabeça aos pés, de outro ângulo da câmera",
 ];
@@ -191,7 +209,7 @@ function carouselPrompts(prompt: string, n: number): string[] {
   return Array.from({ length: n }, (_, i) =>
     i === 0
       ? prompt
-      : `${prompt}\n\nFoto ${i + 1} de ${n} do mesmo momento: mesma pessoa, mesma roupa e mesmo lugar; agora ${CAROUSEL_POSES[(i - 1) % CAROUSEL_POSES.length]}.`
+      : `${prompt}\n\nFoto ${i + 1} de ${n} do mesmo momento: mesma pessoa, mesma roupa e mesmo lugar; agora ${CAROUSEL_POSES[(i - 1) % CAROUSEL_POSES.length]}. Enquadramento igual ou mais aberto que o da foto 1, nunca close só do rosto.`
   );
 }
 
@@ -203,6 +221,7 @@ interface Motion {
   path?: string;
   seconds: number;
   outfit?: string;
+  sound?: "original" | "sem";
 }
 // foto de referencia (IMG1) mandada na conversa: caminho no armazenamento temporario
 async function referenceOf(item: Pick<ItemRow, "plan_id">): Promise<string | null> {
@@ -335,6 +354,48 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     if (body.action === "ping") return reply(200, { ok: true, queue: await queueSize() });
 
+    // --- previas da chamada (CTA) borradas no PC ----------------------------------------------------
+    // fotos que o administrador mandou para a chamada pelo Telegram (📣): o robo borra
+    if (body.action === "blur-next") {
+      if (!storeConfigured()) return reply(200, { tasks: [] });
+      const tasks = JSON.parse((await storeGet(BLUR_KEY).catch(() => null)) ?? "[]");
+      if (Array.isArray(tasks) && tasks.length) await storeSet(BLUR_KEY, "[]");
+      return reply(200, { tasks: Array.isArray(tasks) ? tasks : [] });
+    }
+    // a previa borrada (vendas/previa/...) entra na biblioteca e ganha o link para subir a copia
+    if (body.action === "preview-url") {
+      const local = String(body.local_path ?? "");
+      const mime = body.mime_type === "video/mp4" ? "video/mp4" : "image/jpeg";
+      if (!/^vendas\/previa\/[^/]+\.(jpg|mp4)$/i.test(local) || local.includes("..")) throw new Problem(400, "Caminho da prévia inválido.");
+      const size = safeSize(body.size_bytes);
+      if (!size || size > (mime === "image/jpeg" ? 5 : 20) * 1024 * 1024) throw new Problem(400, mime === "image/jpeg" ? "Prévia: foto de até 5 MB." : "Prévia: vídeo de até 20 MB.");
+      await dbInsertIgnoringDuplicates(
+        "media_assets",
+        [{ local_path: local, kind: mime === "video/mp4" ? "video" : "image", mime_type: mime, size_bytes: size, title: local.split("/").pop()!.slice(0, 120), status: "aprovado", content_rating: "sensivel", created_at: now() }],
+        "local_path"
+      );
+      const [m] = await dbSelect<{ id: string }>("media_assets", `select=id&local_path=eq.${encodeURIComponent(local)}`);
+      if (!m) throw new Problem(500, "Não consegui cadastrar a prévia na biblioteca.");
+      const path = `vendas/previa/${crypto.randomUUID()}.${mime === "video/mp4" ? "mp4" : "jpg"}`;
+      return reply(200, { media_id: m.id, path, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
+    }
+    if (body.action === "preview-add") {
+      const mediaId = String(body.media_id ?? "");
+      const path = String(body.path ?? "");
+      if (!/^[0-9a-f-]{36}$/.test(mediaId) || !/^vendas\/previa\/[0-9a-f-]{36}\.(jpg|mp4)$/.test(path)) throw new Problem(400, "Prévia inválida.");
+      const { addPreviewFromStorage } = await import("./_sales.js");
+      const added = await addPreviewFromStorage(mediaId, path);
+      const name = String(body.name ?? "").slice(0, 120);
+      if (added) await sendNotice(await telegramConfig(), `📣 Prévia borrada nova na chamada: ${name || "foto"}.
+Ela já entra nas próximas mensagens do bot de vendas (Conteúdo do Telegram → Prévias para tirar).`).catch(() => undefined);
+      return reply(200, { added });
+    }
+    // aviso curto do robo para o administrador (ex.: "nao achei partes intimas")
+    if (body.action === "notice") {
+      await sendNotice(await telegramConfig(), String(body.text ?? "").slice(0, 500)).catch(() => undefined);
+      return reply(200, { ok: true });
+    }
+
     if (body.action === "next") {
       // o PC pode ter caido no meio: item preso em "gerando" ha mais de 30 min volta para a fila
       const stale = new Date(Date.now() - 30 * 60_000).toISOString();
@@ -363,6 +424,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
               ...(motion.path ? { file_url: await storageReadUrl(UPLOAD_BUCKET, motion.path, 7200), file_name: motion.path.split("/").pop() } : {}),
               seconds: motion.seconds,
               ...(motion.outfit ? { outfit: motion.outfit } : {}),
+              sound: motion.sound ?? "sem",
             },
           },
         });

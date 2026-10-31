@@ -62,6 +62,10 @@ const CONTEXT: Record<string, string[]> = {
 
 // sala +18 (aba Monetizacao): conversa separada, so para o canal pago
 const ROOM18_KEY = "luna-assistente-18";
+// a IA respondeu so com ideias: pede os blocos que viram o botao "Gerar esta foto"
+const MAKE_BLOCKS =
+  "Pode gerar. Para cada ideia acima escreva o bloco pronto para a Naiaflow, exatamente com os rótulos PROMPT, LEGENDA, HASHTAGS e DESTINO (um bloco por post, no destino que combinamos).";
+
 const QUICK18 = [
   "Monte 5 ideias de fotos +18 para o canal VIP desta semana, com prompt detalhado de cena real e o caminho mais barato na Naiaflow (retoque grátis, Ação ou Criar).",
   "Como transformar uma foto sensual já aprovada do Feed numa versão +18 usando o retoque grátis? Escreva o pedido do retoque.",
@@ -338,6 +342,12 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
                   parsePhotoBlocks(m.content).map((b, j) => (
                     <QuickPhoto key={`${i}-${j}`} block={b} reference={refPhotos.current.get(i - 1)} />
                   ))}
+                {/* a IA deu so ideias (sem o bloco PROMPT): um toque pede os blocos prontos para gerar */}
+                {m.role === "assistant" && i === messages.length - 1 && !busy && parsePhotoBlocks(m.content).length === 0 && m.content.length > 200 && (
+                  <button type="button" className="st-btn st-btn-small st-btn-primary" onClick={() => send(MAKE_BLOCKS)}>
+                    📸 Gerar essas ideias
+                  </button>
+                )}
               </div>
             ))}
             {busy && <div className="st-msg st-msg-assistant st-msg-wait">{stage ?? "Pensando…"}</div>}

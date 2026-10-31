@@ -38,27 +38,44 @@ function slotFrom(text: string): Slot {
 }
 
 // Le os blocos "PROMPT: ... LEGENDA: ... HASHTAGS: ... DESTINO: ..." da resposta.
+// Aceita o jeito que a IA escreve na pratica: numerado ("1. PROMPT:"), em
+// negrito, com titulo ("### Prompt"), com nota ("PROMPT (Naiaflow):") e com o
+// texto na linha de baixo do rotulo.
+const LABEL = /^(PROMPT|LEGENDA|HASHTAGS|DESTINO)\b\s*(?:\([^)]*\))?\s*[:：\-–]?\s*(.*)$/i;
+
 export function parsePhotoBlocks(text: string): PhotoBlock[] {
   const blocks: PhotoBlock[] = [];
   let cur: PhotoBlock | null = null;
   let sawSlot = false;
+  let open: "prompt" | "caption" | "hashtags" | null = null; // rotulo sem texto: o texto vem nas linhas de baixo
   for (const raw of text.split("\n")) {
-    const line = raw.replace(/^[\s*>-]+/, "").replace(/\*\*/g, "").trim();
-    const m = line.match(/^(PROMPT|LEGENDA|HASHTAGS|DESTINO)\s*:\s*(.*)$/i);
-    if (!m) continue;
+    const line = raw.replace(/\*\*|__|`/g, "").replace(/^[^\p{L}]+/u, "").trim();
+    const m = line.match(LABEL);
+    if (!m) {
+      // continuacao de um rotulo que veio vazio (para na linha em branco)
+      if (open && cur && line) cur[open] = cur[open] ? `${cur[open]} ${line}` : line;
+      else if (!line) open = null;
+      continue;
+    }
     const label = m[1].toUpperCase();
-    const value = m[2].trim();
+    const value = m[2].replace(/^["“]|["”]$/g, "").trim();
+    open = null;
     if (label === "PROMPT") {
       // PROMPT logo depois de outro PROMPT (sem legenda no meio) = outra pose
       // do mesmo post: o carrossel o robo faz sozinho, vale o primeiro (a base)
-      if (cur && !cur.caption && !cur.hashtags && !sawSlot) continue;
+      if (cur && cur.prompt && !cur.caption && !cur.hashtags && !sawSlot) continue;
       cur = { prompt: value, caption: "", hashtags: "", slot: "feed" };
       sawSlot = false;
       blocks.push(cur);
+      if (!value) open = "prompt";
     } else if (cur) {
-      if (label === "LEGENDA") cur.caption = value;
-      else if (label === "HASHTAGS") cur.hashtags = value;
-      else {
+      if (label === "LEGENDA") {
+        cur.caption = value;
+        if (!value) open = "caption";
+      } else if (label === "HASHTAGS") {
+        cur.hashtags = value;
+        if (!value) open = "hashtags";
+      } else {
         cur.slot = slotFrom(value);
         sawSlot = true;
       }
@@ -73,6 +90,29 @@ export function placedText(items: { format: string; scheduled_at: string }[]): s
     (i) =>
       `${i.format === "Foto" || i.format === "Vídeo" ? "TikTok" : i.format}: ${new Date(i.scheduled_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`
   );
+}
+
+// pedidos ja mandados para a fila (neste navegador, 2 dias): o botao vira "Ja pedida"
+const ASKED_KEY = "luna-fotos-pedidas";
+function askedMap(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem(ASKED_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+function askedAt(prompt: string): string | null {
+  const at = askedMap()[prompt.trim().slice(0, 300)];
+  return at && Date.now() - at < 2 * 86400_000 ? new Date(at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : null;
+}
+function rememberAsked(prompt: string) {
+  try {
+    const map = Object.fromEntries(Object.entries(askedMap()).filter(([, t]) => Date.now() - t < 2 * 86400_000));
+    map[prompt.trim().slice(0, 300)] = Date.now();
+    localStorage.setItem(ASKED_KEY, JSON.stringify(map));
+  } catch {
+    // sem armazenamento: so a trava do servidor
+  }
 }
 
 // destinos do +18: o post no canal VIP e o conteudo dos pacotes do bot de vendas
@@ -122,7 +162,7 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function queue() {
+  async function queue(force = false) {
     setBusy(true);
     setError(null);
     try {
@@ -150,11 +190,21 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
           scheduled_at: auto ? "auto" : new Date(when).toISOString(),
           ...(refPath ? { ref_path: refPath } : {}),
           ...(slots.includes("telegram18") ? { adultDest: { channel: adult.includes("canal"), packs: adult.filter((k) => k !== "canal") } } : {}),
+          ...(force ? { force: true } : {}),
         }),
       });
       const b = await r.json().catch(() => ({}));
+      // trava: mesmo pedido ha pouco -> so gera de novo se confirmar
+      if (r.status === 409 && b.code === "repetida") {
+        setBusy(false);
+        if (window.confirm(`${b.detail}
+
+Gerar de novo mesmo assim?`)) return queue(true);
+        return;
+      }
       if (!r.ok) throw new Error(b.detail ?? `Erro HTTP ${r.status}`);
       setPlaced(placedText(b.items ?? []));
+      rememberAsked(block.prompt);
       setDone(true);
       setOpen(false);
     } catch (e) {
@@ -180,7 +230,16 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
     );
   }
   if (!open) {
-    return (
+    // ja pedida (mesmo depois de recarregar a pagina): nao chama para gerar de novo
+    const asked = askedAt(block.prompt);
+    return asked ? (
+      <p className="st-hint">
+        ✓ Já pedida às {asked}.{" "}
+        <button type="button" className="st-link" onClick={() => setOpen(true)}>
+          Gerar de novo
+        </button>
+      </p>
+    ) : (
       <button type="button" className="st-btn st-btn-small st-btn-primary" onClick={() => setOpen(true)}>
         Gerar esta foto
       </button>
@@ -296,7 +355,7 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
           type="button"
           className="st-btn st-btn-small st-btn-primary"
           disabled={busy || !prompt.trim() || !slots.length || (slots.includes("telegram18") && !adult.length)}
-          onClick={queue}
+          onClick={() => queue()}
         >
           {busy ? "Mandando…" : `Gerar (${cost} crédito${cost > 1 ? "s" : ""})${slots.length > 1 ? ` · ${slots.length} destinos` : ""}`}
         </button>

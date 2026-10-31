@@ -164,6 +164,11 @@ export async function storageObjectSize(bucket: string, path: string): Promise<n
   }
 }
 
+// Copia um arquivo dentro do mesmo bucket (ex.: a foto escolhida vira a copia da nova versao).
+export async function storageCopy(bucket: string, from: string, to: string): Promise<void> {
+  await call(`/storage/v1/object/copy`, { method: "POST", body: JSON.stringify({ bucketId: bucket, sourceKey: from, destinationKey: to }) });
+}
+
 export async function storageRemove(bucket: string, paths: string[]): Promise<void> {
   if (!paths.length) return;
   await call(`/storage/v1/object/${encodeURIComponent(bucket)}`, { method: "DELETE", body: JSON.stringify({ prefixes: paths }) });

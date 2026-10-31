@@ -391,6 +391,17 @@ function CtaEditor({
         </button>
         ) e os botões dos pacotes. Nas mensagens grátis, provoque sem descrever sexo: quem recebe ainda não pagou.
       </p>
+      <div className="st-cta-media">
+        <div>
+          <b>📣 Fotos e vídeos da chamada: {previews}</b>
+          <span className="st-hint">
+            Adicione aqui (o robô do PC borra as partes íntimas sozinho e ela entra nas mensagens) ou toque em “📣 Usar na chamada (borrar)” numa foto +18 no Telegram.
+          </span>
+        </div>
+        <button type="button" className="st-btn st-btn-primary st-btn-small" onClick={onFolders}>
+          Adicionar foto ou vídeo (com borrão)
+        </button>
+      </div>
       <label className="st-field">
         <span>Boas-vindas (logo depois do “tenho 18”)</span>
         <textarea className="st-input" rows={3} maxLength={900} value={draft.welcome} onChange={(e) => set({ welcome: e.target.value })} />
