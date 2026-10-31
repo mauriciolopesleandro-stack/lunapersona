@@ -60,6 +60,10 @@ ACTION_CATEGORY = {EDIT_ACTION: "Editar", CAROUSEL_ACTION: "Nova Cena", "Adicion
 CLONE = "luna"
 MIN_CREDITS = 2  # abaixo disso para e avisa (nao gasta o resto)
 GENERATION_TIMEOUT_S = 10 * 60
+# com foto de referencia (IMG1) a Naiaflow puxava o rosto e o cabelo da mulher da
+# foto (31/10: saiu loira); a IMG1 serve so para pose, roupa e cenario
+REFERENCE_IDENTITY = (" IMG1 é só referência de pose, roupa, enquadramento e cenário: o rosto, o cabelo"
+                      " (castanho escuro, longo) e o corpo são os da luna, nunca os da mulher da IMG1.")
 QUEUE_POLL_S = 60
 JPEG_MAX_BYTES = 4 * 1024 * 1024  # limite do TikTok para foto
 REELS_SECONDS = 7
@@ -478,7 +482,7 @@ class Naiaflow:
         if not box.count():
             box = self.page.locator("textarea").first
         box.click()
-        box.fill(prompt)
+        box.fill(prompt + (REFERENCE_IDENTITY if reference else ""))
         self._create_button().click()
         log("Gerando na Naiaflow…")
         return self._wait_result(before)
