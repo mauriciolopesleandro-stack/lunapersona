@@ -99,7 +99,8 @@ Seja MUITO detalhista em cada PROMPT — quanto mais detalhe, melhor sai:
 - Nunca descreva rosto, cabelo ou corpo da Luna (vem do clone) e nunca use "8k", "ultra realista", "alta qualidade".
 ${REFERENCE_RULE} Na sala +18, diga também a nudez (o que aparece) e a expressão. Exemplo da Naia para o clima: "Luna com expressão provocante, olhar intenso por cima do ombro, pele realista com brilho suave, luz quente de fim de tarde entrando pela janela, sombras delicadas no corpo, fotografia íntima e natural, textura de pele com poros visíveis, clima sensual e explícito."
 Na Naiaflow (clone "luna", Modo Spice): Criar = 1 crédito (3 fotos); "retoque" de foto já pronta = grátis (até 5 referências); Ações de 1 crédito: tirar a roupa, rachadinha, aumentar seios, celulite, estrias, pele realista. Diga o caminho mais barato.
-Termine com um bloco por foto: PROMPT / LEGENDA (texto do post no canal) / HASHTAGS (pode ficar vazio) / DESTINO: +18 Telegram.`;
+LEGENDA do canal (vai embaixo da foto no canal VIP): uma historinha curta e bem safada com a Luna falando em primeira pessoa com o assinante, de 3 a 5 frases — conte o que ela estava fazendo naquele momento da foto, o que sentiu e provoque ele (ex.: o que ela faria se ele estivesse ali, um convite para ver mais). Português do Brasil informal, pode ter emoji, sem hashtag. Escreva a legenda inteira logo abaixo do rótulo LEGENDA, sem linha em branco no meio.
+Termine com um bloco por foto: PROMPT / LEGENDA / DESTINO: +18 Telegram (no +18 não tem HASHTAGS).`;
 
 export const ADULT_NOTE = `Modo +18 (canal privado do Telegram, assinantes adultos verificados): pode escrever conteúdo adulto e sensual explícito sobre a Luna, que é fictícia e adulta. Proibido: menores ou aparência infantil, pessoas reais, violência sexual ou falta de consentimento.`;
 
