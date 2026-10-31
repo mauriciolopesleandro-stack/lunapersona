@@ -49,11 +49,13 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
   let sawSlot = false;
   let open: "prompt" | "caption" | "hashtags" | null = null; // rotulo sem texto: o texto vem nas linhas de baixo
   for (const raw of text.split("\n")) {
-    const line = raw.replace(/\*\*|__|`/g, "").replace(/^[^\p{L}]+/u, "").trim();
+    // tira numeracao, marcadores e titulo markdown ("### "), mas nao o # da hashtag
+    const line = raw.replace(/\*\*|__|`/g, "").replace(/^(?:#+\s+|[^\p{L}#])+/u, "").trim();
     const m = line.match(LABEL);
     if (!m) {
-      // continuacao de um rotulo que veio vazio (para na linha em branco)
-      if (open && cur && line) cur[open] = cur[open] ? `${cur[open]} ${line}` : line;
+      // continuacao de um rotulo que veio vazio (para na linha em branco); a
+      // legenda guarda as quebras de linha (historinha do canal +18)
+      if (open && cur && line) cur[open] = cur[open] ? `${cur[open]}${open === "caption" ? "\n" : " "}${line}` : line;
       // (linha em branco logo depois do rotulo vazio nao fecha: o texto vem depois)
       else if (!line && (!open || !cur || cur[open])) open = null;
       continue;
@@ -75,7 +77,8 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
     } else if (cur) {
       if (label === "LEGENDA") {
         cur.caption = value;
-        if (!value) open = "caption";
+        // a legenda pode continuar nas linhas de baixo (historinha de varias frases)
+        open = "caption";
       } else if (label === "HASHTAGS") {
         cur.hashtags = value;
         if (!value) open = "hashtags";
@@ -85,7 +88,9 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
       }
     }
   }
-  return blocks.filter((b) => b.prompt);
+  // aspas em volta do texto que veio na linha de baixo do rotulo
+  const unquote = (s: string) => s.replace(/^["“]\s*|\s*["”]$/g, "").trim();
+  return blocks.filter((b) => b.prompt).map((b) => ({ ...b, prompt: unquote(b.prompt), caption: unquote(b.caption) }));
 }
 
 // "Feed: sáb 31/10 15:30" para cada publicacao criada (onde o conteudo foi encaixado)
@@ -165,6 +170,7 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const adultOnly = slots.includes("telegram18");
 
   async function queue(force = false) {
     setBusy(true);
@@ -190,7 +196,7 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
           photos: canCarousel ? photos : 1,
           prompt,
           caption,
-          hashtags: hashtags.split(/[\s,]+/).filter(Boolean),
+          hashtags: adultOnly ? [] : hashtags.split(/[\s,]+/).filter(Boolean),
           scheduled_at: auto ? "auto" : new Date(when).toISOString(),
           ...(refPath ? { ref_path: refPath } : {}),
           ...(slots.includes("telegram18") ? { adultDest: { channel: adult.includes("canal"), packs: adult.filter((k) => k !== "canal") } } : {}),
@@ -314,13 +320,16 @@ Gerar de novo mesmo assim?`)) return queue(true);
         <textarea className="st-input" rows={2} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
       </label>
       <label className="st-field">
-        <span>Legenda</span>
-        <textarea className="st-input" rows={2} value={caption} onChange={(e) => setCaption(e.target.value)} />
+        <span>{adultOnly ? "Legenda do canal (a historinha embaixo da foto)" : "Legenda"}</span>
+        <textarea className="st-input" rows={adultOnly ? 5 : 2} value={caption} onChange={(e) => setCaption(e.target.value)} />
       </label>
-      <label className="st-field">
-        <span>Hashtags</span>
-        <input className="st-input" value={hashtags} onChange={(e) => setHashtags(e.target.value)} />
-      </label>
+      {/* canal +18 nao usa hashtag (pedido de 31/10) */}
+      {!adultOnly && (
+        <label className="st-field">
+          <span>Hashtags</span>
+          <input className="st-input" value={hashtags} onChange={(e) => setHashtags(e.target.value)} />
+        </label>
+      )}
       {slots.includes("telegram18") ? (
         <div className="st-field">
           <span>Onde entra o +18 (no horário)</span>

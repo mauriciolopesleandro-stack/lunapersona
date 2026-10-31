@@ -68,7 +68,7 @@ const REF_ASK =
   "Quero a foto IGUAL a esta referência, só que com a Luna (nunca a pessoa da foto). Ela vai como IMG1 no Criar da Naiaflow, mas escreva o PROMPT descrevendo tudo o que está na leitura, sem trocar nada: a mesma pose e o mesmo ângulo (de frente/de costas/de lado, para onde olha, braços e mãos), cada peça e acessório com o tipo exato, o mesmo cenário objeto por objeto, a luz e o estilo da foto. Nada de ícones ou números do print no prompt.";
 // a IA respondeu so com ideias: pede os blocos que viram o botao "Gerar esta foto"
 const MAKE_BLOCKS =
-  "Pode gerar. Para cada ideia acima escreva o bloco pronto para a Naiaflow, exatamente com os rótulos PROMPT, LEGENDA, HASHTAGS e DESTINO (um bloco por post, no destino que combinamos).";
+  "Pode gerar. Para cada ideia acima escreva o bloco pronto para a Naiaflow, exatamente com os rótulos PROMPT, LEGENDA, HASHTAGS e DESTINO (um bloco por post, no destino que combinamos; no +18 do Telegram sem HASHTAGS e a LEGENDA é a historinha do canal).";
 
 const QUICK18 = [
   "Monte 5 ideias de fotos +18 para o canal VIP desta semana, com prompt detalhado de cena real e o caminho mais barato na Naiaflow (retoque grátis, Ação ou Criar).",
@@ -268,7 +268,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       : profile
       ?"Use a leitura da página para criar 5 conteúdos para a Luna no mesmo estilo (inspire-se, não copie a pessoa, o rosto nem a marca). Termine com um bloco PROMPT/LEGENDA/HASHTAGS/DESTINO para cada um."
       : room === "18"
-      ? `${REF_ASK} Diga também a nudez (o que aparece), a expressão e a textura da pele. Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO: +18 Telegram.`
+      ? `${REF_ASK} Diga também a nudez (o que aparece), a expressão e a textura da pele. Termine com o bloco PROMPT/LEGENDA (a historinha safada do canal, sem hashtag)/DESTINO: +18 Telegram.`
       : refPhoto
       ? `${REF_ASK} Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO.`
       : "Recrie a ideia da referência com a Luna (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).";
