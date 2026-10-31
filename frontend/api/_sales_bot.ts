@@ -4,7 +4,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbInsertIgnoringDuplicates, dbSelect, dbUpdateWhere } from "./_supabase.js";
 import { sendNotice, telegram, telegramChannel, telegramConfig } from "./_telegram.js";
-import { activePacks, baseUrl, cancelSubscription, checkPaid, handleCustomerData, openPack, startPayment } from "./_sales_pay.js";
+import { activePacks, baseUrl, cancelSubscription, checkPaid, handleCustomerData, openPack, previewPack, startPayment } from "./_sales_pay.js";
 import { sendWelcome } from "./_sales_cta.js";
 
 // Bot de vendas (+18): o bot que os fas abrem. E outro bot, separado do bot de
@@ -22,6 +22,7 @@ import { sendWelcome } from "./_sales_cta.js";
 //   (/pacotes)
 //   /cancelar         cancela o VIP mensal (o acesso vai ate o fim do mes pago)
 //   /parar /voltar    desliga e religa as novidades diarias
+//   /ver              so o administrador: escolhe um pacote e recebe igual ao fa
 // O Telegram avisa quando o fa bloqueia o bot (my_chat_member): para de mandar.
 
 const TOKEN_KEY = "luna:sales-token";
@@ -256,6 +257,13 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
       const chatId = cb.message.chat.id;
       const fan = await upsertFan(cb.from);
       const [kind, arg] = (cb.data ?? "").split(":");
+      // /ver do administrador: o pacote chega como o fa recebe
+      if (kind === "ver" && String(cb.from.id) === (await telegramConfig()).chatId) {
+        await previewPack(arg ?? "", token, chatId).catch((e) =>
+          telegram(token, "sendMessage", { chat_id: chatId, text: `⚠️ Não consegui mostrar: ${e instanceof Error ? e.message : String(e)}` })
+        );
+        return done();
+      }
       if (kind === "age") {
         if (arg === "yes") {
           await dbUpdateWhere("fans", `id=eq.${fan.id}`, { adult_confirmed_at: new Date().toISOString() });
@@ -286,6 +294,16 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
       if (text.startsWith("/zerar") && String(msg.from.id) === (await telegramConfig()).chatId) {
         await dbUpdateWhere("fans", `id=eq.${fan.id}`, { adult_confirmed_at: null, cta_sent_at: null, cta_count: 0, opted_out_at: null });
         await telegram(token, "sendMessage", { chat_id: msg.chat.id, text: "Pronto, você voltou a ser um fã novo 🔄 Mande /start para ver tudo do começo (suas compras de teste continuam registradas)." });
+        return done();
+      }
+      // /ver: so o administrador; escolhe o pacote e recebe igual ao fa
+      if (text.startsWith("/ver") && String(msg.from.id) === (await telegramConfig()).chatId) {
+        const packs = (await dbSelect<ProductRow>("sales_products", "select=*&active=eq.true&order=position.asc")).filter((p) => p.kind !== "vip");
+        await telegram(token, "sendMessage", {
+          chat_id: msg.chat.id,
+          text: packs.length ? "👀 Qual pacote você quer ver como o fã recebe?" : "Nenhum pacote ativo.",
+          ...(packs.length ? { reply_markup: { inline_keyboard: packs.map((p) => [{ text: `👀 ${p.title}`, callback_data: `ver:${p.id}` }]) } } : {}),
+        });
         return done();
       }
       if (!fan.adult_confirmed_at) {
