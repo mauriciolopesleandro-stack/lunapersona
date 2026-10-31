@@ -54,7 +54,7 @@ Como ajudar:
   - Para parecer foto de celular de influenciadora: "foto de celular", "selfie no espelho", "luz natural", "flash", nada de estúdio.
   - Exemplo bom: "Luna de biquíni vermelho, top e calcinha, deitada na espreguiçadeira da piscina do condomínio, sol da tarde, sorrindo para a câmera, foto de celular tirada de cima, corpo inteiro dentro do quadro".
 - Legendas curtas e naturais em português do Brasil, com 1 ou 2 emojis, e no máximo 5 hashtags comuns e relevantes ao tema (nada de hashtags inventadas, estranhas ou com "papai").
-- Converse de forma natural e direta, como um sócio no WhatsApp (veja "JEITO DE CONVERSAR"); sem explicações longas.
+- Responda de forma direta e organizada (listas e títulos curtos); sem explicações longas.
 Regras que nunca mudam:
 - Instagram e TikTok: nada explícito (sem nudez, sem ato sexual); sensual pode, dentro das regras das redes.
 - Conteúdo +18 só existe para o canal privado do Telegram, só com a Luna (personagem fictícia e adulta), nunca com pessoa real, nunca com aparência de menor de idade.
@@ -109,32 +109,6 @@ ENQUADRAMENTO (obrigatório): a Luna aparece de corpo inteiro ou pelo menos da c
 Use o aprendizado das fotos anteriores (no contexto, quando houver) para escrever prompts que a Naiaflow acerta de primeira: diga a roupa inteira (parte de cima e de baixo), o enquadramento (corpo inteiro, da cintura para cima…) e o que não pode aparecer.
 Com foto de referência (o administrador mandou uma foto para recriar): ela vai como IMG1 no Criar e a luna copia a pose, o ângulo e o enquadramento. Então NÃO descreva a pose de novo (o texto vence a foto); escreva com detalhe o que a foto não entrega, seguindo o guia de estilo — roupa inteira (cor, tecido, parte de cima e de baixo), cenário brasileiro real, expressão, luz e estilo da foto de celular. Exemplo no padrão da Naia: "Luna sorrindo para a câmera, biquíni verde-limão de amarrar, areia clara e mar azul ao fundo, luz dourada de fim de tarde, pele natural com leve brilho de sol, foto de celular tirada por amiga."`;
 
-// Condutor da Conversa (31/10): o administrador controla tudo falando. A IA
-// entende o formato pedido, pergunta o que falta (uma coisa por vez) e so
-// entao escreve os blocos que viram os cartoes de gerar; aprende com as
-// correcoes dele (APRENDI/ESQUECI, guardado em _memory.ts).
-export const CONDUCTOR = `JEITO DE CONVERSAR (o mais importante):
-- Você é um parceiro de trabalho esperto conversando com o dono, não um gerador de relatório. Fale em português do Brasil do dia a dia, curto e humano, como no WhatsApp.
-- Primeiro ENTENDA a pergunta e responda EXATAMENTE ela, na primeira frase, com o dado real do contexto. Exemplo só do JEITO (os números aqui são inventados; use sempre os do contexto): "como estamos hoje? ontem não cumprimos a meta né?" → "Ontem ficou faltando sim: saíram 2 de 3 Feed e nenhum Reels. Hoje já temos 1 Feed e 2 Stories garantidos, faltam 2 Feed, 1 Stories e o Reels. Quer que eu prepare o Feed agora?"
-- Interprete o contexto: some, compare e tire a conclusão você mesmo (o que faltou, o que está atrasado, o que dá tempo de fazer hoje). Não despeje a agenda inteira nem repita o contexto; cite só o que importa para a pergunta.
-- Use os números e as datas do contexto; nunca invente post, horário ou data. Se o contexto não tem o dado, diga que não sabe.
-- Sem markdown: nada de **negrito**, # títulos ou tabelas. Parágrafos curtos; lista só quando for realmente uma lista (ex.: vários posts).
-- Termine, quando fizer sentido, com UMA sugestão ou pergunta do próximo passo.
-- Ele escreve rápido e com erro de digitação ("oie", "hj", "não"): entenda normalmente, sem comentar.
-
-COMO CONDUZIR (você é o motor do estúdio: o administrador fala e você faz acontecer, como um assistente de verdade):
-1. Entenda o que ele quer e para onde vai. Palavras dele → destino: "feed"/"post"/"carrossel" = Feed (carrossel de 3); "stories"/"storie"/"sotries" = Stories; "reels"/"dancinha"/"trend"/"vídeo" = Reels (+ TikTok); "tiktok" = TikTok; "+18"/"18+"/"vip"/"canal"/"spice"/"pelada"/"explícito" = +18 Telegram. Entenda erro de digitação.
-2. Se faltar algo importante, PERGUNTE antes de fazer — uma pergunta curta por vez, com 2 ou 3 opções prontas para ele só escolher. Não pergunte o que dá para decidir sozinho seguindo o estilo e o que ele já te ensinou; quando ele disser "decide você"/"tanto faz", decida.
-   - Feed/Stories: pergunte o tema ou lugar só se ele não deu nenhuma pista (ex.: "Praia, academia ou rolê à noite?"); ele mandou foto de referência = já pode fazer.
-   - Reels/dancinha: SEMPRE pergunte primeiro "Você vai me mandar o vídeo ou o link do Reels/TikTok que é para copiar?". Quando ele mandar, aparece embaixo da mensagem dele o cartão "💃 Fazer dancinha": diga a roupa, a duração (5, 8 ou 10 s; 1 crédito por segundo + 1) e a legenda que você sugere, e peça para ele conferir e tocar em Fazer. Sem vídeo nem link não dá para fazer dancinha.
-   - +18: pergunte o clima/cenário só se ele não deu nenhum (ex.: "Quarto, banho ou motel?"); siga o guia da Sala +18 (prompt bem detalhado) e o DESTINO é "+18 Telegram".
-3. Quando tiver o suficiente, FAÇA: escreva os blocos PROMPT/LEGENDA/HASHTAGS/DESTINO. Embaixo da sua resposta aparece o botão "Gerar esta foto"; avise em uma linha o custo (Feed carrossel de 3 = 1 crédito; Stories = 1 crédito) e que ele confere e toca para gerar. Tudo que é gerado ainda passa pela aprovação dele no Telegram antes de publicar.
-4. Agenda: para "o que tem amanhã", "o que falta na semana", use a agenda do contexto e responda direto.
-5. APRENDER: quando ele reclamar, corrigir ou disser um gosto ("ficou ruim", "não gostei", "muito escuro", "não quero mais X", "sempre faça Y", "prefiro…", "isso ficou ótimo, faz assim"), entenda o motivo, corrija na hora e termine a resposta com UMA linha:
-APRENDI: <regra curta, geral e prática para as próximas vezes, em 1 frase>
-   Ex.: ele diz "essa foto ficou com cara de estúdio" → "APRENDI: Nas fotos do Feed, sempre luz natural e cara de foto de celular; nada de luz de estúdio." Não escreva APRENDI para pedidos comuns, só para gosto/correção que vale para o futuro. Se ele mandar esquecer uma regra, termine com "ESQUECI: <número da regra>" (ou "ESQUECI: tudo"). Nunca invente regra que ele não disse.
-6. Os blocos PROMPT/LEGENDA/HASHTAGS/DESTINO são a única parte com formato fixo; o resto é conversa.`;
-
 interface PostRow {
   network: string;
   caption: string;
@@ -146,44 +120,20 @@ interface PostRow {
 // Agenda e ultimas legendas: a IA planeja sem repetir e sabe o que ja esta marcado.
 async function context(): Promise<string> {
   const now = new Date();
-  const TZ = "America/Sao_Paulo";
-  const day = (d: Date) => d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", timeZone: TZ });
-  const lines = [
-    `AGORA: ${day(now)}, ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: TZ })} (horário de Brasília). Ontem foi ${day(new Date(now.getTime() - 86400_000))}; amanhã é ${day(new Date(now.getTime() + 86400_000))}. Use SEMPRE estas datas (nunca deduza a data pela agenda).`,
-  ];
+  const lines = [`Hoje: ${now.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" })}.`];
   if (!supabaseConfigured()) return lines.join("\n");
   try {
     const week = now.getTime() + 8 * 86400_000;
     const recent = await dbSelect<PostRow>("posts", "select=network,caption,status,scheduled_at,published_at&order=created_at.desc&limit=120");
     const next = recent
-      .filter((p) => ["aprovado", "agendado", "aguardando_aprovacao"].includes(p.status) && p.scheduled_at && new Date(p.scheduled_at).getTime() >= now.getTime() - 3600_000 && new Date(p.scheduled_at).getTime() <= week)
+      .filter((p) => ["aprovado", "agendado", "aguardando_aprovacao"].includes(p.status) && p.scheduled_at && new Date(p.scheduled_at).getTime() <= week)
       .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1))
       .slice(0, 30);
     const done = recent
       .filter((p) => p.status === "publicado")
       .sort((a, b) => ((a.published_at ?? "") < (b.published_at ?? "") ? 1 : -1))
       .slice(0, 15);
-    const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: TZ }) : "sem data");
-    // metas do Instagram (3 Feed, 3 Stories, 1 Reels por dia): ontem, hoje e amanha
-    const { coverage, todayInBrazil } = await import("./_metas.js");
-    const yesterday = todayInBrazil(now.getTime() - 86400_000);
-    const cov = await coverage(3, yesterday).catch(() => []);
-    const label = ["Ontem", "Hoje", "Amanhã"];
-    if (cov.length)
-      lines.push(
-        "Metas do Instagram por dia: 3 Feed, 3 Stories, 1 Reels. Como está (conta o que foi publicado ou está garantido na agenda/fila; publicação que falhou não conta):",
-        ...cov.map((c, i) => `- ${label[i]} (${c.day.split("-").reverse().slice(0, 2).join("/")}): Feed ${c.counts.Feed}/3, Stories ${c.counts.Stories}/3, Reels ${c.counts.Reels}/1${i === 0 ? "" : ` · ainda dá para encaixar: ${(["Feed", "Stories", "Reels"] as const).filter((g) => c.missing[g] > 0).map((g) => `${c.missing[g]} ${g}`).join(", ") || "nada, completo"}`}`)
-      );
-    // o que aconteceu ontem e hoje, publicacao por publicacao (publicou, falhou, esperando)
-    const dayKey = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { timeZone: TZ });
-    const recentDays = recent.filter((p) => p.scheduled_at && [yesterday, todayInBrazil(now.getTime())].includes(dayKey(p.scheduled_at)) && p.status !== "cancelado");
-    if (recentDays.length)
-      lines.push(
-        "Publicações de ontem e de hoje (situação real):",
-        ...recentDays
-          .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1))
-          .map((p) => `- ${fmt(p.scheduled_at)} · ${p.network} · ${p.status.replace("_", " ")} · ${p.caption.slice(0, 60)}`)
-      );
+    const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }) : "sem data");
     if (next.length) lines.push("Agenda dos próximos dias:", ...next.map((p) => `- ${fmt(p.scheduled_at)} · ${p.network} · ${p.caption.slice(0, 80)}`));
     if (done.length) lines.push("Últimas publicadas (não repetir):", ...done.map((p) => `- ${fmt(p.published_at)} · ${p.network} · ${p.caption.slice(0, 80)}`));
     // fotos pedidas nos ultimos dias (lugar e roupa): o proximo post muda os dois
@@ -198,9 +148,6 @@ async function context(): Promise<string> {
   }
   return lines.join("\n");
 }
-
-// assunto +18 nas ultimas mensagens dele: a resposta vem da IA sem restricao
-const ADULT_TALK = /\+\s?18|18\s?\+|\bvip\b|spice|expl[ií]cit|nud[ea]|pelad|sem roupa|\bnua\b|sexo|sexy|safad|putaria|er[oó]tic|canal pago|telegram\s*\+?18/i;
 
 class BadRequest extends Error {}
 
@@ -293,21 +240,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   } catch {
     return reply(400, { detail: "JSON inválido." });
   }
-  // memoria da Conversa: o painel lista o que a IA aprendeu e deixa esquecer
-  if (body.action === "memory" || body.action === "forget") {
-    const { listRules, forgetRules } = await import("./_memory.js");
-    if (body.action === "memory") return reply(200, { rules: await listRules() });
-    const which = (body as { which?: unknown }).which;
-    const nums = Array.isArray(which) ? which.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
-    if (which !== "all" && !nums.length) return reply(400, { detail: "Diga qual regra esquecer." });
-    return reply(200, { rules: await forgetRules(which === "all" ? "all" : nums) });
-  }
   // referencia mandada na Conversa: foto/video (quadros) ou link -> leitura da ideia
   if (body.action === "analyze" || body.action === "link") {
     const { analyzeImages, analyzeLink, RefError } = await import("./_assistant_refs.js");
     try {
       if (body.action === "analyze") return reply(200, { analysis: await analyzeImages(body.images, body.kind, body.purpose) });
-      return reply(200, await analyzeLink(body.url, (body as { note?: unknown }).note));
+      return reply(200, await analyzeLink(body.url));
     } catch (e) {
       if (e instanceof RefError) return reply(e.status, { detail: e.message });
       throw e;
@@ -319,28 +257,20 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   } catch (e) {
     return reply(400, { detail: e instanceof Error ? e.message : String(e) });
   }
-  // Conversa (31/10): a IA mais esperta (OPENROUTER_MODEL) conversa e analisa;
-  // quando o assunto e +18 (sala +18 ou pedido recente), vai a IA sem
-  // restricao. O Planejamento continua escolhendo a IA por destino.
-  const mode: Mode = body.room === "18" || ADULT_TALK.test(messages.filter((m) => m.role === "user").slice(-3).map((m) => m.content).join("\n")) ? "adulto" : "normal";
+  // A Conversa e sempre com a IA sem restricao (o campo mode do pedido e
+  // ignorado); o Planejamento continua escolhendo a IA por destino.
+  const mode: Mode = "adulto";
   const { lessonsForChat } = await import("./_lessons.js");
   const lessons = await lessonsForChat().catch(() => "");
-  const { addRules, extractMemory, forgetRules, rulesForChat } = await import("./_memory.js");
-  const rules = await rulesForChat().catch(() => "");
-  // sala +18 (aba Monetizacao): so o canal pago do Telegram, com o guia detalhado.
-  // A Conversa geral tambem faz +18 quando ele pede (o guia vai junto).
+  // sala +18 (aba Monetizacao): so o canal pago do Telegram, com o guia detalhado
   const system =
     body.room === "18"
-      ? [PERSONA, ADULT_NOTE, ADULT18_GUIDE, CONDUCTOR, await context(), lessons, rules].filter(Boolean).join("\n\n")
-      : [PERSONA, STYLE_GUIDE, CHAT_NOTE, ADULT18_GUIDE, CONDUCTOR, await context(), lessons, rules].filter(Boolean).join("\n\n");
+      ? [PERSONA, ADULT_NOTE, ADULT18_GUIDE, await context(), lessons].filter(Boolean).join("\n\n")
+      : [PERSONA, STYLE_GUIDE, CHAT_NOTE, await context(), lessons].filter(Boolean).join("\n\n");
 
   try {
     const out = await askAi(mode, [{ role: "system", content: system }, ...messages]);
-    const mem = extractMemory(out.text);
-    // esquece antes de aprender: os numeros do ESQUECI sao os do contexto desta resposta
-    const forgot = mem.forget ? (await forgetRules(mem.forget).catch(() => null)) !== null : false;
-    const learned = mem.learn.length ? (await addRules(mem.learn).catch(() => [])).map((r) => r.rule) : [];
-    return reply(200, { reply: mem.reply || out.text, model: out.model, mode, usage: out.usage, learned, forgot });
+    return reply(200, { reply: out.text, model: out.model, mode, usage: out.usage });
   } catch (e) {
     if (e instanceof AiError) return reply(e.status, { detail: e.message });
     throw e;
