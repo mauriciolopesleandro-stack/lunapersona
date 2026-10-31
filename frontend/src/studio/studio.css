@@ -3302,6 +3302,12 @@
   margin-left: auto;
 }
 
+/* "Cancelar e começar outra" sempre a vista, acima das mensagens */
+.st-chat-top {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .st-chat-list {
   display: flex;
   flex-direction: column;

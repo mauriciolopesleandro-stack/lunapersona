@@ -163,6 +163,9 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
   const danceFiles = useRef(new Map<number, File>());
   // foto mandada (indice da mensagem) vira referencia (IMG1) do Criar
   const refPhotos = useRef(loadRefs(room));
+  // conversa atual (sobe no "Cancelar e comecar outra") e a resposta que esta vindo
+  const conversation = useRef(0);
+  const pending = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetch("/api/studio?r=assistant")
@@ -221,6 +224,9 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     if ((!typed && !attachments.length) || busy) return;
     setBusy(true);
     setError(null);
+    // "Cancelar e comecar outra" no meio: o que estava vindo e jogado fora
+    const conv = conversation.current;
+    const stale = () => conversation.current !== conv;
     // 1) leitura das referencias (fotos, video ou link) pela IA com visao;
     // "o que esta errado?" numa foto/Reels da Luna vira revisao (defeitos)
     const review = attachments.length > 0 && REVIEW_ASK.test(typed);
@@ -252,11 +258,13 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
         }
       }
     } catch (e) {
+      if (stale()) return;
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
       setStage(null);
       return;
     }
+    if (stale()) return;
     const profile = reads.some((r) => r.label.startsWith("perfil @"));
     // uma foto mandada (nao a revisao de uma foto da Luna nem um perfil) vira
     // referencia IMG1 do Criar, nas duas salas (no "Gerar esta foto" da para desmarcar)
@@ -290,21 +298,45 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     setText("");
     setAttachments([]);
     setStage(null);
+    const abort = new AbortController();
+    pending.current = abort;
     try {
       const r = await fetch("/api/studio?r=assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: next.map((m) => ({ role: m.role, content: m.content })), ...(room === "18" ? { room: "18" } : {}) }),
+        signal: abort.signal,
       });
       const b = await r.json().catch(() => ({}));
+      if (stale()) return;
       if (!r.ok) throw new Error(b.detail ?? `Erro HTTP ${r.status}`);
       update([...next, { role: "assistant", content: b.reply }]);
       onReply();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (!stale()) setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      if (!stale()) {
+        pending.current = null;
+        setBusy(false);
+      }
     }
+  }
+
+  // "Cancelar e comecar outra" (pedido de 31/10): a referencia ficava guardada ate
+  // gerar; aqui descarta a conversa, as fotos de referencia e a resposta que esta vindo
+  function newConversation() {
+    if (!window.confirm(`${busy ? "Parar a resposta e começar" : "Começar"} outra? A conversa e a foto de referência serão descartadas.`)) return;
+    conversation.current++;
+    refPhotos.current.clear();
+    saveRefs(refPhotos.current, room);
+    pending.current?.abort();
+    pending.current = null;
+    update([]);
+    setText("");
+    setAttachments([]);
+    setError(null);
+    setStage(null);
+    setBusy(false);
   }
 
   async function copy(i: number) {
@@ -347,6 +379,15 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       )}
       {tab === "conversa" && (
         <section className="st-chat">
+          {/* sempre a vista: descarta a conversa, a foto de referencia guardada e a
+              anexada (e para a resposta que esta vindo) para comecar com outra foto */}
+          {(messages.length > 0 || busy || attachments.length > 0) && (
+            <div className="st-chat-top">
+              <button type="button" className="st-btn st-btn-small" onClick={newConversation}>
+                ✖ Cancelar e começar outra
+              </button>
+            </div>
+          )}
           <div className="st-chat-list">
             {messages.length === 0 && (
               <div className="st-chat-quick">
