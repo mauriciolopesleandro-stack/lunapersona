@@ -378,6 +378,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const photos = body.photos === undefined ? 1 : Number(body.photos);
       if (!Number.isInteger(photos) || photos < 1 || photos > 10) throw new Problem(400, "O carrossel vai de 2 a 10 fotos.");
       if (photos > 1 && !keys.some((k) => k === "feed" || k === "tiktok")) throw new Problem(400, "Carrossel só no Instagram Feed ou no TikTok.");
+      // trava (30/10): o mesmo pedido para o mesmo destino nas ultimas 12 h nao
+      // entra de novo sem confirmar (o botao reaparecia e a foto saia 2-3 vezes)
+      if (body.force !== true) {
+        const recent = await dbSelect<{ created_at: string; status: string; format: string }>(
+          "content_plan_items",
+          `select=created_at,status,format&prompt=eq.${encodeURIComponent(prompt)}&format=eq.${encodeURIComponent(SLOTS[keys[0]].format)}&status=not.in.(cancelado,falhou)&created_at=gt.${new Date(Date.now() - 12 * 3600_000).toISOString()}&order=created_at.desc&limit=1`
+        );
+        if (recent[0]) {
+          const at = new Date(recent[0].created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+          return reply(409, { code: "repetida", detail: `Essa foto já foi pedida hoje às ${at} (${recent[0].status.replace("_", " ")}). Gerar de novo gasta mais crédito.` });
+        }
+      }
       // +18: canal VIP e/ou pacotes do bot de vendas (Ensaio, Album VIP)
       const adultDest = keys.includes("telegram18") ? normalizeFlags({ adultDest: body.adultDest }, 1).adultDest : undefined;
       if (adultDest) {

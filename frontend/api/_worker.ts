@@ -182,7 +182,8 @@ async function photosOf(item: Pick<ItemRow, "plan_id" | "format">): Promise<numb
 // (maos simples: gesto complicado perto do rosto costuma sair com defeito)
 const CAROUSEL_POSES = [
   "de lado ou de costas, olhando por cima do ombro para a câmera, sorrindo, mãos na cintura",
-  "uma mão no cabelo, um pouco mais perto da câmera, do peito para cima, rosto e ombros completos",
+  // nunca "mais perto da camera"/"do peito para cima": saia foto so do rosto (30/10)
+  "uma mão no cabelo, da cintura para cima, com o cenário aparecendo atrás",
   "piscando para a câmera, mãos apoiadas, outro ângulo",
   "corpo inteiro dentro do quadro, da cabeça aos pés, de outro ângulo da câmera",
 ];
@@ -191,7 +192,7 @@ function carouselPrompts(prompt: string, n: number): string[] {
   return Array.from({ length: n }, (_, i) =>
     i === 0
       ? prompt
-      : `${prompt}\n\nFoto ${i + 1} de ${n} do mesmo momento: mesma pessoa, mesma roupa e mesmo lugar; agora ${CAROUSEL_POSES[(i - 1) % CAROUSEL_POSES.length]}.`
+      : `${prompt}\n\nFoto ${i + 1} de ${n} do mesmo momento: mesma pessoa, mesma roupa e mesmo lugar; agora ${CAROUSEL_POSES[(i - 1) % CAROUSEL_POSES.length]}. Enquadramento igual ou mais aberto que o da foto 1, nunca close só do rosto.`
   );
 }
 

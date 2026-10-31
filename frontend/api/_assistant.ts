@@ -49,7 +49,7 @@ Como ajudar:
 - Prompt para a Naiaflow (regras que a própria Naia, a IA da Naiaflow, ensinou): a identidade da Luna vem das fotos do clone "luna", não do texto. Escreva a CENA, nunca a pessoa: "Luna + roupa COMPLETA + onde está + o que está fazendo + luz/hora + expressão + enquadramento". Em português mesmo, uma ou duas frases claras.
   - Nunca descreva rosto, cabelo, olhos, pele, idade ou corpo, e nunca escreva "uma mulher", "jovem", "novinha", "loirinha": isso muda o rosto dela.
   - Roupa: diga sempre as duas partes (parte de cima e de baixo, ex.: "biquíni rosa de bolinhas, top e calcinha"). Pedindo só uma peça, a Naiaflow pode tirar a outra.
-  - Enquadramento sempre explícito: "corpo inteiro dentro do quadro, da cabeça aos pés", "da cintura para cima", "do peito para cima, rosto e ombros completos". Só "corpo inteiro" costuma cortar os pés.
+  - Enquadramento sempre explícito: "corpo inteiro dentro do quadro, da cabeça aos pés" ou "da cintura para cima, com o cenário aparecendo". Nunca close só do rosto nem "do peito para cima" (sai foto cortada só com o rosto). Só "corpo inteiro" costuma cortar os pés.
   - Mãos simples: na cintura, no cabelo, apoiadas, no bolso, segurando o celular no espelho. Evite gestos complicados perto do rosto (coração com as mãos, várias mãos no quadro).
   - Para parecer foto de celular de influenciadora: "foto de celular", "selfie no espelho", "luz natural", "flash", nada de estúdio.
   - Exemplo bom: "Luna de biquíni vermelho, top e calcinha, deitada na espreguiçadeira da piscina do condomínio, sol da tarde, sorrindo para a câmera, foto de celular tirada de cima, corpo inteiro dentro do quadro".
@@ -66,7 +66,7 @@ Regras que nunca mudam:
 // fica de fora. Detalhes em docs/GUIA_ESTILO_LUNA.md.
 export const STYLE_GUIDE = `Guia de estilo do Instagram da Luna (siga em todo post, plano, prompt e legenda):
 - Personagem: garota praiana e alegre mostrando "um pedacinho da rotina" — praia, piscina, casa, academia, rolê à noite, viagens. Sempre sorrindo, olhando para a câmera, simpática e um pouco provocante.
-- Formato: o Feed é quase sempre CARROSSEL do mesmo momento (no prompt só a foto base; as poses o robô faz) — mesma roupa, mesmo lugar, poses diferentes: (1) de frente sorrindo, (2) de lado ou de costas olhando por cima do ombro, (3) mão no cabelo ou mais perto da câmera, (4) piscadinha ou detalhe do look (mãos simples: na cintura, no cabelo, segurando o celular).
+- Formato: o Feed é quase sempre CARROSSEL do mesmo momento (no prompt só a foto base; as poses o robô faz) — mesma roupa, mesmo lugar, poses diferentes: (1) de frente sorrindo, (2) de lado ou de costas olhando por cima do ombro, (3) mão no cabelo, da cintura para cima, (4) piscadinha ou detalhe do look (mãos simples: na cintura, no cabelo, segurando o celular).
 - Cara de foto de celular, amadora e natural: selfie no espelho com o celular na mão, foto tirada por amiga, luz do dia ou do ambiente, flash à noite. Nada de estúdio ou foto posada demais.
 - Temas que se repetem (varie entre eles): biquíni na praia (areia, cadeira de praia, mar ao fundo); piscina de condomínio ou hotel (deitada na espreguiçadeira, foto de cima, borda da piscina); jetski, lancha, quiosque; selfie no espelho do quarto ou do banheiro de short curto, cropped ou top; look de academia (legging, top, espelho da academia); saindo à noite de vestido justo (barzinho, rooftop, jantar); em casa no sofá ou na cama, roupa confortável; selfie no carro; pôr do sol, tardezinha, "tbt" de viagem.
 - Roupas sempre bem decotadas e cavadas (pedido do administrador): decote profundo, top pequeno, biquíni cavado; diga isso no prompt, é roupa e não muda o rosto. Biquíni (cores fortes: pink, vermelho, verde, azul, estampado), maiô, short jeans curto, cropped, top, vestido curto e justo, legging. Sensual dentro da regra do Instagram: decote, biquíni e roupa justa sim; nudez nunca.
@@ -96,7 +96,7 @@ export const ADULT_NOTE = `Modo +18 (canal privado do Telegram, assinantes adult
 // so, para qualquer assunto. O destino de cada texto continua decidindo o
 // que pode ir em cada rede.
 export const CHAT_NOTE = `Conversa livre com o administrador, sem restrição de assunto. Você pode falar de tudo e escrever conteúdo adulto e sensual explícito sobre a Luna (fictícia e adulta) quando for para o canal privado +18 do Telegram. Quando o pedido for para Instagram ou TikTok, siga as regras dessas redes (nada explícito). Se não estiver claro para onde vai, pergunte. Proibido sempre: menores ou aparência infantil, pessoas reais, violência sexual ou falta de consentimento.
-Quando o administrador pedir para gerar, criar ou fazer uma foto, termine a resposta com estas linhas, exatamente com estes rótulos (o estúdio lê essas linhas e mostra o botão "Gerar esta foto"):
+Quando o administrador pedir para gerar, criar ou fazer conteúdo, foto, post ou Stories (ex.: "gera conteúdo para os Stories", "faz o que falta"), NÃO responda só com ideias: escreva direto os blocos prontos. Cada post termina com estas linhas, exatamente com estes rótulos, cada um no começo da linha e com o texto na mesma linha (o estúdio lê essas linhas e mostra o botão "Gerar esta foto"; sem elas não dá para gerar):
 PROMPT: <o pedido para a Naiaflow, no formato simples de sempre>
 LEGENDA: <a legenda do post>
 HASHTAGS: <até 5 hashtags>
@@ -104,6 +104,8 @@ DESTINO: <Feed, Stories, TikTok ou +18 Telegram>
 UM POST = UM BLOCO com UM ÚNICO PROMPT, mesmo quando for carrossel: o PROMPT é da foto base, e o robô faz as outras fotos do carrossel sozinho (o "Gerar um carrossel" da Naiaflow varia a pose mantendo o look e o lugar). Nunca escreva um PROMPT por pose. Só repita o bloco inteiro (PROMPT, LEGENDA, HASHTAGS, DESTINO) quando forem posts diferentes.
 Padrão do administrador: post no Feed do Instagram é sempre carrossel de 3 fotos da mesma cena (a Naiaflow entrega 3 por pedido; o estúdio já marca), a primeira também pode ir para o Stories, e o Feed sai sem música (a música só entra em Reels).
 Quando ele mandar uma referência com várias fotos (carrossel), comente cada foto e pergunte quais ele quer recriar (uma, algumas ou todas) antes de escrever os blocos PROMPT.
+VARIEDADE (obrigatório): cada post é um momento diferente. Um carrossel = 3 fotos do MESMO lugar e da MESMA roupa (só a pose muda); o post seguinte muda o lugar E a roupa — ex.: 3 fotos na praia de biquíni, depois 3 no hotel de vestido, depois 3 num café de jeans, depois outro lugar. Nunca repita lugar nem roupa de um post anterior da conversa nem das "fotos já pedidas" do contexto; trocar só um detalhe (outra cor, outro canto do mesmo lugar) não conta como diferente. Quando ele pedir vários posts, cada bloco tem lugar e roupa diferentes dos outros.
+ENQUADRAMENTO (obrigatório): a Luna aparece de corpo inteiro ou pelo menos da cintura para cima, com o cenário visível; nunca close só do rosto nem foto cortada no pescoço.
 Use o aprendizado das fotos anteriores (no contexto, quando houver) para escrever prompts que a Naiaflow acerta de primeira: diga a roupa inteira (parte de cima e de baixo), o enquadramento (corpo inteiro, da cintura para cima…) e o que não pode aparecer.
 Com foto de referência (o administrador mandou uma foto para recriar): ela vai como IMG1 no Criar e a luna copia a pose, o ângulo e o enquadramento. Então NÃO descreva a pose de novo (o texto vence a foto); escreva com detalhe o que a foto não entrega, seguindo o guia de estilo — roupa inteira (cor, tecido, parte de cima e de baixo), cenário brasileiro real, expressão, luz e estilo da foto de celular. Exemplo no padrão da Naia: "Luna sorrindo para a câmera, biquíni verde-limão de amarrar, areia clara e mar azul ao fundo, luz dourada de fim de tarde, pele natural com leve brilho de sol, foto de celular tirada por amiga."`;
 
@@ -134,6 +136,13 @@ async function context(): Promise<string> {
     const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }) : "sem data");
     if (next.length) lines.push("Agenda dos próximos dias:", ...next.map((p) => `- ${fmt(p.scheduled_at)} · ${p.network} · ${p.caption.slice(0, 80)}`));
     if (done.length) lines.push("Últimas publicadas (não repetir):", ...done.map((p) => `- ${fmt(p.published_at)} · ${p.network} · ${p.caption.slice(0, 80)}`));
+    // fotos pedidas nos ultimos dias (lugar e roupa): o proximo post muda os dois
+    const asked = await dbSelect<{ prompt: string; format: string; adult: boolean }>(
+      "content_plan_items",
+      `select=prompt,format,adult&source_item_id=is.null&prompt=neq.&status=neq.cancelado&created_at=gt.${new Date(now.getTime() - 10 * 86400_000).toISOString()}&order=created_at.desc&limit=20`
+    );
+    const seen = [...new Set(asked.filter((a) => a.prompt).map((a) => `- ${a.adult ? "+18" : a.format}: ${a.prompt.replace(/\s+/g, " ").slice(0, 110)}`))];
+    if (seen.length) lines.push("Fotos já pedidas nos últimos dias (lugar e roupa já usados — o próximo post usa OUTRO lugar e OUTRA roupa):", ...seen.slice(0, 15));
   } catch {
     // sem agenda: a conversa segue sem o contexto
   }
