@@ -280,6 +280,24 @@ export async function approveChosen(id: string, version: unknown, positions: num
   const keep = [...new Set(positions)].filter((n) => Number.isInteger(n) && n >= 1 && n <= mediaIds.length).sort((a, b) => a - b);
   if (!keep.length) throw new Problem(400, "Escolha pelo menos uma foto.");
   if (keep.length === mediaIds.length) return decidePost(post.id, post.version, "approve");
+  return approveAsNewVersion(post, mediaIds, keep, post.flags, `Escolhidas no Telegram: foto(s) ${keep.join(", ")}`, { de: mediaIds.length, ficaram: keep });
+}
+
+// Reels com a musica do Instagram (flags.igAudio): "Aprovar com som original" tira a
+// musica e o Reels sai com o som do proprio video (a dancinha com o Som original).
+export async function approveWithoutMusic(id: string, version: unknown): Promise<PostRow> {
+  const post = await getPost(uuid(id));
+  requireStatus(post, ["aguardando_aprovacao"], "aprovar");
+  if (version !== post.version) throw new Problem(409, `A publicação mudou (agora é a versão ${post.version}). Revise de novo antes de decidir.`);
+  if (!post.flags?.igAudio) return decidePost(post.id, post.version, "approve");
+  const mediaIds = await postMediaIds(post.id);
+  const { igAudio: _music, ...flags } = post.flags;
+  return approveAsNewVersion(post, mediaIds, mediaIds.map((_, i) => i + 1), flags, "Aprovada com o som original (sem a música do Instagram)", { som: "original" });
+}
+
+// Nova versao ja aprovada a partir da revisada: so as midias keep (1 = primeira),
+// com as flags dadas; as copias das midias sao duplicadas para a versao nova.
+async function approveAsNewVersion(post: PostRow, mediaIds: string[], keep: number[], flags: PostFlags, note: string, details: object): Promise<PostRow> {
   const uploads = await dbSelect<{ position: number; storage_path: string; mime_type: string; size_bytes: number | null }>(
     "post_uploads",
     `select=position,storage_path,mime_type,size_bytes&post_id=eq.${post.id}&post_version=eq.${post.version}&deleted_at=is.null&order=position.asc`
@@ -295,15 +313,15 @@ export async function approveChosen(id: string, version: unknown, positions: num
   }
   const chosen = keep.map((n) => mediaIds[n - 1]);
   const formats = (await destinations(post.id)).filter((d) => d.status !== "cancelado").map((d) => d.format);
-  const hash = contentHash({ network: post.network, formats, mediaIds: chosen, caption: post.caption, hashtags: post.hashtags, mode: post.publish_mode, flags: post.flags });
-  // a versao revisada vira a nova (so com as escolhidas); as copias antigas saem
-  await dbInsert("approvals", { post_id: post.id, version: post.version, content_hash: post.content_hash, decision: "reprovado", note: `Escolhidas no Telegram: foto(s) ${keep.join(", ")}` });
-  const saved = await guardedUpdate(post, { version: next, content_hash: hash, status: "aguardando_aprovacao" });
+  const hash = contentHash({ network: post.network, formats, mediaIds: chosen, caption: post.caption, hashtags: post.hashtags, mode: post.publish_mode, flags });
+  // a versao revisada vira a nova; as copias antigas saem
+  await dbInsert("approvals", { post_id: post.id, version: post.version, content_hash: post.content_hash, decision: "reprovado", note });
+  const saved = await guardedUpdate(post, { version: next, content_hash: hash, status: "aguardando_aprovacao", flags });
   await replaceMedia(post.id, chosen);
   await cancelJobs(post.id);
   await cleanupUploads(post.id);
   await dbInsert("post_uploads", copies);
-  await audit("escolher_fotos", "posts", post.id, { de: mediaIds.length, ficaram: keep });
+  await audit("aprovar_nova_versao", "posts", post.id, details);
   return decidePost(saved.id, saved.version, "approve");
 }
 

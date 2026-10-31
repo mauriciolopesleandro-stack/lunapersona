@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { SALES_PACKS } from "./_flags.js";
 import { createHmac, timingSafeEqual } from "crypto";
 import { NETWORK_RULES, UPLOAD_BUCKET, type PostRow } from "./_posts.js";
-import { Problem, approveChosen, decidePost } from "./_posts_api.js";
+import { Problem, approveChosen, approveWithoutMusic, decidePost } from "./_posts_api.js";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbSelect, storageReadUrl } from "./_supabase.js";
 import { forgetChannel, saveChannel, telegram, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
@@ -69,10 +69,19 @@ function buttons(post: PostRow, photos = 1) {
   const ref = `${post.id}:${post.version}`;
   return {
     inline_keyboard: [
-      [
-        { text: photos > 1 ? "✅ Aprovar todas" : "✅ Aprovar", callback_data: `ap:${ref}` },
-        { text: "❌ Reprovar", callback_data: `rp:${ref}` },
-      ],
+      // Reels com musica do Instagram: escolhe na hora (o video do card toca o som original)
+      ...(post.flags?.igAudio
+        ? [
+            [{ text: `✅ Aprovar com 🎵 ${post.flags.igAudio.title}`.slice(0, 60), callback_data: `ap:${ref}` }],
+            [{ text: "✅ Aprovar com o som original", callback_data: `ao:${ref}` }],
+            [{ text: "❌ Reprovar", callback_data: `rp:${ref}` }],
+          ]
+        : [
+            [
+              { text: photos > 1 ? "✅ Aprovar todas" : "✅ Aprovar", callback_data: `ap:${ref}` },
+              { text: "❌ Reprovar", callback_data: `rp:${ref}` },
+            ],
+          ]),
       ...(photos > 1 ? [[{ text: "🖼️ Escolher fotos", callback_data: `ef:${ref}` }]] : []),
       // +18: a foto vira previa da chamada (CTA) borrada pelo robo do PC
       ...(post.network === "telegram" ? [[{ text: "📣 Usar na chamada (borrar)", callback_data: `bc:${ref}` }]] : []),
@@ -332,6 +341,10 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
         // +18 aprovado: o 📣 continua a um toque (os botoes do card somem)
         const chamada = kind === "ap" && post.network === "telegram" ? { reply_markup: { inline_keyboard: [[{ text: "📣 Usar na chamada (borrar)", callback_data: `bc:${post.id}:${post.version}` }]] } } : {};
         await say(decided(post), { ...replyTo, ...chamada });
+      } else if (kind === "ao") {
+        const post = await approveWithoutMusic(id, version);
+        if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
+        await say(`${decided(post)} 🔊 Vai com o som original do vídeo (sem a música do Instagram).`, replyTo);
       } else if (kind === "bc" || kind === "bp") {
         // bc:<post>:<versao> abre a escolha (ou ja manda, se for uma foto so); bp:<post>:<n|all> manda
         const total = (await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${id}`)).length;

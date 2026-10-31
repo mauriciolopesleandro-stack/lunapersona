@@ -325,7 +325,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const taken: string[] = [];
       const caption = typeof body.caption === "string" ? body.caption.slice(0, 2200) : "";
       const hashtags = cleanTags(body.hashtags);
-      const motion = { ...(link ? { link } : { path: file }), seconds, ...(outfit ? { outfit } : {}) };
+      // som: o original da dancinha (padrao; na aprovacao do Telegram da para trocar pela musica do Instagram) ou sem som
+      const sound = body.sound === "sem" ? "sem" : "original";
+      const motion = { ...(link ? { link } : { path: file }), seconds, ...(outfit ? { outfit } : {}), sound };
       const plan = await dbInsert<PlanRow>("content_plans", {
         title: `Dancinha do chat (${keys.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}${outfit ? `, roupa ${outfit}` : ""})`,
         request: { source: "chat-dance", slots: keys, motion },

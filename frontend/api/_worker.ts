@@ -221,6 +221,7 @@ interface Motion {
   path?: string;
   seconds: number;
   outfit?: string;
+  sound?: "original" | "sem";
 }
 // foto de referencia (IMG1) mandada na conversa: caminho no armazenamento temporario
 async function referenceOf(item: Pick<ItemRow, "plan_id">): Promise<string | null> {
@@ -423,6 +424,7 @@ Ela já entra nas próximas mensagens do bot de vendas (Conteúdo do Telegram �
               ...(motion.path ? { file_url: await storageReadUrl(UPLOAD_BUCKET, motion.path, 7200), file_name: motion.path.split("/").pop() } : {}),
               seconds: motion.seconds,
               ...(motion.outfit ? { outfit: motion.outfit } : {}),
+              sound: motion.sound ?? "sem",
             },
           },
         });
