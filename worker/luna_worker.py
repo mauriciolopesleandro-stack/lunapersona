@@ -663,7 +663,21 @@ class Naiaflow:
         if not (dur.count() and dur.first.is_visible()):
             p.get_by_role("button", name="Continuar", exact=True).last.click()
             dur.first.wait_for(state="visible", timeout=90000)
-        dur.first.click()
+        if dur.first.is_enabled():
+            dur.first.click()
+        else:
+            # video mais curto que o pedido (31/10: 4,97 s para 5 s): a Naiaflow
+            # desliga o botao; usa a maior duracao ligada abaixo (nunca uma mais cara)
+            options = []
+            for b in p.get_by_role("button", name=re.compile(r"^\d+s$")).all():
+                m = re.fullmatch(r"(\d+)s", b.inner_text().strip())
+                if m and b.is_visible() and b.is_enabled() and int(m.group(1)) < seconds:
+                    options.append((int(m.group(1)), b))
+            if not options:
+                raise RuntimeError(f"O vídeo enviado é mais curto que {seconds} s e a Naiaflow não liberou uma duração menor: mande um vídeo de pelo menos {seconds} s.")
+            seconds, shorter = max(options, key=lambda o: o[0])
+            log(f"O vídeo enviado é mais curto que o pedido: a dancinha sai com {seconds} s ({seconds + 1} créditos).")
+            shorter.click()
         # "Som original" mantem a musica da dancinha (na aprovacao do Telegram da para
         # trocar pela musica do Instagram); "Sem som" so se pedido. O custo e conferido
         # no botao Gerar (segundos + 1): se a opcao mudar o custo, o robo nao gera.
