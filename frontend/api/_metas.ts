@@ -29,7 +29,9 @@ const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T12:00:00
 
 // O que ja esta garantido em cada dia: publicacoes do Instagram (menos
 // canceladas, falhas e rascunhos) e itens de planos aprovados ainda sem
-// publicacao (na fila ou gerando).
+// publicacao (na fila ou gerando). Stories conta por foto (31/10): cada foto da
+// publicacao sai como um Stories; o pedido na fila conta as 3 do Criar.
+export const STORIES_PER_REQUEST = 3;
 export async function coverage(days = 14, start = todayInBrazil()): Promise<DayCoverage[]> {
   // gt com 1 s de folga (= a partir da meia-noite)
   const from = new Date(Date.parse(`${start}T00:00:00${OFFSET}`) - 1000).toISOString();
@@ -39,18 +41,25 @@ export async function coverage(days = 14, start = todayInBrazil()): Promise<DayC
       "posts",
       `select=id,scheduled_at&network=eq.instagram&status=not.in.(cancelado,falhou,rascunho)&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
     ),
-    dbSelect<{ scheduled_at: string; format: string }>(
+    dbSelect<{ scheduled_at: string; format: string; source_item_id: string | null }>(
       "content_plan_items",
-      `select=scheduled_at,format&network=eq.instagram&status=in.(na_fila,gerando)&post_id=is.null&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
+      `select=scheduled_at,format,source_item_id&network=eq.instagram&status=in.(na_fila,gerando)&post_id=is.null&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
     ),
   ]);
-  const dests = posts.length
-    ? await dbSelect<{ post_id: string; format: string }>("post_destinations", `select=post_id,format&status=neq.cancelado&post_id=in.(${posts.map((p) => p.id).join(",")})`)
-    : [];
+  const ids = posts.map((p) => p.id).join(",");
+  const [dests, media] = posts.length
+    ? await Promise.all([
+        dbSelect<{ post_id: string; format: string }>("post_destinations", `select=post_id,format&status=neq.cancelado&post_id=in.(${ids})`),
+        dbSelect<{ post_id: string }>("post_media", `select=post_id&post_id=in.(${ids})`),
+      ])
+    : [[], []];
   const when = new Map(posts.map((p) => [p.id, p.scheduled_at]));
-  const entries: { at: string; format: string }[] = [
-    ...dests.map((d) => ({ at: when.get(d.post_id)!, format: d.format })),
-    ...items.map((i) => ({ at: i.scheduled_at, format: i.format })),
+  const photos = new Map<string, number>();
+  for (const m of media) photos.set(m.post_id, (photos.get(m.post_id) ?? 0) + 1);
+  const entries: { at: string; format: string; n: number }[] = [
+    ...dests.map((d) => ({ at: when.get(d.post_id)!, format: d.format, n: d.format === "Stories" ? Math.max(1, photos.get(d.post_id) ?? 1) : 1 })),
+    // Stories na fila: o robo traz as 3 fotos do Criar (o que reaproveita a foto do Feed leva 1)
+    ...items.map((i) => ({ at: i.scheduled_at, format: i.format, n: i.format === "Stories" && !i.source_item_id ? STORIES_PER_REQUEST : 1 })),
   ];
   const out: DayCoverage[] = [];
   for (let i = 0; i < days; i++) {
@@ -59,7 +68,7 @@ export async function coverage(days = 14, start = todayInBrazil()): Promise<DayC
     const times = { Feed: [], Stories: [], Reels: [] } as Record<Goal, string[]>;
     for (const e of entries) {
       if (!(e.format in GOALS) || dayOf(e.at) !== day) continue;
-      counts[e.format as Goal]++;
+      counts[e.format as Goal] += e.n;
       times[e.format as Goal].push(hhmm(e.at));
     }
     // hoje: horario padrao que ja passou nao da mais para preencher (nao conta como falta)
@@ -77,13 +86,14 @@ export async function coverage(days = 14, start = todayInBrazil()): Promise<DayC
 
 // Proximo horario vazio do formato: o primeiro dia (a partir de agora) que
 // ainda nao bateu a meta, no primeiro horario padrao livre (e que ainda nao
-// passou). taken: horarios ja reservados nesta mesma chamada.
+// passou). taken: horarios ja reservados nesta mesma chamada. Stories: cada
+// reserva vale as 3 fotos do Criar.
 export async function nextSlot(goal: Goal, taken: string[] = []): Promise<string> {
   const now = Date.now() + 20 * 60_000; // folga para o robo gerar
   for (let page = 0; page < 6; page++) {
     const days = await coverage(30, addDays(todayInBrazil(), page * 30));
     for (const d of days) {
-      const reserved = taken.filter((t) => t.startsWith(d.day)).length;
+      const reserved = taken.filter((t) => t.startsWith(d.day)).length * (goal === "Stories" ? STORIES_PER_REQUEST : 1);
       if (d.counts[goal] + reserved >= GOALS[goal]) continue;
       for (const time of GOAL_TIMES[goal]) {
         const iso = new Date(`${d.day}T${time}:00${OFFSET}`).toISOString();
