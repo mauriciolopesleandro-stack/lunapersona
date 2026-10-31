@@ -184,7 +184,9 @@ function problemWithAutoFormats(network: string, formats: string[], mimes: strin
     return;
   }
   if (formats.includes("Reels") && (mimes.length !== 1 || videos !== 1)) throw new Problem(400, "Reels automático precisa de exatamente 1 vídeo.");
-  if (formats.includes("Stories") && mimes.length !== 1) throw new Problem(400, "Stories automático precisa de exatamente 1 mídia.");
+  // Stories com varias fotos: sai um Stories por foto, um depois do outro (31/10)
+  if (formats.includes("Stories") && formats.length > 1 && mimes.length !== 1) throw new Problem(400, "Stories junto de outro formato precisa de exatamente 1 mídia.");
+  if (formats.includes("Stories") && (mimes.length < 1 || mimes.length > 10)) throw new Problem(400, "Stories: de 1 a 10 mídias (cada uma vira um Stories).");
   if (formats.includes("Feed") && (mimes.length < 1 || mimes.length > 20)) throw new Problem(400, "Feed: de 1 a 20 mídias.");
 }
 

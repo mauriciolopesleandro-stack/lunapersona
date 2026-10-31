@@ -22,7 +22,8 @@ import { forgetLessons, learnFromCorrection, learnFromPhoto, listLessons } from 
 //   GET                          -> { paired, lastSeen, queue }
 //   POST { action: "pair" }      -> nova chave do PC + arquivo de configuracao (a anterior para de valer)
 // Com a chave do PC:
-//   POST { action: "ping" }      -> { queue }
+//   POST { action: "ping", start? } -> { queue }; start: o robo acabou de abrir, o que
+//                                   ficou em "gerando" (robo fechado no meio) volta para a fila
 //   POST { action: "next" }      -> proximo item da fila (vira "gerando") ou { item: null };
 //                                   correcao pedida no Telegram vem com edit { source, instruction }:
 //                                   o PC edita a foto que ja tem (opcao Editar da Naiaflow)
@@ -184,13 +185,14 @@ const QUEUE_FILTER = "status=eq.na_fila&or=(source_item_id.is.null,media_path.no
 
 // Carrossel: o plano da foto do chat guarda quantas fotos (request.photos). O
 // robo gera todas no mesmo item (mesmo ensaio, pose e angulo diferentes); Feed e
-// TikTok levam todas, Stories so a primeira.
+// TikTok levam todas; Stories junto do Feed so a primeira (Stories sozinho leva todas).
 async function photosOf(item: Pick<ItemRow, "plan_id" | "format">): Promise<number> {
   const [plan] = await dbSelect<{ request: { photos?: unknown; feedPhotos?: unknown } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
   // plano da semana: o Feed sai em carrossel (feedPhotos); a foto avulsa usa photos.
   // +18 (Canal): as 3 fotos do mesmo Criar (1 credito) vao para o Telegram e o
-  // administrador escolhe quais aprovar (pedido de 30/10)
-  const n = Number((item.format === "Feed" ? plan?.request?.feedPhotos : undefined) ?? plan?.request?.photos ?? (item.format === "Canal" ? 3 : 1));
+  // administrador escolhe quais aprovar (pedido de 30/10). Stories (31/10): tambem
+  // as 3, ele aprova todas (vira 3 Stories seguidos) ou escolhe
+  const n = Number((item.format === "Feed" ? plan?.request?.feedPhotos : undefined) ?? plan?.request?.photos ?? (item.format === "Canal" || item.format === "Stories" ? 3 : 1));
   return Number.isInteger(n) && n > 1 && n <= 10 ? n : 1;
 }
 
@@ -352,7 +354,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (storeConfigured()) await storeSet(SEEN_KEY, new Date().toISOString()).catch(() => undefined);
     const now = () => new Date().toISOString();
 
-    if (body.action === "ping") return reply(200, { ok: true, queue: await queueSize() });
+    if (body.action === "ping") {
+      // robo recem-aberto (so roda um por vez): nada esta sendo gerado de verdade.
+      // Item que ficou "gerando" porque o robo foi fechado no meio volta para a
+      // fila na hora, sem esperar os 30 min (31/10: rachadinha parada)
+      let released = 0;
+      if (body.start === true) {
+        const stuck = await dbSelect<{ id: string }>("content_plan_items", "select=id&status=eq.gerando");
+        if (stuck.length) await dbUpdateWhere("content_plan_items", "status=eq.gerando", { status: "na_fila", updated_at: now() });
+        released = stuck.length;
+      }
+      return reply(200, { ok: true, queue: await queueSize(), released });
+    }
 
     // --- previas da chamada (CTA) borradas no PC ----------------------------------------------------
     // fotos que o administrador mandou para a chamada pelo Telegram (📣): o robo borra
@@ -546,8 +559,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       for (const it of family) {
         const igAudio = it.network === "instagram" && it.format === "Reels" ? await reelsAudio() : undefined;
         const adultDest = it.network === "telegram" ? await adultDestOf(it) : undefined;
-        // carrossel: Feed e TikTok com todas as fotos; Stories so com a primeira
-        const ids = it.format === "Stories" ? [media.id] : mediaIds;
+        // carrossel: Feed e TikTok com todas as fotos; Stories junto do Feed so com a
+        // primeira, e Stories dono das fotos com todas (cada uma vira um Stories)
+        const ids = it.format === "Stories" && it.id !== item.id ? [media.id] : mediaIds;
         const post = await createDraftPost({
           network: it.network,
           formats: [it.format],

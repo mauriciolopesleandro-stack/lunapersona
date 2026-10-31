@@ -275,6 +275,37 @@ async function createContainer(conn: IgConnection, format: string, uploads: Uplo
   return create({ media_type: "CAROUSEL", children: children.join(","), caption });
 }
 
+// Stories com varias fotos (31/10): cada foto vira um Stories, na ordem. O
+// progresso fica no external_container_id ("<quantos ja sairam>:<conteiner>")
+// para uma nova tentativa nao repetir o que ja saiu. Devolve null quando todos
+// sairam, ou "esperar" se o Instagram ainda processa a midia.
+async function publishStoriesSeq(conn: IgConnection, d: DestinationRow, uploads: UploadRow[]): Promise<{ mediaId: string } | "esperar"> {
+  const [doneText, saved] = (d.external_container_id ?? "0:").split(":");
+  let done = Number(doneText) || 0;
+  let container = saved || null;
+  let mediaId = "";
+  const save = (value: string) => dbUpdateWhere("post_destinations", `id=eq.${d.id}`, { external_container_id: value, last_error: null });
+  while (done < uploads.length) {
+    if (!container) {
+      container = await createContainer(conn, "Stories", [uploads[done]], "", {});
+      await save(`${done}:${container}`);
+    }
+    const status = await igWaitReady(container, conn.token, 8, 3000, conn.host);
+    if (status === "ERROR" || status === "EXPIRED") {
+      await save(`${done}:`);
+      throw new InstagramError(`o Instagram recusou o Stories ${done + 1} de ${uploads.length} (${status})`, true);
+    }
+    if (status !== "PUBLISHED") {
+      if (status !== "FINISHED") return "esperar";
+      mediaId = await igPublish(conn.userId, conn.token, container, conn.host);
+    }
+    done++;
+    container = null;
+    await save(`${done}:`);
+  }
+  return { mediaId };
+}
+
 // Midia ainda processando no Instagram: volta em 1 min sem gastar tentativa
 // (ate o limite de 30 voltas, para nao ficar preso para sempre).
 async function waitMore(job: JobRow, post: PostRow): Promise<Outcome> {
@@ -306,6 +337,17 @@ async function runInstagram(job: JobRow): Promise<Outcome> {
   const dests = await dbSelect<DestinationRow>("post_destinations", `select=id,format,status,external_container_id&post_id=eq.${post.id}&status=eq.pendente`);
   try {
     for (const d of dests) {
+      if (d.format === "Stories" && uploads.length > 1) {
+        const out = await publishStoriesSeq(conn, d, uploads);
+        if (out === "esperar") return waitMore(job, post);
+        await dbUpdateWhere("post_destinations", `id=eq.${d.id}&status=eq.pendente`, {
+          status: "publicado",
+          external_id: out.mediaId || null,
+          confirmed_at: new Date().toISOString(),
+          confirmed_by: "api",
+        });
+        continue;
+      }
       let container = d.external_container_id;
       if (container) {
         const status = await igWaitReady(container, conn.token, 3, 3000, conn.host);
