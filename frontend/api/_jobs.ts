@@ -194,12 +194,11 @@ async function runChannel(job: JobRow, post: PostRow, channel: TelegramChannel):
 // Falhou: tenta de novo em 2, 4, 8 min; na ultima avisa e segue (o canal ainda sai).
 async function runPacks(job: JobRow, post: PostRow, packs: string[]): Promise<"ok" | "nova_tentativa" | "falhou"> {
   try {
-    const { addPostToPacks } = await import("./_sales.js");
-    const names = await addPostToPacks(post.id, post.version, packs);
+    const { packPostNow, postInPacks } = await import("./_sales.js");
+    // ja entrou nos pacotes quando foi aprovada (31/10): nao repete
+    if (await postInPacks(post.id)) return "ok";
+    const names = await packPostNow(post.id, post.version, packs);
     await dbInsert("publishing_attempts", { post_id: post.id, job_id: job.id, attempt: job.attempts, channel: "api", outcome: "ok", detail: `pacotes: ${names.join(", ")}` });
-    for (const m of await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${post.id}`)) {
-      await dbInsert("media_usage", { media_id: m.media_id, channel: "telegram", context: "pack", reference: post.id });
-    }
     await notify(`📦 Guardado em: ${names.join(" + ")}.`);
     return "ok";
   } catch (e) {
