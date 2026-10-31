@@ -201,6 +201,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     const reads: { label: string; text: string }[] = [];
     // foto do post do Instagram lido pelo link: vira a referencia IMG1, como uma foto anexada
     let linkPhoto: string | undefined;
+    let linkFail = "";
     try {
       for (const a of attachments) {
         setStage(review ? "Revisando…" : a.kind === "video" ? "Assistindo o vídeo…" : "Olhando a foto…");
@@ -220,10 +221,10 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
           reads.push({ label: out.title, text: out.analysis });
           linkPhoto = out.image;
         } catch (e) {
-          // link de dancinha (TikTok, Reels...) costuma bloquear a leitura: segue
-          // sem ela, o "Fazer dancinha" usa o link direto. Post de foto (/p/)
-          // sem leitura nao serve para nada: avisa (pede o print)
-          if (!DANCE_LINK.test(link) || /instagram\.com\/(?:[^/]+\/)?p\//i.test(link)) throw e;
+          // link que nao abre nunca trava a conversa (pedido do administrador,
+          // 31/10): segue sem a leitura e a IA fica sabendo que nao viu o link
+          // (o "Fazer dancinha" usa o link direto)
+          linkFail = e instanceof Error ? e.message : String(e);
         }
       }
     } catch (e) {
@@ -250,6 +251,13 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     const message: Message = reads.length
       ? { role: "user", content: `${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
       : { role: "user", content: typed };
+    // link que nao abriu: a IA sabe que nao viu (nao inventa o post) e conversa normal
+    // (link de dancinha - TikTok, Reels - nao precisa: o cartao "Fazer dancinha" usa o link direto)
+    const danceOnly = DANCE_LINK.test(link ?? "") && !/instagram\.com\/(?:[^/]+\/)?p\//i.test(link ?? "");
+    if (linkFail && !danceOnly) {
+      message.content = `${message.content}\n\n(Nota do estúdio, não é do administrador: não consegui abrir o link — ${linkFail.slice(0, 200)} Responda normalmente ao que ele pediu. Se ele quer analisar ou recriar o post, diga numa frase curta que não deu para ver a foto pelo link e peça o print pelo 📎; não invente como é o post.)`.slice(0, 7900);
+      message.display = typed;
+    }
     // dancinha: o video enviado (o arquivo fica so na memoria) ou o link de rede social
     const danceFile = room !== "18" ? attachments.find((a) => a.kind === "video")?.file : undefined;
     const danceLink = room !== "18" ? typed.match(DANCE_LINK)?.[0] : undefined;
