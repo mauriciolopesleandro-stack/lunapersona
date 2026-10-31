@@ -28,6 +28,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -994,11 +995,12 @@ def learn(studio: Studio, item: dict, img: Image.Image, prompt: str) -> None:
 _blur_off = False
 
 
-def blur_previews() -> None:
-    """Previas do bot de vendas: borra as partes intimas do que estiver em
-    conteudos/vendas/previa-borrar (NudeNet, gratis, no PC) e poe em vendas/previa."""
+def blur_previews(studio: "Studio") -> None:
+    """Previas do bot de vendas: borra as partes intimas (NudeNet, gratis, no PC)
+    do que estiver em conteudos/vendas/previa-borrar e do que foi pedido pelo
+    📣 do Telegram, poe em vendas/previa e ja manda para as mensagens (CTA)."""
     global _blur_off
-    if _blur_off or not (STUDIO_ROOT / "conteudos" / "vendas" / "previa-borrar").is_dir():
+    if _blur_off:
         return
     try:
         import borrar
@@ -1006,7 +1008,41 @@ def blur_previews() -> None:
         _blur_off = True
         log(f"Borrar prévias desligado (falta instalar: pip install nudenet). {e}")
         return
-    borrar.processar_pasta(STUDIO_ROOT / "conteudos", log)
+    conteudos = STUDIO_ROOT / "conteudos"
+    entrada = conteudos / "vendas" / "previa-borrar"
+    try:
+        tasks = studio.call("blur-next").get("tasks", [])
+    except Exception as e:  # estudio antigo ou fora do ar: so a pasta
+        tasks = []
+        if "desconhecida" not in str(e):
+            log(f"Fila do borrão indisponível: {e}")
+    for t in tasks:
+        lp = str(t.get("local_path", ""))
+        src = STUDIO_ROOT / lp if lp.startswith("conteudos/") else conteudos / lp
+        if ".." in lp or not src.is_file():
+            log(f"📣 Não achei {lp} no PC para borrar.")
+            continue
+        entrada.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, entrada / src.name)  # mantem a data: o borrao pega no mesmo ciclo
+    if not entrada.is_dir():
+        return
+    for dst, found in borrar.processar_pasta(conteudos, log):
+        if not found:
+            # sem parte intima achada: fica na pasta para conferir, nao entra sozinha na chamada
+            try:
+                studio.call("notice", text=f"📣 Não achei partes íntimas em {dst.name}: ficou em vendas/previa para você conferir (não entrou sozinha na chamada).")
+            except Exception:
+                pass
+            continue
+        try:
+            data = dst.read_bytes()
+            mime = "video/mp4" if dst.suffix.lower() == ".mp4" else "image/jpeg"
+            up = studio.call("preview-url", local_path=dst.relative_to(conteudos).as_posix(), mime_type=mime, size_bytes=len(data))
+            put_copy(up["url"], data, mime)
+            studio.call("preview-add", media_id=up["media_id"], path=up["path"], name=dst.name)
+            log(f"📣 Prévia na chamada: vendas/previa/{dst.name}")
+        except Exception as e:  # a previa borrada fica na pasta; da para mandar pela tela de Previas
+            log(f"Não consegui pôr {dst.name} na chamada: {e}")
 
 
 def main() -> None:
@@ -1035,7 +1071,7 @@ def main() -> None:
                         break
                     time.sleep(10 * QUEUE_POLL_S)
                     continue
-            blur_previews()
+            blur_previews(studio)
             item = studio.call("next")["item"]
             if not item:
                 if args.uma_vez:

@@ -135,6 +135,22 @@ async function storeOnTelegram(token: string, path: string, caption: string, kee
   }
 }
 
+// Previa borrada pelo robo do PC (worker/borrar.py): guarda no Telegram e entra
+// nas mensagens (CTA), como o preview-add da pasta Previas. false = ja estava.
+export async function addPreviewFromStorage(mediaId: string, path: string): Promise<boolean> {
+  const token = await salesToken();
+  if (!token) throw new Error("o bot de vendas não está conectado");
+  const list = await previews();
+  if (list.some((p) => p.media_id === mediaId)) {
+    await storageRemove(UPLOAD_BUCKET, [path]).catch(() => undefined);
+    return false;
+  }
+  const { fileId, kind } = await storeOnTelegram(token, path, "Guardada nas prévias das mensagens.");
+  await savePreviews([...list, { media_id: mediaId, kind, file_id: fileId }]);
+  await audit("previa_cta", "media_assets", mediaId, { origem: "robo_borrar" });
+  return true;
+}
+
 // Publicacao +18 aprovada com pacotes (flags.adultDest): no horario, cada foto
 // ou video da versao aprovada entra no conteudo do pacote (como o media-add da
 // pasta do Telegram). Repetir nao duplica: a mesma midia so troca de lugar.

@@ -4971,3 +4971,24 @@
     width: auto;
   }
 }
+
+/* fotos e videos da chamada (CTA), com o atalho para adicionar com borrao */
+.st-cta-media {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--st-tg);
+  border-radius: 12px;
+  background: var(--bg-panel-2);
+}
+
+.st-cta-media > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 260px;
+}

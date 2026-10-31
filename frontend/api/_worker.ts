@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { isAuthenticated } from "./_auth.js";
 import { Problem, cancelDraftPost, cancelUnpublishedPost, createDraftPost, reviewOnTelegram, submitPost, uploadUrlsFor } from "./_posts_api.js";
 import { storeConfigured, storeGet, storeIncr, storeSet } from "./_store.js";
-import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageReadUrl, storageRemove, supabaseConfigured } from "./_supabase.js";
+import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
 import { normalizeFlags, type AdultDest, type IgAudioFlag } from "./_flags.js";
@@ -161,6 +161,21 @@ export async function queueAction(postId: string, spec: ActionSpec): Promise<boo
   });
   await audit("pedir_acao", "content_plan_items", item.id, { post_id: postId, ...spec });
   return true;
+}
+
+// 📣 do Telegram: fotos da publicacao (+18) que vao virar previa da chamada.
+// O robo do PC pega a fila (blur-next), borra e manda de volta (preview-url/add).
+const BLUR_KEY = "luna:borrar-fila";
+export async function queueBlur(postId: string, positions: number[] | "all"): Promise<number> {
+  if (!storeConfigured()) throw new Problem(501, "Falta o Upstash Redis na Vercel para a fila do borrão.");
+  const media = await dbSelect<{ media_id: string; position: number }>("post_media", `select=media_id,position&post_id=eq.${postId}&order=position.asc`);
+  const chosen = positions === "all" ? media : media.filter((m) => positions.includes(m.position + 1));
+  if (!chosen.length) return 0;
+  const assets = await dbSelect<{ id: string; local_path: string }>("media_assets", `select=id,local_path&id=in.(${chosen.map((m) => m.media_id).join(",")})`);
+  const list = JSON.parse((await storeGet(BLUR_KEY).catch(() => null)) ?? "[]") as { local_path: string }[];
+  const fresh = assets.filter((a) => !list.some((t) => t.local_path === a.local_path)).map((a) => ({ local_path: a.local_path, at: Date.now() }));
+  await storeSet(BLUR_KEY, JSON.stringify([...list, ...fresh].slice(-50)));
+  return fresh.length;
 }
 
 // fotos e Reels novos (sem reaproveitar outro item) e correcoes, que tem foto
@@ -337,6 +352,48 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const now = () => new Date().toISOString();
 
     if (body.action === "ping") return reply(200, { ok: true, queue: await queueSize() });
+
+    // --- previas da chamada (CTA) borradas no PC ----------------------------------------------------
+    // fotos que o administrador mandou para a chamada pelo Telegram (📣): o robo borra
+    if (body.action === "blur-next") {
+      if (!storeConfigured()) return reply(200, { tasks: [] });
+      const tasks = JSON.parse((await storeGet(BLUR_KEY).catch(() => null)) ?? "[]");
+      if (Array.isArray(tasks) && tasks.length) await storeSet(BLUR_KEY, "[]");
+      return reply(200, { tasks: Array.isArray(tasks) ? tasks : [] });
+    }
+    // a previa borrada (vendas/previa/...) entra na biblioteca e ganha o link para subir a copia
+    if (body.action === "preview-url") {
+      const local = String(body.local_path ?? "");
+      const mime = body.mime_type === "video/mp4" ? "video/mp4" : "image/jpeg";
+      if (!/^vendas\/previa\/[^/]+\.(jpg|mp4)$/i.test(local) || local.includes("..")) throw new Problem(400, "Caminho da prévia inválido.");
+      const size = safeSize(body.size_bytes);
+      if (!size || size > (mime === "image/jpeg" ? 5 : 20) * 1024 * 1024) throw new Problem(400, mime === "image/jpeg" ? "Prévia: foto de até 5 MB." : "Prévia: vídeo de até 20 MB.");
+      await dbInsertIgnoringDuplicates(
+        "media_assets",
+        [{ local_path: local, kind: mime === "video/mp4" ? "video" : "image", mime_type: mime, size_bytes: size, title: local.split("/").pop()!.slice(0, 120), status: "aprovado", content_rating: "sensivel", created_at: now() }],
+        "local_path"
+      );
+      const [m] = await dbSelect<{ id: string }>("media_assets", `select=id&local_path=eq.${encodeURIComponent(local)}`);
+      if (!m) throw new Problem(500, "Não consegui cadastrar a prévia na biblioteca.");
+      const path = `vendas/previa/${crypto.randomUUID()}.${mime === "video/mp4" ? "mp4" : "jpg"}`;
+      return reply(200, { media_id: m.id, path, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
+    }
+    if (body.action === "preview-add") {
+      const mediaId = String(body.media_id ?? "");
+      const path = String(body.path ?? "");
+      if (!/^[0-9a-f-]{36}$/.test(mediaId) || !/^vendas\/previa\/[0-9a-f-]{36}\.(jpg|mp4)$/.test(path)) throw new Problem(400, "Prévia inválida.");
+      const { addPreviewFromStorage } = await import("./_sales.js");
+      const added = await addPreviewFromStorage(mediaId, path);
+      const name = String(body.name ?? "").slice(0, 120);
+      if (added) await sendNotice(await telegramConfig(), `📣 Prévia borrada nova na chamada: ${name || "foto"}.
+Ela já entra nas próximas mensagens do bot de vendas (Conteúdo do Telegram → Prévias para tirar).`).catch(() => undefined);
+      return reply(200, { added });
+    }
+    // aviso curto do robo para o administrador (ex.: "nao achei partes intimas")
+    if (body.action === "notice") {
+      await sendNotice(await telegramConfig(), String(body.text ?? "").slice(0, 500)).catch(() => undefined);
+      return reply(200, { ok: true });
+    }
 
     if (body.action === "next") {
       // o PC pode ter caido no meio: item preso em "gerando" ha mais de 30 min volta para a fila

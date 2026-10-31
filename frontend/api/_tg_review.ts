@@ -6,7 +6,7 @@ import { Problem, approveChosen, decidePost } from "./_posts_api.js";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbSelect, storageReadUrl } from "./_supabase.js";
 import { forgetChannel, saveChannel, telegram, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
-import { ACTION_LEVELS, actionTarget, queueAction, queueCorrection } from "./_worker.js";
+import { ACTION_LEVELS, actionTarget, queueAction, queueBlur, queueCorrection } from "./_worker.js";
 
 // Aprovacao pelo Telegram: a versao em revisao chega no celular do
 // administrador (foto/video + legenda + horario) com os botoes Aprovar,
@@ -74,6 +74,8 @@ function buttons(post: PostRow, photos = 1) {
         { text: "❌ Reprovar", callback_data: `rp:${ref}` },
       ],
       ...(photos > 1 ? [[{ text: "🖼️ Escolher fotos", callback_data: `ef:${ref}` }]] : []),
+      // +18: a foto vira previa da chamada (CTA) borrada pelo robo do PC
+      ...(post.network === "telegram" ? [[{ text: "📣 Usar na chamada (borrar)", callback_data: `bc:${ref}` }]] : []),
       [
         { text: "✏️ Pedir correção", callback_data: `cr:${ref}` },
         { text: "🍑 Rachadinha", callback_data: `rc:${ref}` },
@@ -327,7 +329,28 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
       if (kind === "ap" || kind === "rp") {
         const post = await decidePost(id, version, kind === "ap" ? "approve" : "reject", kind === "rp" ? "Reprovada pelo Telegram" : null);
         if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
-        await say(decided(post), replyTo);
+        // +18 aprovado: o 📣 continua a um toque (os botoes do card somem)
+        const chamada = kind === "ap" && post.network === "telegram" ? { reply_markup: { inline_keyboard: [[{ text: "📣 Usar na chamada (borrar)", callback_data: `bc:${post.id}:${post.version}` }]] } } : {};
+        await say(decided(post), { ...replyTo, ...chamada });
+      } else if (kind === "bc" || kind === "bp") {
+        // bc:<post>:<versao> abre a escolha (ou ja manda, se for uma foto so); bp:<post>:<n|all> manda
+        const total = (await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${id}`)).length;
+        if (kind === "bc" && total > 1) {
+          const nums = Array.from({ length: total }, (_, i) => i + 1);
+          await say("📣 Qual foto vai para a chamada? O robô do PC borra as partes íntimas e ela entra nas prévias.", {
+            ...replyTo,
+            reply_markup: { inline_keyboard: [nums.map((n) => ({ text: `Foto ${n}`, callback_data: `bp:${id}:${n}` })), [{ text: "Todas", callback_data: `bp:${id}:all` }]] },
+          });
+          return done();
+        }
+        const which = kind === "bp" && v !== "all" ? [Number(v)] : "all";
+        const queued = await queueBlur(id, which);
+        await say(
+          queued
+            ? `📣 Mandei ${queued > 1 ? `${queued} fotos` : "a foto"} para o robô do PC borrar. Quando ficar pronta, ela entra sozinha nas prévias da chamada e eu te aviso aqui (o robô precisa estar aberto).`
+            : "📣 Essa foto já está na fila do borrão.",
+          replyTo
+        );
       } else if (kind === "ef") {
         const total = (await dbSelect<{ media_id: string }>("post_media", `select=media_id&post_id=eq.${id}`)).length;
         if (total < 2) {
@@ -367,8 +390,9 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
         await storeDelete(CHOOSE_KEY).catch(() => undefined);
         if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
         const which = pending.photos.length === pending.total ? "todas as fotos" : `foto(s) ${pending.photos.join(", ")}`;
+        const chamada = post.network === "telegram" ? { reply_markup: { inline_keyboard: [[{ text: "📣 Usar na chamada (borrar)", callback_data: `bc:${post.id}:${post.version}` }]] } } : {};
         await say(`${decided(post)}
-🖼️ Vão: ${which}.`, replyTo);
+🖼️ Vão: ${which}.`, { ...replyTo, ...chamada });
       } else if (kind === "rc") {
         // rachadinha: so em foto que veio do robo (ele precisa aplicar na Naiaflow)
         const target = await actionTarget(id);

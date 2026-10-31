@@ -174,12 +174,13 @@ def borrar(src: Path, dst: Path | None = None) -> tuple[Path, str]:
     raise ValueError(f"tipo não aceito: {src.name}")
 
 
-def processar_pasta(conteudos: Path, log=print) -> int:
-    """Robo: borra o que estiver em vendas/previa-borrar e poe em vendas/previa."""
+def processar_pasta(conteudos: Path, log=print) -> list[tuple[Path, bool]]:
+    """Robo: borra o que estiver em vendas/previa-borrar e poe em vendas/previa.
+    Devolve (arquivo borrado, achou parte intima?) de cada um."""
     entrada = conteudos / "vendas" / "previa-borrar"
     if not entrada.is_dir():
-        return 0
-    feitos = 0
+        return []
+    feitos: list[tuple[Path, bool]] = []
     for src in sorted(entrada.iterdir()):
         ext = src.suffix.lower()
         if not src.is_file() or src.name.startswith(".") or ".parcial." in src.name or ext not in IMAGE_EXT | VIDEO_EXT:
@@ -199,7 +200,7 @@ def processar_pasta(conteudos: Path, log=print) -> int:
                 alvo = originais / f"{stem}-{int(time.time())}{src.suffix}"
             shutil.move(str(src), str(alvo))
             log(f"Prévia borrada: vendas/previa/{dst.name} ({resumo}). Original em vendas/_originais.")
-            feitos += 1
+            feitos.append((dst, not resumo.startswith("não achei")))
         except Exception as e:  # noqa: BLE001 - um arquivo ruim nao para o robo
             log(f"Não consegui borrar {src.name}: {e}")
     return feitos
