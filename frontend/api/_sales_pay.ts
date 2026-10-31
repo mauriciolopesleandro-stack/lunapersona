@@ -363,6 +363,22 @@ async function sendPack(product: ProductRow, chatId: number, salesToken: string)
   }
 }
 
+// Previa do administrador (pedido de 31/10): o pacote chega na conversa dele com
+// o bot de vendas igual ao que o fa recebe depois de pagar, sem venda nem acesso.
+export async function previewPack(productId: string, salesToken: string, chatId: number): Promise<string> {
+  if (!/^[0-9a-f-]{36}$/i.test(productId)) throw new Error("pacote inválido");
+  const [product] = await dbSelect<ProductRow>("sales_products", `select=*&id=eq.${productId}`);
+  if (!product || product.kind === "vip") throw new Error("esse pacote não existe (o VIP é o canal)");
+  await telegram(salesToken, "sendMessage", { chat_id: chatId, text: `👀 Prévia só sua — assim o fã recebe “${product.title}” depois de pagar (${brl(product.price_cents)}):` });
+  await telegram(salesToken, "sendMessage", { chat_id: chatId, text: `Pagamento confirmado! 💛 Aqui está: ${product.title}` });
+  await sendPack(product, chatId, salesToken);
+  await telegram(salesToken, "sendMessage", {
+    chat_id: chatId,
+    text: `Aproveite 💛 Você pode abrir este pacote de novo até ${day(new Date(Date.now() + product.period_days * 86400_000).toISOString())} em 📂 Meus pacotes.`,
+  });
+  return product.title;
+}
+
 async function deliver(order: OrderRow, salesToken: string): Promise<void> {
   const [fan] = await dbSelect<FanRow>("fans", `select=*&id=eq.${order.fan_id}`);
   const [product] = await dbSelect<ProductRow>("sales_products", `select=*&id=eq.${order.product_id}`);

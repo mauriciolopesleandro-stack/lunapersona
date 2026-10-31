@@ -14,7 +14,7 @@ import {
   type FanRow,
   type ProductRow,
 } from "./_sales_bot.js";
-import { forgetPix, pixConfig, savePixConfig } from "./_sales_pay.js";
+import { forgetPix, pixConfig, previewPack, savePixConfig } from "./_sales_pay.js";
 import { ctaConfig, ctaDays, fill, previews, saveCtaConfig, savePreviews, sendCta, suggestCaptions } from "./_sales_cta.js";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
@@ -565,6 +565,19 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       // recusadas que o estudio ja tirou da pasta
       const ids = Array.isArray(body.media_ids) ? body.media_ids.map(String) : [];
       await storeSet(FOLDER_REJECTED, JSON.stringify((await folderRejected()).filter((r) => !ids.includes(r.media_id))));
+    } else if (body.action === "pack-preview") {
+      // o pacote chega na conversa do administrador com o bot de vendas, igual ao fa
+      const p = await getProduct(body.product_id);
+      const token = await salesToken();
+      const chatId = (await telegramConfig()).chatId;
+      if (!token || !chatId) throw new Problem(400, "Conecte o bot de vendas e o bot de aprovações primeiro.");
+      try {
+        await previewPack(p.id, token, Number(chatId));
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        throw new Problem(400, /chat not found|blocked|bot can't initiate/i.test(message) ? "Abra o bot de vendas no seu Telegram e mande /start uma vez (o bot só fala com quem abriu a conversa)." : message);
+      }
+      return reply(200, { ...(await status()), previewed: p.title });
     } else if (body.action === "media-remove") {
       const p = await getProduct(body.product_id);
       await dbDelete("sales_product_media", `product_id=eq.${p.id}&media_id=eq.${uuid(body.media_id, "Mídia")}`);

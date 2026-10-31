@@ -361,6 +361,22 @@ export function TelegramFoldersPage({ onSales }: { onSales: () => void }) {
                   </div>
                   <code className="st-folder-path">conteudos\{plan.folder.dir.replace(/\//g, "\\")}</code>
                   <p className="st-hint">{doneHint(plan.folder, plan)}</p>
+                  {plan.product && plan.product.media.length > 0 && (
+                    <button
+                      type="button"
+                      className="st-btn st-btn-small"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          setStep(`Mandando ${plan.folder.label} para o seu Telegram...`);
+                          await call({ action: "pack-preview", product_id: plan.product!.id });
+                          return `👀 Mandei “${plan.product!.title}” no seu Telegram, na conversa com o bot de vendas, do jeito que o fã recebe depois de pagar.`;
+                        })
+                      }
+                    >
+                      👀 Ver como o fã recebe
+                    </button>
+                  )}
                   {why && <p className="st-warn">{why}</p>}
                   {plan.inFolder.length === 0 ? (
                     <p className="st-hint">Pasta vazia.</p>
