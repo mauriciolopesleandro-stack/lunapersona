@@ -113,6 +113,49 @@ export function missingText(d: DayCoverage): string {
   return parts.length ? `falta ${parts.join(", ")}` : "completo ✅";
 }
 
+// /agenda no bot de aprovacao (01/11): 7 dias com o que ja esta garantido de
+// cada formato e os buracos; o proximo buraco de cada formato e onde o pedido
+// novo entra sozinho (nextSlot, so leitura: nada e reservado).
+export const AGENDA_WEEKS = 4;
+const ICON: Record<Goal, string> = { Feed: "📷", Stories: "📱", Reels: "🎬" };
+export async function agendaText(week = 0): Promise<string> {
+  const days = await coverage(7, addDays(todayInBrazil(), week * 7));
+  const lines = [`📅 Agenda do Instagram — ${WEEKDAY(days[0].day)} a ${WEEKDAY(days[6].day)}`];
+  for (const d of days) {
+    lines.push("", `${d.complete ? "✅" : "🕳️"} ${WEEKDAY(d.day)}${d.complete ? " — completo" : ""}`);
+    for (const g of Object.keys(GOALS) as Goal[]) {
+      const times = [...d.times[g]].sort().join(" · ");
+      lines.push(`   ${ICON[g]} ${g} ${d.counts[g]}/${GOALS[g]}${times ? ` (${times})` : ""}${d.missing[g] > 0 ? ` — falta ${d.missing[g]}` : ""}`);
+    }
+  }
+  const next = async (g: Goal) => {
+    try {
+      const at = await nextSlot(g, []);
+      return `${WEEKDAY(dayOf(at))} às ${hhmm(at)}`;
+    } catch {
+      return "nenhum nos próximos meses";
+    }
+  };
+  lines.push(
+    "",
+    "Próximo buraco (o pedido novo entra nele sozinho):",
+    `${ICON.Feed} Feed: ${await next("Feed")}`,
+    `${ICON.Stories} Stories: ${await next("Stories")}`,
+    `${ICON.Reels} Reels: ${await next("Reels")}`,
+    "",
+    "Para tampar: mande uma foto aqui e escolha Feed ou Stories. Reels: dancinha pelo estúdio."
+  );
+  return lines.join("\n");
+}
+
+export function agendaButtons(week: number) {
+  const row = [];
+  if (week > 0) row.push({ text: "◀ Semana anterior", callback_data: `ag:${week - 1}` });
+  row.push({ text: "🔄 Atualizar", callback_data: `ag:${week}` });
+  if (week < AGENDA_WEEKS) row.push({ text: "Próxima semana ▶", callback_data: `ag:${week + 1}` });
+  return { inline_keyboard: [row] };
+}
+
 // Aviso do bot: 9h fala de hoje, 20h de amanha; os dois listam os proximos dias com buraco.
 export async function goalsNotice(which: "hoje" | "amanha"): Promise<string> {
   const days = await coverage(8);
