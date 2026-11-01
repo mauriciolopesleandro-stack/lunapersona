@@ -5,6 +5,7 @@ import { isAuthenticated } from "./_auth.js";
 import { ADULT_NOTE, AiError, PERSONA, STYLE_GUIDE, askAi, type Mode } from "./_assistant.js";
 import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
+import { creditsFor } from "./_photo_blocks.js";
 import { randomUUID } from "crypto";
 
 // /api/studio?r=plans - planejamento feito pelo chat (parte A do fluxo).
@@ -319,8 +320,8 @@ export async function queueQuick(body: Record<string, unknown>): Promise<{ statu
   await audit("foto_avulsa", "content_plan_items", items[0].id, { destino: keys.join(",") });
   const estimate = credits(items);
   // carrossel: cada Criar da Naiaflow entrega 3 fotos da mesma cena (1 credito);
-  // passando de 3, "Gerar um carrossel" na base (3 creditos por 3 variacoes)
-  const carouselCredits = photos > 3 ? 1 + 3 * Math.ceil((photos - 3) / 3) : 1;
+  // passando de 3, outro Criar com a mesma referencia (1 credito a cada 3 fotos)
+  const carouselCredits = creditsFor(photos);
   return { status: 200, body: { item: items[0], items, estimate: { ...estimate, images: estimate.images * photos, credits: estimate.credits * carouselCredits } } };
 }
 

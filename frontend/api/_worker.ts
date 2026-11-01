@@ -472,9 +472,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           ...(isCorrection(item) ? { edit: { source: item.media_path, instruction: (item.note ?? "").slice(CORRECTION_PREFIX.length) } } : {}),
           // acao em fotos escolhidas: o PC aplica a acao nelas e mantem as outras
           ...(spec ? { naia_action: { name: NAIA_ACTIONS[spec.action], level: spec.level, photos: spec.photos, sources } } : {}),
-          // carrossel: o PC gera a foto base e usa "Gerar um carrossel" da Naiaflow
-          // (3 variacoes do mesmo look e lugar); prompts fica para robos antigos
-          ...(photos > 1 ? { prompts: carouselPrompts(item.prompt, photos), carousel_action: true } : {}),
+          // carrossel: um Criar a cada 3 fotos, com a mesma referencia e o mesmo
+          // look e lugar, mudando so a pose (01/11: o "Gerar um carrossel" da
+          // Naiaflow perde o rosto depois da 3a foto e custa 3 creditos a cada 3)
+          ...(photos > 1 ? { prompts: carouselPrompts(item.prompt, photos), carousel_action: false } : {}),
           // proporcao na Naiaflow: Feed quadrado, o resto em 9:16
           aspect: item.format === "Feed" ? "quadrado" : "vertical",
           // foto de referencia: o robo anexa como IMG1 (a luna copia pose e angulo)
