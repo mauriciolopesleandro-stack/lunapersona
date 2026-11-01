@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { AiError, askAi, chatSystem } from "./_assistant.js";
-import { ADULT_DESTS, REF_ASK, parsePhotoBlocks, type PhotoBlock } from "./_photo_blocks.js";
+import { ADULT_DESTS, ADULT_PHOTOS, REF_ASK, creditsFor, parsePhotoBlocks, type PhotoBlock } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeSet, storeSetIfAbsent } from "./_store.js";
 import { storageUploadUrl } from "./_supabase.js";
@@ -15,11 +15,11 @@ import { telegram } from "./_telegram.js";
 // chamada da IA so, para caber nos 60 s da Vercel.
 //
 // Botoes: pd:<id>:<feed|stories|18> destino, pa:<id>:<canal|ensaio|album-vip>
-// marca/desmarca o destino +18, pg:<id> gerar, pf:<id> gerar mesmo repetida,
+// marca/desmarca o destino +18, pp:<id>:<3|6|9> fotos do post +18, pg:<id> gerar, pf:<id> gerar mesmo repetida,
 // pn:<id> escrever de novo, px:<id> cancelar. Responder o resumo com texto
 // muda o pedido.
 
-export const PEDIDO_KINDS = new Set(["pd", "pa", "pg", "pf", "pn", "px"]);
+export const PEDIDO_KINDS = new Set(["pd", "pa", "pp", "pg", "pf", "pn", "px"]);
 export const PEDIDO_TAG = "#pedido";
 const LIST_KEY = "luna:tg-pedidos";
 const KEEP = 10;
@@ -36,6 +36,7 @@ interface Pedido {
   note: string; // o que o administrador escreveu junto da foto
   dest?: Dest;
   adult: string[]; // destinos +18 marcados (canal e pacotes)
+  photos?: number; // +18: fotos da mesma cena no post (3, 6 ou 9)
   reply?: string; // a ultima resposta da IA (para mudar sem perder o resto)
   block?: PhotoBlock;
   at: number;
@@ -71,8 +72,11 @@ async function drop(id: string): Promise<void> {
   await storeSet(LIST_KEY, JSON.stringify((await list()).filter((x) => x.id !== id)));
 }
 
+// fotos do post: Feed em carrossel de 3; Stories as 3 do Criar; +18 a escolha (3, 6 ou 9)
+const photosOf = (p: Pedido) => (p.dest === "18" ? (p.photos ?? ADULT_PHOTOS[0]) : p.dest === "feed" ? 3 : 1);
+
 function destText(p: Pedido): string {
-  if (p.dest === "18") return `+18 → ${ADULT_DESTS.filter((d) => p.adult.includes(d.key)).map((d) => d.label).join(" + ") || "nenhum marcado"}`;
+  if (p.dest === "18") return `+18 → ${ADULT_DESTS.filter((d) => p.adult.includes(d.key)).map((d) => d.label).join(" + ") || "nenhum marcado"} · ${photosOf(p)} fotos`;
   if (p.dest === "feed") return "Feed (carrossel de 3 fotos) + TikTok";
   return "Stories (as 3 fotos para você escolher) + TikTok";
 }
@@ -92,8 +96,12 @@ function destButtons(id: string) {
 
 function summaryButtons(p: Pedido) {
   const rows: { text: string; callback_data: string }[][] = [];
-  if (p.dest === "18") rows.push(ADULT_DESTS.map((d) => ({ text: `${p.adult.includes(d.key) ? "✅" : "▫️"} ${d.label}`, callback_data: `pa:${p.id}:${d.key}` })));
-  if (p.block) rows.push([{ text: "✅ Gerar (1 crédito)", callback_data: `pg:${p.id}` }]);
+  if (p.dest === "18") {
+    rows.push(ADULT_DESTS.map((d) => ({ text: `${p.adult.includes(d.key) ? "✅" : "▫️"} ${d.label}`, callback_data: `pa:${p.id}:${d.key}` })));
+    rows.push(ADULT_PHOTOS.map((n) => ({ text: `${photosOf(p) === n ? "✅" : "▫️"} ${n} fotos`, callback_data: `pp:${p.id}:${n}` })));
+  }
+  const credits = creditsFor(photosOf(p));
+  if (p.block) rows.push([{ text: `✅ Gerar (${credits} crédito${credits > 1 ? "s" : ""})`, callback_data: `pg:${p.id}` }]);
   rows.push([
     { text: "🔁 Escrever de novo", callback_data: `pn:${p.id}` },
     { text: "✖ Cancelar", callback_data: `px:${p.id}` },
@@ -109,7 +117,7 @@ function summaryText(p: Pedido): string {
     "",
     `🎯 ${destText(p)}`,
     "🕒 No próximo horário vazio da agenda",
-    "💳 1 crédito",
+    `💳 ${creditsFor(photosOf(p))} crédito${creditsFor(photosOf(p)) > 1 ? "s" : ""}`,
     "",
     `📸 ${b.prompt.slice(0, 1800)}`,
     "",
@@ -238,9 +246,14 @@ export async function pedidoCallback(token: string, chatId: string, kind: string
     await write(p, null, say, replyTo);
     return;
   }
-  if (kind === "pa") {
-    if (p.dest !== "18" || !ADULT_DESTS.some((d) => d.key === value)) return;
-    const next = { ...p, adult: p.adult.includes(value) ? p.adult.filter((k) => k !== value) : [...p.adult, value] };
+  if (kind === "pa" || kind === "pp") {
+    if (p.dest !== "18") return;
+    if (kind === "pa" && !ADULT_DESTS.some((d) => d.key === value)) return;
+    if (kind === "pp" && !ADULT_PHOTOS.includes(Number(value))) return;
+    const next =
+      kind === "pp"
+        ? { ...p, photos: Number(value) }
+        : { ...p, adult: p.adult.includes(value) ? p.adult.filter((k) => k !== value) : [...p.adult, value] };
     await save(next);
     if (messageId && next.block) {
       await telegram(token, "editMessageText", { chat_id: chatId, message_id: messageId, text: summaryText(next), reply_markup: summaryButtons(next) }).catch(() => undefined);
@@ -258,7 +271,7 @@ export async function pedidoCallback(token: string, chatId: string, kind: string
     const adult = p.dest === "18";
     const out = await queueQuick({
       slots: p.dest === "feed" ? ["feed", "tiktok"] : p.dest === "stories" ? ["stories", "tiktok"] : ["telegram18"],
-      photos: p.dest === "feed" ? 3 : 1,
+      photos: p.dest === "stories" ? 1 : photosOf(p),
       prompt: b.prompt,
       caption: b.caption,
       hashtags: adult ? [] : b.hashtags.split(/[\s,]+/).filter(Boolean),
@@ -270,7 +283,7 @@ export async function pedidoCallback(token: string, chatId: string, kind: string
     if (out.status === 409) {
       await say(`⚠️ ${String(out.body.detail ?? "Esse pedido já foi feito há pouco.")}\nGerar de novo mesmo assim?`, {
         ...replyTo,
-        reply_markup: { inline_keyboard: [[{ text: "Gerar de novo (1 crédito)", callback_data: `pf:${id}` }, { text: "✖ Cancelar", callback_data: `px:${id}` }]] },
+        reply_markup: { inline_keyboard: [[{ text: `Gerar de novo (${creditsFor(photosOf(p))} crédito${creditsFor(photosOf(p)) > 1 ? "s" : ""})`, callback_data: `pf:${id}` }, { text: "✖ Cancelar", callback_data: `px:${id}` }]] },
       });
       return;
     }

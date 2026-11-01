@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { putSignedUpload } from "./cloud";
-import { ADULT_DESTS, parsePhotoBlocks, type PhotoBlock, type Slot } from "../../api/_photo_blocks";
+import { ADULT_DESTS, ADULT_PHOTOS, creditsFor, parsePhotoBlocks, type PhotoBlock, type Slot } from "../../api/_photo_blocks";
 
 export { ADULT_DESTS, parsePhotoBlocks, type PhotoBlock };
 
@@ -16,7 +16,6 @@ export { ADULT_DESTS, parsePhotoBlocks, type PhotoBlock };
 // Feed: cada Criar da Naiaflow entrega 3 fotos da mesma cena por 1 credito;
 // passando de 3, o robo usa o "Gerar um carrossel" (3 creditos por 3 fotos)
 const FEED_PHOTOS = 3;
-const creditsFor = (photos: number) => (photos > 3 ? 1 + 3 * Math.ceil((photos - 3) / 3) : 1);
 const SLOT_LABEL: Record<Slot, string> = {
   feed: "Feed (quadrado)",
   stories: "Stories (9:16)",
@@ -88,6 +87,8 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
   const [placed, setPlaced] = useState<string[]>([]);
   // +18: canal VIP e os dois pacotes do bot de vendas, todos marcados (pedido de 30/10)
   const [adult, setAdult] = useState<string[]>(ADULT_DESTS.map((d) => d.key));
+  // +18: quantas fotos da mesma cena vao no post (3 = um Criar)
+  const [adultPhotos, setAdultPhotos] = useState(ADULT_PHOTOS[0]);
   const [prompt, setPrompt] = useState(block.prompt);
   const [caption, setCaption] = useState(block.caption);
   const [hashtags, setHashtags] = useState(block.hashtags);
@@ -117,7 +118,7 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
         body: JSON.stringify({
           action: "quick",
           slots,
-          photos: canCarousel ? photos : 1,
+          photos: adultOnly ? adultPhotos : canCarousel ? photos : 1,
           prompt,
           caption,
           hashtags: adultOnly ? [] : hashtags.split(/[\s,]+/).filter(Boolean),
@@ -149,7 +150,7 @@ Gerar de novo mesmo assim?`)) return queue(true);
   }
 
   const canCarousel = slots.some((k) => k === "feed" || k === "tiktok") && !slots.includes("telegram18");
-  const total = canCarousel ? photos : 1;
+  const total = adultOnly ? adultPhotos : canCarousel ? photos : 1;
   // uma foto por proporcao: Feed quadrado; Stories/TikTok/+18 em 9:16 (o TikTok
   // sem Stories reaproveita a foto do Feed)
   const vertical = slots.some((k) => k === "stories" || k === "telegram18") || (slots.includes("tiktok") && !slots.includes("feed"));
@@ -272,6 +273,16 @@ Gerar de novo mesmo assim?`)) return queue(true);
             ))}
           </div>
           <p className="st-hint">Só no Telegram (não junta com Instagram e TikTok). Os pacotes recebem a foto no conteúdo do bot de vendas; o canal VIP recebe o post.</p>
+          <span>Fotos no post (a mesma cena, uma historinha só)</span>
+          <div className="st-quick-slots" role="group" aria-label="Fotos do post +18">
+            {ADULT_PHOTOS.map((n) => (
+              <button key={n} type="button" aria-pressed={adultPhotos === n} className={adultPhotos === n ? "on" : ""} onClick={() => setAdultPhotos(n)}>
+                {adultPhotos === n ? "✓ " : ""}
+                {n} fotos · {creditsFor(n)} crédito{creditsFor(n) > 1 ? "s" : ""}
+              </button>
+            ))}
+          </div>
+          <p className="st-hint">Chegam todas no Telegram para aprovar (ou escolher as melhores). Mais de 3: o robô usa o "Gerar um carrossel" da Naiaflow, que mantém o look e o lugar.</p>
         </div>
       ) : (
         <>
