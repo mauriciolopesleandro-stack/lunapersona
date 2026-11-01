@@ -7,6 +7,7 @@ import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { dbSelect, storageReadUrl } from "./_supabase.js";
 import { forgetChannel, saveChannel, telegram, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
 import { ACTION_LEVELS, actionTarget, queueAction, queueBlur, queueCorrection } from "./_worker.js";
+import { PEDIDO_KINDS, PEDIDO_TAG, pedidoCallback, pedidoChange, pedidoPhoto, type TgPhotoMessage } from "./_tg_pedido.js";
 
 // Aprovacao pelo Telegram: a versao em revisao chega no celular do
 // administrador (foto/video + legenda + horario) com os botoes Aprovar,
@@ -31,6 +32,9 @@ import { ACTION_LEVELS, actionTarget, queueAction, queueBlur, queueCorrection } 
 // (my_chat_member) e o canal fica salvo - so vale quando quem adicionou e o
 // proprio administrador, para ninguem ligar o bot num canal de outra pessoa.
 // No horario, a publicacao +18 aprovada sai sozinha no canal (_jobs.ts).
+//
+// Pedido pelo celular (01/11): foto mandada aqui vira pedido para o robo do PC
+// (ver _tg_pedido.ts).
 
 const CORRECTION_TAG = "#correcao";
 const PENDING_KEY = "luna:tg-correcao";
@@ -220,11 +224,12 @@ interface Update {
     message?: { message_id: number; chat: { id: number } };
   };
   my_chat_member?: ChatMemberUpdate;
-  message?: {
-    message_id: number;
+  message?: TgPhotoMessage & {
     chat: { id: number };
     text?: string;
     reply_to_message?: { text?: string };
+    video?: unknown;
+    document?: { mime_type?: string };
   };
 }
 
@@ -335,7 +340,9 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
     await telegram(token, "answerCallbackQuery", { callback_query_id: cb.id }).catch(() => undefined);
     const replyTo = cb.message ? { reply_to_message_id: cb.message.message_id } : {};
     try {
-      if (kind === "ap" || kind === "rp") {
+      if (PEDIDO_KINDS.has(kind)) {
+        await pedidoCallback(token, chatId, kind, id, v ?? "", cb.message?.message_id, say);
+      } else if (kind === "ap" || kind === "rp") {
         const post = await decidePost(id, version, kind === "ap" ? "approve" : "reject", kind === "rp" ? "Reprovada pelo Telegram" : null);
         if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
         // +18 aprovado: o 📣 continua a um toque (os botoes do card somem)
@@ -472,6 +479,25 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
   }
 
   const msg = update.message;
+  if (msg && String(msg.chat.id) === chatId && msg.photo?.length) {
+    await pedidoPhoto(token, msg, say);
+    return done();
+  }
+  if (msg && String(msg.chat.id) === chatId && (msg.video || msg.document)) {
+    await say(
+      msg.document?.mime_type?.startsWith("image/")
+        ? "📷 Mande a foto como foto (não como arquivo) que eu leio e monto o pedido."
+        : "🎬 Vídeo pelo Telegram ainda não: por enquanto mande a dancinha e o vídeo longo pelo estúdio.",
+      { reply_to_message_id: msg.message_id }
+    );
+    return done();
+  }
+  // resposta ao resumo de um pedido: muda o pedido
+  const pedidoRef = msg?.reply_to_message?.text?.split(PEDIDO_TAG)[1]?.trim().split(/\s/)[0];
+  if (msg && String(msg.chat.id) === chatId && msg.text && !msg.text.startsWith("/") && pedidoRef) {
+    await pedidoChange(pedidoRef, msg.text, msg.message_id, say);
+    return done();
+  }
   if (msg && String(msg.chat.id) === chatId && msg.text && !msg.text.startsWith("/")) {
     const ref = msg.reply_to_message?.text?.includes(CORRECTION_TAG)
       ? msg.reply_to_message.text.split(CORRECTION_TAG)[1]?.trim() ?? ""

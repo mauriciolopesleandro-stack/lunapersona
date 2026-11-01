@@ -45,7 +45,7 @@ const SLOTS: Record<SlotKey, { network: "instagram" | "tiktok" | "telegram"; for
   telegram18: { network: "telegram", format: "Canal", kind: "image", adult: true, times: ["22:00", "23:30", "21:00"], label: "Telegram +18" },
 };
 
-class Problem extends Error {
+export class Problem extends Error {
   constructor(
     public status: number,
     message: string
@@ -227,6 +227,98 @@ async function syncReused(items: ItemRow[]) {
       await dbUpdateWhere("content_plan_items", `id=eq.${it.id}`, { prompt: src.prompt, caption: src.caption, hashtags: src.hashtags, updated_at: new Date().toISOString() });
     }
   }
+}
+
+// Foto avulsa (chat do estudio e pedido pelo Telegram): um ou mais destinos;
+// uma foto por proporcao (Feed quadrado; Stories, TikTok e +18 em 9:16) e os
+// destinos da mesma proporcao reaproveitam. 409 "repetida": o mesmo pedido ha
+// pouco (so entra de novo com force).
+export async function queueQuick(body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+  // um ou mais destinos; uma foto por proporcao (Feed quadrado; Stories,
+  // TikTok e +18 em 9:16) e os destinos da mesma proporcao reaproveitam
+  const raw: unknown[] = Array.isArray(body.slots) ? body.slots : [body.slot];
+  // ordem fixa (Feed, Stories, ..., TikTok): quem gera e quem reaproveita nao depende da ordem dos cliques
+  const order = Object.keys(SLOTS);
+  const keys = ([...new Set(raw.map((k) => String(k ?? "")))] as SlotKey[]).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  if (!keys.length || keys.length > 4 || keys.some((k) => !SLOTS[k] || SLOTS[k].kind !== "image")) throw new Problem(400, "Escolha o destino da foto.");
+  if (keys.includes("telegram18") && keys.length > 1) throw new Problem(400, "Foto +18 vai só para o canal do Telegram: não dá para juntar com Instagram ou TikTok.");
+  const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 2000) : "";
+  if (!prompt) throw new Problem(400, "Escreva o pedido da foto.");
+  // "auto": vai para o proximo horario vazio do formato (metas do dia)
+  const auto = body.scheduled_at === "auto";
+  const when = auto ? Date.now() + 2 * 3600_000 : typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
+  if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
+  const taken: string[] = [];
+  const refPath = typeof body.ref_path === "string" ? body.ref_path : "";
+  if (refPath && !/^refs\/[0-9a-f-]{36}\.jpg$/.test(refPath)) throw new Problem(400, "Foto de referência inválida.");
+  // carrossel: varias fotos do mesmo ensaio (1 credito cada) no Feed e no TikTok
+  const photos = body.photos === undefined ? 1 : Number(body.photos);
+  if (!Number.isInteger(photos) || photos < 1 || photos > 10) throw new Problem(400, "O carrossel vai de 2 a 10 fotos.");
+  if (photos > 1 && !keys.some((k) => k === "feed" || k === "tiktok")) throw new Problem(400, "Carrossel só no Instagram Feed ou no TikTok.");
+  // trava (30/10): o mesmo pedido para o mesmo destino nas ultimas 12 h nao
+  // entra de novo sem confirmar (o botao reaparecia e a foto saia 2-3 vezes)
+  if (body.force !== true) {
+    const recent = await dbSelect<{ created_at: string; status: string; format: string }>(
+      "content_plan_items",
+      `select=created_at,status,format&prompt=eq.${encodeURIComponent(prompt)}&format=eq.${encodeURIComponent(SLOTS[keys[0]].format)}&status=not.in.(cancelado,falhou)&created_at=gt.${new Date(Date.now() - 12 * 3600_000).toISOString()}&order=created_at.desc&limit=1`
+    );
+    if (recent[0]) {
+      const at = new Date(recent[0].created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+      return { status: 409, body: { code: "repetida", detail: `Essa foto já foi pedida hoje às ${at} (${recent[0].status.replace("_", " ")}). Gerar de novo gasta mais crédito.` } };
+    }
+  }
+  // +18: canal VIP e/ou pacotes do bot de vendas (Ensaio, Album VIP)
+  const adultDest = keys.includes("telegram18") ? normalizeFlags({ adultDest: body.adultDest }, 1).adultDest : undefined;
+  if (adultDest) {
+    const problem = flagProblem("telegram", ["Canal"], { adultDest });
+    if (problem) throw new Problem(400, problem);
+  }
+  const stamp = new Date().toISOString();
+  const plan = await dbInsert<PlanRow>("content_plans", {
+    title: `Foto avulsa do chat (${keys.map((k) => SLOTS[k].label).join(" + ")}${photos > 1 ? `, carrossel de ${photos}` : ""})`,
+    request: { source: "chat", slot: keys[0], slots: keys, ...(photos > 1 ? { photos } : {}), ...(refPath ? { reference: refPath } : {}), ...(adultDest ? { adultDest } : {}) },
+    status: "aprovado",
+    approved_at: stamp,
+  });
+  const caption = typeof body.caption === "string" ? body.caption.slice(0, 4000) : "";
+  const hashtags = cleanTags(body.hashtags);
+  const items: ItemRow[] = [];
+  for (const [position, key] of keys.entries()) {
+    const slot = SLOTS[key];
+    items.push(
+      await dbInsert<ItemRow>("content_plan_items", {
+        plan_id: plan.id,
+        position,
+        scheduled_at:
+          auto && (key === "feed" || key === "stories")
+            ? await nextSlot(key === "feed" ? "Feed" : "Stories", taken)
+            : auto && items[0]
+              ? items[items.length - 1].scheduled_at
+              : new Date(when).toISOString(),
+        network: slot.network,
+        format: slot.format,
+        kind: "image",
+        adult: slot.adult,
+        prompt,
+        caption,
+        hashtags,
+        status: "na_fila",
+        ...(() => {
+          // mesma proporcao reaproveita; o TikTok sem foto vertical usa a do Feed
+          const lead =
+            items.find((it) => !it.source_item_id && aspectOf(it.format) === aspectOf(slot.format)) ??
+            (key === "tiktok" && !keys.some((k) => k === "stories" || k === "telegram18") ? items.find((it) => !it.source_item_id) : undefined);
+          return lead ? { source_item_id: lead.id } : {};
+        })(),
+      })
+    );
+  }
+  await audit("foto_avulsa", "content_plan_items", items[0].id, { destino: keys.join(",") });
+  const estimate = credits(items);
+  // carrossel: cada Criar da Naiaflow entrega 3 fotos da mesma cena (1 credito);
+  // passando de 3, "Gerar um carrossel" na base (3 creditos por 3 variacoes)
+  const carouselCredits = photos > 3 ? 1 + 3 * Math.ceil((photos - 3) / 3) : 1;
+  return { status: 200, body: { item: items[0], items, estimate: { ...estimate, images: estimate.images * photos, credits: estimate.credits * carouselCredits } } };
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
@@ -411,91 +503,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
 
     if (body.action === "quick") {
-      // um ou mais destinos; uma foto por proporcao (Feed quadrado; Stories,
-      // TikTok e +18 em 9:16) e os destinos da mesma proporcao reaproveitam
-      const raw: unknown[] = Array.isArray(body.slots) ? body.slots : [body.slot];
-      // ordem fixa (Feed, Stories, ..., TikTok): quem gera e quem reaproveita nao depende da ordem dos cliques
-      const order = Object.keys(SLOTS);
-      const keys = ([...new Set(raw.map((k) => String(k ?? "")))] as SlotKey[]).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-      if (!keys.length || keys.length > 4 || keys.some((k) => !SLOTS[k] || SLOTS[k].kind !== "image")) throw new Problem(400, "Escolha o destino da foto.");
-      if (keys.includes("telegram18") && keys.length > 1) throw new Problem(400, "Foto +18 vai só para o canal do Telegram: não dá para juntar com Instagram ou TikTok.");
-      const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 2000) : "";
-      if (!prompt) throw new Problem(400, "Escreva o pedido da foto.");
-      // "auto": vai para o proximo horario vazio do formato (metas do dia)
-      const auto = body.scheduled_at === "auto";
-      const when = auto ? Date.now() + 2 * 3600_000 : typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
-      if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
-      const taken: string[] = [];
-      const refPath = typeof body.ref_path === "string" ? body.ref_path : "";
-      if (refPath && !/^refs\/[0-9a-f-]{36}\.jpg$/.test(refPath)) throw new Problem(400, "Foto de referência inválida.");
-      // carrossel: varias fotos do mesmo ensaio (1 credito cada) no Feed e no TikTok
-      const photos = body.photos === undefined ? 1 : Number(body.photos);
-      if (!Number.isInteger(photos) || photos < 1 || photos > 10) throw new Problem(400, "O carrossel vai de 2 a 10 fotos.");
-      if (photos > 1 && !keys.some((k) => k === "feed" || k === "tiktok")) throw new Problem(400, "Carrossel só no Instagram Feed ou no TikTok.");
-      // trava (30/10): o mesmo pedido para o mesmo destino nas ultimas 12 h nao
-      // entra de novo sem confirmar (o botao reaparecia e a foto saia 2-3 vezes)
-      if (body.force !== true) {
-        const recent = await dbSelect<{ created_at: string; status: string; format: string }>(
-          "content_plan_items",
-          `select=created_at,status,format&prompt=eq.${encodeURIComponent(prompt)}&format=eq.${encodeURIComponent(SLOTS[keys[0]].format)}&status=not.in.(cancelado,falhou)&created_at=gt.${new Date(Date.now() - 12 * 3600_000).toISOString()}&order=created_at.desc&limit=1`
-        );
-        if (recent[0]) {
-          const at = new Date(recent[0].created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
-          return reply(409, { code: "repetida", detail: `Essa foto já foi pedida hoje às ${at} (${recent[0].status.replace("_", " ")}). Gerar de novo gasta mais crédito.` });
-        }
-      }
-      // +18: canal VIP e/ou pacotes do bot de vendas (Ensaio, Album VIP)
-      const adultDest = keys.includes("telegram18") ? normalizeFlags({ adultDest: body.adultDest }, 1).adultDest : undefined;
-      if (adultDest) {
-        const problem = flagProblem("telegram", ["Canal"], { adultDest });
-        if (problem) throw new Problem(400, problem);
-      }
-      const stamp = new Date().toISOString();
-      const plan = await dbInsert<PlanRow>("content_plans", {
-        title: `Foto avulsa do chat (${keys.map((k) => SLOTS[k].label).join(" + ")}${photos > 1 ? `, carrossel de ${photos}` : ""})`,
-        request: { source: "chat", slot: keys[0], slots: keys, ...(photos > 1 ? { photos } : {}), ...(refPath ? { reference: refPath } : {}), ...(adultDest ? { adultDest } : {}) },
-        status: "aprovado",
-        approved_at: stamp,
-      });
-      const caption = typeof body.caption === "string" ? body.caption.slice(0, 4000) : "";
-      const hashtags = cleanTags(body.hashtags);
-      const items: ItemRow[] = [];
-      for (const [position, key] of keys.entries()) {
-        const slot = SLOTS[key];
-        items.push(
-          await dbInsert<ItemRow>("content_plan_items", {
-            plan_id: plan.id,
-            position,
-            scheduled_at:
-              auto && (key === "feed" || key === "stories")
-                ? await nextSlot(key === "feed" ? "Feed" : "Stories", taken)
-                : auto && items[0]
-                  ? items[items.length - 1].scheduled_at
-                  : new Date(when).toISOString(),
-            network: slot.network,
-            format: slot.format,
-            kind: "image",
-            adult: slot.adult,
-            prompt,
-            caption,
-            hashtags,
-            status: "na_fila",
-            ...(() => {
-              // mesma proporcao reaproveita; o TikTok sem foto vertical usa a do Feed
-              const lead =
-                items.find((it) => !it.source_item_id && aspectOf(it.format) === aspectOf(slot.format)) ??
-                (key === "tiktok" && !keys.some((k) => k === "stories" || k === "telegram18") ? items.find((it) => !it.source_item_id) : undefined);
-              return lead ? { source_item_id: lead.id } : {};
-            })(),
-          })
-        );
-      }
-      await audit("foto_avulsa", "content_plan_items", items[0].id, { destino: keys.join(",") });
-      const estimate = credits(items);
-      // carrossel: cada Criar da Naiaflow entrega 3 fotos da mesma cena (1 credito);
-      // passando de 3, "Gerar um carrossel" na base (3 creditos por 3 variacoes)
-      const carouselCredits = photos > 3 ? 1 + 3 * Math.ceil((photos - 3) / 3) : 1;
-      return reply(200, { item: items[0], items, estimate: { ...estimate, images: estimate.images * photos, credits: estimate.credits * carouselCredits } });
+      const out = await queueQuick(body);
+      return reply(out.status, out.body);
     }
 
     // acoes de item chegam com o id do item; as de plano, com plan_id
