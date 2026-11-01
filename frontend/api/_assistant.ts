@@ -162,6 +162,17 @@ async function context(): Promise<string> {
   return lines.join("\n");
 }
 
+// Instrucoes da Conversa (sala normal ou +18), com a agenda e o aprendizado das
+// fotos: o estudio e o pedido pelo Telegram escrevem com as mesmas regras.
+export async function chatSystem(room: "chat" | "18"): Promise<string> {
+  const { lessonsForChat } = await import("./_lessons.js");
+  const lessons = await lessonsForChat().catch(() => "");
+  // sala +18 (aba Monetizacao): so o canal pago do Telegram, com o guia detalhado
+  return room === "18"
+    ? [PERSONA, ADULT_NOTE, ADULT18_GUIDE, await context(), lessons].filter(Boolean).join("\n\n")
+    : [PERSONA, STYLE_GUIDE, CHAT_NOTE, await context(), lessons].filter(Boolean).join("\n\n");
+}
+
 class BadRequest extends Error {}
 
 export class AiError extends Error {
@@ -273,13 +284,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // A Conversa e sempre com a IA sem restricao (o campo mode do pedido e
   // ignorado); o Planejamento continua escolhendo a IA por destino.
   const mode: Mode = "adulto";
-  const { lessonsForChat } = await import("./_lessons.js");
-  const lessons = await lessonsForChat().catch(() => "");
-  // sala +18 (aba Monetizacao): so o canal pago do Telegram, com o guia detalhado
-  const system =
-    body.room === "18"
-      ? [PERSONA, ADULT_NOTE, ADULT18_GUIDE, await context(), lessons].filter(Boolean).join("\n\n")
-      : [PERSONA, STYLE_GUIDE, CHAT_NOTE, await context(), lessons].filter(Boolean).join("\n\n");
+  const system = await chatSystem(body.room === "18" ? "18" : "chat");
 
   try {
     const out = await askAi(mode, [{ role: "system", content: system }, ...messages]);

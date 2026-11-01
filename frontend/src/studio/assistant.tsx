@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
+import { REF_ASK } from "../../api/_photo_blocks";
 import { DANCE_LINK, DanceCard } from "./dance";
 import { LongVideoCard } from "./longVideo";
 import { CtaModal, CtaRow, brDay, useCtaDays, type CtaDay } from "./ctaDays";
@@ -64,10 +65,6 @@ const CONTEXT: Record<string, string[]> = {
 
 // sala +18 (aba Monetizacao): conversa separada, so para o canal pago
 const ROOM18_KEY = "luna-assistente-18";
-// foto de referencia: a foto sai IGUAL (31/10). A Naiaflow segue mais o texto do
-// que a IMG1, entao o prompt repete pose, roupa e cenario da leitura
-const REF_ASK =
-  "Quero a foto IGUAL a esta referência, só que com a Luna (nunca a pessoa da foto). Ela vai como IMG1 no Criar da Naiaflow, mas escreva o PROMPT descrevendo tudo o que está na leitura, sem trocar nada: a mesma pose e o mesmo ângulo (de frente/de costas/de lado, para onde olha, braços e mãos), cada peça e acessório com o tipo exato, o mesmo cenário objeto por objeto, a luz e o estilo da foto. Nada de ícones ou números do print no prompt.";
 // a IA respondeu so com ideias: pede os blocos que viram o botao "Gerar esta foto"
 const MAKE_BLOCKS =
   "Pode gerar. Para cada ideia acima escreva o bloco pronto para a Naiaflow, exatamente com os rótulos PROMPT, LEGENDA, HASHTAGS e DESTINO (um bloco por post, no destino que combinamos; no +18 do Telegram sem HASHTAGS e a LEGENDA é a historinha do canal).";
