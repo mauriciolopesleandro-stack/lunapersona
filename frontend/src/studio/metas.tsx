@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 
-// Metas do Instagram (3 Feed, 3 Stories e 1 Reels por dia): quanto de cada dia
+// Metas do dia (3 Feed, 3 Stories e 1 Reels no Instagram; 1 post no Canal VIP +18): quanto de cada dia
 // ja esta garantido (publicacao criada ou item na fila do robo) e qual o
 // proximo dia a completar. O conteudo novo vai sozinho para o proximo buraco.
 
-type Goal = "Feed" | "Stories" | "Reels";
-const GOALS: Record<Goal, number> = { Feed: 3, Stories: 3, Reels: 1 };
+type Goal = "Feed" | "Stories" | "Reels" | "Canal";
+const GOALS: Record<Goal, number> = { Feed: 3, Stories: 3, Reels: 1, Canal: 1 };
+const LABEL: Record<Goal, string> = { Feed: "Feed", Stories: "Stories", Reels: "Reels", Canal: "Canal +18" };
 interface Day {
   day: string;
   counts: Record<Goal, number>;
@@ -21,7 +22,7 @@ function label(day: string, i: number): string {
 }
 
 function missingText(d: Day): string {
-  const parts = (Object.keys(GOALS) as Goal[]).filter((g) => d.missing[g] > 0).map((g) => `${d.missing[g]} ${g}`);
+  const parts = (Object.keys(GOALS) as Goal[]).filter((g) => d.missing[g] > 0).map((g) => `${d.missing[g]} ${LABEL[g]}`);
   return parts.length ? `falta ${parts.join(", ")}` : "completo";
 }
 
@@ -48,9 +49,9 @@ export function MetasPanel({ days = 14, compact = false }: { days?: number; comp
     <section className={compact ? "st-panel st-metas compact" : "st-panel st-metas"}>
       <div className="st-panel-head">
         <h2>
-          <Icon name="calendar" size={17} /> Metas do Instagram
+          <Icon name="calendar" size={17} /> Metas do dia
         </h2>
-        <span className="st-hint">3 Feed · 3 Stories · 1 Reels por dia</span>
+        <span className="st-hint">3 Feed · 3 Stories · 1 Reels · 1 Canal +18 por dia</span>
       </div>
       <p className={next === -1 ? "st-metas-next ok" : "st-metas-next"}>
         {next === -1
@@ -63,7 +64,7 @@ export function MetasPanel({ days = 14, compact = false }: { days?: number; comp
             <b>{label(d.day, i)}</b>
             {(Object.keys(GOALS) as Goal[]).map((g) => (
               <span key={g} className={d.counts[g] >= GOALS[g] ? "chip ok" : "chip"}>
-                {g} {Math.min(d.counts[g], GOALS[g])}/{GOALS[g]}
+                {LABEL[g]} {Math.min(d.counts[g] ?? 0, GOALS[g])}/{GOALS[g]}
               </span>
             ))}
             <i>{d.complete ? "✓" : missingText(d)}</i>
