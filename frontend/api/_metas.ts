@@ -1,15 +1,16 @@
 import { dbSelect } from "./_supabase.js";
 
 // Metas do dia (pedido do administrador, 30/10): todo dia 3 Feed, 3 Stories e
-// 1 Reels no Instagram. O painel mostra quanto de cada dia ja esta garantido
+// 1 Reels no Instagram; desde 01/11 tambem 1 post no Canal VIP +18 (Telegram). O painel mostra quanto de cada dia ja esta garantido
 // (publicacao criada ou item do plano aprovado na fila do robo), o conteudo novo
 // vai sozinho para o proximo horario vazio do formato e o bot avisa as 9h (hoje)
 // e as 20h (amanha) o que falta.
 
-export type Goal = "Feed" | "Stories" | "Reels";
-export const GOALS: Record<Goal, number> = { Feed: 3, Stories: 3, Reels: 1 };
+export type Goal = "Feed" | "Stories" | "Reels" | "Canal";
+export const GOALS: Record<Goal, number> = { Feed: 3, Stories: 3, Reels: 1, Canal: 1 };
 // horarios padrao de cada formato (os mesmos do Planejamento)
-export const GOAL_TIMES: Record<Goal, string[]> = { Feed: ["12:00", "15:30", "19:00"], Stories: ["09:00", "13:00", "17:00"], Reels: ["18:00"] };
+export const GOAL_TIMES: Record<Goal, string[]> = { Feed: ["12:00", "15:30", "19:00"], Stories: ["09:00", "13:00", "17:00"], Reels: ["18:00"], Canal: ["22:00"] };
+export const GOAL_LABEL: Record<Goal, string> = { Feed: "Feed", Stories: "Stories", Reels: "Reels", Canal: "Canal VIP +18" };
 const TZ = "America/Sao_Paulo";
 const OFFSET = "-03:00"; // Brasilia (sem horario de verao)
 const DAY = 86400_000;
@@ -27,9 +28,10 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { timeZo
 export const todayInBrazil = (at = Date.now()) => new Date(at).toLocaleDateString("sv-SE", { timeZone: TZ });
 const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T12:00:00${OFFSET}`) + n * DAY).toLocaleDateString("sv-SE", { timeZone: TZ });
 
-// O que ja esta garantido em cada dia: publicacoes do Instagram (menos
-// canceladas, falhas e rascunhos) e itens de planos aprovados ainda sem
-// publicacao (na fila ou gerando). Stories conta por foto (31/10): cada foto da
+// O que ja esta garantido em cada dia: publicacoes do Instagram e do canal +18
+// (menos canceladas, falhas e rascunhos) e itens de planos aprovados ainda sem
+// publicacao (na fila ou gerando). O +18 so conta quando vai para o canal VIP
+// (o que vai so para os pacotes nao aparece no canal). Stories conta por foto (31/10): cada foto da
 // publicacao sai como um Stories; o pedido na fila conta as 3 do Criar.
 export const STORIES_PER_REQUEST = 3;
 export async function coverage(days = 14, start = todayInBrazil()): Promise<DayCoverage[]> {
@@ -37,15 +39,22 @@ export async function coverage(days = 14, start = todayInBrazil()): Promise<DayC
   const from = new Date(Date.parse(`${start}T00:00:00${OFFSET}`) - 1000).toISOString();
   const to = new Date(Date.parse(`${addDays(start, days)}T00:00:00${OFFSET}`)).toISOString();
   const [posts, items] = await Promise.all([
-    dbSelect<{ id: string; scheduled_at: string }>(
+    dbSelect<{ id: string; scheduled_at: string; network: string; flags: { adultDest?: { channel?: boolean } } | null }>(
       "posts",
-      `select=id,scheduled_at&network=eq.instagram&status=not.in.(cancelado,falhou,rascunho)&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
+      `select=id,scheduled_at,network,flags&network=in.(instagram,telegram)&status=not.in.(cancelado,falhou,rascunho)&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
     ),
-    dbSelect<{ scheduled_at: string; format: string; source_item_id: string | null }>(
+    dbSelect<{ scheduled_at: string; format: string; network: string; plan_id: string; source_item_id: string | null }>(
       "content_plan_items",
-      `select=scheduled_at,format,source_item_id&network=eq.instagram&status=in.(na_fila,gerando)&post_id=is.null&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
+      `select=scheduled_at,format,network,plan_id,source_item_id&network=in.(instagram,telegram)&status=in.(na_fila,gerando)&post_id=is.null&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
     ),
   ]);
+  // +18 sem adultDest = so o canal (o padrao); com adultDest, so se marcou o canal
+  const toChannel = (d: { adultDest?: { channel?: boolean } } | null | undefined) => !d?.adultDest || d.adultDest.channel !== false;
+  const adultPlans = [...new Set(items.filter((i) => i.network === "telegram").map((i) => i.plan_id))];
+  const planReq = adultPlans.length
+    ? new Map((await dbSelect<{ id: string; request: { adultDest?: { channel?: boolean } } | null }>("content_plans", `select=id,request&id=in.(${adultPlans.join(",")})`)).map((p) => [p.id, p.request]))
+    : new Map();
+  const channelPost = new Set(posts.filter((p) => p.network === "telegram" && toChannel(p.flags)).map((p) => p.id));
   const ids = posts.map((p) => p.id).join(",");
   const [dests, media] = posts.length
     ? await Promise.all([
@@ -57,15 +66,19 @@ export async function coverage(days = 14, start = todayInBrazil()): Promise<DayC
   const photos = new Map<string, number>();
   for (const m of media) photos.set(m.post_id, (photos.get(m.post_id) ?? 0) + 1);
   const entries: { at: string; format: string; n: number }[] = [
-    ...dests.map((d) => ({ at: when.get(d.post_id)!, format: d.format, n: d.format === "Stories" ? Math.max(1, photos.get(d.post_id) ?? 1) : 1 })),
+    ...dests
+      .filter((d) => d.format !== "Canal" || channelPost.has(d.post_id))
+      .map((d) => ({ at: when.get(d.post_id)!, format: d.format, n: d.format === "Stories" ? Math.max(1, photos.get(d.post_id) ?? 1) : 1 })),
     // Stories na fila: o robo traz as 3 fotos do Criar (o que reaproveita a foto do Feed leva 1)
-    ...items.map((i) => ({ at: i.scheduled_at, format: i.format, n: i.format === "Stories" && !i.source_item_id ? STORIES_PER_REQUEST : 1 })),
+    ...items
+      .filter((i) => i.network !== "telegram" || (i.format === "Canal" && toChannel(planReq.get(i.plan_id))))
+      .map((i) => ({ at: i.scheduled_at, format: i.format, n: i.format === "Stories" && !i.source_item_id ? STORIES_PER_REQUEST : 1 })),
   ];
   const out: DayCoverage[] = [];
   for (let i = 0; i < days; i++) {
     const day = addDays(start, i);
-    const counts = { Feed: 0, Stories: 0, Reels: 0 } as Record<Goal, number>;
-    const times = { Feed: [], Stories: [], Reels: [] } as Record<Goal, string[]>;
+    const counts = { Feed: 0, Stories: 0, Reels: 0, Canal: 0 } as Record<Goal, number>;
+    const times = { Feed: [], Stories: [], Reels: [], Canal: [] } as Record<Goal, string[]>;
     for (const e of entries) {
       if (!(e.format in GOALS) || dayOf(e.at) !== day) continue;
       counts[e.format as Goal] += e.n;
@@ -109,8 +122,52 @@ export async function nextSlot(goal: Goal, taken: string[] = []): Promise<string
 const WEEKDAY = (day: string) => new Date(`${day}T12:00:00${OFFSET}`).toLocaleDateString("pt-BR", { timeZone: TZ, weekday: "long", day: "2-digit", month: "2-digit" });
 
 export function missingText(d: DayCoverage): string {
-  const parts = (Object.keys(GOALS) as Goal[]).filter((g) => d.missing[g] > 0).map((g) => `${d.missing[g]} ${g}`);
+  const parts = (Object.keys(GOALS) as Goal[]).filter((g) => d.missing[g] > 0).map((g) => `${d.missing[g]} ${GOAL_LABEL[g]}`);
   return parts.length ? `falta ${parts.join(", ")}` : "completo ✅";
+}
+
+// /agenda no bot de aprovacao (01/11): 7 dias com o que ja esta garantido de
+// cada formato e os buracos; o proximo buraco de cada formato e onde o pedido
+// novo entra sozinho (nextSlot, so leitura: nada e reservado).
+export const AGENDA_WEEKS = 4;
+const ICON: Record<Goal, string> = { Feed: "📷", Stories: "📱", Reels: "🎬", Canal: "🔥" };
+export async function agendaText(week = 0): Promise<string> {
+  const days = await coverage(7, addDays(todayInBrazil(), week * 7));
+  const lines = [`📅 Agenda — ${WEEKDAY(days[0].day)} a ${WEEKDAY(days[6].day)}`];
+  for (const d of days) {
+    lines.push("", `${d.complete ? "✅" : "🕳️"} ${WEEKDAY(d.day)}${d.complete ? " — completo" : ""}`);
+    for (const g of Object.keys(GOALS) as Goal[]) {
+      const times = [...d.times[g]].sort().join(" · ");
+      lines.push(`   ${ICON[g]} ${GOAL_LABEL[g]} ${d.counts[g]}/${GOALS[g]}${times ? ` (${times})` : ""}${d.missing[g] > 0 ? ` — falta ${d.missing[g]}` : ""}`);
+    }
+  }
+  const next = async (g: Goal) => {
+    try {
+      const at = await nextSlot(g, []);
+      return `${WEEKDAY(dayOf(at))} às ${hhmm(at)}`;
+    } catch {
+      return "nenhum nos próximos meses";
+    }
+  };
+  lines.push(
+    "",
+    "Próximo buraco (o pedido novo entra nele sozinho):",
+    `${ICON.Feed} Feed: ${await next("Feed")}`,
+    `${ICON.Stories} Stories: ${await next("Stories")}`,
+    `${ICON.Reels} Reels: ${await next("Reels")}`,
+    `${ICON.Canal} Canal VIP +18: ${await next("Canal")}`,
+    "",
+    "Para tampar: mande uma foto aqui e escolha Feed, Stories ou 🔥 +18. Reels: dancinha pelo estúdio."
+  );
+  return lines.join("\n");
+}
+
+export function agendaButtons(week: number) {
+  const row = [];
+  if (week > 0) row.push({ text: "◀ Semana anterior", callback_data: `ag:${week - 1}` });
+  row.push({ text: "🔄 Atualizar", callback_data: `ag:${week}` });
+  if (week < AGENDA_WEEKS) row.push({ text: "Próxima semana ▶", callback_data: `ag:${week + 1}` });
+  return { inline_keyboard: [row] };
 }
 
 // Aviso do bot: 9h fala de hoje, 20h de amanha; os dois listam os proximos dias com buraco.
@@ -119,11 +176,12 @@ export async function goalsNotice(which: "hoje" | "amanha"): Promise<string> {
   const target = which === "hoje" ? days[0] : days[1];
   const holes = days.slice(which === "hoje" ? 1 : 2).filter((d) => !d.complete).slice(0, 4);
   const lines = [
-    `📅 Metas do Instagram — ${which === "hoje" ? "hoje" : "amanhã"} (${WEEKDAY(target.day)}): ${missingText(target)}`,
-    `Feed ${target.counts.Feed}/3 · Stories ${target.counts.Stories}/3 · Reels ${target.counts.Reels}/1`,
+    `📅 Metas do dia — ${which === "hoje" ? "hoje" : "amanhã"} (${WEEKDAY(target.day)}): ${missingText(target)}`,
+    `Feed ${target.counts.Feed}/3 · Stories ${target.counts.Stories}/3 · Reels ${target.counts.Reels}/1 · Canal VIP +18 ${target.counts.Canal}/1`,
   ];
   if (holes.length) lines.push("", "Próximos dias com buraco:", ...holes.map((d) => `• ${WEEKDAY(d.day)}: ${missingText(d)}`));
   else lines.push("", "Os próximos dias estão completos 👏");
   if (target.missing.Reels > 0) lines.push("", "Reels: mande um vídeo ou link de dancinha na Conversa (💃 Fazer dancinha).");
+  if (target.missing.Canal > 0) lines.push("", "🔥 Canal VIP +18: mande uma foto aqui no bot e escolha +18 (ou peça no Chat +18 do estúdio).");
   return lines.join("\n");
 }

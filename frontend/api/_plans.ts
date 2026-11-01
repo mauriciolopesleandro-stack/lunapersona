@@ -292,7 +292,9 @@ export async function queueQuick(body: Record<string, unknown>): Promise<{ statu
         scheduled_at:
           auto && (key === "feed" || key === "stories")
             ? await nextSlot(key === "feed" ? "Feed" : "Stories", taken)
-            : auto && items[0]
+            : auto && key === "telegram18" && (!adultDest || adultDest.channel)
+              ? await nextSlot("Canal", taken)
+              : auto && items[0]
               ? items[items.length - 1].scheduled_at
               : new Date(when).toISOString(),
         network: slot.network,

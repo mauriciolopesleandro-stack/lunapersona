@@ -63,7 +63,20 @@ export async function registerWebhook(token: string, baseUrl: string): Promise<v
     secret_token: webhookSecret(token),
     allowed_updates: ["callback_query", "message", "my_chat_member"],
   });
+  await setCommands(token);
 }
+
+// menu "/" do bot de aprovacao
+const COMMANDS = [
+  { command: "agenda", description: "Ver a agenda e os buracos dos próximos dias" },
+  { command: "ajuda", description: "Como mandar um pedido pelo celular" },
+];
+const setCommands = (token: string) => telegram(token, "setMyCommands", { commands: COMMANDS }).catch(() => undefined);
+const HELP = [
+  "📷 Mande uma foto de referência aqui (pode escrever um recado na legenda): eu leio, pergunto para onde vai e monto o pedido para o robô do PC.",
+  "📅 /agenda mostra os próximos 7 dias e os buracos — o pedido novo entra sozinho no primeiro buraco.",
+  "As fotos prontas chegam aqui para você aprovar.",
+].join("\n\n");
 
 function fmt(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" }) : "sem horário (escolha no estúdio)";
@@ -340,7 +353,16 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
     await telegram(token, "answerCallbackQuery", { callback_query_id: cb.id }).catch(() => undefined);
     const replyTo = cb.message ? { reply_to_message_id: cb.message.message_id } : {};
     try {
-      if (PEDIDO_KINDS.has(kind)) {
+      if (kind === "ag") {
+        // agenda: troca de semana ou atualiza na mesma mensagem
+        const { AGENDA_WEEKS, agendaButtons, agendaText } = await import("./_metas.js");
+        const week = Math.min(AGENDA_WEEKS, Math.max(0, Number(id) || 0));
+        const text = await agendaText(week);
+        const edited = cb.message
+          ? await telegram(token, "editMessageText", { chat_id: chatId, message_id: cb.message.message_id, text, reply_markup: agendaButtons(week) }).then(() => true, () => false)
+          : false;
+        if (!edited) await say(text, { reply_markup: agendaButtons(week) });
+      } else if (PEDIDO_KINDS.has(kind)) {
         await pedidoCallback(token, chatId, kind, id, v ?? "", cb.message?.message_id, say);
       } else if (kind === "ap" || kind === "rp") {
         const post = await decidePost(id, version, kind === "ap" ? "approve" : "reject", kind === "rp" ? "Reprovada pelo Telegram" : null);
@@ -490,6 +512,16 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
         : "🎬 Vídeo pelo Telegram ainda não: por enquanto mande a dancinha e o vídeo longo pelo estúdio.",
       { reply_to_message_id: msg.message_id }
     );
+    return done();
+  }
+  if (msg && String(msg.chat.id) === chatId && msg.text && /^\/(agenda|calendario|ajuda|start)\b/i.test(msg.text)) {
+    await setCommands(token);
+    if (/^\/(agenda|calendario)/i.test(msg.text)) {
+      const { agendaButtons, agendaText } = await import("./_metas.js");
+      await say(await agendaText(0).catch((e) => `⚠️ Não consegui montar a agenda: ${e instanceof Error ? e.message : String(e)}`), { reply_markup: agendaButtons(0) });
+    } else {
+      await say(HELP);
+    }
     return done();
   }
   // resposta ao resumo de um pedido: muda o pedido
