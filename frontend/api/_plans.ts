@@ -251,10 +251,11 @@ export async function queueQuick(body: Record<string, unknown>): Promise<{ statu
   const taken: string[] = [];
   const refPath = typeof body.ref_path === "string" ? body.ref_path : "";
   if (refPath && !/^refs\/[0-9a-f-]{36}\.jpg$/.test(refPath)) throw new Problem(400, "Foto de referência inválida.");
-  // carrossel: varias fotos do mesmo ensaio (1 credito cada) no Feed e no TikTok
+  // carrossel: varias fotos do mesmo ensaio no Feed, no TikTok e no +18 (01/11:
+  // 6 ou 9 fotos de uma vez no canal, com uma historinha so)
   const photos = body.photos === undefined ? 1 : Number(body.photos);
   if (!Number.isInteger(photos) || photos < 1 || photos > 10) throw new Problem(400, "O carrossel vai de 2 a 10 fotos.");
-  if (photos > 1 && !keys.some((k) => k === "feed" || k === "tiktok")) throw new Problem(400, "Carrossel só no Instagram Feed ou no TikTok.");
+  if (photos > 1 && !keys.some((k) => k === "feed" || k === "tiktok" || k === "telegram18")) throw new Problem(400, "Carrossel só no Instagram Feed, no TikTok ou no +18.");
   // trava (30/10): o mesmo pedido para o mesmo destino nas ultimas 12 h nao
   // entra de novo sem confirmar (o botao reaparecia e a foto saia 2-3 vezes)
   if (body.force !== true) {
