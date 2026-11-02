@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CUT_SECONDS, longCut } from "../../api/_outfits";
 import { putSignedUpload } from "./cloud";
 import { OUTFITS, videoSeconds } from "./dance";
 import { ADULT_DESTS } from "./quickPhoto";
@@ -7,7 +8,8 @@ import { ADULT_DESTS } from "./quickPhoto";
 // Luna no video inteiro. O robo do PC corta em trechos de 5 s (onde a luna se
 // perde menos), faz o Copiar movimento em cada um e emenda tudo com o som do
 // video original. So para o canal +18 e os pacotes. O custo aparece antes e so
-// comeca depois de confirmar.
+// comeca depois de confirmar. Da para usar so um pedaco do video (02/11, o
+// mesmo do bot do Telegram): 5/10/15 s ou do segundo X ao Y.
 
 const SEGMENT = 5;
 const MAX_SECONDS = 300;
@@ -31,6 +33,13 @@ export function LongVideoCard({ file }: { file?: File }) {
   const [other, setOther] = useState("");
   const [adult, setAdult] = useState<string[]>(ADULT_DESTS.map((d) => d.key));
   const [caption, setCaption] = useState("");
+  // pedaco do video: tamanho (0 = completo) e o segundo em que comeca
+  const [piece, setPiece] = useState(0);
+  const [from, setFrom] = useState(0);
+  const [to, setTo] = useState(0);
+  const preview = useRef<HTMLVideoElement>(null);
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
+  useEffect(() => () => URL.revokeObjectURL(previewUrl), [previewUrl]);
   const [busy, setBusy] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,8 +49,26 @@ export function LongVideoCard({ file }: { file?: File }) {
   }, [file]);
 
   if (!file) return <p className="st-hint">Para fazer o vídeo longo, mande o arquivo de novo (o vídeo não fica guardado depois de recarregar a página).</p>;
-  const segments = seconds ? segmentsOf(seconds) : 0;
+  const full = seconds ? segmentsOf(seconds) : 0;
+  const cut = seconds && piece ? longCut(seconds, from, piece) : undefined;
+  const segments = cut ? cut.seconds / SEGMENT : full;
   const credits = segments * (SEGMENT + 1);
+  const pieces = CUT_SECONDS.filter((s) => s / SEGMENT < full);
+  const pick = (size: number, start = from) => {
+    setPiece(size);
+    setFrom(start);
+    setTo(start + size);
+  };
+  // "do segundo X ao Y": mudar o comeco leva o pedaco junto; mudar o fim muda o
+  // tamanho (arredonda para trechos de 5 s)
+  const setStart = (a: number) => {
+    setFrom(a);
+    setTo(a + piece);
+  };
+  const setEnd = (b: number) => {
+    setTo(b);
+    if (b > from) setPiece(b - from);
+  };
   const chosen = outfit === OTHER ? other.trim() : outfit;
   const tooShort = seconds !== null && seconds < SEGMENT;
   const tooLong = seconds !== null && seconds > MAX_SECONDS;
@@ -50,7 +77,7 @@ export function LongVideoCard({ file }: { file?: File }) {
 
   async function queue() {
     if (!file || !seconds) return;
-    if (!window.confirm(`Fazer o vídeo longo?\n\n${segments} trechos de ${SEGMENT} s = ${credits} créditos da Naiaflow.`)) return;
+    if (!window.confirm(`Fazer o vídeo longo?\n\n${segments} trecho(s) de ${SEGMENT} s${cut ? ` (do ${cut.from} ao ${cut.from + cut.seconds} s do vídeo)` : ""} = ${credits} créditos da Naiaflow.`)) return;
     setError(null);
     try {
       setBusy("Enviando o vídeo…");
@@ -61,6 +88,7 @@ export function LongVideoCard({ file }: { file?: File }) {
         action: "long-video",
         path: up.path,
         duration: seconds,
+        ...(cut ? { cut_from: cut.from, cut_seconds: cut.seconds } : {}),
         credits,
         outfit: chosen,
         caption,
@@ -79,7 +107,7 @@ export function LongVideoCard({ file }: { file?: File }) {
   if (done) {
     return (
       <p className="st-ok">
-        Vídeo longo na fila do robô ({segments} trechos, {credits} créditos{chosen ? `, roupa ${chosen}` : ""}). Ele chega no Telegram para você aprovar quando o
+        Vídeo longo na fila do robô ({segments} trecho(s){cut ? `, do ${cut.from} ao ${cut.from + cut.seconds} s` : ""}, {credits} créditos{chosen ? `, roupa ${chosen}` : ""}). Ele chega no Telegram para você aprovar quando o
         último trecho ficar pronto — o robô do PC precisa ficar aberto.
       </p>
     );
@@ -96,8 +124,47 @@ export function LongVideoCard({ file }: { file?: File }) {
       <p className="st-hint">
         {seconds === null
           ? "Lendo a duração do vídeo…"
-          : `Vídeo de ${seconds.toFixed(1).replace(".", ",")} s → ${segments} trecho(s) de ${SEGMENT} s = ${credits} créditos. O robô faz a Luna em cada trecho e junta tudo com o som do vídeo original.`}
+          : `Vídeo de ${seconds.toFixed(1).replace(".", ",")} s → ${segments} trecho(s) de ${SEGMENT} s${cut ? ` (do ${cut.from} ao ${cut.from + cut.seconds} s)` : ""} = ${credits} créditos. O robô faz a Luna em cada trecho e junta tudo com o som do vídeo original.`}
       </p>
+      {seconds !== null && pieces.length > 0 && !tooShort && !tooLong && (
+        <div className="st-field">
+          <span>Quanto do vídeo</span>
+          <div className="st-quick-slots" role="group" aria-label="Quanto do vídeo">
+            <button type="button" aria-pressed={!cut} className={!cut ? "on" : ""} onClick={() => setPiece(0)}>
+              {!cut ? "✓ " : ""}Completo ({Math.round(seconds)} s · {full * (SEGMENT + 1)} créd)
+            </button>
+            {pieces.map((s) => (
+              <button key={s} type="button" aria-pressed={cut?.seconds === s} className={cut?.seconds === s ? "on" : ""} onClick={() => pick(s, cut?.from ?? 0)}>
+                {cut?.seconds === s ? "✓ " : ""}
+                {s} s · {(s / SEGMENT) * (SEGMENT + 1)} créd
+              </button>
+            ))}
+          </div>
+          {piece > 0 && (
+            <div className="st-long-cut">
+              <video ref={preview} src={previewUrl} controls muted playsInline preload="metadata" />
+              <div className="st-row">
+                <label>
+                  Do segundo{" "}
+                  <input className="st-input" type="number" min={0} max={Math.floor(seconds)} value={from} onChange={(e) => setStart(Number(e.target.value) || 0)} />
+                </label>
+                <label>
+                  ao{" "}
+                  <input className="st-input" type="number" min={1} max={Math.ceil(seconds)} value={to} onChange={(e) => setEnd(Number(e.target.value) || 0)} />
+                </label>
+                <button type="button" className="st-btn st-btn-small" onClick={() => pick(cut?.seconds ?? piece, Math.floor(preview.current?.currentTime ?? 0))}>
+                  Começar onde o vídeo parou
+                </button>
+              </div>
+              <p className="st-hint">
+                {cut
+                  ? `Vai usar do ${cut.from} ao ${cut.from + cut.seconds} s (em trechos de ${SEGMENT} s; se passar do fim, começa antes).`
+                  : "Esse pedaço é o vídeo inteiro: vai o completo."}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
       {tooShort && <p className="st-warn">O vídeo precisa ter pelo menos {SEGMENT} s.</p>}
       {tooLong && <p className="st-warn">O vídeo pode ter no máximo {MAX_SECONDS / 60} minutos: corte antes de mandar.</p>}
       {tooBig && <p className="st-warn">O arquivo tem {Math.round(file.size / 1024 / 1024)} MB e o envio aceita até 50 MB: exporte em resolução menor (720p) antes de mandar.</p>}

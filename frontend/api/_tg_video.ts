@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { DANCE_LINK, OUTFITS } from "./_outfits.js";
+import { CUT_SECONDS, DANCE_LINK, OUTFITS, longCut, longPieces } from "./_outfits.js";
 import { ADULT_DESTS } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeSet, storeSetIfAbsent } from "./_store.js";
@@ -30,7 +30,6 @@ const MAX_VIDEO = 20 * 1024 * 1024; // o bot so baixa arquivo do Telegram ate 20
 const LONG_SEGMENT = 5; // o mesmo de api/_plans.ts (trechos de 5 s, 6 creditos cada)
 const LONG_MAX_SECONDS = 300;
 const DANCE_SECONDS = [5, 8, 10];
-const CUT_SECONDS = [5, 10, 15]; // so um pedaco do video longo (02/11)
 // resposta "do 10 ao 20" (segundos do video) ao resumo do video longo
 const CUT_REPLY = /^\s*(?:d[oe]s?\s*)?(\d{1,3})\s*(?:s|seg\w*)?\s*(?:ao?|at[ée]|-)\s*(\d{1,3})\s*(?:s|seg\w*)?\s*$/i;
 const DANCE_TAGS = ["#dancinha", "#trend", "#reelsbrasil"];
@@ -88,14 +87,10 @@ async function drop(id: string): Promise<void> {
 
 // dancinha: a maior duracao da Naiaflow (5, 8 ou 10 s) que cabe no video
 const danceSecondsFor = (video?: number) => (video === undefined ? 5 : video >= 10 ? 10 : video >= 8 ? 8 : 5);
-const fullSegments = (v: VideoOrder) => Math.max(1, Math.ceil((v.duration ?? 0) / LONG_SEGMENT - 0.02));
+const fullSegments = (v: VideoOrder) => longPieces(v.duration ?? 0);
 const segmentsOf = (v: VideoOrder) => (v.cut ? v.cut.seconds / LONG_SEGMENT : fullSegments(v));
 const trechos = (n: number) => `${n} trecho${n > 1 ? "s" : ""}`;
-// pedaco que cabe no video (o comeco recua se passar do fim); o video todo = completo
-function cutOf(v: VideoOrder, from: number, seconds: number): VideoOrder["cut"] {
-  if (seconds / LONG_SEGMENT >= fullSegments(v)) return undefined;
-  return { from: Math.min(Math.max(0, Math.round(from)), Math.max(0, Math.floor((v.duration ?? 0) - seconds))), seconds };
-}
+const cutOf = (v: VideoOrder, from: number, seconds: number) => longCut(v.duration ?? 0, from, seconds);
 // Copiar movimento: 1 credito por segundo + 1 do clone; video longo: 6 por trecho
 const creditsOf = (v: VideoOrder) => (v.kind === "longo" ? segmentsOf(v) * (LONG_SEGMENT + 1) : v.seconds + 1);
 const outfitText = (v: VideoOrder) => (v.outfit >= 0 ? OUTFITS[v.outfit] : "a do vídeo");
@@ -339,8 +334,7 @@ export async function videoChange(id: string, text: string, messageId: number, s
       await say(`Não entendi o pedaço: o vídeo tem ${Math.round(v.duration ?? 0)} s. Exemplo: "do 10 ao 20".`, replyTo);
       return;
     }
-    // em trechos de 5 s: arredonda para cima
-    const next = { ...v, cut: cutOf(v, from, Math.ceil((to - from) / LONG_SEGMENT) * LONG_SEGMENT) };
+    const next = { ...v, cut: cutOf(v, from, to - from) };
     await save(next);
     await say(summaryText(next), { ...replyTo, reply_markup: summaryButtons(next) });
     return;
