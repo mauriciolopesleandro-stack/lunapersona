@@ -999,13 +999,17 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
         log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): {item['prompt'][:90]}")
     folder = STUDIO_ROOT / item["folder"]
     folder.mkdir(parents=True, exist_ok=True)
-    # foto de referencia mandada na conversa (vai como IMG1 no Criar)
-    reference: Path | None = None
-    if item.get("reference_url") and not test_image:
-        reference = folder / f"referencia-{item['id'][:8]}.jpg"
-        r = requests.get(item["reference_url"], timeout=120)
-        r.raise_for_status()
-        reference.write_bytes(r.content)
+    # foto de referencia mandada na conversa (vai como IMG1 no Criar); album do
+    # Telegram (01/11): 2 ou 3 fotos parecidas, uma por Criar, na ordem
+    references: list[Path] = []
+    ref_urls = item.get("reference_urls") or ([item["reference_url"]] if item.get("reference_url") else [])
+    if ref_urls and not test_image:
+        for k, ref_url in enumerate(ref_urls):
+            ref_k = folder / f"referencia-{item['id'][:8]}{'' if k == 0 else f'-{k + 1}'}.jpg"
+            r = requests.get(ref_url, timeout=120)
+            r.raise_for_status()
+            ref_k.write_bytes(r.content)
+            references.append(ref_k)
     # carrossel: uma variacao do pedido por foto (a 1a e o proprio pedido)
     prompts = item.get("prompts") or [item["prompt"]]
     carousel = len(prompts) > 1
@@ -1054,6 +1058,10 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
                 spare = naia.carousel(base_job, missing)
                 url = spare.pop(0)
             else:
+                # um Criar a cada 3 fotos: o 1o com a 1a referencia, o 2o com a 2a...
+                reference = references[(i // 3) % len(references)] if references else None
+                if len(references) > 1:
+                    log(f"Criar {i // 3 + 1} com a referência {references.index(reference) + 1}/{len(references)}")
                 urls = naia.generate(prompt, item.get("aspect"), reference)
                 url = urls[0]
                 if carousel:
@@ -1087,8 +1095,9 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
         extra = {"video_path": f"{item['folder']}/{mp4.name}", "video_size": len(video)}
         log(f"Vídeo do Reels montado no PC: {extra['video_path']}")
     # a referencia ja foi usada: nao fica na pasta (nem entra na biblioteca)
-    if reference and reference.exists():
-        reference.unlink()
+    for ref_k in references:
+        if ref_k.exists():
+            ref_k.unlink()
     done = studio.call("done", id=item["id"], local_path=local_path, size_bytes=path.stat().st_size, **extra, **extra_more)
     for t in done["targets"]:
         photos = int(t.get("photos") or 1)

@@ -229,10 +229,14 @@ interface Motion {
   long?: boolean;
 }
 // foto de referencia (IMG1) mandada na conversa: caminho no armazenamento temporario
-async function referenceOf(item: Pick<ItemRow, "plan_id">): Promise<string | null> {
-  const [plan] = await dbSelect<{ request: { reference?: string } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
+// (album do Telegram: 2 ou 3 fotos, uma por Criar, na ordem)
+async function referencesOf(item: Pick<ItemRow, "plan_id">): Promise<string[]> {
+  const [plan] = await dbSelect<{ request: { reference?: string; references?: unknown } | null }>("content_plans", `select=request&id=eq.${item.plan_id}`);
+  const ok = (r: unknown): r is string => typeof r === "string" && /^refs\/[0-9a-f-]{36}\.jpg$/.test(r);
+  const many = Array.isArray(plan?.request?.references) ? plan.request.references.filter(ok).slice(0, 3) : [];
+  if (many.length) return many;
   const ref = plan?.request?.reference;
-  return typeof ref === "string" && /^refs\/[0-9a-f-]{36}\.jpg$/.test(ref) ? ref : null;
+  return ok(ref) ? [ref] : [];
 }
 
 // +18: destinos escolhidos na hora (canal VIP e/ou pacotes); sem nada = so o canal
@@ -481,10 +485,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           // foto de referencia: o robo anexa como IMG1 (a luna copia pose e angulo)
           // (correcao e acao, como a rachadinha, partem da foto pronta: sem referencia; e a
           // referencia ja apagada nao derruba o pedido - 31/10 o robo caia em loop)
+          // album: reference_urls tem uma por Criar (robos antigos usam so a 1a)
           ...(await (async () => {
-            const ref = isRework(item) ? null : await referenceOf(item);
-            const url = ref ? await storageReadUrl(UPLOAD_BUCKET, ref, 7200).catch(() => null) : null;
-            return url ? { reference_url: url } : {};
+            const refs = isRework(item) ? [] : await referencesOf(item);
+            const urls = (await Promise.all(refs.map((r) => storageReadUrl(UPLOAD_BUCKET, r, 7200).catch(() => null)))).filter((u): u is string => !!u);
+            return urls.length ? { reference_url: urls[0], ...(urls.length > 1 ? { reference_urls: urls } : {}) } : {};
           })()),
         },
       });
@@ -602,8 +607,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const motion = video ? await motionOf(item) : null;
       if (motion?.path) await storageRemove(UPLOAD_BUCKET, [motion.path]).catch(() => undefined);
       // a foto de referencia ja foi usada
-      const ref = video ? null : await referenceOf(item);
-      if (ref) await storageRemove(UPLOAD_BUCKET, [ref]).catch(() => undefined);
+      const refs = video ? [] : await referencesOf(item);
+      if (refs.length) await storageRemove(UPLOAD_BUCKET, refs).catch(() => undefined);
       return reply(200, { media_id: media.id, targets });
     }
 
