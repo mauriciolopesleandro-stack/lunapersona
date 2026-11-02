@@ -5023,3 +5023,30 @@
 .st-folder-badge.st-folder-wait {
   background: var(--st-tg);
 }
+
+/* video longo: so um pedaco (02/11) */
+.st-long-cut {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+.st-long-cut video {
+  width: 100%;
+  max-width: 220px;
+  max-height: 320px;
+  border-radius: 8px;
+  background: #000;
+}
+.st-long-cut .st-row {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.st-long-cut label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.st-long-cut input {
+  width: 72px;
+}
