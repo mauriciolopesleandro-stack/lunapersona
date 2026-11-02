@@ -229,6 +229,8 @@ interface Motion {
   sound?: "original" | "sem";
   // video longo +18: quantos trechos de `seconds` o administrador aprovou (custo)
   segments?: number;
+  start?: number; // video longo: so um pedaco (02/11), do segundo start, length s
+  length?: number;
   long?: boolean;
 }
 // link de download do video mandado no bot de aprovacao (vale 1 h; o robo baixa na hora)
@@ -467,7 +469,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
               seconds: motion.seconds,
               ...(motion.outfit ? { outfit: motion.outfit } : {}),
               sound: motion.sound ?? "sem",
-              ...(motion.long ? { long: true, segments: motion.segments } : {}),
+              ...(motion.long ? { long: true, segments: motion.segments, ...(motion.length ? { start: motion.start ?? 0, length: motion.length } : {}) } : {}),
             },
           },
         });

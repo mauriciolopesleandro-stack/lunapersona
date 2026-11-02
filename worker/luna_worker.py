@@ -912,7 +912,10 @@ def process_long_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_
     ff = imageio_ffmpeg.get_ffmpeg_exe()
     m = item["motion"]
     approved = int(m.get("segments") or 0)
+    start = float(m.get("start") or 0)
+    length = float(m.get("length") or 0)
     log(f"Item {item['id'][:8]} (tentativa {item['attempt']}): vídeo longo +18 em {approved} trechos de {LONG_SEGMENT_S} s"
+        + (f", do {start:g} ao {start + length:g} s do vídeo" if length else "")
         + (f", roupa {m['outfit']}" if m.get("outfit") else ""))
     folder = STUDIO_ROOT / item["folder"]
     folder.mkdir(parents=True, exist_ok=True)
@@ -926,6 +929,14 @@ def process_long_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_
     source = parts / f"original{Path(m.get('file_name') or 'video.mp4').suffix}"
     if not source.exists():
         download_video(m["file_url"], source, 600)
+    if length:
+        # so um pedaco do video (02/11): corta antes, com o som, e segue como um video curto
+        piece = parts / "pedaco.mp4"
+        if not piece.exists():
+            run_ff([ff, "-y", "-loglevel", "error", "-ss", f"{start:.3f}", "-i", str(source), "-t", f"{length:.3f}",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+                    "-movflags", "+faststart", str(piece)])
+        source = piece
     total = video_seconds(source)
     count = max(1, math.ceil(total / LONG_SEGMENT_S - 0.02))
     if total < LONG_SEGMENT_S:

@@ -16,10 +16,12 @@ import { telegram } from "./_telegram.js";
 //
 // Botoes: vd:<id>:<danca|longo> o que fazer, vs:<id>:<5|8|10> segundos da
 // dancinha, vo:<id>:<n> roupa (-1 = a do video), vm:<id> som original/sem som,
-// va:<id>:<canal|ensaio|album-vip> destinos do +18, vg:<id> gerar, vx:<id>
-// cancelar. Responder o resumo com texto troca a legenda (a historinha no +18).
+// va:<id>:<canal|ensaio|album-vip> destinos do +18, vt:<id>:<0|5|10|15> quanto
+// do video longo (0 = completo), vg:<id> gerar, vx:<id> cancelar. Responder o
+// resumo com texto troca a legenda (a historinha no +18); no video longo,
+// "do 10 ao 20" escolhe o pedaco.
 
-export const VIDEO_KINDS = new Set(["vd", "vs", "vo", "vm", "va", "vg", "vx"]);
+export const VIDEO_KINDS = new Set(["vd", "vs", "vo", "vm", "va", "vt", "vg", "vx"]);
 export const VIDEO_TAG = "#video";
 const LIST_KEY = "luna:tg-videos";
 const KEEP = 10;
@@ -28,6 +30,9 @@ const MAX_VIDEO = 20 * 1024 * 1024; // o bot so baixa arquivo do Telegram ate 20
 const LONG_SEGMENT = 5; // o mesmo de api/_plans.ts (trechos de 5 s, 6 creditos cada)
 const LONG_MAX_SECONDS = 300;
 const DANCE_SECONDS = [5, 8, 10];
+const CUT_SECONDS = [5, 10, 15]; // so um pedaco do video longo (02/11)
+// resposta "do 10 ao 20" (segundos do video) ao resumo do video longo
+const CUT_REPLY = /^\s*(?:d[oe]s?\s*)?(\d{1,3})\s*(?:s|seg\w*)?\s*(?:ao?|at[ée]|-)\s*(\d{1,3})\s*(?:s|seg\w*)?\s*$/i;
 const DANCE_TAGS = ["#dancinha", "#trend", "#reelsbrasil"];
 
 type Kind = "danca" | "longo";
@@ -42,6 +47,7 @@ interface VideoOrder {
   caption: string;
   kind?: Kind;
   seconds: number;
+  cut?: { from: number; seconds: number }; // video longo: so um pedaco (sem = completo)
   outfit: number; // indice em OUTFITS; -1 = a roupa do video
   sound: "original" | "sem";
   adult: string[];
@@ -82,7 +88,14 @@ async function drop(id: string): Promise<void> {
 
 // dancinha: a maior duracao da Naiaflow (5, 8 ou 10 s) que cabe no video
 const danceSecondsFor = (video?: number) => (video === undefined ? 5 : video >= 10 ? 10 : video >= 8 ? 8 : 5);
-const segmentsOf = (v: VideoOrder) => Math.max(1, Math.ceil((v.duration ?? 0) / LONG_SEGMENT - 0.02));
+const fullSegments = (v: VideoOrder) => Math.max(1, Math.ceil((v.duration ?? 0) / LONG_SEGMENT - 0.02));
+const segmentsOf = (v: VideoOrder) => (v.cut ? v.cut.seconds / LONG_SEGMENT : fullSegments(v));
+const trechos = (n: number) => `${n} trecho${n > 1 ? "s" : ""}`;
+// pedaco que cabe no video (o comeco recua se passar do fim); o video todo = completo
+function cutOf(v: VideoOrder, from: number, seconds: number): VideoOrder["cut"] {
+  if (seconds / LONG_SEGMENT >= fullSegments(v)) return undefined;
+  return { from: Math.min(Math.max(0, Math.round(from)), Math.max(0, Math.floor((v.duration ?? 0) - seconds))), seconds };
+}
 // Copiar movimento: 1 credito por segundo + 1 do clone; video longo: 6 por trecho
 const creditsOf = (v: VideoOrder) => (v.kind === "longo" ? segmentsOf(v) * (LONG_SEGMENT + 1) : v.seconds + 1);
 const outfitText = (v: VideoOrder) => (v.outfit >= 0 ? OUTFITS[v.outfit] : "a do vídeo");
@@ -105,6 +118,12 @@ function summaryButtons(v: VideoOrder) {
     rows.push([{ text: v.sound === "original" ? "🔊 Som original (trocar para sem som)" : "🔇 Sem som (trocar para o original)", callback_data: `vm:${v.id}` }]);
   } else {
     rows.push(ADULT_DESTS.map((d) => ({ text: `${v.adult.includes(d.key) ? "✅" : "▫️"} ${d.label}`, callback_data: `va:${v.id}:${d.key}` })));
+    // quanto do video: um pedaco (5/10/15 s) ou o completo
+    const cuts = CUT_SECONDS.filter((s) => s / LONG_SEGMENT < fullSegments(v));
+    if (cuts.length) {
+      rows.push(cuts.map((s) => ({ text: `${v.cut?.seconds === s ? "✅" : "▫️"} ${s} s · ${(s / LONG_SEGMENT) * (LONG_SEGMENT + 1)} créd`, callback_data: `vt:${v.id}:${s}` })));
+      rows.push([{ text: `${v.cut ? "▫️" : "✅"} Completo (${Math.round(v.duration ?? 0)} s · ${fullSegments(v) * (LONG_SEGMENT + 1)} créd)`, callback_data: `vt:${v.id}:0` }]);
+    }
   }
   // roupas salvas na galeria da Naiaflow ("Minhas roupas"), duas por linha
   const outfits = [{ text: `${v.outfit < 0 ? "✅" : "▫️"} Roupa do vídeo`, callback_data: `vo:${v.id}:-1` }, ...OUTFITS.map((o, k) => ({ text: `${v.outfit === k ? "✅" : "▫️"} ${o}`, callback_data: `vo:${v.id}:${k}` }))];
@@ -121,7 +140,7 @@ function summaryText(v: VideoOrder): string {
       ? [
           `🔥 Vídeo longo +18 → ${ADULT_DESTS.filter((d) => v.adult.includes(d.key)).map((d) => d.label).join(" + ") || "nenhum marcado"}`,
           source,
-          `✂️ ${segmentsOf(v)} trechos de ${LONG_SEGMENT} s, emendados com o som original`,
+          `✂️ ${trechos(segmentsOf(v))} de ${LONG_SEGMENT} s${v.cut ? ` (do ${v.cut.from} ao ${v.cut.from + v.cut.seconds} s do vídeo)` : " (o vídeo completo)"}, ${segmentsOf(v) > 1 ? "emendados " : ""}com o som original`,
           "🕒 No próximo horário vazio do canal",
           `👗 Roupa: ${outfitText(v)}`,
           `💳 ${plural(creditsOf(v))}`,
@@ -145,6 +164,7 @@ function summaryText(v: VideoOrder): string {
     ...lines,
     "",
     `✏️ Para trocar ${v.kind === "longo" ? "a historinha" : "a legenda"}, responda esta mensagem com o texto novo.`,
+    ...(v.kind === "longo" && fullSegments(v) > 1 ? ["✂️ Para usar outro pedaço do vídeo, responda com \"do 10 ao 20\" (segundos)."] : []),
   ].join("\n");
 }
 
@@ -227,7 +247,7 @@ export async function videoCallback(token: string, chatId: string, kind: string,
     await say(summaryText(next), { ...replyTo, reply_markup: summaryButtons(next) });
     return;
   }
-  if (kind === "vs" || kind === "vo" || kind === "vm" || kind === "va") {
+  if (kind === "vs" || kind === "vo" || kind === "vm" || kind === "va" || kind === "vt") {
     if (!v.kind) return;
     let next: VideoOrder;
     if (kind === "vs") {
@@ -238,6 +258,10 @@ export async function videoCallback(token: string, chatId: string, kind: string,
       const k = Number(value);
       if (!Number.isInteger(k) || k < -1 || k >= OUTFITS.length) return;
       next = { ...v, outfit: k };
+    } else if (kind === "vt") {
+      const s = Number(value);
+      if (v.kind !== "longo" || (s !== 0 && !CUT_SECONDS.includes(s))) return;
+      next = { ...v, cut: s ? cutOf(v, v.cut?.from ?? 0, s) : undefined };
     } else if (kind === "vm") {
       if (v.kind !== "danca") return;
       next = { ...v, sound: v.sound === "original" ? "sem" : "original" };
@@ -265,6 +289,7 @@ export async function videoCallback(token: string, chatId: string, kind: string,
           ? await queueLongVideo({
               ...(v.tgFile ? { tg_file: v.tgFile, tg_ext: v.ext } : { path: v.path }),
               duration: v.duration,
+              ...(v.cut ? { cut_from: v.cut.from, cut_seconds: v.cut.seconds } : {}),
               credits: creditsOf(v),
               outfit,
               caption: v.caption,
@@ -299,11 +324,25 @@ export async function videoCallback(token: string, chatId: string, kind: string,
 }
 
 // Resposta (texto) ao resumo do pedido de video: troca a legenda/historinha
+// (no video longo, "do 10 ao 20" escolhe o pedaco do video)
 export async function videoChange(id: string, text: string, messageId: number, say: Say): Promise<void> {
   const replyTo = { reply_to_message_id: messageId };
   const v = await load(id);
   if (!v || !v.kind) {
     await say("⏱️ Esse pedido expirou ou já foi feito. Mande o vídeo de novo.", replyTo);
+    return;
+  }
+  const range = v.kind === "longo" ? text.match(CUT_REPLY) : null;
+  if (range) {
+    const [from, to] = [Number(range[1]), Number(range[2])];
+    if (to <= from || from >= (v.duration ?? 0)) {
+      await say(`Não entendi o pedaço: o vídeo tem ${Math.round(v.duration ?? 0)} s. Exemplo: "do 10 ao 20".`, replyTo);
+      return;
+    }
+    // em trechos de 5 s: arredonda para cima
+    const next = { ...v, cut: cutOf(v, from, Math.ceil((to - from) / LONG_SEGMENT) * LONG_SEGMENT) };
+    await save(next);
+    await say(summaryText(next), { ...replyTo, reply_markup: summaryButtons(next) });
     return;
   }
   const next = { ...v, caption: text.trim().slice(0, 2200) };
