@@ -77,9 +77,9 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
 }
 
 // creditos do carrossel: cada Criar da Naiaflow entrega 3 fotos da mesma cena
-// (1 credito); passando de 3, o robo usa o "Gerar um carrossel" (3 creditos a
-// cada 3 fotos)
-export const creditsFor = (photos: number) => (photos > 3 ? 1 + 3 * Math.ceil((photos - 3) / 3) : 1);
+// (1 credito); passando de 3, o robo faz outro Criar com a mesma referencia e
+// a mesma roupa e lugar, mudando a pose (6 fotos = 2 creditos, 9 = 3)
+export const creditsFor = (photos: number) => Math.max(1, Math.ceil(photos / 3));
 // +18: o post do canal sai com 3, 6 ou 9 fotos da mesma cena e uma historinha so
 export const ADULT_PHOTOS = [3, 6, 9];
 

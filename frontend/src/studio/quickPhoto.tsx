@@ -14,7 +14,7 @@ export { ADULT_DESTS, parsePhotoBlocks, type PhotoBlock };
 // so a primeira.
 
 // Feed: cada Criar da Naiaflow entrega 3 fotos da mesma cena por 1 credito;
-// passando de 3, o robo usa o "Gerar um carrossel" (3 creditos por 3 fotos)
+// passando de 3, o robo faz outro Criar com a mesma referencia (1 credito a cada 3)
 const FEED_PHOTOS = 3;
 const SLOT_LABEL: Record<Slot, string> = {
   feed: "Feed (quadrado)",
@@ -282,7 +282,7 @@ Gerar de novo mesmo assim?`)) return queue(true);
               </button>
             ))}
           </div>
-          <p className="st-hint">Chegam todas no Telegram para aprovar (ou escolher as melhores). Mais de 3: o robô usa o "Gerar um carrossel" da Naiaflow, que mantém o look e o lugar.</p>
+          <p className="st-hint">Chegam todas no Telegram para aprovar (ou escolher as melhores). Mais de 3: o robô faz outro Criar a cada 3 fotos, com a mesma referência, roupa e lugar, mudando só a pose (o rosto fica mais firme).</p>
         </div>
       ) : (
         <>
@@ -294,7 +294,7 @@ Gerar de novo mesmo assim?`)) return queue(true);
             </p>
           )}
           {total > 1 && slots.includes("stories") && <p className="st-hint">Stories não tem carrossel: vai só a primeira foto (a base).</p>}
-          {total > 1 && <p className="st-hint">Carrossel: a Naiaflow entrega 3 fotos da mesma cena por crédito; passando de 3, o robô usa o "Gerar um carrossel" (3 créditos a cada 3 fotos).</p>}
+          {total > 1 && <p className="st-hint">Carrossel: a Naiaflow entrega 3 fotos da mesma cena por crédito; passando de 3, o robô faz outro Criar com a mesma referência (1 crédito a cada 3 fotos).</p>}
         </>
       )}
       {error && <p className="st-error">{error}</p>}
