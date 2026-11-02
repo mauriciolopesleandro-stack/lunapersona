@@ -354,6 +354,9 @@ export async function queueQuick(body: Record<string, unknown>): Promise<{ statu
   const taken: string[] = [];
   const refPath = typeof body.ref_path === "string" ? body.ref_path : "";
   if (refPath && !/^refs\/[0-9a-f-]{36}\.jpg$/.test(refPath)) throw new Problem(400, "Foto de referência inválida.");
+  // album (01/11): 2 ou 3 fotos parecidas, uma por Criar (a 1a e ref_path)
+  const refPaths = Array.isArray(body.ref_paths) ? body.ref_paths.filter((r): r is string => typeof r === "string") : [];
+  if (refPaths.length > 3 || refPaths.some((r) => !/^refs\/[0-9a-f-]{36}\.jpg$/.test(r))) throw new Problem(400, "Fotos de referência inválidas.");
   // carrossel: varias fotos do mesmo ensaio no Feed, no TikTok e no +18 (01/11:
   // 6 ou 9 fotos de uma vez no canal, com uma historinha so)
   const photos = body.photos === undefined ? 1 : Number(body.photos);
@@ -380,7 +383,7 @@ export async function queueQuick(body: Record<string, unknown>): Promise<{ statu
   const stamp = new Date().toISOString();
   const plan = await dbInsert<PlanRow>("content_plans", {
     title: `Foto avulsa do chat (${keys.map((k) => SLOTS[k].label).join(" + ")}${photos > 1 ? `, carrossel de ${photos}` : ""})`,
-    request: { source: "chat", slot: keys[0], slots: keys, ...(photos > 1 ? { photos } : {}), ...(refPath ? { reference: refPath } : {}), ...(adultDest ? { adultDest } : {}) },
+    request: { source: "chat", slot: keys[0], slots: keys, ...(photos > 1 ? { photos } : {}), ...(refPath ? { reference: refPath } : {}), ...(refPath && refPaths.length > 1 ? { references: refPaths } : {}), ...(adultDest ? { adultDest } : {}) },
     status: "aprovado",
     approved_at: stamp,
   });
