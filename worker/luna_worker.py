@@ -231,6 +231,18 @@ def make_reels(img: Image.Image, out: Path) -> None:
         raise RuntimeError(f"Nao consegui montar o video do Reels: {err[-300:]}")
 
 
+def download_video(url: str, dest: Path, timeout: int) -> None:
+    """Baixa o video de referencia (armazenamento ou Telegram). O link do Telegram
+    leva o token do bot: o erro sai sem o endereco."""
+    try:
+        r = requests.get(url, timeout=timeout)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        raise RuntimeError(f"Nao consegui baixar o video de referencia ({type(e).__name__}{f' {status}' if status else ''}).") from None
+    dest.write_bytes(r.content)
+
+
 def put_copy(url: str, data: bytes, mime: str = "image/jpeg") -> None:
     name = "0.mp4" if mime == "video/mp4" else "0.jpg"
     r = requests.put(
@@ -809,9 +821,7 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
         source = None
         if m.get("file_url"):
             source = folder / f"referencia-{item['id'][:8]}{Path(m.get('file_name') or 'video.mp4').suffix}"
-            r = requests.get(m["file_url"], timeout=300)
-            r.raise_for_status()
-            source.write_bytes(r.content)
+            download_video(m["file_url"], source, 300)
         url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original")
         r = requests.get(url, timeout=300)
         r.raise_for_status()
@@ -915,9 +925,7 @@ def process_long_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_
     parts.mkdir(exist_ok=True)
     source = parts / f"original{Path(m.get('file_name') or 'video.mp4').suffix}"
     if not source.exists():
-        r = requests.get(m["file_url"], timeout=600)
-        r.raise_for_status()
-        source.write_bytes(r.content)
+        download_video(m["file_url"], source, 600)
     total = video_seconds(source)
     count = max(1, math.ceil(total / LONG_SEGMENT_S - 0.02))
     if total < LONG_SEGMENT_S:

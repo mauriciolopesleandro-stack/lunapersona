@@ -5,7 +5,7 @@ import { Problem, cancelDraftPost, cancelUnpublishedPost, createDraftPost, revie
 import { storeConfigured, storeGet, storeIncr, storeSet } from "./_store.js";
 import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
-import { sendNotice, telegramConfig } from "./_telegram.js";
+import { sendNotice, telegram, telegramConfig } from "./_telegram.js";
 import { normalizeFlags, type AdultDest, type IgAudioFlag } from "./_flags.js";
 import { igAudioSearch, igConnection } from "./_instagram.js";
 import { forgetLessons, learnFromCorrection, learnFromPhoto, listLessons } from "./_lessons.js";
@@ -221,6 +221,9 @@ function carouselPrompts(prompt: string, n: number): string[] {
 interface Motion {
   link?: string;
   path?: string;
+  // video mandado no bot do Telegram: o robo baixa direto de la (link de 1 h)
+  tg_file?: string;
+  tg_ext?: string;
   seconds: number;
   outfit?: string;
   sound?: "original" | "sem";
@@ -228,6 +231,15 @@ interface Motion {
   segments?: number;
   long?: boolean;
 }
+// link de download do video mandado no bot de aprovacao (vale 1 h; o robo baixa na hora)
+async function telegramFileUrl(fileId: string): Promise<string> {
+  const config = await telegramConfig();
+  if (!config.token) throw new Problem(503, "O bot do Telegram não está configurado.");
+  const file = await telegram<{ file_path?: string }>(config.token, "getFile", { file_id: fileId });
+  if (!file.file_path) throw new Problem(502, "O Telegram não entregou o vídeo.");
+  return `https://api.telegram.org/file/bot${config.token}/${file.file_path}`;
+}
+
 // foto de referencia (IMG1) mandada na conversa: caminho no armazenamento temporario
 // (album do Telegram: 2 ou 3 fotos, uma por Criar, na ordem)
 async function referencesOf(item: Pick<ItemRow, "plan_id">): Promise<string[]> {
@@ -451,6 +463,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
             motion: {
               ...(motion.link ? { link: motion.link } : {}),
               ...(motion.path ? { file_url: await storageReadUrl(UPLOAD_BUCKET, motion.path, 7200), file_name: motion.path.split("/").pop() } : {}),
+              ...(motion.tg_file ? { file_url: await telegramFileUrl(motion.tg_file), file_name: `video.${motion.tg_ext ?? "mp4"}` } : {}),
               seconds: motion.seconds,
               ...(motion.outfit ? { outfit: motion.outfit } : {}),
               sound: motion.sound ?? "sem",
