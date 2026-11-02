@@ -8,6 +8,7 @@ import { dbSelect, storageReadUrl } from "./_supabase.js";
 import { forgetChannel, saveChannel, telegram, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
 import { ACTION_LEVELS, actionTarget, queueAction, queueBlur, queueCorrection } from "./_worker.js";
 import { PEDIDO_KINDS, PEDIDO_TAG, pedidoCallback, pedidoChange, pedidoPhoto, type TgPhotoMessage } from "./_tg_pedido.js";
+import { VIDEO_KINDS, VIDEO_TAG, videoCallback, videoChange, videoLink, videoMessage, type TgVideoMessage } from "./_tg_video.js";
 
 // Aprovacao pelo Telegram: a versao em revisao chega no celular do
 // administrador (foto/video + legenda + horario) com os botoes Aprovar,
@@ -74,6 +75,7 @@ const COMMANDS = [
 const setCommands = (token: string) => telegram(token, "setMyCommands", { commands: COMMANDS }).catch(() => undefined);
 const HELP = [
   "📷 Mande uma foto de referência aqui (pode escrever um recado na legenda): eu leio, pergunto para onde vai e monto o pedido para o robô do PC.",
+  "🎬 Mande um vídeo (até 20 MB) ou o link de uma dancinha do TikTok/Instagram: eu pergunto se é dancinha (Reels + TikTok) ou vídeo longo +18, a roupa e mostro o custo.",
   "📅 /agenda mostra os próximos 7 dias e os buracos — o pedido novo entra sozinho no primeiro buraco.",
   "As fotos prontas chegam aqui para você aprovar.",
 ].join("\n\n");
@@ -237,12 +239,10 @@ interface Update {
     message?: { message_id: number; chat: { id: number } };
   };
   my_chat_member?: ChatMemberUpdate;
-  message?: TgPhotoMessage & {
+  message?: TgPhotoMessage & TgVideoMessage & {
     chat: { id: number };
     text?: string;
     reply_to_message?: { text?: string };
-    video?: unknown;
-    document?: { mime_type?: string };
   };
 }
 
@@ -364,6 +364,8 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
         if (!edited) await say(text, { reply_markup: agendaButtons(week) });
       } else if (PEDIDO_KINDS.has(kind)) {
         await pedidoCallback(token, chatId, kind, id, v ?? "", cb.message?.message_id, say);
+      } else if (VIDEO_KINDS.has(kind)) {
+        await videoCallback(token, chatId, kind, id, v ?? "", cb.message?.message_id, say);
       } else if (kind === "ap" || kind === "rp") {
         const post = await decidePost(id, version, kind === "ap" ? "approve" : "reject", kind === "rp" ? "Reprovada pelo Telegram" : null);
         if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
@@ -505,11 +507,13 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
     await pedidoPhoto(token, msg, say);
     return done();
   }
-  if (msg && String(msg.chat.id) === chatId && (msg.video || msg.document)) {
+  if (msg && String(msg.chat.id) === chatId && (msg.video || msg.document?.mime_type?.startsWith("video/"))) {
+    await videoMessage(token, msg, say);
+    return done();
+  }
+  if (msg && String(msg.chat.id) === chatId && msg.document) {
     await say(
-      msg.document?.mime_type?.startsWith("image/")
-        ? "📷 Mande a foto como foto (não como arquivo) que eu leio e monto o pedido."
-        : "🎬 Vídeo pelo Telegram ainda não: por enquanto mande a dancinha e o vídeo longo pelo estúdio.",
+      msg.document.mime_type?.startsWith("image/") ? "📷 Mande a foto como foto (não como arquivo) que eu leio e monto o pedido." : "Mande uma foto ou um vídeo (MP4, MOV ou WEBM).",
       { reply_to_message_id: msg.message_id }
     );
     return done();
@@ -530,6 +534,14 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
     await pedidoChange(pedidoRef, msg.text, msg.message_id, say);
     return done();
   }
+  // resposta ao resumo de um pedido de video: troca a legenda
+  const videoRef = msg?.reply_to_message?.text?.split(VIDEO_TAG)[1]?.trim().split(/\s/)[0];
+  if (msg && String(msg.chat.id) === chatId && msg.text && !msg.text.startsWith("/") && videoRef) {
+    await videoChange(videoRef, msg.text, msg.message_id, say);
+    return done();
+  }
+  // link de dancinha (TikTok, Instagram...) fora de uma resposta: pedido de video
+  if (msg && String(msg.chat.id) === chatId && msg.text && !msg.reply_to_message && (await videoLink(msg.text, msg.message_id, say))) return done();
   if (msg && String(msg.chat.id) === chatId && msg.text && !msg.text.startsWith("/")) {
     const ref = msg.reply_to_message?.text?.includes(CORRECTION_TAG)
       ? msg.reply_to_message.text.split(CORRECTION_TAG)[1]?.trim() ?? ""
