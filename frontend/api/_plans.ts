@@ -230,6 +230,108 @@ async function syncReused(items: ItemRow[]) {
   }
 }
 
+// Video longo +18 (pedido de 31/10): o robo corta o video em trechos de 5 s,
+// faz o Copiar movimento da luna em cada um e junta tudo com o som original.
+// So para o canal +18 / pacotes. Custo: 6 creditos por trecho (5 s + 1 do clone).
+export async function queueLongVideo(body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+  const file = typeof body.path === "string" ? body.path : "";
+  if (!/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
+  const duration = Number(body.duration);
+  if (!Number.isFinite(duration) || duration < LONG_SEGMENT) throw new Problem(400, `O vídeo precisa ter pelo menos ${LONG_SEGMENT} segundos.`);
+  if (duration > LONG_MAX_SECONDS) throw new Problem(400, `O vídeo pode ter no máximo ${LONG_MAX_SECONDS / 60} minutos (corte antes de mandar).`);
+  const segments = longSegments(duration);
+  const credits = segments * (LONG_SEGMENT + 1);
+  // o estudio mostra o custo e o administrador confirma: o pedido traz o mesmo numero
+  if (Number(body.credits) !== credits) throw new Problem(409, `O custo mudou: são ${segments} trechos (${credits} créditos). Confira e confirme de novo.`);
+  const outfit = typeof body.outfit === "string" ? body.outfit.trim().slice(0, 60) : "";
+  const adultDest = normalizeFlags({ adultDest: body.adultDest }, 1).adultDest;
+  if (adultDest) {
+    const problem = flagProblem("telegram", ["Canal"], { adultDest });
+    if (problem) throw new Problem(400, problem);
+  }
+  const auto = body.scheduled_at === "auto" || body.scheduled_at === undefined;
+  const when = auto ? Date.now() + 3 * 3600_000 : typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
+  if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
+  // "auto" com o canal (01/11): o proximo buraco do canal +18, como a foto +18
+  const slot = auto && (!adultDest || adultDest.channel !== false) ? await nextSlot("Canal", []) : new Date(when).toISOString();
+  const caption = typeof body.caption === "string" ? body.caption.slice(0, 4000) : "";
+  const motion = { path: file, seconds: LONG_SEGMENT, segments, long: true, ...(outfit ? { outfit } : {}), sound: "original" as const };
+  const plan = await dbInsert<PlanRow>("content_plans", {
+    title: `Vídeo longo +18 (${segments} trechos de ${LONG_SEGMENT} s${outfit ? `, roupa ${outfit}` : ""})`,
+    request: { source: "chat18-long", slots: ["telegram18"], motion, ...(adultDest ? { adultDest } : {}) },
+    status: "aprovado",
+    approved_at: new Date().toISOString(),
+  });
+  const item = await dbInsert<ItemRow>("content_plan_items", {
+    plan_id: plan.id,
+    position: 0,
+    scheduled_at: slot,
+    network: "telegram",
+    format: "Canal",
+    kind: "video",
+    adult: true,
+    prompt: `Vídeo longo +18 (Copiar movimento em ${segments} trechos${outfit ? `, roupa ${outfit}` : ""})`,
+    caption,
+    hashtags: [],
+    status: "na_fila",
+  });
+  await audit("video_longo_18", "content_plan_items", item.id, { trechos: segments, creditos: credits, segundos: Math.round(duration) });
+  return { status: 200, body: { item, items: [item], estimate: { images: 0, videos: segments, credits } } };
+}
+
+// Dancinha (Copiar movimento) com o link ou o video enviado: Reels e/ou TikTok
+export async function queueDance(body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+  const link = typeof body.link === "string" ? body.link.trim() : "";
+  const file = typeof body.path === "string" ? body.path : "";
+  if (link && !/^https:\/\/\S+$/.test(link)) throw new Problem(400, "Link inválido.");
+  if (file && !/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
+  if (!link === !file) throw new Problem(400, "Mande o link ou o vídeo da dancinha.");
+  const seconds = Number(body.seconds ?? 5);
+  if (![5, 8, 10].includes(seconds)) throw new Problem(400, "A dancinha tem 5, 8 ou 10 segundos.");
+  const outfit = typeof body.outfit === "string" ? body.outfit.trim().slice(0, 60) : "";
+  const raw: unknown[] = Array.isArray(body.slots) ? body.slots : ["reels", "tiktok"];
+  const keys = [...new Set(raw.map(String))].filter((k) => k === "reels" || k === "tiktok");
+  if (!keys.length) throw new Problem(400, "Marque Reels, TikTok ou os dois.");
+  // "auto": vai para o proximo horario vazio do formato (metas do dia)
+  const auto = body.scheduled_at === "auto";
+  const when = auto ? Date.now() + 2 * 3600_000 : typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
+  if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
+  const taken: string[] = [];
+  const caption = typeof body.caption === "string" ? body.caption.slice(0, 2200) : "";
+  const hashtags = cleanTags(body.hashtags);
+  // som: o original da dancinha (padrao; na aprovacao do Telegram da para trocar pela musica do Instagram) ou sem som
+  const sound = body.sound === "sem" ? "sem" : "original";
+  const motion = { ...(link ? { link } : { path: file }), seconds, ...(outfit ? { outfit } : {}), sound };
+  const plan = await dbInsert<PlanRow>("content_plans", {
+    title: `Dancinha do chat (${keys.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}${outfit ? `, roupa ${outfit}` : ""})`,
+    request: { source: "chat-dance", slots: keys, motion },
+    status: "aprovado",
+    approved_at: new Date().toISOString(),
+  });
+  const items: ItemRow[] = [];
+  for (const [position, key] of keys.entries()) {
+    items.push(
+      await dbInsert<ItemRow>("content_plan_items", {
+        plan_id: plan.id,
+        position,
+        scheduled_at: items[0] ? items[0].scheduled_at : auto && key === "reels" ? await nextSlot("Reels", taken) : new Date(when).toISOString(),
+        network: key === "reels" ? "instagram" : "tiktok",
+        format: key === "reels" ? "Reels" : "Vídeo",
+        kind: "video",
+        adult: false,
+        prompt: `Dancinha (Copiar movimento${outfit ? `, roupa ${outfit}` : ""})`,
+        caption,
+        hashtags,
+        status: "na_fila",
+        ...(items[0] ? { source_item_id: items[0].id } : {}),
+      })
+    );
+  }
+  await audit("dancinha", "content_plan_items", items[0].id, { destino: keys.join(","), fonte: link ? "link" : "video", segundos: seconds });
+  // Copiar movimento: 1 credito por segundo + 1 do clone
+  return { status: 200, body: { item: items[0], items, estimate: { images: 0, videos: 1, credits: seconds + 1 } } };
+}
+
 // Foto avulsa (chat do estudio e pedido pelo Telegram): um ou mais destinos;
 // uma foto por proporcao (Feed quadrado; Stories, TikTok e +18 em 9:16) e os
 // destinos da mesma proporcao reaproveitam. 409 "repetida": o mesmo pedido ha
@@ -408,102 +510,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       return reply(200, { path, url: await storageUploadUrl(UPLOAD_BUCKET, path) });
     }
 
-    // Video longo +18 (pedido de 31/10): o robo corta o video em trechos de 5 s,
-    // faz o Copiar movimento da luna em cada um e junta tudo com o som original.
-    // So para o canal +18 / pacotes. Custo: 6 creditos por trecho (5 s + 1 do clone).
     if (body.action === "long-video") {
-      const file = typeof body.path === "string" ? body.path : "";
-      if (!/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
-      const duration = Number(body.duration);
-      if (!Number.isFinite(duration) || duration < LONG_SEGMENT) throw new Problem(400, `O vídeo precisa ter pelo menos ${LONG_SEGMENT} segundos.`);
-      if (duration > LONG_MAX_SECONDS) throw new Problem(400, `O vídeo pode ter no máximo ${LONG_MAX_SECONDS / 60} minutos (corte antes de mandar).`);
-      const segments = longSegments(duration);
-      const credits = segments * (LONG_SEGMENT + 1);
-      // o estudio mostra o custo e o administrador confirma: o pedido traz o mesmo numero
-      if (Number(body.credits) !== credits) throw new Problem(409, `O custo mudou: são ${segments} trechos (${credits} créditos). Confira e confirme de novo.`);
-      const outfit = typeof body.outfit === "string" ? body.outfit.trim().slice(0, 60) : "";
-      const adultDest = normalizeFlags({ adultDest: body.adultDest }, 1).adultDest;
-      if (adultDest) {
-        const problem = flagProblem("telegram", ["Canal"], { adultDest });
-        if (problem) throw new Problem(400, problem);
-      }
-      const when = body.scheduled_at === "auto" || body.scheduled_at === undefined ? Date.now() + 3 * 3600_000 : typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
-      if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
-      const caption = typeof body.caption === "string" ? body.caption.slice(0, 4000) : "";
-      const motion = { path: file, seconds: LONG_SEGMENT, segments, long: true, ...(outfit ? { outfit } : {}), sound: "original" as const };
-      const plan = await dbInsert<PlanRow>("content_plans", {
-        title: `Vídeo longo +18 (${segments} trechos de ${LONG_SEGMENT} s${outfit ? `, roupa ${outfit}` : ""})`,
-        request: { source: "chat18-long", slots: ["telegram18"], motion, ...(adultDest ? { adultDest } : {}) },
-        status: "aprovado",
-        approved_at: new Date().toISOString(),
-      });
-      const item = await dbInsert<ItemRow>("content_plan_items", {
-        plan_id: plan.id,
-        position: 0,
-        scheduled_at: new Date(when).toISOString(),
-        network: "telegram",
-        format: "Canal",
-        kind: "video",
-        adult: true,
-        prompt: `Vídeo longo +18 (Copiar movimento em ${segments} trechos${outfit ? `, roupa ${outfit}` : ""})`,
-        caption,
-        hashtags: [],
-        status: "na_fila",
-      });
-      await audit("video_longo_18", "content_plan_items", item.id, { trechos: segments, creditos: credits, segundos: Math.round(duration) });
-      return reply(200, { item, items: [item], estimate: { images: 0, videos: segments, credits } });
+      const out = await queueLongVideo(body);
+      return reply(out.status, out.body);
     }
 
     if (body.action === "dance") {
-      const link = typeof body.link === "string" ? body.link.trim() : "";
-      const file = typeof body.path === "string" ? body.path : "";
-      if (link && !/^https:\/\/\S+$/.test(link)) throw new Problem(400, "Link inválido.");
-      if (file && !/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
-      if (!link === !file) throw new Problem(400, "Mande o link ou o vídeo da dancinha.");
-      const seconds = Number(body.seconds ?? 5);
-      if (![5, 8, 10].includes(seconds)) throw new Problem(400, "A dancinha tem 5, 8 ou 10 segundos.");
-      const outfit = typeof body.outfit === "string" ? body.outfit.trim().slice(0, 60) : "";
-      const raw: unknown[] = Array.isArray(body.slots) ? body.slots : ["reels", "tiktok"];
-      const keys = [...new Set(raw.map(String))].filter((k) => k === "reels" || k === "tiktok");
-      if (!keys.length) throw new Problem(400, "Marque Reels, TikTok ou os dois.");
-      // "auto": vai para o proximo horario vazio do formato (metas do dia)
-      const auto = body.scheduled_at === "auto";
-      const when = auto ? Date.now() + 2 * 3600_000 : typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
-      if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
-      const taken: string[] = [];
-      const caption = typeof body.caption === "string" ? body.caption.slice(0, 2200) : "";
-      const hashtags = cleanTags(body.hashtags);
-      // som: o original da dancinha (padrao; na aprovacao do Telegram da para trocar pela musica do Instagram) ou sem som
-      const sound = body.sound === "sem" ? "sem" : "original";
-      const motion = { ...(link ? { link } : { path: file }), seconds, ...(outfit ? { outfit } : {}), sound };
-      const plan = await dbInsert<PlanRow>("content_plans", {
-        title: `Dancinha do chat (${keys.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}${outfit ? `, roupa ${outfit}` : ""})`,
-        request: { source: "chat-dance", slots: keys, motion },
-        status: "aprovado",
-        approved_at: new Date().toISOString(),
-      });
-      const items: ItemRow[] = [];
-      for (const [position, key] of keys.entries()) {
-        items.push(
-          await dbInsert<ItemRow>("content_plan_items", {
-            plan_id: plan.id,
-            position,
-            scheduled_at: items[0] ? items[0].scheduled_at : auto && key === "reels" ? await nextSlot("Reels", taken) : new Date(when).toISOString(),
-            network: key === "reels" ? "instagram" : "tiktok",
-            format: key === "reels" ? "Reels" : "Vídeo",
-            kind: "video",
-            adult: false,
-            prompt: `Dancinha (Copiar movimento${outfit ? `, roupa ${outfit}` : ""})`,
-            caption,
-            hashtags,
-            status: "na_fila",
-            ...(items[0] ? { source_item_id: items[0].id } : {}),
-          })
-        );
-      }
-      await audit("dancinha", "content_plan_items", items[0].id, { destino: keys.join(","), fonte: link ? "link" : "video", segundos: seconds });
-      // Copiar movimento: 1 credito por segundo + 1 do clone
-      return reply(200, { item: items[0], items, estimate: { images: 0, videos: 1, credits: seconds + 1 } });
+      const out = await queueDance(body);
+      return reply(out.status, out.body);
     }
 
     if (body.action === "quick") {

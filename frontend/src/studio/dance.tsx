@@ -1,29 +1,17 @@
 import { useEffect, useState } from "react";
 import { putSignedUpload } from "./cloud";
 import { placedText } from "./quickPhoto";
+import { DANCE_LINK, OUTFITS } from "../../api/_outfits";
+
+export { DANCE_LINK, OUTFITS };
 
 // "Fazer dancinha" na Conversa: com o video (📎) ou o link de uma dancinha
 // (TikTok, Instagram...), o robo do PC faz o Copiar movimento da Naiaflow com a
 // luna, sem som, na roupa escolhida, e o mesmo video vira Reels e TikTok
 // (cada um com a sua publicacao para aprovar no Telegram).
 
-// roupas salvas na galeria da Naiaflow ("Minhas roupas"); o robo procura pelo nome
-export const OUTFITS = [
-  "Biquíni animal print",
-  "Biquíni azul dourado",
-  "Biquíni branco",
-  "Body rendado vinho",
-  "Conjunto casual",
-  "Conjunto azul marinho",
-  "Conjunto cropped jeans",
-  "Conjunto biquíni crochê",
-  "Conjunto estampado",
-];
 const KEEP = "";
 const OTHER = "__outra__";
-
-// link que da para usar no Copiar movimento (video de rede social)
-export const DANCE_LINK = /https:\/\/(?:www\.|vm\.|vt\.|m\.)?(?:tiktok\.com|instagram\.com\/(?:reel|reels|p)\/|youtube\.com\/shorts\/|youtu\.be\/|x\.com\/|twitter\.com\/)\S*/i;
 
 function defaultWhen(): string {
   const d = new Date(Date.now() + 2 * 3600_000);
