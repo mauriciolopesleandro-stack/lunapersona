@@ -26,5 +26,25 @@ export function longCut(duration: number, from: number, seconds: number): { from
   return { from: Math.min(Math.max(0, Math.round(from)), Math.max(0, Math.floor(duration - size))), seconds: size };
 }
 
+// dancinha sem legenda (02/11: Reels saiam so com as hashtags): uma frase do
+// dia da semana da publicacao (horario de Brasilia) + uma chamada que varia
+const DANCE_DAY = [
+  "Domingou com dancinha ☀️",
+  "Segunda com a energia lá em cima 💃",
+  "Terça pedindo uma trend ✨",
+  "Quarta é dia de dançar no meio da semana 💃",
+  "Quintou e eu já tô no clima ✨",
+  "Sextou pedindo dancinha 💃",
+  "Sabadou com a trend do momento ✨",
+];
+const DANCE_CALL = ["Quem dança comigo?", "Salva pra fazer depois!", "Marca quem fazia essa comigo 👀", "Nota de 0 a 10?", "Acertei o passo? 😅", "Comenta 🔥 se curtiu!"];
+export function danceCaption(at: string | number | Date, seed = ""): string {
+  const when = new Date(at);
+  const day = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", weekday: "short" }).format(when);
+  const index = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(day);
+  const pick = [...seed].reduce((sum, c) => sum + c.charCodeAt(0), Math.floor(when.getTime() / 86_400_000));
+  return `${DANCE_DAY[Math.max(0, index)]} ${DANCE_CALL[pick % DANCE_CALL.length]}`;
+}
+
 // link que da para usar no Copiar movimento (video de rede social)
 export const DANCE_LINK = /https:\/\/(?:www\.|vm\.|vt\.|m\.)?(?:tiktok\.com|instagram\.com\/(?:reel|reels|p)\/|youtube\.com\/shorts\/|youtu\.be\/|x\.com\/|twitter\.com\/)\S*/i;

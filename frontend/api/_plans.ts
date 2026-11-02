@@ -6,6 +6,7 @@ import { ADULT_NOTE, AiError, PERSONA, STYLE_GUIDE, askAi, type Mode } from "./_
 import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { creditsFor } from "./_photo_blocks.js";
+import { danceCaption } from "./_outfits.js";
 import { randomUUID } from "crypto";
 
 // /api/studio?r=plans - planejamento feito pelo chat (parte A do fluxo).
@@ -312,7 +313,9 @@ export async function queueDance(body: Record<string, unknown>): Promise<{ statu
   const when = auto ? Date.now() + 2 * 3600_000 : typeof body.scheduled_at === "string" ? Date.parse(body.scheduled_at) : NaN;
   if (Number.isNaN(when)) throw new Problem(400, "Escolha o horário da publicação.");
   const taken: string[] = [];
-  const caption = typeof body.caption === "string" ? body.caption.slice(0, 2200) : "";
+  const first = auto && keys[0] === "reels" ? await nextSlot("Reels", taken) : new Date(when).toISOString();
+  // sem legenda: a automatica do dia da publicacao (02/11: Reels saiam so com as hashtags)
+  const caption = (typeof body.caption === "string" ? body.caption.trim().slice(0, 2200) : "") || danceCaption(first, link || file);
   const hashtags = cleanTags(body.hashtags);
   // som: o original da dancinha (padrao; na aprovacao do Telegram da para trocar pela musica do Instagram) ou sem som
   const sound = body.sound === "sem" ? "sem" : "original";
@@ -329,7 +332,7 @@ export async function queueDance(body: Record<string, unknown>): Promise<{ statu
       await dbInsert<ItemRow>("content_plan_items", {
         plan_id: plan.id,
         position,
-        scheduled_at: items[0] ? items[0].scheduled_at : auto && key === "reels" ? await nextSlot("Reels", taken) : new Date(when).toISOString(),
+        scheduled_at: items[0] ? items[0].scheduled_at : first,
         network: key === "reels" ? "instagram" : "tiktok",
         format: key === "reels" ? "Reels" : "Vídeo",
         kind: "video",
