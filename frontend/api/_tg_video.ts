@@ -3,12 +3,14 @@ import { DANCE_LINK, OUTFITS } from "./_outfits.js";
 import { ADULT_DESTS } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeSet, storeSetIfAbsent } from "./_store.js";
-import { storageRemove, storageUploadUrl } from "./_supabase.js";
+import { storageRemove } from "./_supabase.js";
 import { telegram } from "./_telegram.js";
 
 // Video pelo Telegram (01/11, parte 2 do pedido pelo celular): o administrador
 // manda um video (ou o link de uma dancinha do TikTok/Instagram) no bot de
-// aprovacao. O bot guarda o video, pergunta o que fazer e mostra o resumo com
+// aprovacao. O bot anota o video (o robo do PC baixa direto do Telegram na
+// hora de fazer: baixar na Vercel estourava os 60 s - 01/11 22:13), pergunta o
+// que fazer e mostra o resumo com
 // o custo; "Gerar" poe na fila do robo do PC (queueDance / queueLongVideo, os
 // mesmos do estudio) e o video pronto volta aqui para aprovar.
 //
@@ -32,7 +34,9 @@ type Kind = "danca" | "longo";
 
 interface VideoOrder {
   id: string;
-  path?: string; // video no armazenamento temporario (danca/<uuid>.mp4)
+  path?: string; // video no armazenamento temporario (danca/<uuid>.mp4; pedidos antigos)
+  tgFile?: string; // file_id do video no Telegram (o robo baixa de la)
+  ext?: string;
   link?: string; // ou o link da dancinha
   duration?: number; // segundos (o Telegram manda no video; arquivo nao tem)
   caption: string;
@@ -83,7 +87,7 @@ const segmentsOf = (v: VideoOrder) => Math.max(1, Math.ceil((v.duration ?? 0) / 
 const creditsOf = (v: VideoOrder) => (v.kind === "longo" ? segmentsOf(v) * (LONG_SEGMENT + 1) : v.seconds + 1);
 const outfitText = (v: VideoOrder) => (v.outfit >= 0 ? OUTFITS[v.outfit] : "a do vídeo");
 const plural = (n: number) => `${n} crédito${n > 1 ? "s" : ""}`;
-const canLong = (v: VideoOrder) => !!v.path && v.duration !== undefined && v.duration >= LONG_SEGMENT && v.duration <= LONG_MAX_SECONDS;
+const canLong = (v: VideoOrder) => !!(v.path || v.tgFile) && v.duration !== undefined && v.duration >= LONG_SEGMENT && v.duration <= LONG_MAX_SECONDS;
 
 function kindButtons(v: VideoOrder) {
   const rows: { text: string; callback_data: string }[][] = [[{ text: "💃 Dancinha (Reels + TikTok)", callback_data: `vd:${v.id}:danca` }]];
@@ -150,8 +154,8 @@ function newOrder(fields: Partial<VideoOrder>): VideoOrder {
 
 const EXT: Record<string, string> = { "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm" };
 
-// Video (ou arquivo de video) mandado no chat do bot: guarda e pergunta o que fazer
-export async function videoMessage(token: string, msg: TgVideoMessage, say: Say): Promise<void> {
+// Video (ou arquivo de video) mandado no chat do bot: anota e pergunta o que fazer
+export async function videoMessage(msg: TgVideoMessage, say: Say): Promise<void> {
   const replyTo = { reply_to_message_id: msg.message_id };
   if (!storeConfigured()) {
     await say("⚠️ Falta o Upstash Redis na Vercel para guardar o pedido.", replyTo);
@@ -164,40 +168,22 @@ export async function videoMessage(token: string, msg: TgVideoMessage, say: Say)
     await say("🎬 Mande o vídeo em MP4, MOV ou WEBM.", replyTo);
     return;
   }
-  // o Telegram repete o aviso se a resposta demorar: o mesmo video e guardado uma vez so
+  // o Telegram repete o aviso se a resposta demorar: o mesmo video e anotado uma vez so
   if (!(await storeSetIfAbsent(`luna:tg-video:${msg.message_id}`, "1", 3600))) return;
   if ((file.file_size ?? 0) > MAX_VIDEO) {
     await say("⚠️ Vídeo grande demais para o bot baixar (o Telegram só deixa até 20 MB). Corte ou comprima, mande o link do TikTok/Instagram, ou use o estúdio (até 50 MB).", replyTo);
     return;
   }
-  await say("🎬 Recebi o vídeo. Guardando…", replyTo);
-  try {
-    const info = await telegram<{ file_path?: string }>(token, "getFile", { file_id: file.file_id });
-    if (!info.file_path) throw new Error("o Telegram não entregou o vídeo");
-    const res = await fetch(`https://api.telegram.org/file/bot${token}/${info.file_path}`, { signal: AbortSignal.timeout(40_000) });
-    if (!res.ok) throw new Error(`o Telegram não entregou o vídeo (HTTP ${res.status})`);
-    const bytes = Buffer.from(await res.arrayBuffer());
-    // o robo baixa daqui (o mesmo lugar do video mandado no estudio)
-    const path = `danca/${randomUUID()}.${ext}`;
-    const form = new FormData();
-    form.append("cacheControl", "3600");
-    form.append("", new Blob([bytes], { type: file.mime_type ?? "video/mp4" }));
-    const up = await fetch(await storageUploadUrl(UPLOAD_BUCKET, path), { method: "PUT", headers: { "x-upsert": "true" }, body: form });
-    if (!up.ok) throw new Error(`o armazenamento recusou o vídeo (HTTP ${up.status})`);
-    const duration = msg.video?.duration;
-    const v = newOrder({ path, ...(duration !== undefined ? { duration, seconds: danceSecondsFor(duration) } : {}), caption: (msg.caption ?? "").trim().slice(0, 2200) });
-    await save(v);
-    const tip =
-      duration === undefined
-        ? " (mandado como arquivo: para o vídeo longo +18, mande como vídeo)"
-        : duration > LONG_MAX_SECONDS
-          ? ` (${Math.round(duration)} s: o vídeo longo vai até ${LONG_MAX_SECONDS / 60} min)`
-          : "";
-    await say(`🎬 Vídeo guardado${duration !== undefined ? ` (${Math.round(duration)} s)` : ""}${tip}. O que eu faço?`, { ...replyTo, reply_markup: kindButtons(v) });
-  } catch (e) {
-    await storeDelete(`luna:tg-video:${msg.message_id}`).catch(() => undefined);
-    await say(`⚠️ Não consegui guardar o vídeo: ${e instanceof Error ? e.message : String(e)}. Mande de novo.`, replyTo);
-  }
+  const duration = msg.video?.duration;
+  const v = newOrder({ tgFile: file.file_id, ext, ...(duration !== undefined ? { duration, seconds: danceSecondsFor(duration) } : {}), caption: (msg.caption ?? "").trim().slice(0, 2200) });
+  await save(v);
+  const tip =
+    duration === undefined
+      ? " (mandado como arquivo: para o vídeo longo +18, mande como vídeo)"
+      : duration > LONG_MAX_SECONDS
+        ? ` (${Math.round(duration)} s: o vídeo longo vai até ${LONG_MAX_SECONDS / 60} min)`
+        : "";
+  await say(`🎬 Recebi o vídeo${duration !== undefined ? ` (${Math.round(duration)} s)` : ""}${tip}. O que eu faço?`, { ...replyTo, reply_markup: kindButtons(v) });
 }
 
 // Link de dancinha (TikTok, Instagram...) mandado no chat: so a dancinha (o
@@ -277,7 +263,7 @@ export async function videoCallback(token: string, chatId: string, kind: string,
       const out =
         v.kind === "longo"
           ? await queueLongVideo({
-              path: v.path,
+              ...(v.tgFile ? { tg_file: v.tgFile, tg_ext: v.ext } : { path: v.path }),
               duration: v.duration,
               credits: creditsOf(v),
               outfit,
@@ -286,7 +272,7 @@ export async function videoCallback(token: string, chatId: string, kind: string,
               adultDest: { channel: v.adult.includes("canal"), packs: v.adult.filter((k) => k !== "canal") },
             })
           : await queueDance({
-              ...(v.link ? { link: v.link } : { path: v.path }),
+              ...(v.link ? { link: v.link } : v.tgFile ? { tg_file: v.tgFile, tg_ext: v.ext } : { path: v.path }),
               seconds: v.seconds,
               outfit,
               sound: v.sound,

@@ -508,7 +508,7 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
     return done();
   }
   if (msg && String(msg.chat.id) === chatId && (msg.video || msg.document?.mime_type?.startsWith("video/"))) {
-    await videoMessage(token, msg, say);
+    await videoMessage(msg, say);
     return done();
   }
   if (msg && String(msg.chat.id) === chatId && msg.document) {

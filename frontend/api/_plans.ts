@@ -235,7 +235,8 @@ async function syncReused(items: ItemRow[]) {
 // So para o canal +18 / pacotes. Custo: 6 creditos por trecho (5 s + 1 do clone).
 export async function queueLongVideo(body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
   const file = typeof body.path === "string" ? body.path : "";
-  if (!/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
+  const tg = tgVideo(body);
+  if (!tg && !/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
   const duration = Number(body.duration);
   if (!Number.isFinite(duration) || duration < LONG_SEGMENT) throw new Problem(400, `O vídeo precisa ter pelo menos ${LONG_SEGMENT} segundos.`);
   if (duration > LONG_MAX_SECONDS) throw new Problem(400, `O vídeo pode ter no máximo ${LONG_MAX_SECONDS / 60} minutos (corte antes de mandar).`);
@@ -255,7 +256,7 @@ export async function queueLongVideo(body: Record<string, unknown>): Promise<{ s
   // "auto" com o canal (01/11): o proximo buraco do canal +18, como a foto +18
   const slot = auto && (!adultDest || adultDest.channel !== false) ? await nextSlot("Canal", []) : new Date(when).toISOString();
   const caption = typeof body.caption === "string" ? body.caption.slice(0, 4000) : "";
-  const motion = { path: file, seconds: LONG_SEGMENT, segments, long: true, ...(outfit ? { outfit } : {}), sound: "original" as const };
+  const motion = { ...(tg ?? { path: file }), seconds: LONG_SEGMENT, segments, long: true, ...(outfit ? { outfit } : {}), sound: "original" as const };
   const plan = await dbInsert<PlanRow>("content_plans", {
     title: `Vídeo longo +18 (${segments} trechos de ${LONG_SEGMENT} s${outfit ? `, roupa ${outfit}` : ""})`,
     request: { source: "chat18-long", slots: ["telegram18"], motion, ...(adultDest ? { adultDest } : {}) },
@@ -279,12 +280,22 @@ export async function queueLongVideo(body: Record<string, unknown>): Promise<{ s
   return { status: 200, body: { item, items: [item], estimate: { images: 0, videos: segments, credits } } };
 }
 
+// video mandado no bot do Telegram: fica la e o robo do PC baixa na hora (a
+// Vercel nao tem tempo de baixar e guardar um video de alguns MB)
+function tgVideo(body: Record<string, unknown>): { tg_file: string; tg_ext: string } | null {
+  if (typeof body.tg_file !== "string") return null;
+  if (!/^[\w-]{1,300}$/.test(body.tg_file)) throw new Problem(400, "Vídeo do Telegram inválido.");
+  const ext = ["mp4", "mov", "webm"].includes(String(body.tg_ext)) ? String(body.tg_ext) : "mp4";
+  return { tg_file: body.tg_file, tg_ext: ext };
+}
+
 // Dancinha (Copiar movimento) com o link ou o video enviado: Reels e/ou TikTok
 export async function queueDance(body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
   const link = typeof body.link === "string" ? body.link.trim() : "";
-  const file = typeof body.path === "string" ? body.path : "";
+  const tg = tgVideo(body);
+  const file = tg ? "telegram" : typeof body.path === "string" ? body.path : "";
   if (link && !/^https:\/\/\S+$/.test(link)) throw new Problem(400, "Link inválido.");
-  if (file && !/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
+  if (file && !tg && !/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
   if (!link === !file) throw new Problem(400, "Mande o link ou o vídeo da dancinha.");
   const seconds = Number(body.seconds ?? 5);
   if (![5, 8, 10].includes(seconds)) throw new Problem(400, "A dancinha tem 5, 8 ou 10 segundos.");
@@ -301,7 +312,7 @@ export async function queueDance(body: Record<string, unknown>): Promise<{ statu
   const hashtags = cleanTags(body.hashtags);
   // som: o original da dancinha (padrao; na aprovacao do Telegram da para trocar pela musica do Instagram) ou sem som
   const sound = body.sound === "sem" ? "sem" : "original";
-  const motion = { ...(link ? { link } : { path: file }), seconds, ...(outfit ? { outfit } : {}), sound };
+  const motion = { ...(link ? { link } : (tg ?? { path: file })), seconds, ...(outfit ? { outfit } : {}), sound };
   const plan = await dbInsert<PlanRow>("content_plans", {
     title: `Dancinha do chat (${keys.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}${outfit ? `, roupa ${outfit}` : ""})`,
     request: { source: "chat-dance", slots: keys, motion },
