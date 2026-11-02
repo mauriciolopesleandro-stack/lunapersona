@@ -150,7 +150,7 @@ function summaryText(v: VideoOrder): string {
           `👗 Roupa: ${outfitText(v)}`,
           `💳 ${plural(creditsOf(v))}`,
           "",
-          `💬 ${v.caption.slice(0, 1500) || "(sem legenda)"}`,
+          `💬 ${v.caption.slice(0, 1500) || "(sem legenda: entra uma automática do dia, tipo \"Sextou pedindo dancinha 💃 Quem dança comigo?\")"}`,
           `#️⃣ ${DANCE_TAGS.join(" ")}`,
         ];
   return [

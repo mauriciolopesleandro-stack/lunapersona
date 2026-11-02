@@ -194,7 +194,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
         </label>
       )}
       <label className="st-field">
-        <span>Legenda</span>
+        <span>Legenda (vazia = uma automática do dia, tipo "Sextou pedindo dancinha 💃 Quem dança comigo?")</span>
         <textarea className="st-input" rows={2} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Ex.: Sextou pedindo dancinha 💃" />
       </label>
       <label className="st-field">
