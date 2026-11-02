@@ -240,7 +240,11 @@ export async function queueLongVideo(body: Record<string, unknown>): Promise<{ s
   const duration = Number(body.duration);
   if (!Number.isFinite(duration) || duration < LONG_SEGMENT) throw new Problem(400, `O vídeo precisa ter pelo menos ${LONG_SEGMENT} segundos.`);
   if (duration > LONG_MAX_SECONDS) throw new Problem(400, `O vídeo pode ter no máximo ${LONG_MAX_SECONDS / 60} minutos (corte antes de mandar).`);
-  const segments = longSegments(duration);
+  // so um pedaco do video (02/11): do segundo cut_from, cut_seconds (trechos de 5 s)
+  const cut = body.cut_seconds === undefined ? null : { from: Number(body.cut_from ?? 0), seconds: Number(body.cut_seconds) };
+  if (cut && (!Number.isInteger(cut.from) || !Number.isInteger(cut.seconds) || cut.from < 0 || cut.seconds < LONG_SEGMENT || cut.seconds % LONG_SEGMENT || cut.from + cut.seconds > duration + 0.05))
+    throw new Problem(400, "Pedaço do vídeo inválido.");
+  const segments = cut ? cut.seconds / LONG_SEGMENT : longSegments(duration);
   const credits = segments * (LONG_SEGMENT + 1);
   // o estudio mostra o custo e o administrador confirma: o pedido traz o mesmo numero
   if (Number(body.credits) !== credits) throw new Problem(409, `O custo mudou: são ${segments} trechos (${credits} créditos). Confira e confirme de novo.`);
@@ -256,9 +260,9 @@ export async function queueLongVideo(body: Record<string, unknown>): Promise<{ s
   // "auto" com o canal (01/11): o proximo buraco do canal +18, como a foto +18
   const slot = auto && (!adultDest || adultDest.channel !== false) ? await nextSlot("Canal", []) : new Date(when).toISOString();
   const caption = typeof body.caption === "string" ? body.caption.slice(0, 4000) : "";
-  const motion = { ...(tg ?? { path: file }), seconds: LONG_SEGMENT, segments, long: true, ...(outfit ? { outfit } : {}), sound: "original" as const };
+  const motion = { ...(tg ?? { path: file }), seconds: LONG_SEGMENT, segments, long: true, ...(cut ? { start: cut.from, length: cut.seconds } : {}), ...(outfit ? { outfit } : {}), sound: "original" as const };
   const plan = await dbInsert<PlanRow>("content_plans", {
-    title: `Vídeo longo +18 (${segments} trechos de ${LONG_SEGMENT} s${outfit ? `, roupa ${outfit}` : ""})`,
+    title: `Vídeo longo +18 (${segments} trechos de ${LONG_SEGMENT} s${cut ? `, do ${cut.from} ao ${cut.from + cut.seconds} s` : ""}${outfit ? `, roupa ${outfit}` : ""})`,
     request: { source: "chat18-long", slots: ["telegram18"], motion, ...(adultDest ? { adultDest } : {}) },
     status: "aprovado",
     approved_at: new Date().toISOString(),
@@ -276,7 +280,7 @@ export async function queueLongVideo(body: Record<string, unknown>): Promise<{ s
     hashtags: [],
     status: "na_fila",
   });
-  await audit("video_longo_18", "content_plan_items", item.id, { trechos: segments, creditos: credits, segundos: Math.round(duration) });
+  await audit("video_longo_18", "content_plan_items", item.id, { trechos: segments, creditos: credits, segundos: Math.round(duration), ...(cut ? { pedaco: `${cut.from}-${cut.from + cut.seconds}` } : {}) });
   return { status: 200, body: { item, items: [item], estimate: { images: 0, videos: segments, credits } } };
 }
 
