@@ -644,7 +644,7 @@ class Naiaflow:
 
     # --- dancinha: Copiar movimento --------------------------------------------------------------
 
-    def copy_motion(self, link: str | None, video_file: Path | None, seconds: int, outfit: str | None, dry: bool = False, sound: str = "original", on_wait=None) -> str:
+    def copy_motion(self, link: str | None, video_file: Path | None, seconds: int, outfit: str | None, dry: bool = False, sound: str = "original", on_wait=None, on_started=None) -> str:
         """Copiar movimento (Modo imagem -> Copiar movimento): o movimento vem do
         link ou do video enviado, a pessoa e o clone luna, sem som (a musica entra
         no Instagram), com a roupa escolhida da galeria (ou a do video). So gera
@@ -741,7 +741,19 @@ class Naiaflow:
         before = set(self._stream_thumbs())
         final.first.click(timeout=15000, force=True)
         log(f"Gerando a dancinha ({seconds} s, {seconds + 1} créditos)…")
-        deadline = time.time() + 25 * 60
+        if on_started:  # o credito ja foi gasto: a proxima tentativa so procura o video
+            on_started(sorted(before))
+        # 03/11: a de 10 s passou dos 25 min; 5 s levou 12 a 14 min
+        minutes = 15 + 4 * seconds
+        url = self.find_motion(before, minutes * 60, on_wait)
+        if url:
+            return url
+        raise RuntimeError(f"A Naiaflow nao terminou a dancinha em {minutes} minutos.")
+
+    def find_motion(self, before: set[str], wait_s: int, on_wait=None) -> str | None:
+        """Espera o video novo (que nao estava na galeria antes do Gerar) e devolve o MP4."""
+        p = self.page
+        deadline = time.time() + wait_s
         while time.time() < deadline:
             time.sleep(15)
             if on_wait:
@@ -760,7 +772,7 @@ class Naiaflow:
                     return mp4
             except Exception:
                 continue
-        raise RuntimeError("A Naiaflow nao terminou a dancinha em 25 minutos.")
+        return None
 
     def _stream_thumbs(self) -> list[str]:
         # miniaturas dos videos da galeria (Cloudflare Stream)
@@ -820,13 +832,27 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
         mp4.write_bytes(test_video.read_bytes())
     else:
         source = None
-        if m.get("file_url"):
-            source = folder / f"referencia-{item['id'][:8]}{Path(m.get('file_name') or 'video.mp4').suffix}"
-            download_video(m["file_url"], source, 300)
-        url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original")
+        # 03/11: a dancinha ja pedida (credito gasto) fica anotada; nova tentativa so
+        # procura o video na Naiaflow, nunca gera (e paga) de novo
+        marker = mp4.with_name(mp4.stem + ".naia.json")
+        if marker.exists():
+            before = json.loads(marker.read_text(encoding="utf-8")).get("before")
+            if before is None:
+                raise RuntimeError("Dancinha ja pedida na Naiaflow: confira la e baixe o video. Nao gerei de novo para nao gastar creditos.")
+            log("Dancinha ja pedida antes: procurando o video pronto na Naiaflow (sem gastar credito).")
+            url = naia.find_motion(set(before), 20 * 60)
+            if not url:
+                raise RuntimeError("A dancinha pedida antes ainda nao apareceu na Naiaflow. Nao gerei de novo para nao gastar creditos.")
+        else:
+            if m.get("file_url"):
+                source = folder / f"referencia-{item['id'][:8]}{Path(m.get('file_name') or 'video.mp4').suffix}"
+                download_video(m["file_url"], source, 300)
+            started = lambda before: marker.write_text(json.dumps({"before": before, "at": time.time()}), encoding="utf-8")  # noqa: E731
+            url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original", on_started=started)
         r = requests.get(url, timeout=300)
         r.raise_for_status()
         mp4.write_bytes(r.content)
+        marker.unlink(missing_ok=True)
         if source and source.exists():
             source.unlink()
     import imageio_ffmpeg
