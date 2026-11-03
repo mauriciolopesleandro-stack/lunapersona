@@ -1053,3 +1053,27 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
 - **Dancinha** (Conversa): mandou vídeo (📎) ou link de TikTok/Instagram/Shorts → botão **"💃 Fazer dancinha (Reels + TikTok)"**: destinos, roupa (manter a do vídeo ou uma salva na galeria), 5/8/10 s, horário, legenda. O vídeo enviado vai ao armazenamento temporário (`danca/…`, apagado depois). O robô faz o Copiar movimento (sem som, luna, roupa), baixa o MP4, tira um quadro para a biblioteca e cria o Reels (com música do Instagram) e o TikTok Vídeo com o mesmo arquivo. Custo: 1 crédito por segundo + 1.
 - Ferramentas sem gastar crédito: `worker/ferramentas/naia_proporcao.py`, `worker/ferramentas/naia_dancinha_seco.py`.
 - Depois do deploy, reiniciar o robô do PC.
+
+## 45. A Luna responde os comentários do Instagram (03/11/2026)
+
+- **O que faz:** a mesma IA das legendas (`OPENROUTER_MODEL`, DeepSeek) responde sozinha, como a Luna, os comentários novos do Instagram, no tom da conta e olhando a legenda do post. Não passa por aprovação (pedido do administrador).
+- **Quando:** o processador da fila (Supabase Cron, a cada minuto) roda a olhada no máximo a cada 4 min (`api/_ig_comments.ts`, `commentsTick`). Não depende do PC.
+- **Quais comentários:**
+  - de primeiro nível, dos últimos 7 dias, nos 8 posts mais recentes com comentário;
+  - até 8 por rodada, todos numa chamada só da IA;
+  - pula os da própria conta e os que ela (ou o administrador, à mão) já respondeu.
+- **Regras da resposta** (`REPLY_SYSTEM`):
+  - primeira pessoa, uma frase curta e 0 a 2 emojis da conta;
+  - nada explícito, sem encontro, contato, link, preço, Telegram ou VIP;
+  - se perguntarem, diz que é virtual, criada com IA.
+  - Spam, ofensa, pedido explícito ou quem parece menor de idade ficam sem resposta.
+  - O estúdio ainda tira link, @ e aspas da resposta e marca a pessoa (`@usuario …`).
+- **Uma vez só:** cada comentário fica marcado no Upstash (`luna:ig-c:<id>`, 60 dias) como respondido ou ignorado.
+- **Telegram (bot de aprovação):**
+  - resumo do que foi respondido e do que ficou sem resposta;
+  - **/comentarios** mostra o estado, **/comentarios off** desliga e **/comentarios on** liga (`luna:ig-comentarios`).
+- **Permissão:** `instagram_manage_comments` (conexão pelo Facebook) ou `instagram_business_manage_comments` (Instagram Login). Com a conexão antiga, sem a permissão, chega um aviso por dia para reconectar pelo Facebook.
+- **Fora do escopo:**
+  - DMs do Instagram (precisam da revisão da Meta);
+  - TikTok (a API de postagem não lê comentários).
+- **Teste:** `test_ig_comentarios.mjs`, com Instagram e OpenRouter falsos.
