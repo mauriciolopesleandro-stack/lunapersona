@@ -1053,3 +1053,20 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
 - **Dancinha** (Conversa): mandou vídeo (📎) ou link de TikTok/Instagram/Shorts → botão **"💃 Fazer dancinha (Reels + TikTok)"**: destinos, roupa (manter a do vídeo ou uma salva na galeria), 5/8/10 s, horário, legenda. O vídeo enviado vai ao armazenamento temporário (`danca/…`, apagado depois). O robô faz o Copiar movimento (sem som, luna, roupa), baixa o MP4, tira um quadro para a biblioteca e cria o Reels (com música do Instagram) e o TikTok Vídeo com o mesmo arquivo. Custo: 1 crédito por segundo + 1.
 - Ferramentas sem gastar crédito: `worker/ferramentas/naia_proporcao.py`, `worker/ferramentas/naia_dancinha_seco.py`.
 - Depois do deploy, reiniciar o robô do PC.
+
+## 46. Stories em sequência, uma foto por horário (03/11/2026)
+
+- **Meta:** 3 Stories por dia, uma foto por horário (09:00, 13:00 e 17:00). Cada foto é 1 Stories.
+- **Ao aprovar** (Telegram ou estúdio) um Stories automático com várias fotos:
+  - cada foto aprovada vai para o primeiro horário vazio a partir de agora, sem pular;
+  - exemplo: aprovou 2 de 3 num dia; na próxima aprovação, a 1ª foto completa esse dia e as outras começam o dia seguinte.
+  - A publicação fica com a 1ª foto (nova versão, já aprovada). As outras viram publicações próprias, já aprovadas, com a cópia da foto e a tarefa no horário de cada uma. Tudo é registrado na auditoria. Se algo falhar no meio, as novas são canceladas e a aprovada fica como estava.
+  - Foto não volta para um horário que já passou: a folga é de 15 min.
+- **O que conta como ocupado:** só os Stories já aprovados (agendado, publicando ou publicado). O que ainda espera aprovação entra na sequência quando for aprovado.
+- **Fora da regra:**
+  - Feed + Stories na mesma publicação;
+  - modo manual;
+  - os Stories que já estavam agendados antes desta mudança.
+- **No Telegram:** a resposta mostra o horário de cada foto.
+- `api/_posts_api.ts`: `spreadStories` e `storiesSlots`, chamadas no fim de `decidePost`.
+- **Teste:** `test_stories_seq.mjs`. O `test_stories3.mjs` antigo (todas as fotos no mesmo horário) ficou obsoleto.

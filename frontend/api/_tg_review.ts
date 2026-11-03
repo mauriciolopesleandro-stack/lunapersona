@@ -252,7 +252,11 @@ function safeSame(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-function decided(post: PostRow): string {
+function decided(post: PostRow & { storiesTimes?: string[] }): string {
+  // Stories em sequencia (03/11): cada foto no seu horario
+  if (post.status === "agendado" && (post.storiesTimes?.length ?? 0) > 1) {
+    return `✅ Aprovada. Stories em sequência, uma foto por horário:\n${post.storiesTimes!.map((t, i) => `📱 foto ${i + 1}: ${fmt(t)}`).join("\n")}`;
+  }
   if (post.status === "agendado") return `✅ Aprovada (versão ${post.version}). Sai em ${fmt(post.scheduled_at)}.`;
   if (post.status === "aprovado") return `✅ Aprovada (versão ${post.version}). Escolha o horário no estúdio.`;
   return "❌ Reprovada: voltou para rascunho no estúdio.";

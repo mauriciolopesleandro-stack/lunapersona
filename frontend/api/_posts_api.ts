@@ -268,7 +268,119 @@ export async function decidePost(id: string, version: unknown, decision: "approv
   await dbUpdateWhere("content_plan_items", `post_id=eq.${post.id}`, { status: "aprovado", updated_at: new Date().toISOString() }).catch(() => undefined);
   await audit("aprovar", "posts", post.id, { version: post.version, agendado: saved.status === "agendado" });
   await packsOnApproval(saved);
-  return saved;
+  return (await spreadStories(saved)) ?? saved;
+}
+
+// --- Stories em sequencia (pedido de 03/11) ---------------------------------------------
+// Meta: 3 Stories por dia, uma foto por horario (09:00, 13:00, 17:00). Cada foto
+// aprovada entra no primeiro horario vazio a partir de agora, sem pular: aprovou
+// 2 de 3 num dia, a primeira foto da proxima aprovacao completa esse dia e o
+// resto comeca o dia seguinte. So contam os Stories ja aprovados (o que ainda
+// espera aprovacao entra na sequencia quando for aprovado). Publicacao so de
+// Stories com varias fotos vira uma por foto, todas ja aprovadas por ele.
+const STORIES_PER_DAY = 3;
+const SP_TZ = "America/Sao_Paulo";
+const SP_OFFSET = "-03:00";
+export type SpreadPost = PostRow & { storiesTimes?: string[] };
+
+async function storiesSlots(count: number, excludeId: string): Promise<string[]> {
+  const { GOAL_TIMES, todayInBrazil } = await import("./_metas.js");
+  const start = todayInBrazil();
+  const from = new Date(Date.parse(`${start}T00:00:00${SP_OFFSET}`) - 1000).toISOString();
+  const posts = await dbSelect<{ id: string; scheduled_at: string }>(
+    "posts",
+    `select=id,scheduled_at&network=eq.instagram&status=in.(agendado,publicando,publicado)&scheduled_at=gt.${from}&id=neq.${excludeId}`
+  );
+  const ids = posts.map((p) => p.id).join(",");
+  const [dests, media] = posts.length
+    ? await Promise.all([
+        dbSelect<{ post_id: string }>("post_destinations", `select=post_id&format=eq.Stories&status=neq.cancelado&post_id=in.(${ids})`),
+        dbSelect<{ post_id: string }>("post_media", `select=post_id&post_id=in.(${ids})`),
+      ])
+    : [[], []];
+  const stories = new Set(dests.map((d) => d.post_id));
+  const used = new Map<string, number>(); // dia -> fotos
+  const taken = new Set<string>(); // "dia HH:MM"
+  for (const p of posts.filter((x) => stories.has(x.id))) {
+    const day = new Date(p.scheduled_at).toLocaleDateString("sv-SE", { timeZone: SP_TZ });
+    const time = new Date(p.scheduled_at).toLocaleTimeString("pt-BR", { timeZone: SP_TZ, hour: "2-digit", minute: "2-digit", hour12: false });
+    used.set(day, (used.get(day) ?? 0) + Math.max(1, media.filter((m) => m.post_id === p.id).length));
+    taken.add(`${day} ${time}`);
+  }
+  const soon = Date.now() + 15 * 60_000; // folga para publicar
+  const out: string[] = [];
+  for (let i = 0; i < 120 && out.length < count; i++) {
+    const day = new Date(Date.parse(`${start}T12:00:00${SP_OFFSET}`) + i * 86400_000).toLocaleDateString("sv-SE", { timeZone: SP_TZ });
+    for (const time of GOAL_TIMES.Stories) {
+      if (out.length >= count || (used.get(day) ?? 0) >= STORIES_PER_DAY) break;
+      const at = Date.parse(`${day}T${time}:00${SP_OFFSET}`);
+      if (at < soon || taken.has(`${day} ${time}`)) continue;
+      out.push(new Date(at).toISOString());
+      used.set(day, (used.get(day) ?? 0) + 1);
+    }
+  }
+  return out;
+}
+
+async function spreadStories(post: PostRow): Promise<SpreadPost | null> {
+  if (post.network !== "instagram" || post.publish_mode !== "api" || post.status !== "agendado") return null;
+  const formats = (await destinations(post.id)).filter((d) => d.status !== "cancelado").map((d) => d.format);
+  if (formats.length !== 1 || formats[0] !== "Stories") return null;
+  const mediaIds = await postMediaIds(post.id);
+  const slots = await storiesSlots(mediaIds.length, post.id);
+  if (!mediaIds.length || slots.length < mediaIds.length) return null;
+  if (mediaIds.length === 1) {
+    if (post.scheduled_at && Date.parse(post.scheduled_at) === Date.parse(slots[0])) return post;
+    const saved = await guardedUpdate(post, { scheduled_at: slots[0] });
+    await cancelJobs(post.id);
+    await scheduleReminder(saved);
+    await audit("agendar", "posts", post.id, { scheduled_at: slots[0], motivo: "Stories em sequência" });
+    return saved;
+  }
+  // fotos 2..N: uma publicacao nova por foto, ja aprovada (ele aprovou estas fotos)
+  const uploads = await dbSelect<{ position: number; storage_path: string; mime_type: string; size_bytes: number | null }>(
+    "post_uploads",
+    `select=position,storage_path,mime_type,size_bytes&post_id=eq.${post.id}&post_version=eq.${post.version}&deleted_at=is.null`
+  );
+  const created: string[] = [];
+  try {
+    for (let i = 1; i < mediaIds.length; i++) {
+      const up = uploads.find((u) => u.position === i);
+      if (!up) throw new Problem(400, "A cópia de uma das fotos não está mais no armazenamento.");
+      const hash = contentHash({ network: post.network, formats, mediaIds: [mediaIds[i]], caption: post.caption, hashtags: post.hashtags, mode: post.publish_mode, flags: post.flags });
+      const one = await dbInsert<PostRow>("posts", {
+        network: post.network,
+        caption: post.caption,
+        hashtags: post.hashtags,
+        scheduled_at: slots[i],
+        publish_mode: post.publish_mode,
+        flags: post.flags,
+        ...(post.group_id ? { group_id: post.group_id } : {}),
+        content_hash: hash,
+        status: "agendado",
+        approved_version: 1,
+        approved_hash: hash,
+      });
+      created.push(one.id);
+      await replaceMedia(one.id, [mediaIds[i]]);
+      await syncDestinations(one.id, formats);
+      const to = `${one.id}/v1/0.${up.storage_path.split(".").pop()}`;
+      await storageCopy(UPLOAD_BUCKET, up.storage_path, to);
+      await dbInsert("post_uploads", { post_id: one.id, post_version: 1, position: 0, storage_path: to, mime_type: up.mime_type, size_bytes: up.size_bytes ?? 1, uploaded_at: new Date().toISOString() });
+      await dbInsert("approvals", { post_id: one.id, version: 1, content_hash: hash, decision: "aprovado", note: `Stories em sequência: foto ${i + 1} de ${mediaIds.length} da aprovação de ${post.id.slice(0, 8)}` });
+      await scheduleReminder(one);
+      await audit("aprovar", "posts", one.id, { stories_em_sequencia: post.id, foto: i + 1 });
+    }
+  } catch (e) {
+    // nada pela metade: as novas saem e a aprovada fica como estava (todas juntas)
+    for (const id of created) await cancelPost(await getPost(id)).catch(() => undefined);
+    await audit("stories_sequencia_falhou", "posts", post.id, { erro: (e instanceof Error ? e.message : String(e)).slice(0, 300) });
+    return null;
+  }
+  // a aprovada fica com a primeira foto (nova versao, ja aprovada) e vai para o primeiro horario
+  const first = (await approveAsNewVersion(post, mediaIds, [1], post.flags, `Stories em sequência: as outras ${mediaIds.length - 1} foto(s) viraram publicações próprias`, { stories_em_sequencia: created })) as SpreadPost;
+  first.storiesTimes = [first.scheduled_at!, ...slots.slice(1)];
+  return first;
 }
 
 // +18 com pacotes (pedido de 31/10): entra nos pacotes na hora da aprovacao; o
