@@ -1077,3 +1077,19 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
   - DMs do Instagram (precisam da revisão da Meta);
   - TikTok (a API de postagem não lê comentários).
 - **Teste:** `test_ig_comentarios.mjs`, com Instagram e OpenRouter falsos.
+## 46. Stories em sequência, uma foto por horário (03/11/2026)
+
+- **Meta:** 3 Stories por dia, uma foto por horário (09:00, 13:00 e 17:00). Cada foto é 1 Stories.
+- **Ao aprovar** (Telegram ou estúdio) um Stories automático com várias fotos:
+  - cada foto aprovada vai para o primeiro horário vazio a partir de agora, sem pular;
+  - exemplo: aprovou 2 de 3 num dia; na próxima aprovação, a 1ª foto completa esse dia e as outras começam o dia seguinte.
+  - A publicação fica com a 1ª foto (nova versão, já aprovada). As outras viram publicações próprias, já aprovadas, com a cópia da foto e a tarefa no horário de cada uma. Tudo é registrado na auditoria. Se algo falhar no meio, as novas são canceladas e a aprovada fica como estava.
+  - Foto não volta para um horário que já passou: a folga é de 15 min.
+- **O que conta como ocupado:** só os Stories já aprovados (agendado, publicando ou publicado). O que ainda espera aprovação entra na sequência quando for aprovado.
+- **Fora da regra:**
+  - Feed + Stories na mesma publicação;
+  - modo manual;
+  - os Stories que já estavam agendados antes desta mudança.
+- **No Telegram:** a resposta mostra o horário de cada foto.
+- `api/_posts_api.ts`: `spreadStories` e `storiesSlots`, chamadas no fim de `decidePost`.
+- **Teste:** `test_stories_seq.mjs`. O `test_stories3.mjs` antigo (todas as fotos no mesmo horário) ficou obsoleto.
