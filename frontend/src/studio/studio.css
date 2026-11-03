@@ -4793,6 +4793,16 @@
   background: rgba(52, 211, 153, 0.16);
 }
 
+/* esperando a aprovacao (03/11): ainda nao conta como feito */
+.st-metas-days .chip.wait {
+  background: rgba(251, 191, 36, 0.16);
+}
+
+.st-metas-days .chip small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .st-metas-days li > b {
   flex: 0 0 74px;
 }

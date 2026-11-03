@@ -15,13 +15,20 @@ const TZ = "America/Sao_Paulo";
 const OFFSET = "-03:00"; // Brasilia (sem horario de verao)
 const DAY = 86400_000;
 
+// 03/11: so conta como feito o que o administrador aprovou (agendado ou ja
+// publicado); o que espera a aprovacao dele ou o robo fica em "waiting" (ocupa o
+// horario, mas o dia nao fica completo).
 export interface DayCoverage {
   day: string; // AAAA-MM-DD
-  counts: Record<Goal, number>;
-  times: Record<Goal, string[]>; // horarios ja ocupados (HH:MM)
-  missing: Record<Goal, number>;
+  counts: Record<Goal, number>; // aprovados
+  waiting: Record<Goal, number>; // esperando aprovacao ou o robo
+  times: Record<Goal, string[]>; // horarios ja ocupados (HH:MM), aprovados ou esperando
+  slots: Record<Goal, { time: string; n: number; ok: boolean }[]>; // cada horario: quantos (Stories por foto) e se ja foi aprovado
+  missing: Record<Goal, number>; // sem nada, nem esperando
   complete: boolean;
 }
+
+const APPROVED = ["aprovado", "agendado", "publicando", "publicado"];
 
 const dayOf = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { timeZone: TZ });
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
@@ -39,9 +46,9 @@ export async function coverage(days = 14, start = todayInBrazil()): Promise<DayC
   const from = new Date(Date.parse(`${start}T00:00:00${OFFSET}`) - 1000).toISOString();
   const to = new Date(Date.parse(`${addDays(start, days)}T00:00:00${OFFSET}`)).toISOString();
   const [posts, items] = await Promise.all([
-    dbSelect<{ id: string; scheduled_at: string; network: string; flags: { adultDest?: { channel?: boolean } } | null }>(
+    dbSelect<{ id: string; scheduled_at: string; network: string; status: string; flags: { adultDest?: { channel?: boolean } } | null }>(
       "posts",
-      `select=id,scheduled_at,network,flags&network=in.(instagram,telegram)&status=not.in.(cancelado,falhou,rascunho)&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
+      `select=id,scheduled_at,network,status,flags&network=in.(instagram,telegram)&status=not.in.(cancelado,falhou,rascunho)&scheduled_at=gt.${from}&scheduled_at=lt.${to}`
     ),
     dbSelect<{ scheduled_at: string; format: string; network: string; plan_id: string; source_item_id: string | null }>(
       "content_plan_items",
@@ -63,36 +70,48 @@ export async function coverage(days = 14, start = todayInBrazil()): Promise<DayC
       ])
     : [[], []];
   const when = new Map(posts.map((p) => [p.id, p.scheduled_at]));
+  const approved = new Set(posts.filter((p) => APPROVED.includes(p.status)).map((p) => p.id));
   const photos = new Map<string, number>();
   for (const m of media) photos.set(m.post_id, (photos.get(m.post_id) ?? 0) + 1);
-  const entries: { at: string; format: string; n: number }[] = [
+  const entries: { at: string; format: string; n: number; ok: boolean }[] = [
     ...dests
       .filter((d) => d.format !== "Canal" || channelPost.has(d.post_id))
-      .map((d) => ({ at: when.get(d.post_id)!, format: d.format, n: d.format === "Stories" ? Math.max(1, photos.get(d.post_id) ?? 1) : 1 })),
+      .map((d) => ({ at: when.get(d.post_id)!, format: d.format, n: d.format === "Stories" ? Math.max(1, photos.get(d.post_id) ?? 1) : 1, ok: approved.has(d.post_id) })),
     // Stories na fila: o robo traz as 3 fotos do Criar (o que reaproveita a foto do Feed leva 1)
     ...items
       .filter((i) => i.network !== "telegram" || (i.format === "Canal" && toChannel(planReq.get(i.plan_id))))
-      .map((i) => ({ at: i.scheduled_at, format: i.format, n: i.format === "Stories" && !i.source_item_id ? STORIES_PER_REQUEST : 1 })),
+      .map((i) => ({ at: i.scheduled_at, format: i.format, n: i.format === "Stories" && !i.source_item_id ? STORIES_PER_REQUEST : 1, ok: false })),
   ];
   const out: DayCoverage[] = [];
   for (let i = 0; i < days; i++) {
     const day = addDays(start, i);
     const counts = { Feed: 0, Stories: 0, Reels: 0, Canal: 0 } as Record<Goal, number>;
+    const waiting = { Feed: 0, Stories: 0, Reels: 0, Canal: 0 } as Record<Goal, number>;
     const times = { Feed: [], Stories: [], Reels: [], Canal: [] } as Record<Goal, string[]>;
+    const slots = { Feed: [], Stories: [], Reels: [], Canal: [] } as DayCoverage["slots"];
     for (const e of entries) {
       if (!(e.format in GOALS) || dayOf(e.at) !== day) continue;
-      counts[e.format as Goal] += e.n;
-      times[e.format as Goal].push(hhmm(e.at));
+      const g = e.format as Goal;
+      const time = hhmm(e.at);
+      (e.ok ? counts : waiting)[g] += e.n;
+      times[g].push(time);
+      const same = slots[g].find((s) => s.time === time && s.ok === e.ok);
+      if (same) same.n += e.n;
+      else slots[g].push({ time, n: e.n, ok: e.ok });
     }
+    for (const g of Object.keys(slots) as Goal[]) slots[g].sort((a, b) => a.time.localeCompare(b.time) || Number(b.ok) - Number(a.ok));
     // hoje: horario padrao que ja passou nao da mais para preencher (nao conta como falta)
     const isToday = day === todayInBrazil();
     const nowMs = Date.now();
     const open = (g: Goal) =>
       isToday ? GOAL_TIMES[g].filter((t) => Date.parse(`${day}T${t}:00${OFFSET}`) > nowMs && !times[g].includes(t)).length : Infinity;
     const missing = Object.fromEntries(
-      (Object.keys(GOALS) as Goal[]).map((g) => [g, Math.min(Math.max(0, GOALS[g] - counts[g]), open(g))])
+      (Object.keys(GOALS) as Goal[]).map((g) => [g, Math.min(Math.max(0, GOALS[g] - counts[g] - waiting[g]), open(g))])
     ) as Record<Goal, number>;
-    out.push({ day, counts, times, missing, complete: Object.values(missing).every((n) => n === 0) });
+    // completo so com a meta aprovada: o que espera aprovacao ainda pode nao sair
+    // (hoje, horario que ja passou sem nada nao conta como falta)
+    const complete = (Object.keys(GOALS) as Goal[]).every((g) => counts[g] >= GOALS[g] || (missing[g] === 0 && waiting[g] === 0));
+    out.push({ day, counts, waiting, times, slots, missing, complete });
   }
   return out;
 }
@@ -107,7 +126,7 @@ export async function nextSlot(goal: Goal, taken: string[] = []): Promise<string
     const days = await coverage(30, addDays(todayInBrazil(), page * 30));
     for (const d of days) {
       const reserved = taken.filter((t) => t.startsWith(d.day)).length * (goal === "Stories" ? STORIES_PER_REQUEST : 1);
-      if (d.counts[goal] + reserved >= GOALS[goal]) continue;
+      if (d.counts[goal] + d.waiting[goal] + reserved >= GOALS[goal]) continue;
       for (const time of GOAL_TIMES[goal]) {
         const iso = new Date(`${d.day}T${time}:00${OFFSET}`).toISOString();
         if (Date.parse(iso) < now || d.times[goal].includes(time) || taken.includes(`${d.day} ${time}`)) continue;
@@ -123,8 +142,14 @@ const WEEKDAY = (day: string) => new Date(`${day}T12:00:00${OFFSET}`).toLocaleDa
 
 export function missingText(d: DayCoverage): string {
   const parts = (Object.keys(GOALS) as Goal[]).filter((g) => d.missing[g] > 0).map((g) => `${d.missing[g]} ${GOAL_LABEL[g]}`);
-  return parts.length ? `falta ${parts.join(", ")}` : "completo ✅";
+  const wait = (Object.keys(GOALS) as Goal[]).filter((g) => d.waiting[g] > 0).map((g) => `${d.waiting[g]} ${GOAL_LABEL[g]}`);
+  if (!parts.length && !wait.length) return "completo ✅";
+  return [parts.length ? `falta ${parts.join(", ")}` : "", wait.length ? `⏳ aprovar ${wait.join(", ")}` : ""].filter(Boolean).join(" · ");
 }
+
+// horarios do dia de um formato: ⏳ = ainda nao aprovado; Stories com quantas fotos
+const slotText = (d: DayCoverage, g: Goal) =>
+  d.slots[g].map((s) => `${s.ok ? "" : "⏳"}${s.time}${g === "Stories" && s.n > 1 ? ` ${s.n} fotos` : ""}`).join(" · ");
 
 // /agenda no bot de aprovacao (01/11): 7 dias com o que ja esta garantido de
 // cada formato e os buracos; o proximo buraco de cada formato e onde o pedido
@@ -133,12 +158,15 @@ export const AGENDA_WEEKS = 4;
 const ICON: Record<Goal, string> = { Feed: "📷", Stories: "📱", Reels: "🎬", Canal: "🔥" };
 export async function agendaText(week = 0): Promise<string> {
   const days = await coverage(7, addDays(todayInBrazil(), week * 7));
-  const lines = [`📅 Agenda — ${WEEKDAY(days[0].day)} a ${WEEKDAY(days[6].day)}`];
+  const lines = [`📅 Agenda — ${WEEKDAY(days[0].day)} a ${WEEKDAY(days[6].day)}`, "✅ = aprovado por você · ⏳ = esperando sua aprovação (ou o robô)"];
   for (const d of days) {
-    lines.push("", `${d.complete ? "✅" : "🕳️"} ${WEEKDAY(d.day)}${d.complete ? " — completo" : ""}`);
+    const onlyWaiting = !d.complete && Object.values(d.missing).every((n) => n === 0);
+    lines.push("", `${d.complete ? "✅" : onlyWaiting ? "⏳" : "🕳️"} ${WEEKDAY(d.day)}${d.complete ? " — completo" : onlyWaiting ? " — falta aprovar" : ""}`);
     for (const g of Object.keys(GOALS) as Goal[]) {
-      const times = [...d.times[g]].sort().join(" · ");
-      lines.push(`   ${ICON[g]} ${GOAL_LABEL[g]} ${d.counts[g]}/${GOALS[g]}${times ? ` (${times})` : ""}${d.missing[g] > 0 ? ` — falta ${d.missing[g]}` : ""}`);
+      const times = slotText(d, g);
+      lines.push(
+        `   ${ICON[g]} ${GOAL_LABEL[g]} ${d.counts[g]}/${GOALS[g]}${times ? ` (${times})` : ""}${d.waiting[g] > 0 ? ` — ⏳ ${d.waiting[g]} para aprovar` : ""}${d.missing[g] > 0 ? ` — falta ${d.missing[g]}` : ""}`
+      );
     }
   }
   const next = async (g: Goal) => {
@@ -177,7 +205,7 @@ export async function goalsNotice(which: "hoje" | "amanha"): Promise<string> {
   const holes = days.slice(which === "hoje" ? 1 : 2).filter((d) => !d.complete).slice(0, 4);
   const lines = [
     `📅 Metas do dia — ${which === "hoje" ? "hoje" : "amanhã"} (${WEEKDAY(target.day)}): ${missingText(target)}`,
-    `Feed ${target.counts.Feed}/3 · Stories ${target.counts.Stories}/3 · Reels ${target.counts.Reels}/1 · Canal VIP +18 ${target.counts.Canal}/1`,
+    `Aprovados: Feed ${target.counts.Feed}/3 · Stories ${target.counts.Stories}/3 · Reels ${target.counts.Reels}/1 · Canal VIP +18 ${target.counts.Canal}/1`,
   ];
   if (holes.length) lines.push("", "Próximos dias com buraco:", ...holes.map((d) => `• ${WEEKDAY(d.day)}: ${missingText(d)}`));
   else lines.push("", "Os próximos dias estão completos 👏");

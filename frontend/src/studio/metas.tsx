@@ -2,15 +2,17 @@ import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 
 // Metas do dia (3 Feed, 3 Stories e 1 Reels no Instagram; 1 post no Canal VIP +18): quanto de cada dia
-// ja esta garantido (publicacao criada ou item na fila do robo) e qual o
-// proximo dia a completar. O conteudo novo vai sozinho para o proximo buraco.
+// ja foi aprovado, o que espera aprovacao (ou o robo) e qual o proximo dia a
+// completar. O conteudo novo vai sozinho para o proximo buraco.
 
 type Goal = "Feed" | "Stories" | "Reels" | "Canal";
 const GOALS: Record<Goal, number> = { Feed: 3, Stories: 3, Reels: 1, Canal: 1 };
 const LABEL: Record<Goal, string> = { Feed: "Feed", Stories: "Stories", Reels: "Reels", Canal: "Canal +18" };
 interface Day {
   day: string;
-  counts: Record<Goal, number>;
+  counts: Record<Goal, number>; // aprovados
+  waiting?: Record<Goal, number>; // esperando aprovacao ou o robo
+  slots?: Record<Goal, { time: string; n: number; ok: boolean }[]>;
   missing: Record<Goal, number>;
   complete: boolean;
 }
@@ -23,8 +25,14 @@ function label(day: string, i: number): string {
 
 function missingText(d: Day): string {
   const parts = (Object.keys(GOALS) as Goal[]).filter((g) => d.missing[g] > 0).map((g) => `${d.missing[g]} ${LABEL[g]}`);
-  return parts.length ? `falta ${parts.join(", ")}` : "completo";
+  const wait = (Object.keys(GOALS) as Goal[]).filter((g) => (d.waiting?.[g] ?? 0) > 0).map((g) => `${d.waiting![g]} ${LABEL[g]}`);
+  if (!parts.length && !wait.length) return "completo";
+  return [parts.length ? `falta ${parts.join(", ")}` : "", wait.length ? `⏳ aprovar ${wait.join(", ")}` : ""].filter(Boolean).join(" · ");
 }
+
+// horarios de um formato: ⏳ = ainda nao aprovado; Stories com quantas fotos
+const slotText = (d: Day, g: Goal) =>
+  (d.slots?.[g] ?? []).map((s) => `${s.ok ? "" : "⏳"}${s.time}${g === "Stories" && s.n > 1 ? ` ×${s.n}` : ""}`).join(" · ");
 
 export function MetasPanel({ days = 14, compact = false }: { days?: number; compact?: boolean }) {
   const [list, setList] = useState<Day[] | null>(null);
@@ -51,7 +59,7 @@ export function MetasPanel({ days = 14, compact = false }: { days?: number; comp
         <h2>
           <Icon name="calendar" size={17} /> Metas do dia
         </h2>
-        <span className="st-hint">3 Feed · 3 Stories · 1 Reels · 1 Canal +18 por dia</span>
+        <span className="st-hint">3 Feed · 3 Stories · 1 Reels · 1 Canal +18 por dia · conta só o que você aprovou (⏳ = esperando aprovação)</span>
       </div>
       <p className={next === -1 ? "st-metas-next ok" : "st-metas-next"}>
         {next === -1
@@ -63,8 +71,9 @@ export function MetasPanel({ days = 14, compact = false }: { days?: number; comp
           <li key={d.day} className={d.complete ? "ok" : i === next ? "next" : ""}>
             <b>{label(d.day, i)}</b>
             {(Object.keys(GOALS) as Goal[]).map((g) => (
-              <span key={g} className={d.counts[g] >= GOALS[g] ? "chip ok" : "chip"}>
+              <span key={g} className={d.counts[g] >= GOALS[g] ? "chip ok" : (d.waiting?.[g] ?? 0) > 0 ? "chip wait" : "chip"}>
                 {LABEL[g]} {Math.min(d.counts[g] ?? 0, GOALS[g])}/{GOALS[g]}
+                {slotText(d, g) && <small> {slotText(d, g)}</small>}
               </span>
             ))}
             <i>{d.complete ? "✓" : missingText(d)}</i>
