@@ -461,7 +461,7 @@ class Naiaflow:
         return removed
 
     def attach_reference(self, photo: Path) -> None:
-        """Imagem de referencia no Criar: Adicionar -> Enviar imagem -> Enviar do
+        """Imagem de referencia no Criar: Adicionar -> Enviar imagem -> Do
         dispositivo. Ela entra no composer como IMG1, ao lado do clone."""
         self._close_popovers()
         self.page.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
@@ -469,7 +469,8 @@ class Naiaflow:
         self.page.get_by_text(re.compile(r"^\s*Enviar imagem\s*$", re.I)).first.click()
         self.page.wait_for_timeout(2500)
         with self.page.expect_file_chooser(timeout=15000) as chooser:
-            self.page.get_by_role("button", name=re.compile(r"Enviar do dispositivo", re.I)).last.click()
+            # 02/11 a Naiaflow trocou "Enviar do dispositivo" por "Do dispositivo"
+            self.page.get_by_role("button", name=re.compile(r"(Enviar )?do dispositivo", re.I)).last.click()
         chooser.value.set_files(str(photo))
         self.page.wait_for_timeout(8000)
         self._close_popovers()
