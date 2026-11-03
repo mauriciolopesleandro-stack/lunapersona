@@ -70,6 +70,7 @@ export async function registerWebhook(token: string, baseUrl: string): Promise<v
 // menu "/" do bot de aprovacao
 const COMMANDS = [
   { command: "agenda", description: "Ver a agenda e os buracos dos próximos dias" },
+  { command: "comentarios", description: "Respostas automáticas no Instagram (on/off)" },
   { command: "ajuda", description: "Como mandar um pedido pelo celular" },
 ];
 const setCommands = (token: string) => telegram(token, "setMyCommands", { commands: COMMANDS }).catch(() => undefined);
@@ -77,6 +78,7 @@ const HELP = [
   "📷 Mande uma foto de referência aqui (pode escrever um recado na legenda): eu leio, pergunto para onde vai e monto o pedido para o robô do PC.",
   "🎬 Mande um vídeo (até 20 MB) ou o link de uma dancinha do TikTok/Instagram: eu pergunto se é dancinha (Reels + TikTok) ou vídeo longo +18, a roupa e mostro o custo.",
   "📅 /agenda mostra os próximos 7 dias e os buracos — o pedido novo entra sozinho no primeiro buraco.",
+  "💬 /comentarios mostra as respostas automáticas da Luna no Instagram; /comentarios off desliga e /comentarios on liga.",
   "As fotos prontas chegam aqui para você aprovar.",
 ].join("\n\n");
 
@@ -518,9 +520,19 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
     );
     return done();
   }
-  if (msg && String(msg.chat.id) === chatId && msg.text && /^\/(agenda|calendario|ajuda|start)\b/i.test(msg.text)) {
+  if (msg && String(msg.chat.id) === chatId && msg.text && /^\/(agenda|calendario|ajuda|start|comentarios)\b/i.test(msg.text)) {
     await setCommands(token);
-    if (/^\/(agenda|calendario)/i.test(msg.text)) {
+    if (/^\/comentarios/i.test(msg.text)) {
+      const { commentsText, setCommentsEnabled } = await import("./_ig_comments.js");
+      const arg = msg.text.split(/\s+/)[1]?.toLowerCase();
+      try {
+        if (arg === "on" || arg === "ligar") await setCommentsEnabled(true);
+        if (arg === "off" || arg === "desligar") await setCommentsEnabled(false);
+        await say(await commentsText());
+      } catch (e) {
+        await say(`⚠️ ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } else if (/^\/(agenda|calendario)/i.test(msg.text)) {
       const { agendaButtons, agendaText } = await import("./_metas.js");
       await say(await agendaText(0).catch((e) => `⚠️ Não consegui montar a agenda: ${e instanceof Error ? e.message : String(e)}`), { reply_markup: agendaButtons(0) });
     } else {

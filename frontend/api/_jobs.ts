@@ -643,6 +643,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     acessos_vencidos: 0,
     cta_mensagens: 0,
     aviso_metas: null as string | null,
+    comentarios: null as string | null,
     erro: null as string | null,
   };
   try {
@@ -673,6 +674,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     result.cta_mensagens = await ctaTick();
     // metas do Instagram: aviso as 9h (hoje) e as 20h (amanha), uma vez por dia cada
     result.aviso_metas = await goalsReminder();
+    // Instagram: a Luna responde os comentarios novos (no maximo a cada 4 min)
+    const { commentsTick } = await import("./_ig_comments.js");
+    result.comentarios = await commentsTick().catch((e) => `erro: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`);
   } catch (e) {
     result.erro = (e instanceof Error ? e.message : String(e)).slice(0, 300);
   }

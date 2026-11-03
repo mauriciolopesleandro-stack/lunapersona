@@ -24,7 +24,9 @@ export class InstagramError extends Error {
     message: string,
     public retryable: boolean,
     // midia ainda processando (9007): tentar de novo logo, sem contar tentativa
-    public notReady = false
+    public notReady = false,
+    // codigo de erro da Meta (10/200 = falta permissao)
+    public code?: number
   ) {
     super(message);
   }
@@ -44,7 +46,7 @@ async function graph<T>(url: string, init: RequestInit = {}): Promise<T> {
     // 9007 = "Media ID is not available": o conteiner ainda esta processando
     const notReady = err.code === 9007;
     const retryable = err.code !== 190 && (notReady || res.status >= 500 || res.status === 429 || Boolean(err.is_transient) || err.code === 4 || err.code === 2);
-    throw new InstagramError(`Instagram: ${err.message ?? `HTTP ${res.status}`}`, retryable, notReady);
+    throw new InstagramError(`Instagram: ${err.message ?? `HTTP ${res.status}`}`, retryable, notReady, err.code);
   }
   return body;
 }
@@ -102,6 +104,44 @@ export async function igPublish(userId: string, token: string, containerId: stri
 export async function igPermalink(mediaId: string, token: string, host = GRAPH): Promise<string | null> {
   const res = await graph<{ permalink?: string }>(`${host}/${mediaId}?fields=permalink`, auth(token)).catch(() => null);
   return res?.permalink ?? null;
+}
+
+// --- Comentarios (instagram_manage_comments / instagram_business_manage_comments) ---------
+
+export interface IgMedia {
+  id: string;
+  caption?: string;
+  media_type?: string;
+  timestamp?: string;
+  comments_count?: number;
+  permalink?: string;
+}
+
+export interface IgComment {
+  id: string;
+  text?: string;
+  username?: string;
+  timestamp?: string;
+  replies?: { data?: { username?: string }[] };
+}
+
+export async function igRecentMedia(conn: IgConnection, limit = 12): Promise<IgMedia[]> {
+  const res = await graph<{ data?: IgMedia[] }>(
+    `${conn.host}/${conn.userId}/media?fields=id,caption,media_type,timestamp,comments_count,permalink&limit=${limit}`,
+    auth(conn.token)
+  );
+  return res.data ?? [];
+}
+
+// So os comentarios de primeiro nivel, com quem ja respondeu cada um.
+export async function igComments(conn: IgConnection, mediaId: string): Promise<IgComment[]> {
+  const res = await graph<{ data?: IgComment[] }>(`${conn.host}/${mediaId}/comments?fields=id,text,username,timestamp,replies{username}&limit=50`, auth(conn.token));
+  return res.data ?? [];
+}
+
+export async function igReplyComment(conn: IgConnection, commentId: string, message: string): Promise<string> {
+  const res = await graph<{ id: string }>(`${conn.host}/${commentId}/replies`, postJson(conn.token, { message }));
+  return res.id;
 }
 
 // --- Login do Facebook para Empresas -----------------------------------------------------
