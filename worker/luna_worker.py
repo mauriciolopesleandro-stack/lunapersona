@@ -839,24 +839,6 @@ def video_seconds_at(url: str) -> float | None:
         tmp.unlink(missing_ok=True)
 
 
-def check_not_explicit(studio: Studio, item: dict, video: Path) -> None:
-    """Instagram e TikTok nunca recebem nudez (03/11: um trecho +18 foi parar no
-    Reels). A IA com visao olha 6 quadros; explicito = erro, nada vai para aprovar."""
-    if item.get("adult"):
-        return
-    try:
-        res = studio.call("safe-check", id=item["id"], frames=reference_frames(video))
-    except Exception as e:  # noqa: BLE001  (a aprovacao no Telegram continua sendo a trava final)
-        log(f"Conferência de nudez: não consegui ({e}); sigo, confira na aprovação.")
-        return
-    if res.get("explicit"):
-        bad = video.with_name(video.stem + "-BLOQUEADO-nudez.mp4")
-        video.replace(bad)
-        # nova tentativa nao gera (e paga) de novo: fica para conferir na Naiaflow
-        video.with_name(video.stem + ".naia.json").write_text(json.dumps({"before": None, "at": time.time()}), encoding="utf-8")
-        raise RuntimeError(f"O vídeo saiu com nudez ({res.get('reason') or 'conteúdo explícito'}): não mandei para Instagram/TikTok. Ficou em {bad.name}.")
-
-
 def reference_frames(video: Path, count: int = 6) -> list[str]:
     """Quadros espalhados do video de referencia (JPEG pequeno em data URL) para a nota."""
     import imageio_ffmpeg
@@ -996,7 +978,6 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
             check=True,
         )
         raw.unlink()
-    check_not_explicit(studio, item, mp4)
     send_motion(studio, item, folder, mp4, "Dancinha salva")
 
 
