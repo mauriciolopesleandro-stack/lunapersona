@@ -963,7 +963,10 @@ class Naiaflow:
         """Espera o video novo (que nao estava na galeria antes do Gerar) e devolve o MP4.
         03/11: a galeria pode mostrar videos antigos que nao estavam na tela no
         "antes" (pegou um trecho +18 de 5 s no lugar da dancinha de 8 s): cada video
-        candidato e baixado e so vale se tiver a duracao pedida (+-1 s)."""
+        candidato e baixado e so vale se tiver a duracao pedida (+-1 s).
+        04/11: so o PRIMEIRO video da galeria (o mais novo) e so se for uma geracao
+        (a pagina tem "Reutilizar" / "Antes / Depois"); o video de referencia que o
+        robo envia tambem entra na galeria, mas sem esses botoes."""
         p = self.page
         before = set(before)
         deadline = time.time() + wait_s
@@ -974,18 +977,22 @@ class Naiaflow:
             try:
                 p.goto(NAIAFLOW, wait_until="domcontentloaded")
                 p.wait_for_timeout(4000)
-                new = [t for t in self._stream_thumbs() if t not in before]
-                if not new:
+                thumbs = self._stream_thumbs()
+                if not thumbs or thumbs[0] in before:
                     continue
-                p.locator(f"img[src='{new[0]}']").first.click()
+                first = thumbs[0]
+                p.locator(f"img[src='{first}']").first.click()
                 p.wait_for_timeout(6000)
+                generated = p.get_by_role("button", name=re.compile(r"Reutilizar|Antes\s*/\s*Depois", re.I)).count() > 0
+                if not generated:
+                    continue  # referencia enviada no topo: a geracao ainda nao terminou
                 srcs = p.eval_on_selector_all("video, video source", "els => els.map(e => e.currentSrc || e.src).filter(Boolean)")
                 mp4 = next((x for x in srcs if x.startswith("http") and x.endswith(".mp4")), None)
                 if mp4:
                     length = video_seconds_at(mp4) if seconds else None
                     if length is not None and abs(length - seconds) > 1.0:
                         log(f"Vídeo da galeria com {length:.1f} s (pedido {seconds} s): não é este, sigo esperando.")
-                        before.add(new[0])
+                        before.add(first)
                         continue
                     return mp4
             except Exception:
