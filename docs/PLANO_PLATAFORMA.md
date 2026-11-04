@@ -1118,3 +1118,13 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
   - vídeo longo +18.
 - Robô: `reference_frames` e `rate_reference` em `worker/luna_worker.py`. Rota do PC: `rate-ref`.
 - **Teste:** `test_nota_ref.mjs`.
+
+## 48. Dancinha: o vídeo certo (03/11/2026)
+
+**O que aconteceu:**
+- Numa dancinha de 8 s, o robô pegou da galeria da Naiaflow um vídeo antigo que não estava na tela no momento do Gerar: um trecho +18 de 5 s. Ele foi mandado para aprovar como Reels e TikTok.
+- O administrador reprovou, e nada foi publicado.
+
+**Correção:**
+- Cada vídeo candidato da galeria é baixado e só vale se tiver a duração pedida, com folga de ±1 s (`find_motion`, `video_seconds_at`). A dancinha certa sai com 5,16 s, 8,0 s ou 10,13 s.
+- Não há trava de nudez, a pedido do administrador: ele decide na aprovação o que vai para o Instagram e o TikTok.

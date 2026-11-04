@@ -745,14 +745,18 @@ class Naiaflow:
             on_started(sorted(before))
         # 03/11: a de 10 s passou dos 25 min; 5 s levou 12 a 14 min
         minutes = 15 + 4 * seconds
-        url = self.find_motion(before, minutes * 60, on_wait)
+        url = self.find_motion(before, minutes * 60, on_wait, seconds=seconds)
         if url:
             return url
         raise RuntimeError(f"A Naiaflow nao terminou a dancinha em {minutes} minutos.")
 
-    def find_motion(self, before: set[str], wait_s: int, on_wait=None) -> str | None:
-        """Espera o video novo (que nao estava na galeria antes do Gerar) e devolve o MP4."""
+    def find_motion(self, before: set[str], wait_s: int, on_wait=None, seconds: int | None = None) -> str | None:
+        """Espera o video novo (que nao estava na galeria antes do Gerar) e devolve o MP4.
+        03/11: a galeria pode mostrar videos antigos que nao estavam na tela no
+        "antes" (pegou um trecho +18 de 5 s no lugar da dancinha de 8 s): cada video
+        candidato e baixado e so vale se tiver a duracao pedida (+-1 s)."""
         p = self.page
+        before = set(before)
         deadline = time.time() + wait_s
         while time.time() < deadline:
             time.sleep(15)
@@ -769,6 +773,11 @@ class Naiaflow:
                 srcs = p.eval_on_selector_all("video, video source", "els => els.map(e => e.currentSrc || e.src).filter(Boolean)")
                 mp4 = next((x for x in srcs if x.startswith("http") and x.endswith(".mp4")), None)
                 if mp4:
+                    length = video_seconds_at(mp4) if seconds else None
+                    if length is not None and abs(length - seconds) > 1.0:
+                        log(f"Vídeo da galeria com {length:.1f} s (pedido {seconds} s): não é este, sigo esperando.")
+                        before.add(new[0])
+                        continue
                     return mp4
             except Exception:
                 continue
@@ -813,6 +822,22 @@ class Naiaflow:
 
 
 # --- um item da fila -----------------------------------------------------------------------------------
+
+def video_seconds_at(url: str) -> float | None:
+    """Baixa o MP4 (temporario) e devolve a duracao; None se nao der para ler."""
+    import imageio_ffmpeg
+    tmp = STUDIO_ROOT / "conteudos" / "_nota" / "candidato.mp4"
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        r = requests.get(url, timeout=300)
+        r.raise_for_status()
+        tmp.write_bytes(r.content)
+        return imageio_ffmpeg.count_frames_and_secs(str(tmp))[1]
+    except Exception:  # noqa: BLE001
+        return None
+    finally:
+        tmp.unlink(missing_ok=True)
+
 
 def reference_frames(video: Path, count: int = 6) -> list[str]:
     """Quadros espalhados do video de referencia (JPEG pequeno em data URL) para a nota."""
