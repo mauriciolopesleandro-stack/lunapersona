@@ -581,6 +581,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     const item = await getItem(body.id ?? body.item_id);
 
+    // conferencia de nudez da dancinha pronta (Instagram/TikTok nunca recebem explicito)
+    if (body.action === "safe-check") {
+      const { explicitFrames } = await import("./_ref_rating.js");
+      try {
+        const out = await explicitFrames(Array.isArray(body.frames) ? (body.frames as string[]) : []);
+        if (out.explicit) await audit("bloqueio_nudez", "content_plan_items", item.id, { motivo: out.reason });
+        return reply(200, out);
+      } catch (e) {
+        throw new Problem(502, `Conferência de nudez: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
     // nota do video de referencia antes de gastar credito (dancinha): quadros em JPEG
     if (body.action === "rate-ref") {
       if (item.status !== "gerando") throw new Problem(409, `O item está "${item.status}", não "gerando".`);

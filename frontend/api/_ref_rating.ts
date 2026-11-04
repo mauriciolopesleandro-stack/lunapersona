@@ -132,3 +132,26 @@ export async function refDecision(kind: "rg" | "rx", id: string): Promise<string
   await audit("nota_referencia_gerar", "content_plan_items", id, {});
   return "▶️ Combinado: voltou para a fila e o robô gera mesmo assim.";
 }
+
+// --- conferencia de nudez (03/11) ----------------------------------------------------------
+// Antes de mandar a dancinha do Instagram/TikTok para aprovar, o robo manda 6
+// quadros do video pronto: explicito nao vai (um trecho +18 da galeria foi parar
+// no Reels por engano).
+export const NUDITY_PROMPT = `Você confere vídeos antes de irem para o Instagram e o TikTok. Olhe os quadros.
+Responda explicito: true se aparecer em QUALQUER quadro: seios com mamilo à mostra, genitais, nádegas totalmente nuas, ato sexual ou pênis. Biquíni, lingerie, decote e roupa justa NÃO são explícitos.
+Responda só JSON: {"explicito": true|false, "motivo": "curto"}`;
+
+export async function explicitFrames(frames: string[]): Promise<{ explicit: boolean; reason: string }> {
+  const images = frames.filter((f) => typeof f === "string" && f.startsWith("data:image/jpeg;base64,")).slice(0, MAX_FRAMES);
+  if (images.length < 2) throw new Error("mande pelo menos 2 quadros do vídeo");
+  const out = await askAi(
+    "normal",
+    [
+      { role: "system", content: NUDITY_PROMPT },
+      { role: "user", content: [{ type: "text", text: `Quadros do vídeo (${images.length}):` }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))] },
+    ],
+    { json: true, model: visionModel(), maxTokens: 200, timeoutMs: 45_000, temperature: 0 }
+  );
+  const json = JSON.parse(out.text.replace(/^```(?:json)?\s*|\s*```$/g, "")) as { explicito?: unknown; motivo?: unknown };
+  return { explicit: json.explicito === true || json.explicito === "true", reason: String(json.motivo ?? "").slice(0, 120) };
+}
