@@ -359,7 +359,13 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
     await telegram(token, "answerCallbackQuery", { callback_query_id: cb.id }).catch(() => undefined);
     const replyTo = cb.message ? { reply_to_message_id: cb.message.message_id } : {};
     try {
-      if (kind === "ag") {
+      if (kind === "rg" || kind === "rx") {
+        // nota baixa do video de referencia: gerar mesmo assim ou cancelar
+        const { refDecision } = await import("./_ref_rating.js");
+        const answer = await refDecision(kind, id);
+        if (cb.message) await telegram(token, "editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
+        await say(answer, replyTo);
+      } else if (kind === "ag") {
         // agenda: troca de semana ou atualiza na mesma mensagem
         const { AGENDA_WEEKS, agendaButtons, agendaText } = await import("./_metas.js");
         const week = Math.min(AGENDA_WEEKS, Math.max(0, Number(id) || 0));

@@ -42,6 +42,8 @@ import { forgetLessons, learnFromCorrection, learnFromPhoto, listLessons } from 
 //   POST { action: "learn", prompt, image } -> a IA com visao compara a foto (data URL JPEG
 //                                   pequena) com o pedido e guarda a licao para a Conversa (api/_lessons.ts)
 //   POST { action: "fail", id, error } -> volta para a fila ou, sem tentativas, falhou (aviso no Telegram)
+//   POST { action: "rate-ref", id, frames: [data URL JPEG] } -> nota de 0 a 100 do video de referencia
+//                                   da dancinha (api/_ref_rating.ts); { go: false } = nao gerar
 
 const GEN_KEY = "luna:worker-gen";
 const SEEN_KEY = "luna:worker-seen";
@@ -232,6 +234,8 @@ interface Motion {
   start?: number; // video longo: so um pedaco (02/11), do segundo start, length s
   length?: number;
   long?: boolean;
+  // nota do video de referencia (03/11): force = ele mandou gerar mesmo com nota baixa
+  force?: boolean;
 }
 // link de download do video mandado no bot de aprovacao (vale 1 h; o robo baixa na hora)
 async function telegramFileUrl(fileId: string): Promise<string> {
@@ -470,6 +474,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
               ...(motion.outfit ? { outfit: motion.outfit } : {}),
               sound: motion.sound ?? "sem",
               ...(motion.long ? { long: true, segments: motion.segments, ...(motion.length ? { start: motion.start ?? 0, length: motion.length } : {}) } : {}),
+              ...(motion.force ? { force: true } : {}),
             },
           },
         });
@@ -549,6 +554,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
 
     const item = await getItem(body.id ?? body.item_id);
+
+    // nota do video de referencia antes de gastar credito (dancinha): quadros em JPEG
+    if (body.action === "rate-ref") {
+      if (item.status !== "gerando") throw new Problem(409, `O item está "${item.status}", não "gerando".`);
+      const { rateReference } = await import("./_ref_rating.js");
+      try {
+        return reply(200, await rateReference(item, body.frames));
+      } catch (e) {
+        throw new Problem(502, `Nota da referência: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
 
     if (body.action === "done") {
       if (item.status !== "gerando") throw new Problem(409, `O item está "${item.status}", não "gerando".`);

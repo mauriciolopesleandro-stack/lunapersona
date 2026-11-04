@@ -1093,3 +1093,22 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
 - **No Telegram:** a resposta mostra o horário de cada foto.
 - `api/_posts_api.ts`: `spreadStories` e `storiesSlots`, chamadas no fim de `decidePost`.
 - **Teste:** `test_stories_seq.mjs`. O `test_stories3.mjs` antigo (todas as fotos no mesmo horário) ficou obsoleto.
+
+## 47. Nota do vídeo de referência da dancinha (03/11/2026)
+
+- **Antes de gastar crédito** no Copiar movimento, o robô do PC tira 6 quadros do vídeo de referência e o estúdio pede uma **nota de 0 a 100** à IA com visão (`OPENROUTER_MODEL_VISION`). A nota segue as regras que a Naia passou (`api/_ref_rating.ts`, `REF_PROMPT`):
+  - **luz uniforme**: sol forte e sombras viram manchas na pele;
+  - **uma pessoa, de corpo inteiro**;
+  - **câmera parada**;
+  - **fundo simples**: água, fumaça e espelho saem estranhos;
+  - **roupa simples**.
+- **Nota 70 ou mais:** o robô gera, e o Telegram mostra a nota com os pontos bons, os problemas e uma dica.
+- **Abaixo de 70:** o robô não gera e não gasta crédito.
+  - O pedido fica parado (status `planejado`) com dois botões: **▶️ Gerar mesmo assim** (volta para a fila com `motion.force` e não é avaliado de novo) e **🗑️ Cancelar** (cancela também o TikTok do mesmo vídeo).
+  - A nota fica em `content_plans.request.motion.rating`.
+- **Se a IA não responder:** a dancinha segue sem nota, como era antes.
+- **Ainda sem nota:**
+  - dancinha pedida por **link** (TikTok ou Instagram), porque o robô não tem o arquivo; só o vídeo mandado no Telegram ou no estúdio recebe nota;
+  - vídeo longo +18.
+- Robô: `reference_frames` e `rate_reference` em `worker/luna_worker.py`. Rota do PC: `rate-ref`.
+- **Teste:** `test_nota_ref.mjs`.
