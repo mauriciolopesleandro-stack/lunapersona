@@ -814,6 +814,40 @@ class Naiaflow:
 
 # --- um item da fila -----------------------------------------------------------------------------------
 
+def reference_frames(video: Path, count: int = 6) -> list[str]:
+    """Quadros espalhados do video de referencia (JPEG pequeno em data URL) para a nota."""
+    import imageio_ffmpeg
+    _, secs = imageio_ffmpeg.count_frames_and_secs(str(video))
+    ff = imageio_ffmpeg.get_ffmpeg_exe()
+    out = []
+    for i in range(count):
+        t = max(0.0, secs * (i + 0.5) / count)
+        r = subprocess.run([ff, "-loglevel", "error", "-ss", f"{t:.2f}", "-i", str(video), "-frames:v", "1",
+                            "-vf", "scale=512:-2", "-q:v", "5", "-f", "image2pipe", "-vcodec", "mjpeg", "-"],
+                           capture_output=True, check=True)
+        if r.stdout:
+            out.append("data:image/jpeg;base64," + base64.b64encode(r.stdout).decode())
+    return out
+
+
+def rate_reference(studio: Studio, item: dict, video: Path | None) -> bool:
+    """Nota de 0 a 100 do video de referencia antes de gastar credito (03/11).
+    True = pode gerar; False = nota baixa, a decisao ficou no Telegram."""
+    if not video or not video.exists():
+        log("Nota da referência: vídeo por link, não deu para analisar antes (segue sem nota).")
+        return True
+    try:
+        res = studio.call("rate-ref", id=item["id"], frames=reference_frames(video))
+    except Exception as e:  # sem nota nao trava a dancinha
+        log(f"Nota da referência: não consegui avaliar ({e}); segue sem nota.")
+        return True
+    log(f"Nota prevista da referência: {res.get('score')}/100.")
+    if res.get("go"):
+        return True
+    log("Nota baixa: não gerei (nenhum crédito gasto). Você decide no Telegram.")
+    return False
+
+
 def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video: Path | None) -> None:
     """Dancinha: video da Naiaflow (ou o de teste) -> quadro em JPEG para a
     biblioteca -> Reels e TikTok com o mesmo MP4."""
@@ -826,15 +860,23 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
     folder = STUDIO_ROOT / item["folder"]
     folder.mkdir(parents=True, exist_ok=True)
     mp4 = folder / item["file"].replace(".jpg", ".mp4")
-    if mp4.exists() and mp4.stat().st_size > 10000:
+    # 03/11: a dancinha ja pedida (credito gasto) fica anotada; nova tentativa so
+    # procura o video na Naiaflow, nunca gera (e paga) de novo
+    marker = mp4.with_name(mp4.stem + ".naia.json")
+    ready = mp4.exists() and mp4.stat().st_size > 10000
+    source = None
+    if not ready and not marker.exists():
+        if m.get("file_url") and not test_video:
+            source = folder / f"referencia-{item['id'][:8]}{Path(m.get('file_name') or 'video.mp4').suffix}"
+            download_video(m["file_url"], source, 300)
+        # nota do video antes de gastar credito; "gerar mesmo assim" no Telegram pula
+        if not m.get("force") and not rate_reference(studio, item, test_video or source):
+            return
+    if ready:
         log(f"Dancinha ja estava pronta: {mp4.name} (nao gasta credito de novo).")
     elif test_video:
         mp4.write_bytes(test_video.read_bytes())
     else:
-        source = None
-        # 03/11: a dancinha ja pedida (credito gasto) fica anotada; nova tentativa so
-        # procura o video na Naiaflow, nunca gera (e paga) de novo
-        marker = mp4.with_name(mp4.stem + ".naia.json")
         if marker.exists():
             before = json.loads(marker.read_text(encoding="utf-8")).get("before")
             if before is None:
@@ -844,9 +886,6 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
             if not url:
                 raise RuntimeError("A dancinha pedida antes ainda nao apareceu na Naiaflow. Nao gerei de novo para nao gastar creditos.")
         else:
-            if m.get("file_url"):
-                source = folder / f"referencia-{item['id'][:8]}{Path(m.get('file_name') or 'video.mp4').suffix}"
-                download_video(m["file_url"], source, 300)
             started = lambda before: marker.write_text(json.dumps({"before": before, "at": time.time()}), encoding="utf-8")  # noqa: E731
             url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original", on_started=started)
         r = requests.get(url, timeout=300)
