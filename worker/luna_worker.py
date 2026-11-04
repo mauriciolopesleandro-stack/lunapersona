@@ -848,6 +848,43 @@ def rate_reference(studio: Studio, item: dict, video: Path | None) -> bool:
     return False
 
 
+def rate_orders(studio: Studio, test_video: Path | None = None) -> None:
+    """Nota dos videos mandados no Telegram, antes do Gerar (03/11): baixa, tira os
+    quadros e devolve; a nota chega no bot. Link sem yt-dlp: avisa que nao deu."""
+    order = studio.call("ref-pending").get("order")
+    if not order:
+        return
+    tmp = STUDIO_ROOT / "conteudos" / "_nota"
+    tmp.mkdir(parents=True, exist_ok=True)
+    video = tmp / f"{order['id']}.mp4"
+    try:
+        if test_video:
+            shutil.copyfile(test_video, video)
+        elif order.get("file_url"):
+            download_video(order["file_url"], video, 300)
+        elif order.get("link"):
+            try:
+                import yt_dlp
+            except ImportError:
+                studio.call("ref-rated", order_id=order["id"], error="link sem nota (o robô precisa do yt-dlp para baixar o vídeo do link)")
+                return
+            with yt_dlp.YoutubeDL({"outtmpl": str(video), "format": "mp4/best", "quiet": True, "noprogress": True, "overwrites": True}) as ydl:
+                ydl.download([order["link"]])
+        else:
+            studio.call("ref-rated", order_id=order["id"], error="sem o vídeo para analisar")
+            return
+        res = studio.call("ref-rated", order_id=order["id"], frames=reference_frames(video))
+        log(f"Nota do vídeo do pedido {order['id']}: {res.get('score')}/100.")
+    except Exception as e:  # noqa: BLE001
+        log(f"Nota do vídeo do pedido {order['id']}: não consegui ({e}).")
+        try:
+            studio.call("ref-rated", order_id=order["id"], error="não consegui baixar ou analisar o vídeo")
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        video.unlink(missing_ok=True)
+
+
 def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video: Path | None) -> None:
     """Dancinha: video da Naiaflow (ou o de teste) -> quadro em JPEG para a
     biblioteca -> Reels e TikTok com o mesmo MP4."""
@@ -870,7 +907,8 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
             source = folder / f"referencia-{item['id'][:8]}{Path(m.get('file_name') or 'video.mp4').suffix}"
             download_video(m["file_url"], source, 300)
         # nota do video antes de gastar credito; "gerar mesmo assim" no Telegram pula
-        if not m.get("force") and not rate_reference(studio, item, test_video or source):
+        # (a nota ja dada no pedido pelo Telegram tambem: rated)
+        if not m.get("force") and m.get("rated") is None and not rate_reference(studio, item, test_video or source):
             return
     if ready:
         log(f"Dancinha ja estava pronta: {mp4.name} (nao gasta credito de novo).")
@@ -1349,6 +1387,7 @@ def main() -> None:
             # erro do estudio (ou sem internet) nao derruba o robo: espera e tenta de novo
             try:
                 blur_previews(studio)
+                rate_orders(studio, args.video_teste)
                 item = studio.call("next")["item"]
             except Exception as e:  # noqa: BLE001
                 log(f"Não consegui pegar o próximo pedido: {e}")

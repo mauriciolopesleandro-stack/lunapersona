@@ -1107,7 +1107,13 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
   - O pedido fica parado (status `planejado`) com dois botões: **▶️ Gerar mesmo assim** (volta para a fila com `motion.force` e não é avaliado de novo) e **🗑️ Cancelar** (cancela também o TikTok do mesmo vídeo).
   - A nota fica em `content_plans.request.motion.rating`.
 - **Se a IA não responder:** a dancinha segue sem nota, como era antes.
-- **Ainda sem nota:**
+- **Nota no pedido do Telegram, antes do Gerar:**
+  - Quando o vídeo chega no bot, o pedido fica com a nota "pendente".
+  - A cada volta da fila, o robô do PC pergunta (`ref-pending`), baixa o vídeo do Telegram, tira os quadros e devolve (`ref-rated`).
+  - O bot manda a nota com os pontos bons e os problemas, e o resumo do pedido passa a mostrar "🔎 Nota prevista: N/100".
+  - Ao tocar em Gerar, a nota vai junto (`motion.rating`) e o robô não avalia de novo.
+  - Link: o robô baixa com o yt-dlp; sem o yt-dlp instalado, o bot avisa que o link fica sem nota.
+- **Ainda sem nota (antes desta parte):**
   - dancinha pedida por **link** (TikTok ou Instagram), porque o robô não tem o arquivo; só o vídeo mandado no Telegram ou no estúdio recebe nota;
   - vídeo longo +18.
 - Robô: `reference_frames` e `rate_reference` em `worker/luna_worker.py`. Rota do PC: `rate-ref`.

@@ -319,7 +319,10 @@ export async function queueDance(body: Record<string, unknown>): Promise<{ statu
   const hashtags = cleanTags(body.hashtags);
   // som: o original da dancinha (padrao; na aprovacao do Telegram da para trocar pela musica do Instagram) ou sem som
   const sound = body.sound === "sem" ? "sem" : "original";
-  const motion = { ...(link ? { link } : (tg ?? { path: file })), seconds, ...(outfit ? { outfit } : {}), sound };
+  // nota do video ja dada no pedido pelo Telegram (03/11): o robo nao avalia de novo
+  const score = Number(body.rating);
+  const rating = body.rating !== undefined && Number.isInteger(score) && score >= 0 && score <= 100 ? { rating: { score, at: new Date().toISOString() } } : {};
+  const motion = { ...(link ? { link } : (tg ?? { path: file })), seconds, ...(outfit ? { outfit } : {}), sound, ...rating };
   const plan = await dbInsert<PlanRow>("content_plans", {
     title: `Dancinha do chat (${keys.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}${outfit ? `, roupa ${outfit}` : ""})`,
     request: { source: "chat-dance", slots: keys, motion },
