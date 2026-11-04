@@ -4,7 +4,8 @@ import { ADULT_DESTS } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeSet, storeSetIfAbsent } from "./_store.js";
 import { storageRemove } from "./_supabase.js";
-import { telegram } from "./_telegram.js";
+import { MIN_SCORE, ratingText, type RefRating } from "./_ref_rating.js";
+import { sendNotice, telegram, telegramConfig } from "./_telegram.js";
 
 // Video pelo Telegram (01/11, parte 2 do pedido pelo celular): o administrador
 // manda um video (ou o link de uma dancinha do TikTok/Instagram) no bot de
@@ -51,6 +52,8 @@ interface VideoOrder {
   sound: "original" | "sem";
   adult: string[];
   at: number;
+  // 03/11: nota do video (0 a 100) dada pelo robo do PC antes do Gerar
+  rating?: { status: "pendente" | "pronto" | "erro"; score?: number; note?: string };
 }
 
 type Say = (text: string, extra?: Record<string, unknown>) => Promise<unknown>;
@@ -128,13 +131,24 @@ function summaryButtons(v: VideoOrder) {
   return { inline_keyboard: rows };
 }
 
+// linha da nota no resumo do pedido
+function ratingLine(v: VideoOrder): string | null {
+  const r = v.rating;
+  if (!r) return null;
+  if (r.status === "pendente") return "🔎 Nota do vídeo: o robô do PC está analisando (chega aqui em 1 a 2 min)…";
+  if (r.status === "erro") return `🔎 Nota do vídeo: ${r.note ?? "não deu para analisar"}`;
+  return `🔎 Nota prevista: ${r.score}/100 ${(r.score ?? 0) >= MIN_SCORE ? "✅ pode gerar" : "⚠️ deve sair com defeito"}`;
+}
+
 function summaryText(v: VideoOrder): string {
   const source = v.link ? `🔗 ${v.link}` : `🎞️ Vídeo de ${v.duration !== undefined ? `${Math.round(v.duration)} s` : "duração desconhecida"}`;
+  const rating = ratingLine(v);
   const lines =
     v.kind === "longo"
       ? [
           `🔥 Vídeo longo +18 → ${ADULT_DESTS.filter((d) => v.adult.includes(d.key)).map((d) => d.label).join(" + ") || "nenhum marcado"}`,
           source,
+          ...(rating ? [rating] : []),
           `✂️ ${trechos(segmentsOf(v))} de ${LONG_SEGMENT} s${v.cut ? ` (do ${v.cut.from} ao ${v.cut.from + v.cut.seconds} s do vídeo)` : " (o vídeo completo)"}, ${segmentsOf(v) > 1 ? "emendados " : ""}com o som original`,
           "🕒 No próximo horário vazio do canal",
           `👗 Roupa: ${outfitText(v)}`,
@@ -145,6 +159,7 @@ function summaryText(v: VideoOrder): string {
       : [
           "💃 Dancinha → Reels + TikTok",
           source,
+          ...(rating ? [rating] : []),
           `⏱️ ${v.seconds} s · ${v.sound === "original" ? "som original" : "sem som"}`,
           "🕒 No próximo horário vazio dos Reels",
           `👗 Roupa: ${outfitText(v)}`,
@@ -190,7 +205,7 @@ export async function videoMessage(msg: TgVideoMessage, say: Say): Promise<void>
     return;
   }
   const duration = msg.video?.duration;
-  const v = newOrder({ tgFile: file.file_id, ext, ...(duration !== undefined ? { duration, seconds: danceSecondsFor(duration) } : {}), caption: (msg.caption ?? "").trim().slice(0, 2200) });
+  const v = newOrder({ tgFile: file.file_id, ext, ...(duration !== undefined ? { duration, seconds: danceSecondsFor(duration) } : {}), caption: (msg.caption ?? "").trim().slice(0, 2200), rating: { status: "pendente" } });
   await save(v);
   const tip =
     duration === undefined
@@ -198,7 +213,7 @@ export async function videoMessage(msg: TgVideoMessage, say: Say): Promise<void>
       : duration > LONG_MAX_SECONDS
         ? ` (${Math.round(duration)} s: o vídeo longo vai até ${LONG_MAX_SECONDS / 60} min)`
         : "";
-  await say(`🎬 Recebi o vídeo${duration !== undefined ? ` (${Math.round(duration)} s)` : ""}${tip}. O que eu faço?`, { ...replyTo, reply_markup: kindButtons(v) });
+  await say(`🎬 Recebi o vídeo${duration !== undefined ? ` (${Math.round(duration)} s)` : ""}${tip}. O que eu faço?\n🔎 O robô do PC já está dando a nota do vídeo (de 0 a 100): ela chega aqui antes de você gerar.`, { ...replyTo, reply_markup: kindButtons(v) });
 }
 
 // Link de dancinha (TikTok, Instagram...) mandado no chat: so a dancinha (o
@@ -208,7 +223,7 @@ export async function videoLink(text: string, messageId: number, say: Say): Prom
   if (!link || !storeConfigured()) return false;
   if (!(await storeSetIfAbsent(`luna:tg-video:${messageId}`, "1", 3600))) return true;
   const caption = text.replace(link, "").trim().slice(0, 2200);
-  const v = newOrder({ link, caption, kind: "danca" });
+  const v = newOrder({ link, caption, kind: "danca", rating: { status: "pendente" } });
   await save(v);
   await say(summaryText(v), { reply_to_message_id: messageId, reply_markup: summaryButtons(v) });
   return true;
@@ -296,6 +311,8 @@ export async function videoCallback(token: string, chatId: string, kind: string,
               seconds: v.seconds,
               outfit,
               sound: v.sound,
+              // a nota ja foi dada (e ele gerou assim mesmo): o robo nao avalia de novo
+              ...(v.rating?.status === "pronto" ? { rating: v.rating.score } : {}),
               slots: ["reels", "tiktok"],
               caption: v.caption,
               hashtags: DANCE_TAGS,
@@ -342,4 +359,39 @@ export async function videoChange(id: string, text: string, messageId: number, s
   const next = { ...v, caption: text.trim().slice(0, 2200) };
   await save(next);
   await say(summaryText(next), { ...replyTo, reply_markup: summaryButtons(next) });
+}
+
+// --- nota do video antes do Gerar (03/11) ----------------------------------------------------
+// O robo do PC pergunta a cada volta da fila (ref-pending), baixa o video, tira os
+// quadros e devolve (ref-rated); a nota chega no bot antes de ele tocar em Gerar.
+
+export async function pendingRating(): Promise<{ id: string; file_url?: string; link?: string } | null> {
+  if (!storeConfigured()) return null;
+  const v = (await list()).filter((x) => x.rating?.status === "pendente").sort((a, b) => a.at - b.at)[0];
+  if (!v) return null;
+  if (v.link) return { id: v.id, link: v.link };
+  if (!v.tgFile) return { id: v.id };
+  const config = await telegramConfig();
+  if (!config.token) return null;
+  const file = await telegram<{ file_path?: string }>(config.token, "getFile", { file_id: v.tgFile });
+  return file.file_path ? { id: v.id, file_url: `https://api.telegram.org/file/bot${config.token}/${file.file_path}` } : { id: v.id };
+}
+
+export async function saveRating(id: string, result: RefRating | { error: string }): Promise<void> {
+  const v = await load(id);
+  if (!v) return;
+  const done = "score" in result;
+  await save({ ...v, rating: done ? { status: "pronto", score: result.score } : { status: "erro", note: result.error.slice(0, 120) } });
+  const head = `🔎 Nota do vídeo ${VIDEO_TAG} ${id}`;
+  const text = done
+    ? [
+        `${head}: ${result.score}/100`,
+        ratingText(result),
+        "",
+        result.score >= MIN_SCORE
+          ? "✅ Deve ficar bom: pode tocar em Gerar no pedido."
+          : `⚠️ Abaixo de ${MIN_SCORE}: deve sair com defeito. Melhor mandar outro vídeo; se quiser gerar assim mesmo, toque em Gerar no pedido.`,
+      ].join("\n")
+    : `${head}: ${result.error.slice(0, 200)}. Você decide se gera mesmo assim.`;
+  await sendNotice(await telegramConfig(), text).catch(() => undefined);
 }

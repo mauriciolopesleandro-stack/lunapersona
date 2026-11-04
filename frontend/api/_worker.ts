@@ -236,6 +236,7 @@ interface Motion {
   long?: boolean;
   // nota do video de referencia (03/11): force = ele mandou gerar mesmo com nota baixa
   force?: boolean;
+  rating?: { score: number; at: string };
 }
 // link de download do video mandado no bot de aprovacao (vale 1 h; o robo baixa na hora)
 async function telegramFileUrl(fileId: string): Promise<string> {
@@ -475,6 +476,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
               sound: motion.sound ?? "sem",
               ...(motion.long ? { long: true, segments: motion.segments, ...(motion.length ? { start: motion.start ?? 0, length: motion.length } : {}) } : {}),
               ...(motion.force ? { force: true } : {}),
+              ...(motion.rating ? { rated: motion.rating.score } : {}),
             },
           },
         });
@@ -551,6 +553,30 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       await dbUpdateWhere("content_plan_items", `id=eq.${it.id}`, { status: "na_fila", attempts: 0, note: null, updated_at: now() });
       await audit("refazer_item", "content_plan_items", it.id, { photos: Number.isInteger(photos) ? photos : null });
       return reply(200, { id: it.id, folder: folderFor(it), file: fileNameFor(it) });
+    }
+
+    // nota do video do pedido pelo Telegram, antes do Gerar (03/11)
+    if (body.action === "ref-pending") {
+      const { pendingRating } = await import("./_tg_video.js");
+      return reply(200, { order: await pendingRating() });
+    }
+    if (body.action === "ref-rated") {
+      const { saveRating } = await import("./_tg_video.js");
+      const orderId = String(body.order_id ?? "");
+      if (!/^[0-9a-f]{8}$/.test(orderId)) throw new Problem(400, "Pedido inválido.");
+      if (typeof body.error === "string") {
+        await saveRating(orderId, { error: body.error });
+        return reply(200, { saved: true });
+      }
+      const { rateFrames } = await import("./_ref_rating.js");
+      try {
+        const rating = await rateFrames(Array.isArray(body.frames) ? (body.frames as string[]) : []);
+        await saveRating(orderId, rating);
+        return reply(200, rating);
+      } catch (e) {
+        await saveRating(orderId, { error: "não consegui dar a nota agora" });
+        throw new Problem(502, `Nota do vídeo: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
 
     const item = await getItem(body.id ?? body.item_id);
