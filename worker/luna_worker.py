@@ -64,6 +64,12 @@ GENERATION_TIMEOUT_S = 10 * 60
 # foto (31/10: saiu loira); a IMG1 serve so para pose, roupa e cenario
 REFERENCE_IDENTITY = (" IMG1 é só referência de pose, roupa, enquadramento e cenário: o rosto, o cabelo"
                       " (castanho escuro, longo) e o corpo são os da luna, nunca os da mulher da IMG1.")
+# 05/11: a IA do Telegram escreveu "de costas" para uma foto de frente e a Naiaflow
+# seguiu o texto, nao a IMG1. No 1o Criar a pose da IMG1 vem primeiro e vale mais
+# que o texto (nos outros Criar do carrossel o texto pede outra pose de proposito).
+REFERENCE_POSE = ("Copie da IMG1 exatamente a pose (de frente, de costas ou de lado), a posição dos braços e das mãos,"
+                  " a direção do olhar, o ângulo e a altura da câmera e o enquadramento. Se o texto abaixo descrever"
+                  " outra pose ou outro ângulo, vale a IMG1.\n\n")
 QUEUE_POLL_S = 60
 JPEG_MAX_BYTES = 4 * 1024 * 1024  # limite do TikTok para foto
 REELS_SECONDS = 7
@@ -482,7 +488,7 @@ class Naiaflow:
             raise RuntimeError("A foto de referencia nao entrou no composer da Naiaflow (IMG1).")
         log("Referência anexada (IMG1).")
 
-    def generate(self, prompt: str, aspect: str | None = None, reference: Path | None = None) -> list[str]:
+    def generate(self, prompt: str, aspect: str | None = None, reference: Path | None = None, copy_pose: bool = False) -> list[str]:
         """Gera pelo prompt; devolve as fotos do mesmo Criar (3 desde 29/10)."""
         self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
         self.page.wait_for_selector("text=Modo imagem", timeout=60000)
@@ -499,7 +505,7 @@ class Naiaflow:
         if not box.count():
             box = self.page.locator("textarea").first
         box.click()
-        box.fill(prompt + (REFERENCE_IDENTITY if reference else ""))
+        box.fill((REFERENCE_POSE if reference and copy_pose else "") + prompt + (REFERENCE_IDENTITY if reference else ""))
         self._create_button().click()
         log("Gerando na Naiaflow…")
         return self._wait_result(before)
@@ -1374,7 +1380,7 @@ def process(studio: Studio, item: dict, naia: Naiaflow | None, test_image: Path 
                 reference = references[(i // 3) % len(references)] if references else None
                 if len(references) > 1:
                     log(f"Criar {i // 3 + 1} com a referência {references.index(reference) + 1}/{len(references)}")
-                urls = naia.generate(prompt, item.get("aspect"), reference)
+                urls = naia.generate(prompt, item.get("aspect"), reference, copy_pose=(i == 0))
                 url = urls[0]
                 if carousel:
                     spare = urls[1:]
