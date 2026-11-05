@@ -749,6 +749,10 @@ class Naiaflow:
             if not p.evaluate("() => !!document.querySelector(`[role=dialog] button[aria-label='Roupa'] img`)"):
                 raise RuntimeError(f'A roupa "{outfit}" nao ficou escolhida no Copiar movimento.')
             log(f"Roupa: {outfit}.")
+        # 05/11: sem escolha, a Naiaflow nova inventa roupa e cenario (saiu de blazer
+        # numa sala). "Copiar do vídeo" mantem os do video (mesmo custo, conferido).
+        for slot in ("Roupa", "Cenário") if not outfit else ("Cenário",):
+            self._copy_from_video(slot)
         final = p.get_by_role("button", name=re.compile(r"Gerar v[ií]deo", re.I))
         # 05/11: o Gerar fica desligado alguns segundos enquanto a Naiaflow prepara
         # a ultima tela (o robo chegava cedo: "nao ficou ligado", ou clicava logo
@@ -802,6 +806,20 @@ class Naiaflow:
         if url:
             return url
         raise RuntimeError(f"A Naiaflow nao terminou a dancinha em {minutes} minutos.")
+
+    def _copy_from_video(self, slot: str) -> None:
+        """Roupa ou Cenario do Copiar dancinha -> "Copiar do vídeo"; confere que o
+        botao ficou com a imagem (escolhido)."""
+        p = self.page
+        p.locator("[role=dialog]").last.get_by_role("button", name=slot, exact=True).last.click()
+        p.wait_for_timeout(1500)
+        p.get_by_role("menuitem", name="Copiar do vídeo").first.click()
+        for _ in range(10):
+            p.wait_for_timeout(1500)
+            if p.locator("[role=dialog]").last.locator(f"button[aria-label='{slot}'] img").count():
+                log(f"{slot}: a do vídeo.")
+                return
+        raise RuntimeError(f'"{slot}: Copiar do vídeo" não ficou escolhido na Naiaflow (não gerei).')
 
     def _after_click_report(self, bad: list[str]) -> None:
         """Foto da tela 3 s depois do Gerar (antes de recarregar) e o que ficou
