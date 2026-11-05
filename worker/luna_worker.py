@@ -654,7 +654,7 @@ class Naiaflow:
 
     # --- dancinha: Copiar movimento --------------------------------------------------------------
 
-    def copy_motion(self, link: str | None, video_file: Path | None, seconds: int, outfit: str | None, dry: bool = False, sound: str = "original", on_wait=None, on_started=None) -> str:
+    def copy_motion(self, link: str | None, video_file: Path | None, seconds: int, outfit: str | None, dry: bool = False, sound: str = "original", on_wait=None, on_started=None, outfit_file: Path | None = None) -> str:
         """Copiar movimento (Modo imagem -> Copiar movimento): o movimento vem do
         link ou do video enviado, a pessoa e o clone luna, sem som (a musica entra
         no Instagram), com a roupa escolhida da galeria (ou a do video). So gera
@@ -742,22 +742,31 @@ class Naiaflow:
             p.wait_for_timeout(2000)
         if (pending.count() and pending.first.is_visible()) or not (chosen.count() and chosen.last.is_visible()):
             raise RuntimeError(f'Nao consegui escolher o clone "{CLONE}" no Copiar movimento.')
-        if outfit:
+        if outfit or outfit_file:
             p.get_by_role("button", name="Roupa", exact=True).last.click()
             p.wait_for_timeout(1500)
             p.get_by_role("menuitem", name="Abrir galeria").first.click()
             p.wait_for_timeout(3500)
-            caption = p.get_by_text(re.compile(re.escape(outfit), re.I)).first
-            if not caption.count():
-                raise RuntimeError(f'Nao achei a roupa "{outfit}" na galeria da Naiaflow.')
-            caption.locator("xpath=ancestor::*[.//img][1]").locator("img").first.click()
-            p.wait_for_timeout(3000)
+            if outfit_file:
+                # 05/11: foto da roupa mandada no pedido (gratis: so vale para esta dancinha)
+                with p.expect_file_chooser(timeout=15000) as chooser:
+                    p.locator("[role=dialog]").last.get_by_role("button", name="Do dispositivo", exact=True).first.click()
+                chooser.value.set_files(str(outfit_file))
+                p.wait_for_timeout(8000)
+            else:
+                # nome exato (senao "Biquíni azul" pegava o "Biquíni azul dourado")
+                caption = p.get_by_text(re.compile(rf"^\s*{re.escape(outfit)}\s*$", re.I)).first
+                if not caption.count():
+                    raise RuntimeError(f'Nao achei a roupa "{outfit}" na galeria da Naiaflow.')
+                caption.locator("xpath=ancestor::*[.//img][1]").locator("img").first.click()
+                p.wait_for_timeout(3000)
+            what = "a da foto mandada" if outfit_file else outfit
             if not p.evaluate("() => !!document.querySelector(`[role=dialog] button[aria-label='Roupa'] img`)"):
-                raise RuntimeError(f'A roupa "{outfit}" nao ficou escolhida no Copiar movimento.')
-            log(f"Roupa: {outfit}.")
+                raise RuntimeError(f'A roupa ({what}) nao ficou escolhida no Copiar movimento.')
+            log(f"Roupa: {what}.")
         # 05/11: sem escolha, a Naiaflow nova inventa roupa e cenario (saiu de blazer
         # numa sala). "Copiar do vídeo" mantem os do video (mesmo custo, conferido).
-        for slot in ("Roupa", "Cenário") if not outfit else ("Cenário",):
+        for slot in ("Roupa", "Cenário") if not (outfit or outfit_file) else ("Cenário",):
             self._copy_from_video(slot)
         final = p.get_by_role("button", name=re.compile(r"Gerar v[ií]deo", re.I))
         # 05/11: o Gerar fica desligado alguns segundos enquanto a Naiaflow prepara
@@ -812,6 +821,41 @@ class Naiaflow:
         if url:
             return url
         raise RuntimeError(f"A Naiaflow nao terminou a dancinha em {minutes} minutos.")
+
+    def list_outfits(self) -> list[str]:
+        """Nomes das roupas em "Minhas roupas" da Naiaflow (05/11: a lista do
+        Telegram e do estudio vem daqui). So le: Adicionar -> Enviar imagem ->
+        Roupas, e fecha com Esc."""
+        p = self.page
+        p.goto(NAIAFLOW, wait_until="domcontentloaded")
+        p.wait_for_selector("text=Modo imagem", timeout=60000)
+        p.wait_for_timeout(2500)
+        self._dismiss_overlays()
+        p.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
+        p.get_by_text(re.compile(r"^\s*Enviar imagem\s*$", re.I)).first.click(timeout=10000)
+        p.get_by_text("Roupas", exact=True).first.click(timeout=15000)
+        p.get_by_text("Minhas roupas", exact=True).first.wait_for(state="visible", timeout=15000)
+        p.wait_for_timeout(2000)
+        # o texto tem as abas ("Minhas roupas | 17 | Casual | 33 ...") e depois as
+        # secoes; a secao "Minhas roupas | 17" e seguida dos nomes ate o titulo da
+        # proxima secao (um nome seguido de numero)
+        lines = [s.strip() for s in p.locator("body").inner_text().split("\n") if s.strip()]
+        p.keyboard.press("Escape")
+        heads = [k for k in range(len(lines) - 1) if lines[k] == "Minhas roupas" and lines[k + 1].isdigit()]
+        names: list[str] = []
+        for k in heads:
+            found: list[str] = []
+            j = k + 2
+            while j < len(lines) and not (j + 1 < len(lines) and lines[j + 1].isdigit()) and not lines[j].isdigit():
+                found.append(lines[j])
+                j += 1
+            if len(found) > len(names):  # a lista de abas da 0 nomes; a secao, os nomes
+                names = found
+        seen: list[str] = []
+        for n in names:
+            if n not in seen and len(n) <= 60:
+                seen.append(n)
+        return seen
 
     def _copy_from_video(self, slot: str) -> None:
         """Roupa ou Cenario do Copiar dancinha -> "Copiar do vídeo"; confere que o
@@ -1075,6 +1119,32 @@ def rate_orders(studio: Studio, test_video: Path | None = None) -> None:
         video.unlink(missing_ok=True)
 
 
+def outfit_photo(m: dict, folder: Path, item: dict) -> Path | None:
+    """Foto da roupa mandada no pedido (05/11): baixa para entrar na Roupa da dancinha."""
+    url = m.get("outfit_url")
+    if not url:
+        return None
+    dest = folder / f"roupa-{item['id'][:8]}.jpg"
+    if dest.exists() and dest.stat().st_size > 1000:  # video longo: uma vez para todos os trechos
+        return dest
+    r = requests.get(url, timeout=120)
+    r.raise_for_status()
+    dest.write_bytes(r.content)
+    return dest
+
+
+def sync_outfits(studio: Studio, naia: Naiaflow) -> None:
+    """Manda os nomes de "Minhas roupas" da Naiaflow para o estudio (a lista do
+    Telegram e do estudio). Falhar aqui nao para o robo."""
+    try:
+        names = naia.list_outfits()
+        if names:
+            studio.call("outfits", names=names)
+            log(f"Roupas da galeria: {len(names)} (lista do Telegram e do estúdio atualizada).")
+    except Exception as e:  # noqa: BLE001
+        log(f"Não consegui ler as roupas da galeria: {str(e)[:150]}")
+
+
 def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video: Path | None) -> None:
     """Dancinha: video da Naiaflow (ou o de teste) -> quadro em JPEG para a
     biblioteca -> Reels e TikTok com o mesmo MP4."""
@@ -1116,7 +1186,7 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
         else:
             started = lambda before: marker.write_text(json.dumps({"before": before, "at": time.time()}), encoding="utf-8")  # noqa: E731
             try:
-                url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original", on_started=started)
+                url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original", on_started=started, outfit_file=outfit_photo(m, folder, item))
             except NaiaNotStarted:
                 # nada foi pago: a proxima tentativa pode gerar de novo
                 marker.unlink(missing_ok=True)
@@ -1156,6 +1226,8 @@ def send_motion(studio: Studio, item: dict, folder: Path, mp4: Path, what: str) 
     uma copia para cada publicacao (que chega no Telegram para aprovar)."""
     import imageio_ffmpeg
 
+    # a foto da roupa ja foi usada: nao fica na pasta (nem entra na biblioteca)
+    (folder / f"roupa-{item['id'][:8]}.jpg").unlink(missing_ok=True)
     jpg = folder / item["file"]
     subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-ss", "1", "-i", str(mp4), "-frames:v", "1", "-q:v", "3", str(jpg)], check=True)
     local_path = f"{item['folder']}/{item['file']}"
@@ -1271,7 +1343,7 @@ def process_long_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_
             clip(i).write_bytes(test_video.read_bytes())
         else:
             log(f"Trecho {i + 1} de {count} na Naiaflow…")
-            url = naia.copy_motion(None, cut, LONG_SEGMENT_S, m.get("outfit"), sound="sem", on_wait=beat)
+            url = naia.copy_motion(None, cut, LONG_SEGMENT_S, m.get("outfit"), sound="sem", on_wait=beat, outfit_file=outfit_photo(m, folder, item))
             r = requests.get(url, timeout=300)
             r.raise_for_status()
             clip(i).write_bytes(r.content)
@@ -1570,6 +1642,8 @@ def main() -> None:
             naia = Naiaflow()
             naia.open()
             log("Naiaflow pronta.")
+            sync_outfits(studio, naia)
+        last_sync = time.time()
         while True:
             if naia:
                 credits = naia.credits()
@@ -1594,6 +1668,10 @@ def main() -> None:
                 if args.uma_vez:
                     log("Fila vazia: terminei.")
                     break
+                # roupas novas na galeria aparecem no Telegram e no estudio (a cada 6 h)
+                if naia and time.time() - last_sync > 6 * 3600:
+                    sync_outfits(studio, naia)
+                    last_sync = time.time()
                 time.sleep(QUEUE_POLL_S)
                 continue
             try:

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { putSignedUpload } from "./cloud";
 import { placedText } from "./quickPhoto";
+import { OUTFIT_VIDEO, OutfitPicker, outfitFields, outfitLabel, outfitReady, type OutfitChoice } from "./outfitPicker";
 import { DANCE_LINK, OUTFITS } from "../../api/_outfits";
 
 export { DANCE_LINK, OUTFITS };
@@ -10,8 +11,6 @@ export { DANCE_LINK, OUTFITS };
 // luna, sem som, na roupa escolhida, e o mesmo video vira Reels e TikTok
 // (cada um com a sua publicacao para aprovar no Telegram).
 
-const KEEP = "";
-const OTHER = "__outra__";
 
 function defaultWhen(): string {
   const d = new Date(Date.now() + 2 * 3600_000);
@@ -50,8 +49,7 @@ async function post<T>(body: object): Promise<T> {
 
 export function DanceCard({ link, file }: { link?: string; file?: File }) {
   const [open, setOpen] = useState(false);
-  const [outfit, setOutfit] = useState(KEEP);
-  const [other, setOther] = useState("");
+  const [outfit, setOutfit] = useState<OutfitChoice>(OUTFIT_VIDEO);
   const [seconds, setSeconds] = useState(5);
   // video mandado: a duracao vem dele (o administrador ainda pode trocar)
   const [videoLength, setVideoLength] = useState<number | null>(null);
@@ -77,7 +75,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
   if (!link && !file) {
     return <p className="st-hint">Para fazer a dancinha com este vídeo, mande o arquivo de novo (o vídeo não fica guardado depois de recarregar a página).</p>;
   }
-  const chosen = outfit === OTHER ? other.trim() : outfit;
+  const chosen = outfitLabel(outfit);
   const toggle = (k: string) => setSlots(slots.includes(k) ? slots.filter((s) => s !== k) : [...slots, k]);
 
   async function queue() {
@@ -90,12 +88,14 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
         await putSignedUpload(up.url, file);
         source = { path: up.path };
       }
+      if (outfit.mode === "foto") setBusy("Enviando a foto da roupa…");
+      const roupa = await outfitFields(outfit);
       setBusy("Mandando para o robô…");
       const res = await post<{ items: { format: string; scheduled_at: string }[] }>({
         action: "dance",
         ...source,
         seconds,
-        outfit: chosen,
+        ...roupa,
         sound,
         slots,
         caption,
@@ -145,19 +145,8 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
           ))}
         </div>
       </div>
+      <OutfitPicker value={outfit} onChange={setOutfit} />
       <div className="st-row">
-        <label className="st-field">
-          <span>Roupa da Luna</span>
-          <select className="st-input" value={outfit} onChange={(e) => setOutfit(e.target.value)}>
-            <option value={KEEP}>Manter a do vídeo</option>
-            {OUTFITS.map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-            <option value={OTHER}>Outra (nome na galeria)…</option>
-          </select>
-        </label>
         <label className="st-field">
           <span>Duração{videoLength ? ` (o vídeo tem ${videoLength.toFixed(1).replace(".", ",")} s)` : ""}</span>
           <select className="st-input" value={seconds} onChange={(e) => setSeconds(Number(e.target.value))}>
@@ -174,12 +163,6 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
           </select>
         </label>
       </div>
-      {outfit === OTHER && (
-        <label className="st-field">
-          <span>Nome da roupa na galeria da Naiaflow</span>
-          <input className="st-input" value={other} onChange={(e) => setOther(e.target.value)} placeholder="Ex.: Biquíni animal print" />
-        </label>
-      )}
       <label className="st-field">
         <span>Quando</span>
         <select className="st-input" value={auto ? "auto" : "data"} onChange={(e) => setAuto(e.target.value === "auto")}>
@@ -203,12 +186,11 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
       </label>
       {videoLength !== null && videoLength < 5 && <p className="st-warn">O vídeo tem menos de 5 s: a Naiaflow não faz a dancinha. Mande um vídeo de pelo menos 5 s.</p>}
       <p className="st-hint">
-        O robô faz o Copiar movimento sem som (a música do Instagram entra no Reels). Sem trocar a roupa, a Luna sai com a roupa e o cenário do vídeo de
-        referência.
+        O robô faz o Copiar dancinha com a Luna no lugar da pessoa do vídeo. O cenário sempre vem do vídeo; a roupa, do jeito escolhido acima.
       </p>
       {error && <p className="st-error">{error}</p>}
       <div className="st-row">
-        <button type="button" className="st-btn st-btn-small st-btn-primary" disabled={busy !== null || !slots.length || (outfit === OTHER && !other.trim())} onClick={queue}>
+        <button type="button" className="st-btn st-btn-small st-btn-primary" disabled={busy !== null || !slots.length || !outfitReady(outfit)} onClick={queue}>
           {busy ?? `Fazer dancinha (${seconds + 1} créditos)`}
         </button>
         <button type="button" className="st-btn st-btn-small" disabled={busy !== null} onClick={() => setOpen(false)}>

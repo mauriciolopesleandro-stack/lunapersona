@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
-import { CUT_SECONDS, DANCE_LINK, OUTFITS, longCut, longPieces } from "./_outfits.js";
+import { CUT_SECONDS, DANCE_LINK, longCut, longPieces } from "./_outfits.js";
+import { outfitList } from "./_outfit_list.js";
 import { ADULT_DESTS } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeSet, storeSetIfAbsent } from "./_store.js";
@@ -16,7 +17,8 @@ import { sendNotice, telegram, telegramConfig } from "./_telegram.js";
 // mesmos do estudio) e o video pronto volta aqui para aprovar.
 //
 // Botoes: vd:<id>:<danca|longo> o que fazer, vs:<id>:<5|8|10> segundos da
-// dancinha, vo:<id>:<n> roupa (-1 = a do video), vm:<id> som original/sem som,
+// dancinha, vo:<id>:<v|g|f|n> roupa (05/11: v = igual ao video, g = abre "Minhas
+// roupas", n = a roupa n da lista, f = pede a foto da roupa), vm:<id> som original/sem som,
 // va:<id>:<canal|ensaio|album-vip> destinos do +18, vt:<id>:<0|5|10|15> quanto
 // do video longo (0 = completo), vg:<id> gerar, vx:<id> cancelar. Responder o
 // resumo com texto troca a legenda (a historinha no +18); no video longo,
@@ -24,6 +26,8 @@ import { sendNotice, telegram, telegramConfig } from "./_telegram.js";
 
 export const VIDEO_KINDS = new Set(["vd", "vs", "vo", "vm", "va", "vt", "vg", "vx"]);
 export const VIDEO_TAG = "#video";
+// pedido da foto da roupa: a resposta com a foto chega em videoOutfitPhoto
+export const OUTFIT_TAG = "#roupa";
 const LIST_KEY = "luna:tg-videos";
 const KEEP = 10;
 const TTL_MS = 24 * 3600_000;
@@ -48,7 +52,11 @@ interface VideoOrder {
   kind?: Kind;
   seconds: number;
   cut?: { from: number; seconds: number }; // video longo: so um pedaco (sem = completo)
-  outfit: number; // indice em OUTFITS; -1 = a roupa do video
+  // roupa (05/11): nada = igual ao video; outfitName = de "Minhas roupas";
+  // outfitRef = foto da roupa mandada (so para este pedido, gratis)
+  outfitName?: string;
+  outfitRef?: string;
+  outfitOpen?: boolean; // lista "Minhas roupas" aberta nos botoes
   sound: "original" | "sem";
   adult: string[];
   at: number;
@@ -100,7 +108,7 @@ const trechos = (n: number) => `${n} trecho${n > 1 ? "s" : ""}`;
 const cutOf = (v: VideoOrder, from: number, seconds: number) => longCut(v.duration ?? 0, from, seconds);
 // Copiar movimento: 1 credito por segundo + 1 do clone; video longo: 6 por trecho
 const creditsOf = (v: VideoOrder) => (v.kind === "longo" ? segmentsOf(v) * (LONG_SEGMENT + 1) : v.seconds + 1);
-const outfitText = (v: VideoOrder) => (v.outfit >= 0 ? OUTFITS[v.outfit] : "a do vídeo");
+const outfitText = (v: VideoOrder) => (v.outfitRef ? "a da foto que você mandou" : v.outfitName ?? "igual ao vídeo");
 const plural = (n: number) => `${n} crédito${n > 1 ? "s" : ""}`;
 const canLong = (v: VideoOrder) => !!(v.path || v.tgFile) && v.duration !== undefined && v.duration >= LONG_SEGMENT && v.duration <= LONG_MAX_SECONDS;
 
@@ -111,7 +119,7 @@ function kindButtons(v: VideoOrder) {
   return { inline_keyboard: rows };
 }
 
-function summaryButtons(v: VideoOrder) {
+function summaryButtons(v: VideoOrder, names: string[]) {
   const rows: { text: string; callback_data: string }[][] = [];
   if (v.kind === "danca") {
     rows.push(
@@ -127,12 +135,25 @@ function summaryButtons(v: VideoOrder) {
       rows.push([{ text: `${v.cut ? "▫️" : "✅"} Completo (${Math.round(v.duration ?? 0)} s · ${fullSegments(v) * (LONG_SEGMENT + 1)} créd)`, callback_data: `vt:${v.id}:0` }]);
     }
   }
-  // roupas salvas na galeria da Naiaflow ("Minhas roupas"), duas por linha
-  const outfits = [{ text: `${v.outfit < 0 ? "✅" : "▫️"} Roupa do vídeo`, callback_data: `vo:${v.id}:-1` }, ...OUTFITS.map((o, k) => ({ text: `${v.outfit === k ? "✅" : "▫️"} ${o}`, callback_data: `vo:${v.id}:${k}` }))];
-  for (let k = 0; k < outfits.length; k += 2) rows.push(outfits.slice(k, k + 2));
+  // roupa (05/11): igual ao video, uma de "Minhas roupas" (a lista abre ao tocar)
+  // ou a foto de uma roupa mandada aqui
+  const mode = v.outfitRef ? "f" : v.outfitName ? "g" : "v";
+  const mark = (m: string) => (mode === m ? "✅" : "▫️");
+  rows.push([{ text: `${mark("v")} 🎥 Roupa igual ao vídeo`, callback_data: `vo:${v.id}:v` }]);
+  rows.push([{ text: `${mark("g")} 👙 Minhas roupas${v.outfitName ? `: ${v.outfitName}` : ` (${names.length})`} ${v.outfitOpen ? "▴" : "▾"}`, callback_data: `vo:${v.id}:g` }]);
+  if (v.outfitOpen) {
+    const list = names.map((o, k) => ({ text: `${v.outfitName === o ? "✅" : "▫️"} ${o}`, callback_data: `vo:${v.id}:${k}` }));
+    for (let k = 0; k < list.length; k += 2) rows.push(list.slice(k, k + 2));
+  }
+  rows.push([{ text: mode === "f" ? "✅ 📸 Roupa da foto (tocar para mandar outra)" : "▫️ 📸 Mandar foto da roupa", callback_data: `vo:${v.id}:f` }]);
   rows.push([{ text: `✅ Gerar (${plural(creditsOf(v))})`, callback_data: `vg:${v.id}` }]);
   rows.push([{ text: "✖ Cancelar", callback_data: `vx:${v.id}` }]);
   return { inline_keyboard: rows };
+}
+
+// botoes do resumo com a lista de roupas atual (a do robo, ou a fixa)
+async function buttonsFor(v: VideoOrder) {
+  return summaryButtons(v, await outfitList());
 }
 
 // linha da nota no resumo do pedido
@@ -206,12 +227,12 @@ async function askOrder(v: VideoOrder, head: string, replyTo: Record<string, unk
     return;
   }
   await save({ ...v, optionsShown: true });
-  if (v.kind) await say(summaryText(v), { ...replyTo, reply_markup: summaryButtons(v) });
+  if (v.kind) await say(summaryText(v), { ...replyTo, reply_markup: await buttonsFor(v) });
   else await say(`${head} O que eu faço?\n${OFFLINE}`, { ...replyTo, reply_markup: kindButtons(v) });
 }
 
 function newOrder(fields: Partial<VideoOrder>): VideoOrder {
-  return { id: randomUUID().slice(0, 8), caption: "", seconds: 5, outfit: -1, sound: "original", adult: ADULT_DESTS.map((d) => d.key), at: Date.now(), ...fields };
+  return { id: randomUUID().slice(0, 8), caption: "", seconds: 5, sound: "original", adult: ADULT_DESTS.map((d) => d.key), at: Date.now(), ...fields };
 }
 
 const EXT: Record<string, string> = { "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm" };
@@ -290,7 +311,7 @@ export async function videoCallback(token: string, chatId: string, kind: string,
     const next = { ...v, kind: value as Kind };
     await save(next);
     await clearButtons();
-    await say(summaryText(next), { ...replyTo, reply_markup: summaryButtons(next) });
+    await say(summaryText(next), { ...replyTo, reply_markup: await buttonsFor(next) });
     return;
   }
   if (kind === "vs" || kind === "vo" || kind === "vm" || kind === "va" || kind === "vt") {
@@ -301,9 +322,25 @@ export async function videoCallback(token: string, chatId: string, kind: string,
       if (v.kind !== "danca" || !DANCE_SECONDS.includes(s) || (s > 5 && v.duration !== undefined && v.duration < s)) return;
       next = { ...v, seconds: s };
     } else if (kind === "vo") {
-      const k = Number(value);
-      if (!Number.isInteger(k) || k < -1 || k >= OUTFITS.length) return;
-      next = { ...v, outfit: k };
+      if (value === "f") {
+        // pede a foto: a resposta (com a foto) chega em videoOutfitPhoto
+        await say(`📸 Mande a foto da roupa respondendo esta mensagem (pode ser a peça sozinha ou alguém vestindo). A Luna usa essa roupa só neste vídeo, sem custo a mais.
+${OUTFIT_TAG} ${v.id}`, {
+          ...replyTo,
+          reply_markup: { force_reply: true, input_field_placeholder: "Mande a foto da roupa" },
+        });
+        return;
+      }
+      // trocou a foto por outra opcao: a foto nao vai ser usada
+      if ((value === "v" || /^\d+$/.test(value)) && v.outfitRef) await storageRemove(UPLOAD_BUCKET, [v.outfitRef]).catch(() => undefined);
+      if (value === "v") next = { ...v, outfitName: undefined, outfitRef: undefined, outfitOpen: false };
+      else if (value === "g") next = { ...v, outfitOpen: !v.outfitOpen };
+      else {
+        const names = await outfitList();
+        const k = Number(value);
+        if (!Number.isInteger(k) || k < 0 || k >= names.length) return;
+        next = { ...v, outfitName: names[k], outfitRef: undefined, outfitOpen: false };
+      }
     } else if (kind === "vt") {
       const s = Number(value);
       if (v.kind !== "longo" || (s !== 0 && !CUT_SECONDS.includes(s))) return;
@@ -316,7 +353,7 @@ export async function videoCallback(token: string, chatId: string, kind: string,
       next = { ...v, adult: v.adult.includes(value) ? v.adult.filter((k) => k !== value) : [...v.adult, value] };
     }
     await save(next);
-    if (messageId) await telegram(token, "editMessageText", { chat_id: chatId, message_id: messageId, text: summaryText(next), reply_markup: summaryButtons(next) }).catch(() => undefined);
+    if (messageId) await telegram(token, "editMessageText", { chat_id: chatId, message_id: messageId, text: summaryText(next), reply_markup: await buttonsFor(next) }).catch(() => undefined);
     return;
   }
   if (kind === "vg") {
@@ -329,7 +366,8 @@ export async function videoCallback(token: string, chatId: string, kind: string,
     if (!(await storeSetIfAbsent(`luna:tg-video-gerando:${id}`, "1", 60))) return;
     try {
       const { queueDance, queueLongVideo } = await import("./_plans.js");
-      const outfit = v.outfit >= 0 ? OUTFITS[v.outfit] : "";
+      const outfit = v.outfitName ?? "";
+      const outfitRef = v.outfitRef ? { outfit_ref: v.outfitRef } : {};
       const out =
         v.kind === "longo"
           ? await queueLongVideo({
@@ -338,6 +376,7 @@ export async function videoCallback(token: string, chatId: string, kind: string,
               ...(v.cut ? { cut_from: v.cut.from, cut_seconds: v.cut.seconds } : {}),
               credits: creditsOf(v),
               outfit,
+              ...outfitRef,
               caption: v.caption,
               scheduled_at: "auto",
               adultDest: { channel: v.adult.includes("canal"), packs: v.adult.filter((k) => k !== "canal") },
@@ -346,6 +385,7 @@ export async function videoCallback(token: string, chatId: string, kind: string,
               ...(v.link ? { link: v.link } : v.tgFile ? { tg_file: v.tgFile, tg_ext: v.ext } : { path: v.path }),
               seconds: v.seconds,
               outfit,
+              ...outfitRef,
               sound: v.sound,
               // a nota ja foi dada (e ele gerou assim mesmo): o robo nao avalia de novo
               ...(v.rating?.status === "pronto" ? { rating: v.rating.score } : {}),
@@ -389,12 +429,12 @@ export async function videoChange(id: string, text: string, messageId: number, s
     }
     const next = { ...v, cut: cutOf(v, from, to - from) };
     await save(next);
-    await say(summaryText(next), { ...replyTo, reply_markup: summaryButtons(next) });
+    await say(summaryText(next), { ...replyTo, reply_markup: await buttonsFor(next) });
     return;
   }
   const next = { ...v, caption: text.trim().slice(0, 2200) };
   await save(next);
-  await say(summaryText(next), { ...replyTo, reply_markup: summaryButtons(next) });
+  await say(summaryText(next), { ...replyTo, reply_markup: await buttonsFor(next) });
 }
 
 // --- nota do video antes do Gerar (03/11) ----------------------------------------------------
@@ -440,8 +480,38 @@ export async function saveRating(id: string, result: RefRating | { error: string
   if (next.kind) {
     // link de dancinha: a nota e depois o resumo com os botoes (a nota tambem vai no resumo)
     await telegram(config.token, "sendMessage", { ...chat, ...replyTo, text }).catch(() => undefined);
-    await telegram(config.token, "sendMessage", { ...chat, text: summaryText(next), reply_markup: summaryButtons(next) }).catch(() => undefined);
+    await telegram(config.token, "sendMessage", { ...chat, text: summaryText(next), reply_markup: await buttonsFor(next) }).catch(() => undefined);
   } else {
     await telegram(config.token, "sendMessage", { ...chat, ...replyTo, text: `${text}\n\n🎬 O que eu faço?`, reply_markup: kindButtons(next) }).catch(() => undefined);
+  }
+}
+
+// --- foto da roupa (05/11) ---------------------------------------------------------------------
+// "📸 Mandar foto da roupa": a resposta com a foto guarda a roupa no pedido (o robo
+// poe na Roupa da dancinha pelo "Do dispositivo" da Naiaflow, sem custo) e manda o
+// resumo de novo com a roupa marcada.
+export async function videoOutfitPhoto(token: string, id: string, photos: { file_id: string; file_size?: number; width: number; height: number }[], messageId: number, say: Say): Promise<void> {
+  const replyTo = { reply_to_message_id: messageId };
+  const v = await load(id);
+  if (!v || !v.kind) {
+    await say("⏱️ Esse pedido expirou ou já foi feito. Mande o vídeo de novo.", replyTo);
+    return;
+  }
+  const photo = [...photos].sort((a, b) => b.width * b.height - a.width * a.height)[0];
+  if (!photo) return;
+  if ((photo.file_size ?? 0) > 20 * 1024 * 1024) {
+    await say("⚠️ Foto grande demais para o bot baixar (mais de 20 MB).", replyTo);
+    return;
+  }
+  try {
+    const { fetchPhoto } = await import("./_tg_pedido.js");
+    const { ref } = await fetchPhoto(token, photo.file_id);
+    // a foto de antes (se ele trocou) nao vai ser usada
+    if (v.outfitRef) await storageRemove(UPLOAD_BUCKET, [v.outfitRef]).catch(() => undefined);
+    const next: VideoOrder = { ...v, outfitRef: ref, outfitName: undefined, outfitOpen: false };
+    await save(next);
+    await say(`✅ Roupa da foto escolhida (sem custo a mais).\n\n${summaryText(next)}`, { ...replyTo, reply_markup: await buttonsFor(next) });
+  } catch (e) {
+    await say(`⚠️ Não consegui guardar a foto da roupa: ${e instanceof Error ? e.message : String(e)}. Mande de novo.`, replyTo);
   }
 }

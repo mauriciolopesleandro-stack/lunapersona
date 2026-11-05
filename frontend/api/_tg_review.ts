@@ -8,7 +8,7 @@ import { dbSelect, storageReadUrl } from "./_supabase.js";
 import { forgetChannel, saveChannel, telegram, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
 import { ACTION_LEVELS, actionTarget, queueAction, queueBlur, queueCorrection } from "./_worker.js";
 import { PEDIDO_KINDS, PEDIDO_TAG, pedidoCallback, pedidoChange, pedidoPhoto, type TgPhotoMessage } from "./_tg_pedido.js";
-import { VIDEO_KINDS, VIDEO_TAG, videoCallback, videoChange, videoLink, videoMessage, type TgVideoMessage } from "./_tg_video.js";
+import { OUTFIT_TAG, VIDEO_KINDS, VIDEO_TAG, videoCallback, videoChange, videoLink, videoMessage, videoOutfitPhoto, type TgVideoMessage } from "./_tg_video.js";
 
 // Aprovacao pelo Telegram: a versao em revisao chega no celular do
 // administrador (foto/video + legenda + horario) com os botoes Aprovar,
@@ -515,6 +515,12 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
   }
 
   const msg = update.message;
+  // foto da roupa de um pedido de video (resposta ao "📸 Mande a foto da roupa", 05/11)
+  const outfitFor = msg?.reply_to_message?.text?.split(OUTFIT_TAG)[1]?.trim().split(/\s/)[0];
+  if (msg && String(msg.chat.id) === chatId && msg.photo?.length && outfitFor) {
+    await videoOutfitPhoto(token, outfitFor, msg.photo, msg.message_id, say);
+    return done();
+  }
   if (msg && String(msg.chat.id) === chatId && msg.photo?.length) {
     await pedidoPhoto(token, msg, say);
     return done();

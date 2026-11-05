@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CUT_SECONDS, longCut } from "../../api/_outfits";
 import { putSignedUpload } from "./cloud";
-import { OUTFITS, videoSeconds } from "./dance";
+import { videoSeconds } from "./dance";
+import { OUTFIT_VIDEO, OutfitPicker, outfitFields, outfitLabel, outfitReady, type OutfitChoice } from "./outfitPicker";
 import { ADULT_DESTS } from "./quickPhoto";
 
 // Video longo +18 (pedido de 31/10): no Chat +18, o video mandado (📎) vira a
@@ -14,8 +15,6 @@ import { ADULT_DESTS } from "./quickPhoto";
 const SEGMENT = 5;
 const MAX_SECONDS = 300;
 const MAX_BYTES = 50 * 1024 * 1024; // limite do envio (api/_plans.ts dance-url)
-const KEEP = "";
-const OTHER = "__outra__";
 // mesma conta do servidor (api/_plans.ts longSegments)
 const segmentsOf = (seconds: number) => Math.max(1, Math.ceil(seconds / SEGMENT - 0.02));
 
@@ -29,8 +28,7 @@ async function post<T>(body: object): Promise<T> {
 export function LongVideoCard({ file }: { file?: File }) {
   const [open, setOpen] = useState(false);
   const [seconds, setSeconds] = useState<number | null>(null);
-  const [outfit, setOutfit] = useState(KEEP);
-  const [other, setOther] = useState("");
+  const [outfit, setOutfit] = useState<OutfitChoice>(OUTFIT_VIDEO);
   const [adult, setAdult] = useState<string[]>(ADULT_DESTS.map((d) => d.key));
   const [caption, setCaption] = useState("");
   // pedaco do video: tamanho (0 = completo) e o segundo em que comeca
@@ -69,7 +67,7 @@ export function LongVideoCard({ file }: { file?: File }) {
     setTo(b);
     if (b > from) setPiece(b - from);
   };
-  const chosen = outfit === OTHER ? other.trim() : outfit;
+  const chosen = outfitLabel(outfit);
   const tooShort = seconds !== null && seconds < SEGMENT;
   const tooLong = seconds !== null && seconds > MAX_SECONDS;
   const tooBig = file.size > MAX_BYTES;
@@ -83,6 +81,8 @@ export function LongVideoCard({ file }: { file?: File }) {
       setBusy("Enviando o vídeo…");
       const up = await post<{ path: string; url: string }>({ action: "dance-url", mime_type: file.type || "video/mp4", size_bytes: file.size });
       await putSignedUpload(up.url, file);
+      if (outfit.mode === "foto") setBusy("Enviando a foto da roupa…");
+      const roupa = await outfitFields(outfit);
       setBusy("Mandando para o robô…");
       await post({
         action: "long-video",
@@ -90,7 +90,7 @@ export function LongVideoCard({ file }: { file?: File }) {
         duration: seconds,
         ...(cut ? { cut_from: cut.from, cut_seconds: cut.seconds } : {}),
         credits,
-        outfit: chosen,
+        ...roupa,
         caption,
         adultDest: { channel: adult.includes("canal"), packs: adult.filter((k) => k !== "canal") },
         scheduled_at: "auto",
@@ -179,24 +179,7 @@ export function LongVideoCard({ file }: { file?: File }) {
           ))}
         </div>
       </div>
-      <label className="st-field">
-        <span>Roupa da Luna</span>
-        <select className="st-input" value={outfit} onChange={(e) => setOutfit(e.target.value)}>
-          <option value={KEEP}>Manter a do vídeo</option>
-          {OUTFITS.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-          <option value={OTHER}>Outra (nome na galeria)…</option>
-        </select>
-      </label>
-      {outfit === OTHER && (
-        <label className="st-field">
-          <span>Nome da roupa na galeria da Naiaflow</span>
-          <input className="st-input" value={other} onChange={(e) => setOther(e.target.value)} />
-        </label>
-      )}
+      <OutfitPicker value={outfit} onChange={setOutfit} />
       <label className="st-field">
         <span>Legenda do canal (a historinha embaixo do vídeo)</span>
         <textarea className="st-input" rows={4} value={caption} onChange={(e) => setCaption(e.target.value)} />
@@ -206,7 +189,7 @@ export function LongVideoCard({ file }: { file?: File }) {
         <button
           type="button"
           className="st-btn st-btn-small st-btn-primary"
-          disabled={busy !== null || !seconds || tooShort || tooLong || tooBig || !adult.length || (outfit === OTHER && !other.trim())}
+          disabled={busy !== null || !seconds || tooShort || tooLong || tooBig || !adult.length || !outfitReady(outfit)}
           onClick={queue}
         >
           {busy ?? `Fazer vídeo longo (${credits} créditos)`}

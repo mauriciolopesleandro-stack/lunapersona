@@ -7,6 +7,7 @@ import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpda
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { creditsFor } from "./_photo_blocks.js";
 import { danceCaption } from "./_outfits.js";
+import { OUTFIT_REF, outfitList } from "./_outfit_list.js";
 import { randomUUID } from "crypto";
 
 // /api/studio?r=plans - planejamento feito pelo chat (parte A do fluxo).
@@ -250,6 +251,7 @@ export async function queueLongVideo(body: Record<string, unknown>): Promise<{ s
   // o estudio mostra o custo e o administrador confirma: o pedido traz o mesmo numero
   if (Number(body.credits) !== credits) throw new Problem(409, `O custo mudou: são ${segments} trechos (${credits} créditos). Confira e confirme de novo.`);
   const outfit = typeof body.outfit === "string" ? body.outfit.trim().slice(0, 60) : "";
+  const outfitRef = outfitRefOf(body);
   const adultDest = normalizeFlags({ adultDest: body.adultDest }, 1).adultDest;
   if (adultDest) {
     const problem = flagProblem("telegram", ["Canal"], { adultDest });
@@ -261,9 +263,9 @@ export async function queueLongVideo(body: Record<string, unknown>): Promise<{ s
   // "auto" com o canal (01/11): o proximo buraco do canal +18, como a foto +18
   const slot = auto && (!adultDest || adultDest.channel !== false) ? await nextSlot("Canal", []) : new Date(when).toISOString();
   const caption = typeof body.caption === "string" ? body.caption.slice(0, 4000) : "";
-  const motion = { ...(tg ?? { path: file }), seconds: LONG_SEGMENT, segments, long: true, ...(cut ? { start: cut.from, length: cut.seconds } : {}), ...(outfit ? { outfit } : {}), sound: "original" as const };
+  const motion = { ...(tg ?? { path: file }), seconds: LONG_SEGMENT, segments, long: true, ...(cut ? { start: cut.from, length: cut.seconds } : {}), ...(outfit ? { outfit } : {}), ...(outfitRef ? { outfit_ref: outfitRef } : {}), sound: "original" as const };
   const plan = await dbInsert<PlanRow>("content_plans", {
-    title: `Vídeo longo +18 (${segments} trechos de ${LONG_SEGMENT} s${cut ? `, do ${cut.from} ao ${cut.from + cut.seconds} s` : ""}${outfit ? `, roupa ${outfit}` : ""})`,
+    title: `Vídeo longo +18 (${segments} trechos de ${LONG_SEGMENT} s${cut ? `, do ${cut.from} ao ${cut.from + cut.seconds} s` : ""}${outfit ? `, roupa ${outfit}` : outfitRef ? ", roupa da foto" : ""})`,
     request: { source: "chat18-long", slots: ["telegram18"], motion, ...(adultDest ? { adultDest } : {}) },
     status: "aprovado",
     approved_at: new Date().toISOString(),
@@ -283,6 +285,13 @@ export async function queueLongVideo(body: Record<string, unknown>): Promise<{ s
   });
   await audit("video_longo_18", "content_plan_items", item.id, { trechos: segments, creditos: credits, segundos: Math.round(duration), ...(cut ? { pedaco: `${cut.from}-${cut.from + cut.seconds}` } : {}) });
   return { status: 200, body: { item, items: [item], estimate: { images: 0, videos: segments, credits } } };
+}
+
+// foto da roupa mandada no pedido (05/11): o robo poe na Roupa da dancinha (gratis)
+function outfitRefOf(body: Record<string, unknown>): string {
+  if (body.outfit_ref === undefined || body.outfit_ref === "") return "";
+  if (typeof body.outfit_ref !== "string" || !OUTFIT_REF.test(body.outfit_ref)) throw new Problem(400, "Foto da roupa inválida.");
+  return body.outfit_ref;
 }
 
 // video mandado no bot do Telegram: fica la e o robo do PC baixa na hora (a
@@ -305,6 +314,7 @@ export async function queueDance(body: Record<string, unknown>): Promise<{ statu
   const seconds = Number(body.seconds ?? 5);
   if (![5, 8, 10].includes(seconds)) throw new Problem(400, "A dancinha tem 5, 8 ou 10 segundos.");
   const outfit = typeof body.outfit === "string" ? body.outfit.trim().slice(0, 60) : "";
+  const outfitRef = outfitRefOf(body);
   const raw: unknown[] = Array.isArray(body.slots) ? body.slots : ["reels", "tiktok"];
   const keys = [...new Set(raw.map(String))].filter((k) => k === "reels" || k === "tiktok");
   if (!keys.length) throw new Problem(400, "Marque Reels, TikTok ou os dois.");
@@ -322,9 +332,9 @@ export async function queueDance(body: Record<string, unknown>): Promise<{ statu
   // nota do video ja dada no pedido pelo Telegram (03/11): o robo nao avalia de novo
   const score = Number(body.rating);
   const rating = body.rating !== undefined && Number.isInteger(score) && score >= 0 && score <= 100 ? { rating: { score, at: new Date().toISOString() } } : {};
-  const motion = { ...(link ? { link } : (tg ?? { path: file })), seconds, ...(outfit ? { outfit } : {}), sound, ...rating };
+  const motion = { ...(link ? { link } : (tg ?? { path: file })), seconds, ...(outfit ? { outfit } : {}), ...(outfitRef ? { outfit_ref: outfitRef } : {}), sound, ...rating };
   const plan = await dbInsert<PlanRow>("content_plans", {
-    title: `Dancinha do chat (${keys.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}${outfit ? `, roupa ${outfit}` : ""})`,
+    title: `Dancinha do chat (${keys.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}${outfit ? `, roupa ${outfit}` : outfitRef ? ", roupa da foto" : ""})`,
     request: { source: "chat-dance", slots: keys, motion },
     status: "aprovado",
     approved_at: new Date().toISOString(),
@@ -526,6 +536,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (body.action === "coverage") {
       const days = Math.min(30, Math.max(1, Number(body.days ?? 14) || 14));
       return reply(200, { days: await coverage(days) });
+    }
+
+    // roupas de "Minhas roupas" da Naiaflow (05/11: o robo atualiza a lista)
+    if (body.action === "outfits") {
+      return reply(200, { names: await outfitList() });
     }
 
     // foto de referencia (IMG1) da foto avulsa: o robo baixa e anexa no Criar

@@ -240,7 +240,7 @@ export async function pedidoPhoto(token: string, msg: TgPhotoMessage, say: Say):
 
 // baixa a foto do Telegram e guarda no armazenamento temporario: o robo baixa
 // e anexa como IMG1 (o mesmo lugar da foto mandada no estudio)
-async function fetchPhoto(token: string, fileId: string): Promise<{ ref: string; bytes: Buffer }> {
+export async function fetchPhoto(token: string, fileId: string): Promise<{ ref: string; bytes: Buffer }> {
   const file = await telegram<{ file_path?: string }>(token, "getFile", { file_id: fileId });
   if (!file.file_path) throw new Error("o Telegram não entregou a foto");
   const res = await fetch(`https://api.telegram.org/file/bot${token}/${file.file_path}`, { signal: AbortSignal.timeout(20_000) });

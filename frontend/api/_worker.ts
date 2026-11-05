@@ -228,6 +228,7 @@ interface Motion {
   tg_ext?: string;
   seconds: number;
   outfit?: string;
+  outfit_ref?: string; // 05/11: foto da roupa mandada no pedido (refs/<uuid>.jpg)
   sound?: "original" | "sem";
   // video longo +18: quantos trechos de `seconds` o administrador aprovou (custo)
   segments?: number;
@@ -473,6 +474,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
               ...(motion.tg_file ? { file_url: await telegramFileUrl(motion.tg_file), file_name: `video.${motion.tg_ext ?? "mp4"}` } : {}),
               seconds: motion.seconds,
               ...(motion.outfit ? { outfit: motion.outfit } : {}),
+              ...(motion.outfit_ref ? { outfit_url: await storageReadUrl(UPLOAD_BUCKET, motion.outfit_ref, 7200) } : {}),
               sound: motion.sound ?? "sem",
               ...(motion.long ? { long: true, segments: motion.segments, ...(motion.length ? { start: motion.start ?? 0, length: motion.length } : {}) } : {}),
               ...(motion.force ? { force: true } : {}),
@@ -553,6 +555,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       await dbUpdateWhere("content_plan_items", `id=eq.${it.id}`, { status: "na_fila", attempts: 0, note: null, updated_at: now() });
       await audit("refazer_item", "content_plan_items", it.id, { photos: Number.isInteger(photos) ? photos : null });
       return reply(200, { id: it.id, folder: folderFor(it), file: fileNameFor(it) });
+    }
+
+    // roupas de "Minhas roupas" da Naiaflow, lidas pelo robo (05/11)
+    if (body.action === "outfits") {
+      const { saveOutfitList } = await import("./_outfit_list.js");
+      return reply(200, { names: await saveOutfitList(body.names) });
     }
 
     // nota do video do pedido pelo Telegram, antes do Gerar (03/11)
@@ -663,6 +671,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       // dancinha pronta: o video de referencia enviado sai do armazenamento
       const motion = video ? await motionOf(item) : null;
       if (motion?.path) await storageRemove(UPLOAD_BUCKET, [motion.path]).catch(() => undefined);
+      if (motion?.outfit_ref) await storageRemove(UPLOAD_BUCKET, [motion.outfit_ref]).catch(() => undefined);
       // a foto de referencia ja foi usada
       const refs = video ? [] : await referencesOf(item);
       if (refs.length) await storageRemove(UPLOAD_BUCKET, refs).catch(() => undefined);
