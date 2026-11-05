@@ -258,6 +258,10 @@ def put_copy(url: str, data: bytes, mime: str = "image/jpeg") -> None:
 
 # --- Naiaflow (Playwright) --------------------------------------------------------------------------
 
+class NaiaNotStarted(RuntimeError):
+    """O Gerar foi clicado mas a Naiaflow nao comecou (nenhum credito gasto)."""
+
+
 class Naiaflow:
     def __init__(self) -> None:
         from playwright.sync_api import sync_playwright
@@ -654,6 +658,8 @@ class Naiaflow:
         p.wait_for_selector("text=Modo imagem", timeout=60000)
         p.wait_for_timeout(2000)
         self._dismiss_overlays()
+        # para conferir depois do Gerar se a Naiaflow comecou mesmo (05/11)
+        credits_before, busy_before = self.credits(), self._busy_count()
         p.get_by_role("button", name=re.compile(r"Modo imagem")).first.click()
         p.wait_for_timeout(1200)
         # 04/11 a Naiaflow renomeou "Copiar movimento" para "Copiar dancinha"
@@ -744,12 +750,69 @@ class Naiaflow:
         log(f"Gerando a dancinha ({seconds} s, {seconds + 1} créditos)…")
         if on_started:  # o credito ja foi gasto: a proxima tentativa so procura o video
             on_started(sorted(before))
+        # 05/11: o clique no Gerar nao comecou nada (creditos iguais, galeria sem
+        # video) e o robo esperou 35 min a toa. Confere em ate 2 min; se nada
+        # comecou, para e avisa (o pedido falha e o aviso chega no Telegram).
+        if not self._motion_started(credits_before, busy_before, before):
+            shot = STUDIO_ROOT / "conteudos" / "_erros" / f"gerar-nao-comecou-{time.strftime('%Y%m%d-%H%M%S')}.png"
+            shot.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                p.screenshot(path=str(shot))
+            except Exception:  # noqa: BLE001
+                pass
+            raise NaiaNotStarted(
+                "A Naiaflow não começou a dancinha depois do Gerar (nenhum crédito gasto). "
+                f"Mande o vídeo de novo. Tela guardada em conteudos/_erros/{shot.name}"
+            )
         # 03/11: a de 10 s passou dos 25 min; 5 s levou 12 a 14 min
         minutes = 15 + 4 * seconds
         url = self.find_motion(before, minutes * 60, on_wait, seconds=seconds)
         if url:
             return url
         raise RuntimeError(f"A Naiaflow nao terminou a dancinha em {minutes} minutos.")
+
+    def _busy_count(self) -> int:
+        # cartoes "Gerando"/"Na fila"/"Processando" na galeria
+        try:
+            return len(re.findall(r"\b(Gerando|Na fila|Processando)\b", self.page.locator("body").inner_text(timeout=5000), re.I))
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _motion_started(self, credits_before: int | None, busy_before: int, thumbs_before: set[str], wait_s: int = 120) -> bool:
+        """Depois do Gerar: a Naiaflow comecou? Sim se os creditos baixaram, se
+        apareceu um "Gerando" a mais ou um video novo na galeria. Sem como ler os
+        creditos, supoe que sim (nunca arrisca gerar e pagar duas vezes)."""
+        p = self.page
+        p.wait_for_timeout(5000)
+        # aviso da Naiaflow logo depois do clique (erro, limite...) vai para o log
+        try:
+            toasts = p.locator("[role=alert], [role=status], [data-sonner-toast]")
+            msgs = [t.inner_text().strip() for t in toasts.all() if t.is_visible() and t.inner_text().strip()]
+            if msgs:
+                log(f"Aviso da Naiaflow depois do Gerar: {' | '.join(msgs)[:300]}")
+        except Exception:  # noqa: BLE001
+            pass
+        if credits_before is None:
+            return True
+        deadline = time.time() + wait_s
+        while True:
+            try:
+                credits = self.credits()
+                if credits is not None and credits < credits_before:
+                    return True
+                if self._busy_count() > busy_before or set(self._stream_thumbs()) - thumbs_before:
+                    return True
+            except Exception:  # noqa: BLE001
+                pass
+            if time.time() > deadline:
+                return False
+            p.wait_for_timeout(15000)
+            try:
+                p.goto(NAIAFLOW, wait_until="domcontentloaded")
+                p.wait_for_selector("text=Modo imagem", timeout=60000)
+                p.wait_for_timeout(4000)
+            except Exception:  # noqa: BLE001
+                pass
 
     def find_motion(self, before: set[str], wait_s: int, on_wait=None, seconds: int | None = None) -> str | None:
         """Espera o video novo (que nao estava na galeria antes do Gerar) e devolve o MP4.
@@ -951,7 +1014,12 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
                 raise RuntimeError("A dancinha pedida antes ainda nao apareceu na Naiaflow. Nao gerei de novo para nao gastar creditos.")
         else:
             started = lambda before: marker.write_text(json.dumps({"before": before, "at": time.time()}), encoding="utf-8")  # noqa: E731
-            url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original", on_started=started)
+            try:
+                url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original", on_started=started)
+            except NaiaNotStarted:
+                # nada foi pago: a proxima tentativa pode gerar de novo
+                marker.unlink(missing_ok=True)
+                raise
         r = requests.get(url, timeout=300)
         r.raise_for_status()
         mp4.write_bytes(r.content)
