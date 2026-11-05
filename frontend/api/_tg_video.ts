@@ -54,6 +54,10 @@ interface VideoOrder {
   at: number;
   // 03/11: nota do video (0 a 100) dada pelo robo do PC antes do Gerar
   rating?: { status: "pendente" | "pronto" | "erro"; score?: number; note?: string };
+  // 05/11: os botoes so aparecem junto com a nota; ate la, "processando a nota"
+  waiting?: boolean; // esperando a nota para mostrar os botoes
+  waitMsg?: number; // mensagem "processando" (resposta ao video), para responder a nota nela
+  optionsShown?: boolean; // os botoes ja foram mostrados (robo desligado: na hora)
 }
 
 type Say = (text: string, extra?: Record<string, unknown>) => Promise<unknown>;
@@ -178,6 +182,34 @@ function summaryText(v: VideoOrder): string {
   ].join("\n");
 }
 
+// robo do PC ligado (falou com o estudio nos ultimos minutos): so ele da a nota
+const WORKER_SEEN_KEY = "luna:worker-seen"; // o mesmo de api/_worker.ts
+const WORKER_FRESH_MS = 5 * 60_000;
+async function workerOnline(): Promise<boolean> {
+  const seen = await storeGet(WORKER_SEEN_KEY).catch(() => null);
+  return !!seen && Date.now() - Date.parse(seen) < WORKER_FRESH_MS;
+}
+
+const cancelButton = (v: VideoOrder) => ({ inline_keyboard: [[{ text: "✖ Cancelar", callback_data: `vx:${v.id}` }]] });
+const WAITING = "⏳ Processando a nota do vídeo (de 0 a 100) no robô do PC… Quando ela chegar, aparecem aqui as opções.";
+const OFFLINE = "🔎 O robô do PC está desligado: a nota chega aqui quando ele ligar (dá para escolher já).";
+
+// Mostra o pedido: com o robo ligado, so "processando" (os botoes vem com a nota);
+// desligado, os botoes na hora (senao o pedido ficaria parado sem opcao)
+async function askOrder(v: VideoOrder, head: string, replyTo: Record<string, unknown>, say: Say): Promise<void> {
+  if (await workerOnline()) {
+    await save({ ...v, waiting: true });
+    const sent = (await say(`${head}\n${WAITING}`, { ...replyTo, reply_markup: cancelButton(v) })) as { message_id?: number } | undefined;
+    // relê: a nota pode ter chegado enquanto a mensagem ia (nao apaga a nota)
+    const cur = await load(v.id);
+    if (cur && !cur.optionsShown && sent?.message_id) await save({ ...cur, waitMsg: sent.message_id });
+    return;
+  }
+  await save({ ...v, optionsShown: true });
+  if (v.kind) await say(summaryText(v), { ...replyTo, reply_markup: summaryButtons(v) });
+  else await say(`${head} O que eu faço?\n${OFFLINE}`, { ...replyTo, reply_markup: kindButtons(v) });
+}
+
 function newOrder(fields: Partial<VideoOrder>): VideoOrder {
   return { id: randomUUID().slice(0, 8), caption: "", seconds: 5, outfit: -1, sound: "original", adult: ADULT_DESTS.map((d) => d.key), at: Date.now(), ...fields };
 }
@@ -206,14 +238,19 @@ export async function videoMessage(msg: TgVideoMessage, say: Say): Promise<void>
   }
   const duration = msg.video?.duration;
   const v = newOrder({ tgFile: file.file_id, ext, ...(duration !== undefined ? { duration, seconds: danceSecondsFor(duration) } : {}), caption: (msg.caption ?? "").trim().slice(0, 2200), rating: { status: "pendente" } });
-  await save(v);
+  await askOrder(v, `🎬 Recebi o vídeo${receivedTip(v)}.`, replyTo, say);
+}
+
+function receivedTip(v: VideoOrder): string {
+  if (v.link) return "";
+  const d = v.duration;
   const tip =
-    duration === undefined
+    d === undefined
       ? " (mandado como arquivo: para o vídeo longo +18, mande como vídeo)"
-      : duration > LONG_MAX_SECONDS
-        ? ` (${Math.round(duration)} s: o vídeo longo vai até ${LONG_MAX_SECONDS / 60} min)`
+      : d > LONG_MAX_SECONDS
+        ? ` (${Math.round(d)} s: o vídeo longo vai até ${LONG_MAX_SECONDS / 60} min)`
         : "";
-  await say(`🎬 Recebi o vídeo${duration !== undefined ? ` (${Math.round(duration)} s)` : ""}${tip}. O que eu faço?\n🔎 O robô do PC já está dando a nota do vídeo (de 0 a 100): ela chega aqui antes de você gerar.`, { ...replyTo, reply_markup: kindButtons(v) });
+  return `${d !== undefined ? ` (${Math.round(d)} s)` : ""}${tip}`;
 }
 
 // Link de dancinha (TikTok, Instagram...) mandado no chat: so a dancinha (o
@@ -224,8 +261,7 @@ export async function videoLink(text: string, messageId: number, say: Say): Prom
   if (!(await storeSetIfAbsent(`luna:tg-video:${messageId}`, "1", 3600))) return true;
   const caption = text.replace(link, "").trim().slice(0, 2200);
   const v = newOrder({ link, caption, kind: "danca", rating: { status: "pendente" } });
-  await save(v);
-  await say(summaryText(v), { reply_to_message_id: messageId, reply_markup: summaryButtons(v) });
+  await askOrder(v, "🔗 Recebi o link da dancinha.", { reply_to_message_id: messageId }, say);
   return true;
 }
 
@@ -381,17 +417,31 @@ export async function saveRating(id: string, result: RefRating | { error: string
   const v = await load(id);
   if (!v) return;
   const done = "score" in result;
-  await save({ ...v, rating: done ? { status: "pronto", score: result.score } : { status: "erro", note: result.error.slice(0, 120) } });
+  // pedido antigo (de antes de 05/11, sem "waiting"): ja tinha os botoes
+  const showOptions = !!v.waiting && !v.optionsShown;
+  const next: VideoOrder = { ...v, rating: done ? { status: "pronto", score: result.score } : { status: "erro", note: result.error.slice(0, 120) }, optionsShown: true };
+  await save(next);
   const head = `🔎 Nota do vídeo ${VIDEO_TAG} ${id}`;
-  const text = done
-    ? [
-        `${head}: ${result.score}/100`,
-        ratingText(result),
-        "",
-        result.score >= MIN_SCORE
-          ? "✅ Deve ficar bom: pode tocar em Gerar no pedido."
-          : `⚠️ Abaixo de ${MIN_SCORE}: deve sair com defeito. Melhor mandar outro vídeo; se quiser gerar assim mesmo, toque em Gerar no pedido.`,
-      ].join("\n")
-    : `${head}: ${result.error.slice(0, 200)}. Você decide se gera mesmo assim.`;
-  await sendNotice(await telegramConfig(), text).catch(() => undefined);
+  const verdict = done
+    ? result.score >= MIN_SCORE
+      ? "✅ Deve ficar bom: pode gerar."
+      : `⚠️ Abaixo de ${MIN_SCORE}: deve sair com defeito. Melhor mandar outro vídeo; se quiser, gere assim mesmo.`
+    : "Você decide se gera mesmo assim.";
+  const text = done ? [`${head}: ${result.score}/100`, ratingText(result), "", verdict].join("\n") : `${head}: ${result.error.slice(0, 200)}. ${verdict}`;
+  const config = await telegramConfig();
+  if (!showOptions || !config.token || !config.chatId) {
+    await sendNotice(config, text).catch(() => undefined);
+    return;
+  }
+  // tira o Cancelar do "processando" e responde nele com a nota + as opcoes
+  const chat = { chat_id: config.chatId };
+  if (v.waitMsg) await telegram(config.token, "editMessageReplyMarkup", { ...chat, message_id: v.waitMsg, reply_markup: { inline_keyboard: [] } }).catch(() => undefined);
+  const replyTo = v.waitMsg ? { reply_to_message_id: v.waitMsg, allow_sending_without_reply: true } : {};
+  if (next.kind) {
+    // link de dancinha: a nota e depois o resumo com os botoes (a nota tambem vai no resumo)
+    await telegram(config.token, "sendMessage", { ...chat, ...replyTo, text }).catch(() => undefined);
+    await telegram(config.token, "sendMessage", { ...chat, text: summaryText(next), reply_markup: summaryButtons(next) }).catch(() => undefined);
+  } else {
+    await telegram(config.token, "sendMessage", { ...chat, ...replyTo, text: `${text}\n\n🎬 O que eu faço?`, reply_markup: kindButtons(next) }).catch(() => undefined);
+  }
 }

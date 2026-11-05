@@ -1111,6 +1111,7 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
   - Quando o vídeo chega no bot, o pedido fica com a nota "pendente".
   - A cada volta da fila, o robô do PC pergunta (`ref-pending`), baixa o vídeo do Telegram, tira os quadros e devolve (`ref-rated`).
   - O bot manda a nota com os pontos bons e os problemas, e o resumo do pedido passa a mostrar "🔎 Nota prevista: N/100".
+  - **Botões só depois da nota (05/11):** com o robô ligado (falou com o estúdio nos últimos 5 min), o bot responde só "⏳ Processando a nota…" (com Cancelar). A mensagem da nota já traz os botões: Dancinha / Vídeo longo no vídeo; no link, o resumo com o Gerar. Robô desligado: os botões aparecem na hora e a nota chega depois, sem repetir os botões.
   - Ao tocar em Gerar, a nota vai junto (`motion.rating`) e o robô não avalia de novo.
   - Link: o robô baixa com o yt-dlp; sem o yt-dlp instalado, o bot avisa que o link fica sem nota.
 - **Ainda sem nota (antes desta parte):**
