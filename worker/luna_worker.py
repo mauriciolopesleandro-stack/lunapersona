@@ -779,6 +779,7 @@ class Naiaflow:
         p.wait_for_timeout(3000)
         p.remove_listener("response", on_resp)
         self._after_click_report(bad)
+        self._wait_preparing()
         if on_started:  # o credito ja foi gasto: a proxima tentativa so procura o video
             on_started(sorted(before))
         # 05/11: o clique no Gerar nao comecou nada (creditos iguais, galeria sem
@@ -823,6 +824,29 @@ class Naiaflow:
             log(f"Tela de depois do Gerar: conteudos/_erros/{shot.name}")
         except Exception as e:  # noqa: BLE001
             log(f"Depois do Gerar: não consegui guardar a tela ({e}).")
+
+    def _wait_preparing(self, wait_s: int = 600) -> None:
+        """05/11: depois do Gerar a Naiaflow prepara o trecho NO NAVEGADOR
+        ("Preparando o trecho · 3 de 5 s · 18%") e so depois manda o pedido.
+        Recarregar a pagina nesse meio cancelava tudo (nada comecava, nenhum
+        credito gasto). Espera a preparacao acabar sem sair da pagina."""
+        p = self.page
+        prep = p.get_by_text(re.compile(r"Preparando", re.I))
+        deadline = time.time() + wait_s
+        next_log = 0.0
+        while time.time() < deadline:
+            try:
+                visible = [t for t in prep.all() if t.is_visible()]
+            except Exception:  # noqa: BLE001
+                visible = []
+            if not visible:
+                p.wait_for_timeout(3000)  # o envio pode ainda estar terminando
+                return
+            if time.time() >= next_log:  # progresso no log a cada 30 s
+                log(f"Naiaflow: {visible[0].inner_text().strip()[:80]}")
+                next_log = time.time() + 30
+            p.wait_for_timeout(2000)
+        log("A preparação do trecho na Naiaflow passou de 10 minutos; sigo conferindo.")
 
     def _busy_count(self) -> int:
         # cartoes "Gerando"/"Na fila"/"Processando" na galeria
