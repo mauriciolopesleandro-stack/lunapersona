@@ -717,12 +717,24 @@ class Naiaflow:
         p.wait_for_timeout(5000)
         dialog = p.locator("[role=dialog]").last
         pending = dialog.get_by_text("Selecionar clone", exact=True)
+        # 05/11: "Quem vai aparecer" pode demorar a carregar; conferir cedo pulava a
+        # escolha da Luna e o Gerar ficava desligado (ou nao comecava). Espera
+        # aparecer o "Selecionar clone" ou o clone ja escolhido (botao Roupa).
+        chosen = dialog.get_by_role("button", name="Roupa", exact=True)
+        for _ in range(30):
+            if (pending.count() and pending.first.is_visible()) or (chosen.count() and chosen.last.is_visible()):
+                break
+            p.wait_for_timeout(2000)
         if pending.count() and pending.first.is_visible():
             pending.first.click()
             p.wait_for_timeout(2500)
             p.locator("[role=dialog]").last.get_by_text(CLONE, exact=True).first.click()
             p.wait_for_timeout(2500)
-        if pending.count() and pending.first.is_visible():
+        for _ in range(5):
+            if chosen.count() and chosen.last.is_visible():
+                break
+            p.wait_for_timeout(2000)
+        if (pending.count() and pending.first.is_visible()) or not (chosen.count() and chosen.last.is_visible()):
             raise RuntimeError(f'Nao consegui escolher o clone "{CLONE}" no Copiar movimento.')
         if outfit:
             p.get_by_role("button", name="Roupa", exact=True).last.click()
@@ -738,16 +750,35 @@ class Naiaflow:
                 raise RuntimeError(f'A roupa "{outfit}" nao ficou escolhida no Copiar movimento.')
             log(f"Roupa: {outfit}.")
         final = p.get_by_role("button", name=re.compile(r"Gerar v[ií]deo", re.I))
+        # 05/11: o Gerar fica desligado alguns segundos enquanto a Naiaflow prepara
+        # a ultima tela (o robo chegava cedo: "nao ficou ligado", ou clicava logo
+        # que ligava e nada comecava). Espera ligar e da mais um tempo.
+        for _ in range(30):
+            if final.count() == 1 and final.first.is_enabled():
+                break
+            p.wait_for_timeout(2000)
         if final.count() != 1 or not final.first.is_enabled():
-            raise RuntimeError("O botao Gerar video da Naiaflow nao ficou ligado.")
+            raise RuntimeError("O botao Gerar video da Naiaflow nao ficou ligado em 1 minuto.")
+        p.wait_for_timeout(5000)
         label = final.first.inner_text().replace("\n", " ").strip()
         if not label.endswith(str(seconds + 1)):
             raise RuntimeError(f"Custo inesperado no Copiar movimento ({label}): nao gerei.")
         if dry:  # conferencia sem gastar credito: para antes do Gerar
             return label
         before = set(self._stream_thumbs())
-        final.first.click(timeout=15000, force=True)
+        # 05/11 o Gerar nao comecava nada: guarda as respostas com erro do site
+        # logo depois do clique, para o diagnostico
+        bad: list[str] = []
+        on_resp = lambda r: bad.append(f"{r.status} {r.request.method} {r.url[:120]}") if r.status >= 400 else None  # noqa: E731
+        p.on("response", on_resp)
+        try:  # clique normal (espera o botao estar pronto); forcado so se nao der
+            final.first.click(timeout=15000)
+        except Exception:  # noqa: BLE001
+            final.first.click(timeout=15000, force=True)
         log(f"Gerando a dancinha ({seconds} s, {seconds + 1} créditos)…")
+        p.wait_for_timeout(3000)
+        p.remove_listener("response", on_resp)
+        self._after_click_report(bad)
         if on_started:  # o credito ja foi gasto: a proxima tentativa so procura o video
             on_started(sorted(before))
         # 05/11: o clique no Gerar nao comecou nada (creditos iguais, galeria sem
@@ -770,6 +801,28 @@ class Naiaflow:
         if url:
             return url
         raise RuntimeError(f"A Naiaflow nao terminou a dancinha em {minutes} minutos.")
+
+    def _after_click_report(self, bad: list[str]) -> None:
+        """Foto da tela 3 s depois do Gerar (antes de recarregar) e o que ficou
+        aberto por cima: janela, botoes, erros do site. Vai para conteudos/_erros
+        e para o log, para achar por que a Naiaflow nao comeca."""
+        p = self.page
+        try:
+            shot = STUDIO_ROOT / "conteudos" / "_erros" / f"depois-do-gerar-{time.strftime('%Y%m%d-%H%M%S')}.png"
+            shot.parent.mkdir(parents=True, exist_ok=True)
+            p.screenshot(path=str(shot))
+            dialogs = [d for d in p.locator("[role=dialog], [role=alertdialog]").all() if d.is_visible()]
+            if dialogs:
+                top = dialogs[-1]
+                buttons = [b.inner_text().replace("\n", " ").strip()[:30] for b in top.get_by_role("button").all() if b.is_visible()]
+                log(f"Depois do Gerar: janela aberta | botões: {[b for b in buttons if b]} | texto: {top.inner_text()[:250].replace(chr(10), ' | ')}")
+            else:
+                log("Depois do Gerar: a janela fechou.")
+            if bad:
+                log(f"Depois do Gerar: respostas com erro do site: {bad[:5]}")
+            log(f"Tela de depois do Gerar: conteudos/_erros/{shot.name}")
+        except Exception as e:  # noqa: BLE001
+            log(f"Depois do Gerar: não consegui guardar a tela ({e}).")
 
     def _busy_count(self) -> int:
         # cartoes "Gerando"/"Na fila"/"Processando" na galeria
