@@ -656,7 +656,8 @@ class Naiaflow:
         self._dismiss_overlays()
         p.get_by_role("button", name=re.compile(r"Modo imagem")).first.click()
         p.wait_for_timeout(1200)
-        p.get_by_text(re.compile(r"Copiar movimento", re.I)).first.click()
+        # 04/11 a Naiaflow renomeou "Copiar movimento" para "Copiar dancinha"
+        p.get_by_text(re.compile(r"Copiar (movimento|dancinha)", re.I)).first.click()
         p.wait_for_timeout(2500)
         # a janela lembra o passo da ultima vez
         for name in ("Recomeçar", "Limpar"):

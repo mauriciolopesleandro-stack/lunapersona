@@ -41,7 +41,7 @@ naia._dismiss_overlays()
 print("creditos antes:", naia.credits())
 p.get_by_role("button", name=re.compile(r"Modo imagem")).first.click()
 p.wait_for_timeout(1200)
-p.get_by_text(re.compile(r"Copiar movimento", re.I)).first.click()
+p.get_by_text(re.compile(r"Copiar (movimento|dancinha)", re.I)).first.click()
 p.wait_for_timeout(2500)
 show("0_aberto")
 # a janela lembra o passo da ultima vez: Recomecar volta para o inicio
