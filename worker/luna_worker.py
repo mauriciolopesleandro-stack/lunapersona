@@ -983,7 +983,7 @@ class Naiaflow:
                 first = thumbs[0]
                 p.locator(f"img[src='{first}']").first.click()
                 p.wait_for_timeout(6000)
-                generated = p.get_by_role("button", name=re.compile(r"Reutilizar|Antes\s*/\s*Depois", re.I)).count() > 0
+                generated = p.get_by_role("button", name=re.compile(r"Reutilizar|Antes.{1,3}Depois", re.I)).count() > 0
                 if not generated:
                     continue  # referencia enviada no topo: a geracao ainda nao terminou
                 srcs = p.eval_on_selector_all("video, video source", "els => els.map(e => e.currentSrc || e.src).filter(Boolean)")
