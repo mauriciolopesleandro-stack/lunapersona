@@ -883,25 +883,41 @@ class Naiaflow:
         dialog = p.locator("[role=dialog]").last
         frame = dialog.locator("video").first
         frame.wait_for(state="visible", timeout=90000)
-        p.wait_for_timeout(3000)
-        # quem sai: toca no quadro do video no ponto da pessoa escolhida
+        # 06/11: a previa demora a aceitar o toque (tocar logo nao marcava ninguem)
+        p.wait_for_timeout(10000)
+        # quem sai: toca no quadro do video no ponto da pessoa escolhida; aparece o
+        # marcador "1" e o menu "Selecionar clone / Usar personagem"
         box = frame.bounding_box()
         if not box:
             raise RuntimeError("Não achei o vídeo para tocar em quem vai sair.")
         px, py = point or (0.5, 0.45)
-        p.mouse.click(box["x"] + box["width"] * px, box["y"] + box["height"] * py)
+        menu = p.get_by_text("Selecionar clone", exact=True)
+        for _ in range(3):
+            p.mouse.move(box["x"] + box["width"] * px, box["y"] + box["height"] * py)
+            p.wait_for_timeout(400)
+            p.mouse.down()
+            p.wait_for_timeout(120)
+            p.mouse.up()
+            for _ in range(8):
+                if menu.count() and menu.last.is_visible():
+                    break
+                p.wait_for_timeout(1000)
+            if menu.count() and menu.last.is_visible():
+                break
+            p.wait_for_timeout(4000)
+        if not (menu.count() and menu.last.is_visible()):
+            raise RuntimeError("A Naiaflow não marcou a pessoa no toque (nenhum crédito gasto).")
         log(f"Quem sai: toquei no vídeo em {px:.2f} x {py:.2f}.")
+        menu.last.click()
+        p.wait_for_timeout(3000)
+        hit = p.get_by_text(CLONE, exact=True)
+        if not hit.count():
+            raise RuntimeError(f'Não achei o clone "{CLONE}" na lista do Trocar pessoa.')
+        # roupa fica "Manter original" (a do video)
+        hit.last.click()
         p.wait_for_timeout(4000)
-        # se a Naiaflow pedir o clone depois do toque, escolhe a luna
-        pending = dialog.get_by_text(re.compile(r"Selecionar clone|Escolher clone|Quem entra", re.I))
-        if pending.count() and pending.first.is_visible():
-            pending.first.click()
-            p.wait_for_timeout(2500)
-            hit = p.locator("[role=dialog]").last.get_by_text(CLONE, exact=True)
-            if hit.count():
-                hit.first.click()
-                p.wait_for_timeout(2500)
-        final = dialog.get_by_role("button", name=re.compile(r"Trocar pessoa", re.I))
+        # na pagina toda: o menu da Luna (Roupa / Mudar / Remover) tambem e um dialogo
+        final = p.get_by_role("button", name=re.compile(r"Trocar pessoa", re.I))
         for _ in range(30):
             if final.count() and final.last.is_enabled():
                 break
