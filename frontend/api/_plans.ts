@@ -311,10 +311,16 @@ export async function queueDance(body: Record<string, unknown>): Promise<{ statu
   if (link && !/^https:\/\/\S+$/.test(link)) throw new Problem(400, "Link inválido.");
   if (file && !tg && !/^danca\/[0-9a-f-]{36}\.(mp4|mov|webm)$/.test(file)) throw new Problem(400, "Vídeo inválido.");
   if (!link === !file) throw new Problem(400, "Mande o link ou o vídeo da dancinha.");
+  // 06/11: "trocar" = Trocar pessoa (a cena e a roupa vem do video; ate 12 s);
+  // sem modo = Copiar dancinha (pedidos de antes e o estudio antigo)
+  const swap = body.mode === "trocar";
   const seconds = Number(body.seconds ?? 5);
-  if (![5, 8, 10].includes(seconds)) throw new Problem(400, "A dancinha tem 5, 8 ou 10 segundos.");
-  const outfit = typeof body.outfit === "string" ? body.outfit.trim().slice(0, 60) : "";
-  const outfitRef = outfitRefOf(body);
+  if (![5, 8, 10, ...(swap ? [12] : [])].includes(seconds)) throw new Problem(400, swap ? "O Trocar pessoa tem 5, 8, 10 ou 12 segundos." : "A dancinha tem 5, 8 ou 10 segundos.");
+  const outfit = !swap && typeof body.outfit === "string" ? body.outfit.trim().slice(0, 60) : "";
+  const outfitRef = swap ? "" : outfitRefOf(body);
+  // quem vira a Luna: ponto (fracao do quadro) da pessoa escolhida
+  const pt = (body.point ?? null) as { x?: unknown; y?: unknown } | null;
+  const point = swap && pt && [pt.x, pt.y].every((n) => typeof n === "number" && n > 0 && n < 1) ? { point: { x: Number(pt.x), y: Number(pt.y) } } : {};
   const raw: unknown[] = Array.isArray(body.slots) ? body.slots : ["reels", "tiktok"];
   const keys = [...new Set(raw.map(String))].filter((k) => k === "reels" || k === "tiktok");
   if (!keys.length) throw new Problem(400, "Marque Reels, TikTok ou os dois.");
@@ -332,7 +338,7 @@ export async function queueDance(body: Record<string, unknown>): Promise<{ statu
   // nota do video ja dada no pedido pelo Telegram (03/11): o robo nao avalia de novo
   const score = Number(body.rating);
   const rating = body.rating !== undefined && Number.isInteger(score) && score >= 0 && score <= 100 ? { rating: { score, at: new Date().toISOString() } } : {};
-  const motion = { ...(link ? { link } : (tg ?? { path: file })), seconds, ...(outfit ? { outfit } : {}), ...(outfitRef ? { outfit_ref: outfitRef } : {}), sound, ...rating };
+  const motion = { ...(link ? { link } : (tg ?? { path: file })), seconds, ...(outfit ? { outfit } : {}), ...(outfitRef ? { outfit_ref: outfitRef } : {}), sound, ...rating, ...(swap ? { mode: "trocar" as const, ...point } : {}) };
   const plan = await dbInsert<PlanRow>("content_plans", {
     title: `Dancinha do chat (${keys.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}${outfit ? `, roupa ${outfit}` : outfitRef ? ", roupa da foto" : ""})`,
     request: { source: "chat-dance", slots: keys, motion },

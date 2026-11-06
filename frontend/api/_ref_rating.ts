@@ -24,11 +24,37 @@ Você recebe alguns quadros do vídeo, em ordem. Preveja de 0 a 100 o quanto o r
 Seja honesto e prático: 85-100 = deve ficar ótimo; 70-84 = bom, com algum risco; abaixo de 70 = provavelmente sai com defeito.
 Responda só JSON: {"nota": <0-100>, "bom": ["até 3 pontos curtos"], "problemas": ["até 3 pontos curtos"], "dica": "uma frase curta do que trocar no vídeo"}`;
 
+// 06/11: no "Trocar pessoa" (o padrao novo) a cena inteira vem do video e so a
+// pessoa tocada vira a Luna. Regua que a Naia passou (soma 100) + quem aparece no
+// 1o quadro, com a posicao, para ele escolher quem sai.
+export const REF_PROMPT_TROCA = `Você avalia vídeos de referência para o "Trocar pessoa" da Naiaflow: o vídeo fica igual (cena, roupa, fundo, câmera, movimento) e só uma pessoa escolhida vira a personagem Luna.
+Você recebe alguns quadros do vídeo, em ordem. Dê a nota de 0 a 100 somando os pontos desta régua (a da própria Naiaflow):
+- Pessoa que vai virar a Luna clara e central (0-20): rosto visível o tempo todo, não fica de costas nem escondida.
+- Movimento e pose (0-15): movimento suave e natural; muito rápido, muito perto da câmera ou girando o corpo tira pontos.
+- Luz no rosto (0-15): rosto bem iluminado; rosto escuro, luz colorida forte ou piscando tira pontos.
+- Enquadramento e câmera (0-15): câmera parada ou lenta, a pessoa ocupa de 30% a 70% da tela; cortes, zoom e câmera tremida tiram pontos.
+- Fundo (0-10): o fundo é mantido, então só tira pontos se confundir com a pessoa (gente passando na frente, efeitos).
+- Quantidade de pessoas (0-10): 10 com uma pessoa; 5 com duas bem separadas; 0 se a pessoa se sobrepõe a outras.
+- Roupa e corpo (0-10): roupa justa ou com recortes claros; casaco largo ou objeto cobrindo o corpo tira pontos.
+- Água, fumaça, reflexos (0-5).
+- Se a pessoa parecer menor de idade, nota 0.
+Liste também as pessoas que aparecem grandes no PRIMEIRO quadro (no máximo 4, a mais destacada primeiro), cada uma com uma descrição curta (roupa, cabelo, lado) e o ponto do meio do tronco dela em fração da largura (x) e da altura (y) do quadro, de 0 a 1.
+Responda só JSON: {"nota": <0-100>, "bom": ["até 3 pontos curtos"], "problemas": ["até 3 pontos curtos"], "dica": "uma frase curta", "pessoas": [{"descricao": "mulher de vestido rosa, no meio", "x": 0.5, "y": 0.5}]}`;
+
+export type RefMode = "trocar" | "copiar";
+
+export interface RefPerson {
+  desc: string;
+  x: number;
+  y: number;
+}
+
 export interface RefRating {
   score: number;
   good: string[];
   problems: string[];
   tip: string;
+  people?: RefPerson[];
 }
 
 interface ItemRow {
@@ -46,22 +72,28 @@ export function parseRating(text: string): RefRating {
   const json = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "")) as Record<string, unknown>;
   const score = Math.round(Number(json.nota));
   if (!Number.isFinite(score)) throw new Error("a IA não deu a nota");
-  return { score: Math.min(100, Math.max(0, score)), good: list(json.bom), problems: list(json.problemas), tip: String(json.dica ?? "").trim().slice(0, 200) };
+  const frac = (v: unknown) => Math.min(0.98, Math.max(0.02, Number(v)));
+  const people = (Array.isArray(json.pessoas) ? json.pessoas : [])
+    .map((p) => p as Record<string, unknown>)
+    .filter((p) => Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
+    .slice(0, 4)
+    .map((p) => ({ desc: String(p.descricao ?? "pessoa").trim().slice(0, 50), x: frac(p.x), y: frac(p.y) }));
+  return { score: Math.min(100, Math.max(0, score)), good: list(json.bom), problems: list(json.problemas), tip: String(json.dica ?? "").trim().slice(0, 200), ...(people.length ? { people } : {}) };
 }
 
-export async function rateFrames(frames: string[]): Promise<RefRating> {
+export async function rateFrames(frames: string[], mode: RefMode = "trocar"): Promise<RefRating> {
   const images = frames.filter((f) => typeof f === "string" && f.startsWith("data:image/jpeg;base64,")).slice(0, MAX_FRAMES);
   if (images.length < 2) throw new Error("mande pelo menos 2 quadros do vídeo");
   const out = await askAi(
     "normal",
     [
-      { role: "system", content: REF_PROMPT },
+      { role: "system", content: mode === "trocar" ? REF_PROMPT_TROCA : REF_PROMPT },
       {
         role: "user",
         content: [{ type: "text", text: `Quadros do vídeo de referência (${images.length}, do começo ao fim):` }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))],
       },
     ],
-    { json: true, model: visionModel(), maxTokens: 500, timeoutMs: 45_000, temperature: 0.2 }
+    { json: true, model: visionModel(), maxTokens: 700, timeoutMs: 45_000, temperature: 0.2 }
   );
   return parseRating(out.text);
 }
@@ -83,8 +115,9 @@ async function planRequest(item: ItemRow): Promise<Record<string, unknown> & { m
 
 // Chamado pelo robo (acao rate-ref). Devolve { score, go }.
 export async function rateReference(item: ItemRow, frames: unknown): Promise<RefRating & { go: boolean }> {
-  const rating = await rateFrames(Array.isArray(frames) ? (frames as string[]) : []);
   const request = await planRequest(item);
+  // pedido de antes de 06/11 (sem modo) e Copiar dancinha
+  const rating = await rateFrames(Array.isArray(frames) ? (frames as string[]) : [], request.motion?.mode === "trocar" ? "trocar" : "copiar");
   const seconds = Number(request.motion?.seconds ?? 5);
   await dbUpdateWhere("content_plans", `id=eq.${item.plan_id}`, {
     request: { ...request, motion: { ...(request.motion ?? {}), rating: { score: rating.score, at: new Date().toISOString() } } },

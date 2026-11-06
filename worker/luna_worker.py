@@ -822,6 +822,134 @@ class Naiaflow:
             return url
         raise RuntimeError(f"A Naiaflow nao terminou a dancinha em {minutes} minutos.")
 
+    def swap_person(self, link: str | None, video_file: Path | None, seconds: int, sound: str = "original",
+                    point: tuple[float, float] | None = None, dry: bool = False, on_wait=None, on_started=None) -> str:
+        """Trocar pessoa (06/11, bem melhor que o Copiar dancinha): a cena, a roupa e o
+        fundo vem do video e so a pessoa tocada vira a Luna. Passos: busca "trocar" ->
+        Enviar video (ou Importar por link) -> trecho e som -> Continuar -> toca no
+        video em quem sai (point = fracao x, y do quadro; sem point, o meio) -> clone
+        luna -> "Trocar pessoa N" (N = segundos + 1, conferido). Devolve o MP4."""
+        p = self.page
+        p.goto(NAIAFLOW, wait_until="domcontentloaded")
+        p.wait_for_selector("text=Modo imagem", timeout=60000)
+        p.wait_for_timeout(2000)
+        self._dismiss_overlays()
+        credits_before, busy_before = self.credits(), self._busy_count()
+        p.get_by_role("button", name=re.compile(r"Modo imagem")).first.click()
+        p.wait_for_timeout(1200)
+        p.get_by_placeholder(re.compile(r"Filtrar a", re.I)).first.fill("trocar")
+        p.wait_for_timeout(1500)
+        p.get_by_text(re.compile(r"Trocar (a )?pessoa", re.I)).first.click()
+        p.wait_for_timeout(2500)
+        for name in ("Recomeçar", "Limpar"):
+            b = p.get_by_role("button", name=name, exact=True)
+            if b.count() and b.last.is_visible():
+                b.last.click()
+                p.wait_for_timeout(1500)
+                break
+        if video_file:
+            p.get_by_role("button", name=re.compile(r"Enviar v[ií]deo")).first.click()
+            p.wait_for_timeout(1500)
+            with p.expect_file_chooser(timeout=15000) as chooser:
+                p.get_by_role("button", name="Escolher arquivo", exact=True).last.click()
+            chooser.value.set_files(str(video_file))
+            p.wait_for_timeout(15000)
+        else:
+            p.get_by_role("button", name=re.compile(r"Importar por link")).first.click()
+            p.wait_for_timeout(1500)
+            p.locator("input[placeholder^='https']").first.fill(link or "")
+        dur = p.get_by_role("button", name=f"{seconds}s", exact=True)
+        if not (dur.count() and dur.first.is_visible()):
+            p.get_by_role("button", name="Continuar", exact=True).last.click()
+            dur.first.wait_for(state="visible", timeout=90000)
+        if dur.first.is_enabled():
+            dur.first.click()
+        else:
+            options = []
+            for b in p.get_by_role("button", name=re.compile(r"^\d+s$")).all():
+                m = re.fullmatch(r"(\d+)s", b.inner_text().strip())
+                if m and b.is_visible() and b.is_enabled() and int(m.group(1)) < seconds:
+                    options.append((int(m.group(1)), b))
+            if not options:
+                raise RuntimeError(f"O vídeo enviado é mais curto que {seconds} s e a Naiaflow não liberou uma duração menor: mande um vídeo de pelo menos {seconds} s.")
+            seconds, shorter = max(options, key=lambda o: o[0])
+            log(f"O vídeo enviado é mais curto que o pedido: a troca sai com {seconds} s ({seconds + 1} créditos).")
+            shorter.click()
+        choice = p.get_by_text("Som original" if sound == "original" else "Sem som", exact=True)
+        if choice.count():
+            choice.first.click()
+        p.wait_for_timeout(800)
+        p.get_by_role("button", name="Continuar", exact=True).last.click()
+        dialog = p.locator("[role=dialog]").last
+        frame = dialog.locator("video").first
+        frame.wait_for(state="visible", timeout=90000)
+        # 06/11: a previa demora a aceitar o toque (tocar logo nao marcava ninguem)
+        p.wait_for_timeout(10000)
+        # quem sai: toca no quadro do video no ponto da pessoa escolhida; aparece o
+        # marcador "1" e o menu "Selecionar clone / Usar personagem"
+        box = frame.bounding_box()
+        if not box:
+            raise RuntimeError("Não achei o vídeo para tocar em quem vai sair.")
+        px, py = point or (0.5, 0.45)
+        menu = p.get_by_text("Selecionar clone", exact=True)
+        for _ in range(3):
+            p.mouse.move(box["x"] + box["width"] * px, box["y"] + box["height"] * py)
+            p.wait_for_timeout(400)
+            p.mouse.down()
+            p.wait_for_timeout(120)
+            p.mouse.up()
+            for _ in range(8):
+                if menu.count() and menu.last.is_visible():
+                    break
+                p.wait_for_timeout(1000)
+            if menu.count() and menu.last.is_visible():
+                break
+            p.wait_for_timeout(4000)
+        if not (menu.count() and menu.last.is_visible()):
+            raise RuntimeError("A Naiaflow não marcou a pessoa no toque (nenhum crédito gasto).")
+        log(f"Quem sai: toquei no vídeo em {px:.2f} x {py:.2f}.")
+        menu.last.click()
+        p.wait_for_timeout(3000)
+        hit = p.get_by_text(CLONE, exact=True)
+        if not hit.count():
+            raise RuntimeError(f'Não achei o clone "{CLONE}" na lista do Trocar pessoa.')
+        # roupa fica "Manter original" (a do video)
+        hit.last.click()
+        p.wait_for_timeout(4000)
+        # na pagina toda: o menu da Luna (Roupa / Mudar / Remover) tambem e um dialogo
+        final = p.get_by_role("button", name=re.compile(r"Trocar pessoa", re.I))
+        for _ in range(30):
+            if final.count() and final.last.is_enabled():
+                break
+            p.wait_for_timeout(2000)
+        shot = STUDIO_ROOT / "conteudos" / "_erros" / f"trocar-pessoa-{time.strftime('%Y%m%d-%H%M%S')}.png"
+        if not (final.count() and final.last.is_enabled()):
+            shot.parent.mkdir(parents=True, exist_ok=True)
+            p.screenshot(path=str(shot))
+            raise RuntimeError(f"O botão Trocar pessoa não ligou depois de tocar em quem sai (nenhum crédito gasto). Tela em conteudos/_erros/{shot.name}")
+        p.wait_for_timeout(3000)
+        label = final.last.inner_text().replace("\n", " ").strip()
+        if not label.endswith(str(seconds + 1)):
+            raise RuntimeError(f"Custo inesperado no Trocar pessoa ({label}): não gerei.")
+        if dry:  # conferencia sem gastar credito: para antes do clique
+            shot.parent.mkdir(parents=True, exist_ok=True)
+            p.screenshot(path=str(shot))
+            return label
+        before = set(self._stream_thumbs())
+        final.last.click(timeout=15000)
+        log(f"Trocando a pessoa ({seconds} s, {seconds + 1} créditos)…")
+        p.wait_for_timeout(3000)
+        self._wait_preparing()
+        if on_started:  # o credito ja foi gasto: a proxima tentativa so procura o video
+            on_started(sorted(before))
+        if not self._motion_started(credits_before, busy_before, before):
+            raise NaiaNotStarted("A Naiaflow não começou a troca depois do clique (nenhum crédito gasto). Mande o vídeo de novo.")
+        minutes = 15 + 4 * seconds
+        url = self.find_motion(before, minutes * 60, on_wait, seconds=seconds)
+        if url:
+            return url
+        raise RuntimeError(f"A Naiaflow não terminou a troca em {minutes} minutos.")
+
     def list_outfits(self) -> list[str]:
         """Nomes das roupas em "Minhas roupas" da Naiaflow (05/11: a lista do
         Telegram e do estudio vem daqui). So le: Adicionar -> Enviar imagem ->
@@ -963,7 +1091,10 @@ class Naiaflow:
         """Espera o video novo (que nao estava na galeria antes do Gerar) e devolve o MP4.
         03/11: a galeria pode mostrar videos antigos que nao estavam na tela no
         "antes" (pegou um trecho +18 de 5 s no lugar da dancinha de 8 s): cada video
-        candidato e baixado e so vale se tiver a duracao pedida (+-1 s)."""
+        candidato e baixado e so vale se tiver a duracao pedida (+-1 s).
+        04/11: so o PRIMEIRO video da galeria (o mais novo) e so se for uma geracao
+        (a pagina tem "Reutilizar" / "Antes / Depois"); o video de referencia que o
+        robo envia tambem entra na galeria, mas sem esses botoes."""
         p = self.page
         before = set(before)
         deadline = time.time() + wait_s
@@ -974,18 +1105,22 @@ class Naiaflow:
             try:
                 p.goto(NAIAFLOW, wait_until="domcontentloaded")
                 p.wait_for_timeout(4000)
-                new = [t for t in self._stream_thumbs() if t not in before]
-                if not new:
+                thumbs = self._stream_thumbs()
+                if not thumbs or thumbs[0] in before:
                     continue
-                p.locator(f"img[src='{new[0]}']").first.click()
+                first = thumbs[0]
+                p.locator(f"img[src='{first}']").first.click()
                 p.wait_for_timeout(6000)
+                generated = p.get_by_role("button", name=re.compile(r"Reutilizar|Antes.{1,3}Depois", re.I)).count() > 0
+                if not generated:
+                    continue  # referencia enviada no topo: a geracao ainda nao terminou
                 srcs = p.eval_on_selector_all("video, video source", "els => els.map(e => e.currentSrc || e.src).filter(Boolean)")
                 mp4 = next((x for x in srcs if x.startswith("http") and x.endswith(".mp4")), None)
                 if mp4:
                     length = video_seconds_at(mp4) if seconds else None
                     if length is not None and abs(length - seconds) > 1.0:
                         log(f"Vídeo da galeria com {length:.1f} s (pedido {seconds} s): não é este, sigo esperando.")
-                        before.add(new[0])
+                        before.add(first)
                         continue
                     return mp4
             except Exception:
@@ -1186,7 +1321,12 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
         else:
             started = lambda before: marker.write_text(json.dumps({"before": before, "at": time.time()}), encoding="utf-8")  # noqa: E731
             try:
-                url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original", on_started=started, outfit_file=outfit_photo(m, folder, item))
+                if m.get("mode") == "trocar":
+                    pt = m.get("point") or {}
+                    point = (float(pt["x"]), float(pt["y"])) if "x" in pt and "y" in pt else None
+                    url = naia.swap_person(m.get("link"), source, int(m.get("seconds") or 5), sound=m.get("sound") or "original", point=point, on_started=started)
+                else:
+                    url = naia.copy_motion(m.get("link"), source, int(m.get("seconds") or 5), m.get("outfit"), sound=m.get("sound") or "original", on_started=started, outfit_file=outfit_photo(m, folder, item))
             except NaiaNotStarted:
                 # nada foi pago: a proxima tentativa pode gerar de novo
                 marker.unlink(missing_ok=True)
