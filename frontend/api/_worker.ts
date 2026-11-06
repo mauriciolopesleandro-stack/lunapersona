@@ -238,6 +238,9 @@ interface Motion {
   // nota do video de referencia (03/11): force = ele mandou gerar mesmo com nota baixa
   force?: boolean;
   rating?: { score: number; at: string };
+  // 06/11: Trocar pessoa (sem = Copiar dancinha) e o ponto de quem vira a Luna
+  mode?: "trocar";
+  point?: { x: number; y: number };
 }
 // link de download do video mandado no bot de aprovacao (vale 1 h; o robo baixa na hora)
 async function telegramFileUrl(fileId: string): Promise<string> {
@@ -479,6 +482,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
               ...(motion.long ? { long: true, segments: motion.segments, ...(motion.length ? { start: motion.start ?? 0, length: motion.length } : {}) } : {}),
               ...(motion.force ? { force: true } : {}),
               ...(motion.rating ? { rated: motion.rating.score } : {}),
+              ...(motion.mode ? { mode: motion.mode } : {}),
+              ...(motion.point ? { point: motion.point } : {}),
             },
           },
         });

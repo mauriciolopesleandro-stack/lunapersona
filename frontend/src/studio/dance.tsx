@@ -10,6 +10,15 @@ export { DANCE_LINK, OUTFITS };
 // (TikTok, Instagram...), o robo do PC faz o Copiar movimento da Naiaflow com a
 // luna, sem som, na roupa escolhida, e o mesmo video vira Reels e TikTok
 // (cada um com a sua publicacao para aprovar no Telegram).
+// 06/11: modo "Trocar pessoa" (padrao, igual ao bot): a cena, a roupa e o fundo
+// vem do video e so a pessoa escolhida vira a Luna (ate 12 s).
+
+// quem vira a Luna no Trocar pessoa: o ponto (fracao do quadro) onde o robo toca
+const WHO = [
+  { key: "meio", label: "A pessoa do meio", point: { x: 0.5, y: 0.45 } },
+  { key: "esquerda", label: "A pessoa da esquerda", point: { x: 0.28, y: 0.45 } },
+  { key: "direita", label: "A pessoa da direita", point: { x: 0.72, y: 0.45 } },
+] as const;
 
 
 function defaultWhen(): string {
@@ -38,7 +47,7 @@ export function videoSeconds(file: File): Promise<number | null> {
 
 // dancinha com o video mandado (31/10): a duracao segue o video - a maior da
 // Naiaflow (5, 8 ou 10 s) que cabe nele
-export const danceSecondsFor = (video: number) => (video >= 10 ? 10 : video >= 8 ? 8 : 5);
+export const danceSecondsFor = (video: number, swap = false) => (swap && video >= 12 ? 12 : video >= 10 ? 10 : video >= 8 ? 8 : 5);
 
 async function post<T>(body: object): Promise<T> {
   const r = await fetch("/api/studio?r=plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -50,6 +59,8 @@ async function post<T>(body: object): Promise<T> {
 export function DanceCard({ link, file }: { link?: string; file?: File }) {
   const [open, setOpen] = useState(false);
   const [outfit, setOutfit] = useState<OutfitChoice>(OUTFIT_VIDEO);
+  const [swap, setSwap] = useState(true);
+  const [who, setWho] = useState<(typeof WHO)[number]["key"]>("meio");
   const [seconds, setSeconds] = useState(5);
   // video mandado: a duracao vem dele (o administrador ainda pode trocar)
   const [videoLength, setVideoLength] = useState<number | null>(null);
@@ -57,7 +68,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
     if (!file) return;
     void videoSeconds(file).then((n) => {
       setVideoLength(n);
-      if (n) setSeconds(danceSecondsFor(n));
+      if (n) setSeconds(danceSecondsFor(n, true));
     });
   }, [file]);
   // som original da dancinha: na aprovacao do Telegram escolhe entre ele e a musica do Instagram
@@ -88,8 +99,9 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
         await putSignedUpload(up.url, file);
         source = { path: up.path };
       }
-      if (outfit.mode === "foto") setBusy("Enviando a foto da roupa…");
-      const roupa = await outfitFields(outfit);
+      if (!swap && outfit.mode === "foto") setBusy("Enviando a foto da roupa…");
+      // Trocar pessoa: a roupa e a do video; vai o ponto de quem vira a Luna
+      const roupa = swap ? { mode: "trocar", point: WHO.find((w) => w.key === who)!.point } : await outfitFields(outfit);
       setBusy("Mandando para o robô…");
       const res = await post<{ items: { format: string; scheduled_at: string }[] }>({
         action: "dance",
@@ -116,7 +128,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
     return (
       <p className="st-ok">
         Dancinha na fila do robô ({slots.map((k) => (k === "reels" ? "Reels" : "TikTok")).join(" + ")}
-        {chosen ? `, roupa ${chosen}` : ""}){placed.length ? ` · ${placed.join(" · ")}` : ""}. O vídeo chega no Telegram para você aprovar — o robô do PC precisa estar aberto.
+        {swap ? ", Trocar pessoa" : chosen ? `, roupa ${chosen}` : ""}){placed.length ? ` · ${placed.join(" · ")}` : ""}. O vídeo chega no Telegram para você aprovar — o robô do PC precisa estar aberto.
       </p>
     );
   }
@@ -145,7 +157,35 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
           ))}
         </div>
       </div>
-      <OutfitPicker value={outfit} onChange={setOutfit} />
+      <label className="st-field">
+        <span>Como fazer</span>
+        <select
+          className="st-input st-dance-mode"
+          value={swap ? "trocar" : "copiar"}
+          onChange={(e) => {
+            const t = e.target.value === "trocar";
+            setSwap(t);
+            if (!t && seconds > 10) setSeconds(10);
+          }}
+        >
+          <option value="trocar">🔄 Trocar pessoa (recomendado): a cena fica igual, só a pessoa vira a Luna</option>
+          <option value="copiar">💃 Copiar dancinha: a Luna faz o movimento numa cena refeita</option>
+        </select>
+      </label>
+      {swap ? (
+        <label className="st-field">
+          <span>Quem vira a Luna (se tiver mais de uma pessoa no vídeo)</span>
+          <select className="st-input st-dance-who" value={who} onChange={(e) => setWho(e.target.value as (typeof WHO)[number]["key"])}>
+            {WHO.map((w) => (
+              <option key={w.key} value={w.key}>
+                {w.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <OutfitPicker value={outfit} onChange={setOutfit} />
+      )}
       <div className="st-row">
         <label className="st-field">
           <span>Duração{videoLength ? ` (o vídeo tem ${videoLength.toFixed(1).replace(".", ",")} s)` : ""}</span>
@@ -153,6 +193,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
             <option value={5}>5 s (6 créditos)</option>
             <option value={8}>8 s (9 créditos)</option>
             <option value={10}>10 s (11 créditos)</option>
+            {swap && <option value={12}>12 s (13 créditos)</option>}
           </select>
         </label>
         <label className="st-field">
@@ -186,11 +227,13 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
       </label>
       {videoLength !== null && videoLength < 5 && <p className="st-warn">O vídeo tem menos de 5 s: a Naiaflow não faz a dancinha. Mande um vídeo de pelo menos 5 s.</p>}
       <p className="st-hint">
-        O robô faz o Copiar dancinha com a Luna no lugar da pessoa do vídeo. O cenário sempre vem do vídeo; a roupa, do jeito escolhido acima.
+        {swap
+          ? "O robô faz o Trocar pessoa: o vídeo fica igual (cena, roupa e fundo) e só a pessoa escolhida vira a Luna."
+          : "O robô faz o Copiar dancinha com a Luna no lugar da pessoa do vídeo. O cenário sempre vem do vídeo; a roupa, do jeito escolhido acima."}
       </p>
       {error && <p className="st-error">{error}</p>}
       <div className="st-row">
-        <button type="button" className="st-btn st-btn-small st-btn-primary" disabled={busy !== null || !slots.length || !outfitReady(outfit)} onClick={queue}>
+        <button type="button" className="st-btn st-btn-small st-btn-primary" disabled={busy !== null || !slots.length || (!swap && !outfitReady(outfit))} onClick={queue}>
           {busy ?? `Fazer dancinha (${seconds + 1} créditos)`}
         </button>
         <button type="button" className="st-btn st-btn-small" disabled={busy !== null} onClick={() => setOpen(false)}>

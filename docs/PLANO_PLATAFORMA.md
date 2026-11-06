@@ -1129,3 +1129,22 @@ O administrador quer que, ao abrir o bot Luna 💛, o fã veja a prévia (foto o
 **Correção:**
 - Cada vídeo candidato da galeria é baixado e só vale se tiver a duração pedida, com folga de ±1 s (`find_motion`, `video_seconds_at`). A dancinha certa sai com 5,16 s, 8,0 s ou 10,13 s.
 - Não há trava de nudez, a pedido do administrador: ele decide na aprovação o que vai para o Instagram e o TikTok.
+
+## 49. Dancinha pelo Trocar pessoa (06/11/2026)
+
+- **Por quê:** o "Trocar pessoa" da Naiaflow mantém a cena, a roupa, o fundo e o movimento do vídeo, e só a pessoa escolhida vira a Luna. Num teste do administrador (show, multidão) a pele saiu sem manchas e o rosto ficou constante. O Copiar dancinha refaz a cena e "pinta" a luz na pele.
+- **Custo e limite:** o mesmo do Copiar, 1 crédito por segundo mais 1. Vai até 12 s.
+- **Telegram (pedido de vídeo):**
+  - a dancinha vem no **🔄 Trocar pessoa** por padrão, com o **💃 Copiar dancinha** como alternativa (`vw`);
+  - no Trocar pessoa não aparecem as roupas, porque a roupa é a do vídeo, e o 12 s fica liberado;
+  - a nota usa a régua da Naia (`REF_PROMPT_TROCA`: pessoa central 20, movimento 15, luz no rosto 15, câmera 15, fundo 10, quantidade de pessoas 10, roupa 10, água 5) e lista as pessoas do 1º quadro com a posição;
+  - com 2 ou mais pessoas, os botões **👤 1, 2…** escolhem quem vira a Luna (`vp`).
+- **Estúdio (Fazer dancinha):** campo "Como fazer" (Trocar pessoa, o padrão, ou Copiar dancinha) e "Quem vira a Luna" (meio, esquerda ou direita).
+- **Fila:** `motion.mode = "trocar"` e `motion.point {x, y}`. Sem modo é Copiar, para os pedidos antigos.
+- **Robô (`swap_person`):**
+  1. busca "trocar" nas ações e envia o vídeo ou o link;
+  2. escolhe o trecho e o som e toca em Continuar;
+  3. toca no vídeo no ponto de quem sai (sem ponto, no meio) e escolhe o clone luna se a Naiaflow pedir;
+  4. confere o custo (s + 1) no botão "Trocar pessoa" antes de clicar.
+- **Vídeo certo:** só vale o 1º vídeo da galeria, e só se for geração (botões "Reutilizar" e "Antes / Depois"); a referência enviada não tem esses botões. A duração também tem que bater.
+- **Teste:** `test_trocar_pessoa.mjs`.

@@ -5,7 +5,7 @@ import { ADULT_DESTS } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeSet, storeSetIfAbsent } from "./_store.js";
 import { storageRemove } from "./_supabase.js";
-import { MIN_SCORE, ratingText, type RefRating } from "./_ref_rating.js";
+import { MIN_SCORE, ratingText, type RefPerson, type RefRating } from "./_ref_rating.js";
 import { sendNotice, telegram, telegramConfig } from "./_telegram.js";
 
 // Video pelo Telegram (01/11, parte 2 do pedido pelo celular): o administrador
@@ -23,8 +23,10 @@ import { sendNotice, telegram, telegramConfig } from "./_telegram.js";
 // do video longo (0 = completo), vg:<id> gerar, vx:<id> cancelar. Responder o
 // resumo com texto troca a legenda (a historinha no +18); no video longo,
 // "do 10 ao 20" escolhe o pedaco.
+// 06/11: vw:<id>:<t|c> modo da dancinha (t = Trocar pessoa, o padrao; c = Copiar
+// dancinha), vp:<id>:<n> quem vira a Luna (a pessoa n da nota).
 
-export const VIDEO_KINDS = new Set(["vd", "vs", "vo", "vm", "va", "vt", "vg", "vx"]);
+export const VIDEO_KINDS = new Set(["vd", "vs", "vo", "vm", "va", "vt", "vg", "vx", "vw", "vp"]);
 export const VIDEO_TAG = "#video";
 // pedido da foto da roupa: a resposta com a foto chega em videoOutfitPhoto
 export const OUTFIT_TAG = "#roupa";
@@ -35,6 +37,7 @@ const MAX_VIDEO = 20 * 1024 * 1024; // o bot so baixa arquivo do Telegram ate 20
 const LONG_SEGMENT = 5; // o mesmo de api/_plans.ts (trechos de 5 s, 6 creditos cada)
 const LONG_MAX_SECONDS = 300;
 const DANCE_SECONDS = [5, 8, 10];
+const SWAP_SECONDS = [5, 8, 10, 12]; // Trocar pessoa vai ate 12 s
 // resposta "do 10 ao 20" (segundos do video) ao resumo do video longo
 const CUT_REPLY = /^\s*(?:d[oe]s?\s*)?(\d{1,3})\s*(?:s|seg\w*)?\s*(?:ao?|at[ée]|-)\s*(\d{1,3})\s*(?:s|seg\w*)?\s*$/i;
 const DANCE_TAGS = ["#dancinha", "#trend", "#reelsbrasil"];
@@ -66,6 +69,10 @@ interface VideoOrder {
   waiting?: boolean; // esperando a nota para mostrar os botoes
   waitMsg?: number; // mensagem "processando" (resposta ao video), para responder a nota nela
   optionsShown?: boolean; // os botoes ja foram mostrados (robo desligado: na hora)
+  // 06/11: Trocar pessoa (padrao; swap false = Copiar dancinha) e quem vira a Luna
+  swap?: boolean;
+  people?: RefPerson[];
+  person?: number;
 }
 
 type Say = (text: string, extra?: Record<string, unknown>) => Promise<unknown>;
@@ -110,6 +117,9 @@ const cutOf = (v: VideoOrder, from: number, seconds: number) => longCut(v.durati
 const creditsOf = (v: VideoOrder) => (v.kind === "longo" ? segmentsOf(v) * (LONG_SEGMENT + 1) : v.seconds + 1);
 const outfitText = (v: VideoOrder) => (v.outfitRef ? "a da foto que você mandou" : v.outfitName ?? "igual ao vídeo");
 const plural = (n: number) => `${n} crédito${n > 1 ? "s" : ""}`;
+// dancinha no Trocar pessoa (o padrao desde 06/11): a cena e a roupa vem do video
+const isSwap = (v: VideoOrder) => v.kind === "danca" && v.swap !== false;
+const secondsFor = (v: VideoOrder) => (isSwap(v) ? SWAP_SECONDS : DANCE_SECONDS);
 const canLong = (v: VideoOrder) => !!(v.path || v.tgFile) && v.duration !== undefined && v.duration >= LONG_SEGMENT && v.duration <= LONG_MAX_SECONDS;
 
 function kindButtons(v: VideoOrder) {
@@ -122,8 +132,16 @@ function kindButtons(v: VideoOrder) {
 function summaryButtons(v: VideoOrder, names: string[]) {
   const rows: { text: string; callback_data: string }[][] = [];
   if (v.kind === "danca") {
+    rows.push([
+      { text: `${isSwap(v) ? "✅" : "▫️"} 🔄 Trocar pessoa`, callback_data: `vw:${v.id}:t` },
+      { text: `${isSwap(v) ? "▫️" : "✅"} 💃 Copiar dancinha`, callback_data: `vw:${v.id}:c` },
+    ]);
+    // video com mais de uma pessoa: ele escolhe quem vira a Luna
+    if (isSwap(v) && (v.people?.length ?? 0) > 1) {
+      for (const [k, person] of v.people!.entries()) rows.push([{ text: `${(v.person ?? 0) === k ? "✅" : "▫️"} 👤 ${k + 1}. ${person.desc}`, callback_data: `vp:${v.id}:${k}` }]);
+    }
     rows.push(
-      DANCE_SECONDS.filter((s) => s === 5 || v.duration === undefined || v.duration >= s).map((s) => ({ text: `${v.seconds === s ? "✅" : "▫️"} ${s} s`, callback_data: `vs:${v.id}:${s}` }))
+      secondsFor(v).filter((s) => s === 5 || v.duration === undefined || v.duration >= s).map((s) => ({ text: `${v.seconds === s ? "✅" : "▫️"} ${s} s`, callback_data: `vs:${v.id}:${s}` }))
     );
     rows.push([{ text: v.sound === "original" ? "🔊 Som original (trocar para sem som)" : "🔇 Sem som (trocar para o original)", callback_data: `vm:${v.id}` }]);
   } else {
@@ -136,7 +154,12 @@ function summaryButtons(v: VideoOrder, names: string[]) {
     }
   }
   // roupa (05/11): igual ao video, uma de "Minhas roupas" (a lista abre ao tocar)
-  // ou a foto de uma roupa mandada aqui
+  // ou a foto de uma roupa mandada aqui; no Trocar pessoa a roupa e a do video
+  if (isSwap(v)) {
+    rows.push([{ text: `✅ Gerar (${plural(creditsOf(v))})`, callback_data: `vg:${v.id}` }]);
+    rows.push([{ text: "✖ Cancelar", callback_data: `vx:${v.id}` }]);
+    return { inline_keyboard: rows };
+  }
   const mode = v.outfitRef ? "f" : v.outfitName ? "g" : "v";
   const mark = (m: string) => (mode === m ? "✅" : "▫️");
   rows.push([{ text: `${mark("v")} 🎥 Roupa igual ao vídeo`, callback_data: `vo:${v.id}:v` }]);
@@ -185,9 +208,13 @@ function summaryText(v: VideoOrder): string {
           "💃 Dancinha → Reels + TikTok",
           source,
           ...(rating ? [rating] : []),
+          isSwap(v)
+            ? "🔄 Trocar pessoa: a cena, a roupa e o fundo ficam iguais ao vídeo; só a pessoa vira a Luna"
+            : `💃 Copiar dancinha: a Luna faz o movimento numa cena refeita${v.rating?.status === "pronto" ? " (a nota é a do Trocar pessoa)" : ""}`,
+          ...(isSwap(v) && v.people?.length ? [`👤 Quem vira a Luna: ${(v.person ?? 0) + 1}. ${v.people[v.person ?? 0]?.desc ?? ""}`] : []),
           `⏱️ ${v.seconds} s · ${v.sound === "original" ? "som original" : "sem som"}`,
           "🕒 No próximo horário vazio dos Reels",
-          `👗 Roupa: ${outfitText(v)}`,
+          ...(isSwap(v) ? [] : [`👗 Roupa: ${outfitText(v)}`]),
           `💳 ${plural(creditsOf(v))}`,
           "",
           `💬 ${v.caption.slice(0, 1500) || "(sem legenda: entra uma automática do dia, tipo \"Sextou pedindo dancinha 💃 Quem dança comigo?\")"}`,
@@ -314,12 +341,20 @@ export async function videoCallback(token: string, chatId: string, kind: string,
     await say(summaryText(next), { ...replyTo, reply_markup: await buttonsFor(next) });
     return;
   }
-  if (kind === "vs" || kind === "vo" || kind === "vm" || kind === "va" || kind === "vt") {
+  if (kind === "vs" || kind === "vo" || kind === "vm" || kind === "va" || kind === "vt" || kind === "vw" || kind === "vp") {
     if (!v.kind) return;
     let next: VideoOrder;
-    if (kind === "vs") {
+    if (kind === "vw") {
+      if (v.kind !== "danca" || (value !== "t" && value !== "c")) return;
+      // o Copiar dancinha vai ate 10 s
+      next = { ...v, swap: value === "t", seconds: value === "c" && v.seconds > 10 ? 10 : v.seconds };
+    } else if (kind === "vp") {
+      const k = Number(value);
+      if (!isSwap(v) || !Number.isInteger(k) || k < 0 || k >= (v.people?.length ?? 0)) return;
+      next = { ...v, person: k };
+    } else if (kind === "vs") {
       const s = Number(value);
-      if (v.kind !== "danca" || !DANCE_SECONDS.includes(s) || (s > 5 && v.duration !== undefined && v.duration < s)) return;
+      if (v.kind !== "danca" || !secondsFor(v).includes(s) || (s > 5 && v.duration !== undefined && v.duration < s)) return;
       next = { ...v, seconds: s };
     } else if (kind === "vo") {
       if (value === "f") {
@@ -384,8 +419,10 @@ ${OUTFIT_TAG} ${v.id}`, {
           : await queueDance({
               ...(v.link ? { link: v.link } : v.tgFile ? { tg_file: v.tgFile, tg_ext: v.ext } : { path: v.path }),
               seconds: v.seconds,
-              outfit,
-              ...outfitRef,
+              // Trocar pessoa: a roupa e a do video; o ponto e a pessoa escolhida
+              ...(isSwap(v)
+                ? { mode: "trocar", ...(v.people?.[v.person ?? 0] ? { point: { x: v.people[v.person ?? 0].x, y: v.people[v.person ?? 0].y } } : {}) }
+                : { mode: "copiar", outfit, ...outfitRef }),
               sound: v.sound,
               // a nota ja foi dada (e ele gerou assim mesmo): o robo nao avalia de novo
               ...(v.rating?.status === "pronto" ? { rating: v.rating.score } : {}),
@@ -459,7 +496,12 @@ export async function saveRating(id: string, result: RefRating | { error: string
   const done = "score" in result;
   // pedido antigo (de antes de 05/11, sem "waiting"): ja tinha os botoes
   const showOptions = !!v.waiting && !v.optionsShown;
-  const next: VideoOrder = { ...v, rating: done ? { status: "pronto", score: result.score } : { status: "erro", note: result.error.slice(0, 120) }, optionsShown: true };
+  const next: VideoOrder = {
+    ...v,
+    rating: done ? { status: "pronto", score: result.score } : { status: "erro", note: result.error.slice(0, 120) },
+    ...(done && result.people?.length ? { people: result.people, person: 0 } : {}),
+    optionsShown: true,
+  };
   await save(next);
   const head = `🔎 Nota do vídeo ${VIDEO_TAG} ${id}`;
   const verdict = done
@@ -467,7 +509,8 @@ export async function saveRating(id: string, result: RefRating | { error: string
       ? "✅ Deve ficar bom: pode gerar."
       : `⚠️ Abaixo de ${MIN_SCORE}: deve sair com defeito. Melhor mandar outro vídeo; se quiser, gere assim mesmo.`
     : "Você decide se gera mesmo assim.";
-  const text = done ? [`${head}: ${result.score}/100`, ratingText(result), "", verdict].join("\n") : `${head}: ${result.error.slice(0, 200)}. ${verdict}`;
+  const who = done && (result.people?.length ?? 0) > 1 ? `\n👤 ${result.people!.length} pessoas no vídeo: escolha quem vira a Luna nos botões.` : "";
+  const text = done ? [`${head}: ${result.score}/100`, ratingText(result), "", verdict + who].join("\n") : `${head}: ${result.error.slice(0, 200)}. ${verdict}`;
   const config = await telegramConfig();
   if (!showOptions || !config.token || !config.chatId) {
     await sendNotice(config, text).catch(() => undefined);
