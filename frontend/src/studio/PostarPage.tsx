@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { aspectRatio, ASPECTS, flagProblem, translateFlags, type Aspect, type IgAudioFlag, type PostFlags } from "../../api/_flags";
 import { Icon } from "./Icon";
-import { Modal, NETWORKS, Thumb } from "./shared";
+import { AdultBlur, isAdult, Modal, NETWORKS, Thumb } from "./shared";
 import { useStudio, type Item, type Network, type Post } from "./store";
 
 // Publicar: assistente em quatro etapas (Criar, Configurar, Revisar, Publicar).
@@ -377,7 +377,9 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
             <div className="st-postar-rail">
               {chosen.map((m, i) => (
                 <button key={m.path} type="button" className={i === Math.min(slide, chosen.length - 1) ? "on" : ""} onClick={() => setSlide(i)} aria-label={`Ver ${m.title}`}>
-                  {m.kind === "image" ? <img src={m.url} alt="" /> : <video src={`${m.url}#t=0.1`} muted preload="metadata" />}
+                  <AdultBlur item={m}>
+                    {m.kind === "image" ? <img src={m.url} alt="" /> : <video src={`${m.url}#t=0.1`} muted preload="metadata" />}
+                  </AdultBlur>
                 </button>
               ))}
               <button type="button" className="st-postar-add" onClick={() => setPicking(true)}>
@@ -404,7 +406,9 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
                     className={aspect !== "original" ? "st-builder-frame cropped" : "st-builder-frame"}
                     style={aspect !== "original" ? { aspectRatio: String(aspectRatio(aspect)) } : undefined}
                   >
-                    {current.kind === "image" ? <img src={current.url} alt="" /> : <video src={current.url} controls playsInline />}
+                    <AdultBlur item={current}>
+                      {current.kind === "image" ? <img src={current.url} alt="" /> : <video src={current.url} controls playsInline />}
+                    </AdultBlur>
                     {chosen.length > 1 && (
                       <>
                         <button type="button" className="st-car st-car-prev" onClick={() => setSlide((s) => (s - 1 + chosen.length) % chosen.length)} aria-label="Anterior">
@@ -432,7 +436,9 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
                 {chosen.map((m, i) => (
                   <li key={m.path}>
                     <button type="button" className="st-postar-strip-thumb" onClick={() => setSlide(i)} aria-label={`Ver ${m.title}`}>
-                      {m.kind === "image" ? <img src={m.url} alt="" /> : <video src={`${m.url}#t=0.1`} muted preload="metadata" />}
+                      <AdultBlur item={m}>
+                        {m.kind === "image" ? <img src={m.url} alt="" /> : <video src={`${m.url}#t=0.1`} muted preload="metadata" />}
+                      </AdultBlur>
                       <span>{i + 1}</span>
                       {cover === i && chosen.length > 1 && <em>Capa</em>}
                     </button>
@@ -488,7 +494,9 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
                     <tr key={u.id}>
                       <td>
                         <span className="st-pubgrid-media">
-                          {u.media[0] && (u.media[0].kind === "image" ? <img src={u.media[0].url} alt="" /> : <video src={`${u.media[0].url}#t=0.1`} muted preload="metadata" />)}
+                          {u.media[0] && (u.media[0].kind === "image"
+                            ? <img src={u.media[0].url} alt="" className={isAdult(u.media[0]) ? "st-adult-mini" : undefined} />
+                            : <video src={`${u.media[0].url}#t=0.1`} muted preload="metadata" className={isAdult(u.media[0]) ? "st-adult-mini" : undefined} />)}
                           {u.label}
                         </span>
                       </td>
@@ -529,7 +537,9 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
                       <article key={p.key} className={`st-pub st-target-${s.network}`}>
                         <header>
                           <span className="st-pub-thumbs">
-                            {m.slice(0, 4).map((x) => (x.kind === "image" ? <img key={x.path} src={x.url} alt="" /> : <video key={x.path} src={`${x.url}#t=0.1`} muted preload="metadata" />))}
+                            {m.slice(0, 4).map((x) => (x.kind === "image"
+                              ? <img key={x.path} src={x.url} alt="" className={isAdult(x) ? "st-adult-mini" : undefined} />
+                              : <video key={x.path} src={`${x.url}#t=0.1`} muted preload="metadata" className={isAdult(x) ? "st-adult-mini" : undefined} />))}
                           </span>
                           <b>
                             {NETWORKS[s.network].label} · {s.label}
@@ -839,7 +849,9 @@ export function PostarPage({ start, onDone }: { start: PostarStart; onDone: () =
                     </td>
                     <td>
                       <span className="st-pub-thumbs">
-                        {m.slice(0, 4).map((x) => (x.kind === "image" ? <img key={x.path} src={x.url} alt="" /> : <video key={x.path} src={`${x.url}#t=0.1`} muted preload="metadata" />))}
+                        {m.slice(0, 4).map((x) => (x.kind === "image"
+                          ? <img key={x.path} src={x.url} alt="" className={isAdult(x) ? "st-adult-mini" : undefined} />
+                          : <video key={x.path} src={`${x.url}#t=0.1`} muted preload="metadata" className={isAdult(x) ? "st-adult-mini" : undefined} />))}
                       </span>
                     </td>
                     <td className="st-summary-caption">{text || "—"}</td>
@@ -1046,8 +1058,14 @@ function PhonePreview(props: {
   const item = ordered[Math.min(i, ordered.length - 1)];
   const vertical = network === "tiktok" || format === "Stories" || format === "Reels";
   const text = [caption, hashtags.join(" ")].filter(Boolean).join(" ");
+  // +18 borrado ate um clique (a previa exige a midia como filho direto: o borrao vai na propria midia)
+  const [peek, setPeek] = useState<string | null>(null);
+  const blurred = item && isAdult(item) && peek !== item.url;
+  const blurProps = blurred
+    ? { className: "st-adult-mini st-adult-peek", title: "Conteúdo +18: clique para ver", onClick: () => setPeek(item.url) }
+    : {};
   const shown = item ? (
-    item.kind === "image" ? <img src={item.url} alt="" /> : <video src={`${item.url}#t=0.1`} muted preload="metadata" />
+    item.kind === "image" ? <img src={item.url} alt="" {...blurProps} /> : <video src={`${item.url}#t=0.1`} muted preload="metadata" {...blurProps} />
   ) : (
     <div className="st-phone-blank">
       <Icon name="image" size={28} />
