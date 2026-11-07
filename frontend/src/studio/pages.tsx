@@ -7,7 +7,7 @@ import { Icon } from "./Icon";
 import { TelegramCards } from "./money";
 import { MetasPanel } from "./metas";
 import { cloudAudit } from "./cloud";
-import { FolderGate, Modal, NETWORKS, WhenReady, StatusBadge, Thumb, formatBytes, formatDate } from "./shared";
+import { AdultBlur, FolderGate, Modal, NETWORKS, WhenReady, StatusBadge, Thumb, formatBytes, formatDate } from "./shared";
 import { metaProblem, useStudio, type Audience, type Campaign, type Character, type Item, type ItemStatus, type MetaPatch, type Network, type Post, type PostStatus } from "./store";
 
 export interface Nav {
@@ -260,7 +260,11 @@ function PostList({ posts, nav, empty }: { posts: Post[]; nav: Nav; empty: strin
         return (
           <button key={p.id} type="button" className="st-post-row" onClick={() => nav.openComposer({ post: p })}>
             <span className="st-post-cover">
-              {cover ? cover.kind === "image" ? <img src={cover.url} alt="" /> : <video src={`${cover.url}#t=0.1`} muted preload="metadata" /> : <Icon name="image" size={18} />}
+              {cover ? (
+                <AdultBlur item={cover}>
+                  {cover.kind === "image" ? <img src={cover.url} alt="" /> : <video src={`${cover.url}#t=0.1`} muted preload="metadata" />}
+                </AdultBlur>
+              ) : <Icon name="image" size={18} />}
             </span>
             <span className="st-post-info">
               <span className="st-post-net">
@@ -431,7 +435,9 @@ export function ItemDetails({ path, nav, onClose }: { path: string; nav: Nav; on
   return (
     <div className="st-details">
       <div className="st-details-media">
-        {item.kind === "image" ? <img src={item.url} alt={item.title} /> : <video src={item.url} controls playsInline />}
+        <AdultBlur item={item}>
+          {item.kind === "image" ? <img src={item.url} alt={item.title} /> : <video src={item.url} controls playsInline />}
+        </AdultBlur>
       </div>
       <div className="st-details-side">
         <label className="st-label" htmlFor="st-title">Nome</label>

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Icon } from "./Icon";
 import { PostFlow } from "./PostFlow";
-import { Modal, NETWORKS, Thumb } from "./shared";
+import { AdultBlur, Modal, NETWORKS, Thumb } from "./shared";
 import { newPostId, useStudio, type Network, type Post, type PostStatus } from "./store";
 
 function pad(n: number) {
@@ -197,7 +197,9 @@ export function Composer({ initial, defaultDate, defaultMedia, onDone }: Props) 
         <div className="st-composer-media">
           {current ? (
             <>
-              {current.kind === "image" ? <img src={current.url} alt="" /> : <video src={current.url} controls playsInline />}
+              <AdultBlur item={current}>
+                {current.kind === "image" ? <img src={current.url} alt="" /> : <video src={current.url} controls playsInline />}
+              </AdultBlur>
               {chosen.length > 1 && (
                 <>
                   <button type="button" className="st-car st-car-prev" onClick={() => setSlide((s) => (s - 1 + chosen.length) % chosen.length)} aria-label="Anterior">

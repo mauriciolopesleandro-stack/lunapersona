@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode, type SyntheticEvent } from "react";
 import { Icon } from "./Icon";
 import { useStudio, type Item, type Network } from "./store";
 
@@ -34,16 +34,42 @@ function formatDuration(s: number) {
   return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 }
 
+export const isAdult = (item?: { rating?: string } | null) => item?.rating === "adulto";
+
+// Conteudo +18 fica borrado ate um clique. O clique so revela: nao abre nem seleciona nada.
+// A revelacao vale para a midia mostrada (trocar de midia borra de novo).
+export function AdultBlur({ item, children }: { item: { url: string; rating?: string }; children: ReactNode }) {
+  const [revealed, setRevealed] = useState<string | null>(null);
+  if (!isAdult(item) || revealed === item.url) return <>{children}</>;
+  const reveal = (e: SyntheticEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setRevealed(item.url);
+  };
+  return (
+    <span className="st-adult">
+      {children}
+      <span className="st-adult-cover" role="button" tabIndex={0} aria-label="Conteúdo +18: clique para ver"
+        onClick={reveal} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && reveal(e)}>
+        <b>+18</b>
+        <span>clique para ver</span>
+      </span>
+    </span>
+  );
+}
+
 // Miniatura quadrada: foto ou o primeiro quadro do video (com a duracao).
 export function Thumb({ item, onClick }: { item: Item; onClick?: () => void }) {
   const [duration, setDuration] = useState<number | null>(null);
   return (
     <button type="button" className="st-thumb" onClick={onClick} aria-label={`Abrir ${item.title}`}>
-      {item.kind === "image" ? (
-        <img src={item.url} alt="" loading="lazy" />
-      ) : (
-        <video src={`${item.url}#t=0.1`} muted preload="metadata" playsInline onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} />
-      )}
+      <AdultBlur item={item}>
+        {item.kind === "image" ? (
+          <img src={item.url} alt="" loading="lazy" />
+        ) : (
+          <video src={`${item.url}#t=0.1`} muted preload="metadata" playsInline onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)} />
+        )}
+      </AdultBlur>
       <span className="st-thumb-kind">
         <Icon name={item.kind === "image" ? "image" : "video"} size={14} />
       </span>
