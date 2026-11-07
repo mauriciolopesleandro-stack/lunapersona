@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
-import { REF_ASK } from "../../api/_photo_blocks";
+import { REF_ASK, refBotHintText, splitRefBotNote } from "../../api/_photo_blocks";
 import { DANCE_LINK, DanceCard } from "./dance";
 import { LongVideoCard } from "./longVideo";
 import { CtaModal, CtaRow, brDay, useCtaDays, type CtaDay } from "./ctaDays";
@@ -268,8 +268,10 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     // uma foto mandada (nao a revisao de uma foto da Luna nem um perfil) vira
     // referencia IMG1 do Criar, nas duas salas (no "Gerar esta foto" da para desmarcar)
     const refPhoto = review || profile ? undefined : attachments.find((a) => a.kind === "foto")?.images[0];
-    const ask = typed || (profile ? "Analise essa página e crie conteúdos para a Luna nesse estilo." : "Recria essa ideia com a Luna.");
-    const reading = reads.map((r) => `[Referência: ${r.label}]\n${r.text}`).join("\n\n");
+    // texto colado do Reference Bot ("📌 FOTO DE REFERÊNCIA…"): vai como dica, a leitura vale
+    const fromBot = reads.length ? splitRefBotNote(typed) : { ask: typed, hint: "" };
+    const ask = fromBot.ask || (profile ? "Analise essa página e crie conteúdos para a Luna nesse estilo." : "Recria essa ideia com a Luna.");
+    const reading = reads.map((r) => `[Referência: ${r.label}]\n${r.text}`).join("\n\n") + refBotHintText(fromBot.hint);
     const recreate = review
       ? "Esta é uma foto/Reels da própria Luna gerado pela Naiaflow. Com a revisão acima, diga em tópicos curtos o que está errado (ou se está pronta para postar) e como acertar: se der para corrigir editando, escreva o pedido curto para o ✏️ Pedir correção do Telegram (Editar pelo texto da Naiaflow); se for melhor gerar de novo, escreva o prompt corrigido com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO, seguindo as regras de prompt (roupa completa, enquadramento, mãos simples)."
       : profile

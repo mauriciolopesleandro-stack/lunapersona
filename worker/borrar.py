@@ -101,6 +101,45 @@ def _read(path: Path):
     return img
 
 
+FACE_LABELS = {"FACE_FEMALE", "FACE_MALE"}
+FACE_THRESHOLD = 0.3
+FACE_GROW = 0.7  # o rosto inteiro, com testa, queixo e um pouco do cabelo
+
+
+def face_boxes(img) -> list[tuple[int, int, int, int]]:
+    """Caixas (x, y, w, h) dos rostos, aumentadas e dentro da imagem."""
+    h, w = img.shape[:2]
+    out = []
+    for d in detector().detect(img):
+        if d["class"] not in FACE_LABELS or d["score"] < FACE_THRESHOLD:
+            continue
+        x, y, bw, bh = d["box"]
+        gx, gy = int(bw * FACE_GROW / 2), int(bh * FACE_GROW / 2)
+        x0, y0 = max(0, x - gx), max(0, y - gy)
+        x1, y1 = min(w, x + bw + gx), min(h, y + bh + gy)
+        if x1 > x0 and y1 > y0:
+            out.append((x0, y0, x1 - x0, y1 - y0))
+    return out
+
+
+def borrar_rosto(src: Path, dst: Path) -> int:
+    """Foto de referencia (IMG1) com o rosto da pessoa borrado (07/11, dica da
+    Naia: o rosto nitido da IMG1 vaza para o clone). Devolve quantos rostos
+    borrou; com 0, nao salva nada (o robo usa a foto original)."""
+    import cv2
+
+    img = _read(src)
+    regions = face_boxes(img)
+    if not regions:
+        return 0
+    ok, buf = cv2.imencode(".jpg", apply(img, regions), [cv2.IMWRITE_JPEG_QUALITY, 92])
+    if not ok:
+        raise ValueError("não consegui salvar a foto")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    buf.tofile(str(dst))
+    return len(regions)
+
+
 def borrar_imagem(src: Path, dst: Path) -> int:
     """Salva a foto borrada em JPEG; devolve quantas partes borrou."""
     import cv2

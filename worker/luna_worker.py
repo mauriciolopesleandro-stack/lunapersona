@@ -63,7 +63,29 @@ GENERATION_TIMEOUT_S = 10 * 60
 # com foto de referencia (IMG1) a Naiaflow puxava o rosto e o cabelo da mulher da
 # foto (31/10: saiu loira); a IMG1 serve so para pose, roupa e cenario
 REFERENCE_IDENTITY = (" IMG1 é só referência de pose, roupa, enquadramento e cenário: o rosto, o cabelo"
-                      " (castanho escuro, longo) e o corpo são os da luna, nunca os da mulher da IMG1.")
+                      " (castanho escuro, longo) e o corpo são os da luna, nunca os da mulher da IMG1."
+                      # 07/11: frase de reforco que a Naia recomendou
+                      " Mantenha o rosto da Luna exatamente igual ao das fotos do clone, sem alterar as feições.")
+# 07/11 (Naia): o rosto nitido da IMG1 vaza para o clone; borrar o rosto da
+# referencia e o que mais segura o rosto da Luna. A copia borrada fica aqui.
+IMG1_DIR = Path(os.environ.get("TEMP", ".")) / "luna-img1"
+
+
+def face_hidden(photo: Path) -> Path:
+    """A foto de referencia com o rosto da pessoa borrado (NudeNet do borrar.py).
+    Sem rosto achado, sem NudeNet ou com erro: segue com a foto original."""
+    try:
+        import borrar
+
+        dst = IMG1_DIR / f"{photo.stem}-sem-rosto.jpg"
+        n = borrar.borrar_rosto(photo, dst)
+    except Exception as e:  # noqa: BLE001 - borrar o rosto nunca pode parar o Criar
+        log(f"Não consegui borrar o rosto da IMG1 ({e}); vai a foto original.")
+        return photo
+    if not n:
+        return photo
+    log(f"Rosto da pessoa da IMG1 borrado ({n}).")
+    return dst
 # 05/11: a IA do Telegram escreveu "de costas" para uma foto de frente e a Naiaflow
 # seguiu o texto, nao a IMG1. No 1o Criar a pose da IMG1 vem primeiro e vale mais
 # que o texto (nos outros Criar do carrossel o texto pede outra pose de proposito).
@@ -473,6 +495,7 @@ class Naiaflow:
     def attach_reference(self, photo: Path) -> None:
         """Imagem de referencia no Criar: Adicionar -> Enviar imagem -> Do
         dispositivo. Ela entra no composer como IMG1, ao lado do clone."""
+        photo = face_hidden(photo)
         self._close_popovers()
         self.page.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
         self.page.wait_for_timeout(1200)

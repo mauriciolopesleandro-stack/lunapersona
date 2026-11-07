@@ -90,7 +90,19 @@ export const ADULT_DESTS = [
   { key: "album-vip", label: "Pacote Álbum VIP" },
 ];
 
-// foto de referencia: a foto sai IGUAL (31/10). A Naiaflow segue mais o texto do
-// que a IMG1, entao o prompt repete pose, roupa e cenario da leitura
+// foto de referencia: a foto sai IGUAL. 07/11 (Naia): prompt curto, so o que a
+// IMG1 (com o rosto borrado) nao garante; texto longo tira forca do clone
 export const REF_ASK =
-  "Quero a foto IGUAL a esta referência, só que com a Luna (nunca a pessoa da foto). Ela vai como IMG1 no Criar da Naiaflow, mas escreva o PROMPT descrevendo tudo o que está na leitura, sem trocar nada: a mesma pose e o mesmo ângulo (de frente/de costas/de lado, para onde olha, braços e mãos), cada peça e acessório com o tipo exato, o mesmo cenário objeto por objeto, a luz e o estilo da foto. Nada de ícones ou números do print no prompt.";
+  "Quero a foto IGUAL a esta referência, só que com a Luna (nunca a pessoa da foto). Ela vai como IMG1 no Criar da Naiaflow e já mostra pose, roupa e cenário: escreva um PROMPT CURTO (uma ou duas frases, no máximo uns 350 caracteres) com a pose e para onde ela olha (de frente/de costas/de lado), a roupa em poucas palavras (tipo e cor), o lugar em poucas palavras, a luz e o estilo da foto. Não descreva objeto por objeto nem peça por peça: prompt longo faz o rosto da Luna mudar. Nada de ícones ou números do print no prompt." +
+  " Roupa do jeito que está na leitura: se ela estiver nua escreva \"totalmente nua\", sem a parte de cima \"topless\", só de calcinha \"só de calcinha\"; nunca acrescente lingerie, calcinha, sutiã, toalha ou peça que não esteja na leitura.";
+
+// A foto que chega do Reference Bot traz uma legenda propria ("📌 FOTO DE
+// REFERÊNCIA…" + uma descricao de outra IA). Ela nao e recado do administrador:
+// vira so uma dica, e a leitura do estudio e que vale (07/11).
+const REF_BOT_HEADER = /^\s*📌\s*FOTO DE REFER[ÊE]NCIA[^\n]*\n?/i;
+export function splitRefBotNote(note: string): { ask: string; hint: string } {
+  if (!REF_BOT_HEADER.test(note)) return { ask: note.trim(), hint: "" };
+  return { ask: "", hint: note.replace(REF_BOT_HEADER, "").trim().slice(0, 800) };
+}
+export const refBotHintText = (hint: string) =>
+  hint ? `\n\n[Dica do Reference Bot (outra IA, pode errar): se brigar com a leitura acima, vale a leitura]\n${hint}` : "";
