@@ -16,7 +16,8 @@ const READ_RULES = `Descreva só o que aparece de verdade na imagem; não invent
 // a foto vai ser recriada IGUAL (31/10): a leitura precisa ser exata, peca por peca
 const PHOTO_PROMPT = `Você ajuda a recriar fotos para redes sociais o mais IGUAL possível à referência. Olhe com atenção e faça a leitura exata:
 - Lugar e cenário, objeto por objeto (parede e do que é feita, móveis, cama, cortina e cor, porta ou janela e o que aparece lá fora)
-- Roupa: o tipo exato de cada peça (maiô, biquíni, body, vestido…), cores, estampa (oncinha, zebra, floral…), recortes, tiras e amarrações, e o corte da parte de baixo (fio dental, asa-delta, normal)
+- Roupa: primeiro diga o que ela veste DE VERDADE. Se estiver sem nenhuma roupa, escreva "totalmente nua"; se estiver sem a parte de cima, "topless"; se estiver só de calcinha, "só de calcinha". Nunca acrescente lingerie, calcinha, sutiã, toalha, lençol cobrindo ou qualquer peça que não esteja na foto; na dúvida, diga que não dá para ver.
+- Das peças que aparecem: o tipo exato de cada uma (maiô, biquíni, body, vestido…), cores, estampa (oncinha, zebra, floral…), recortes, tiras e amarrações, e o corte da parte de baixo (fio dental, asa-delta, normal)
 - Acessórios com o tipo exato (chapéu de caubói, chapéu de praia, boné…; material e detalhes)
 - Pose: de frente, de costas ou de lado para a câmera; para onde olha (câmera, por cima do ombro, para baixo); onde estão braços e mãos; em pé, sentada ou deitada
 - Enquadramento e ângulo da câmera (corpo inteiro, da cintura para cima; altura da câmera; selfie, espelho só se houver espelho, foto tirada por outra pessoa) e se a foto é vertical ou horizontal
@@ -68,14 +69,14 @@ export class RefError extends Error {
   }
 }
 
-async function read(prompt: string, images: string[], extra = "", temperature?: number): Promise<string> {
+async function read(prompt: string, images: string[], extra = "", temperature?: number, model?: string): Promise<string> {
   const content: AiContent = [{ type: "text", text: extra ? `${prompt}\n\n${extra}` : prompt }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))];
   try {
-    const out = await askAi("normal", [{ role: "user", content }], { model: visionModel(), maxTokens: 900, timeoutMs: 40_000, temperature });
+    const out = await askAi("normal", [{ role: "user", content }], { model: model ?? visionModel(), maxTokens: 900, timeoutMs: 40_000, temperature });
     return out.text.slice(0, 5000);
   } catch (e) {
     // lote de fotos recusado pelo provedor: tenta de novo com menos fotos
-    if (e instanceof AiError && e.status === 502 && images.length > 1) return read(prompt, images.slice(0, images.length > 3 ? 3 : 1), extra, temperature);
+    if (e instanceof AiError && e.status === 502 && images.length > 1) return read(prompt, images.slice(0, images.length > 3 ? 3 : 1), extra, temperature, model);
     if (e instanceof AiError) throw new RefError(e.status, e.message);
     throw e;
   }
@@ -84,12 +85,13 @@ async function read(prompt: string, images: string[], extra = "", temperature?: 
 // Foto (1 imagem) ou video (quadros em ordem), ja reduzidos no navegador.
 // purpose "review": revisao de foto/Reels da Luna (o que esta errado) em vez da
 // leitura da ideia de uma referencia
-export async function analyzeImages(rawImages: unknown, kind: unknown, purpose?: unknown): Promise<string> {
+// model: so para comparar modelos (VISION_CANDIDATES); sem ele, o OPENROUTER_MODEL_VISION
+export async function analyzeImages(rawImages: unknown, kind: unknown, purpose?: unknown, model?: string): Promise<string> {
   const images = Array.isArray(rawImages) ? rawImages.map(String) : [];
   if (!images.length || images.length > MAX_IMAGES) throw new RefError(400, `Mande de 1 a ${MAX_IMAGES} imagens.`);
   if (images.some((i) => !JPEG.test(i) || i.length > MAX_IMAGE_CHARS)) throw new RefError(400, "Imagem inválida ou grande demais.");
-  if (purpose === "review") return read(kind === "video" ? REVIEW_VIDEO : REVIEW_PHOTO, images, "", 0.1);
-  return read(kind === "video" ? VIDEO_PROMPT : PHOTO_PROMPT, images);
+  if (purpose === "review") return read(kind === "video" ? REVIEW_VIDEO : REVIEW_PHOTO, images, "", 0.1, model);
+  return read(kind === "video" ? VIDEO_PROMPT : PHOTO_PROMPT, images, "", undefined, model);
 }
 
 // --- links -----------------------------------------------------------------------------------------

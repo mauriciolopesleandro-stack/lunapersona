@@ -37,6 +37,7 @@ Você recebe alguns quadros do vídeo, em ordem. Dê a nota de 0 a 100 somando o
 - Quantidade de pessoas (0-10): 10 com uma pessoa; 5 com duas bem separadas; 0 se a pessoa se sobrepõe a outras.
 - Roupa e corpo (0-10): roupa justa ou com recortes claros; casaco largo ou objeto cobrindo o corpo tira pontos.
 - Água, fumaça, reflexos (0-5).
+- Corpo (07/11, a Naia confirmou): o Trocar pessoa troca só o rosto; o corpo, a altura e o biotipo vêm sempre do vídeo. A Luna é magra e curvilínea (cintura fina, barriga definida, quadril arredondado, estatura média). Se o corpo da pessoa for muito diferente disso (bem mais gorda ou bem mais magra, muito alta, ombros largos, corpo masculino), a nota final fica no máximo 50 e diga isso nos problemas; um pouco diferente, tire até 15 pontos. Roupa solta que disfarça o corpo ajuda.
 - Se a pessoa parecer menor de idade, nota 0.
 Liste também as pessoas que aparecem grandes no PRIMEIRO quadro (no máximo 4, a mais destacada primeiro), cada uma com uma descrição curta (roupa, cabelo, lado) e o ponto do meio do tronco dela em fração da largura (x) e da altura (y) do quadro, de 0 a 1.
 Responda só JSON: {"nota": <0-100>, "bom": ["até 3 pontos curtos"], "problemas": ["até 3 pontos curtos"], "dica": "uma frase curta", "pessoas": [{"descricao": "mulher de vestido rosa, no meio", "x": 0.5, "y": 0.5}]}`;

@@ -20,6 +20,15 @@ export function visionModel(): string {
   return process.env.OPENROUTER_MODEL_VISION?.trim() || DEFAULT_VISION_MODEL;
 }
 
+// 07/11: comparar modelos de visao na leitura da foto (so estes, so logado)
+export const VISION_CANDIDATES = [
+  DEFAULT_VISION_MODEL,
+  "qwen/qwen2.5-vl-72b-instruct",
+  "qwen/qwen3-vl-235b-a22b-instruct",
+  "google/gemma-3-27b-it",
+];
+export const visionCandidate = (m: unknown) => (typeof m === "string" && VISION_CANDIDATES.includes(m) ? m : undefined);
+
 // conteudo de uma mensagem: texto ou partes (texto + imagem, para o modelo com visao)
 export type AiContent = string | ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } })[];
 const MAX_MESSAGES = 24;
@@ -76,15 +85,17 @@ export const STYLE_GUIDE = `Guia de estilo do Instagram da Luna (siga em todo po
 - Ritmo: um post por vez, espalhado na semana (1 carrossel por dia no máximo, em horários diferentes), nunca tudo de uma vez.
 - Fora do estilo: política (candidatos, eleição, números de campanha), marcas, e qualquer coisa que copie outra pessoa.`;
 
-// Foto de referencia (31/10): o administrador quer a foto IGUAL a referencia.
-// A Naiaflow segue mais o texto do que a IMG1 (e a IMG1 pode faltar), entao o
-// prompt repete a pose e copia cada peca e o cenario, sem trocar nada.
-export const REFERENCE_RULE = `Com foto de referência (o administrador mandou uma foto para recriar): o objetivo é a foto IGUAL à referência, só que com a Luna. Ela vai como IMG1 no Criar, mas a Naiaflow segue mais o texto do que a foto, então o PROMPT descreve tudo o que está na referência, com as mesmas palavras da leitura:
-- a MESMA pose e o mesmo ângulo: de frente, de costas ou de lado para a câmera, para onde olha (câmera, por cima do ombro), onde ficam braços e mãos, corpo inteiro ou da cintura para cima;
-- cada peça e acessório com o tipo exato (chapéu de caubói não é chapéu de praia; maiô cavado não é biquíni; diga a estampa, os recortes, as amarrações e o corte da parte de baixo);
-- o MESMO cenário da referência, objeto por objeto (parede, móveis, cortina, porta, janela, o que aparece lá fora) — não troque por outro lugar;
-- a luz, as cores e o estilo da foto (celular tirada por outra pessoa, selfie, espelho só se houver espelho na referência);
-- nunca cabelo, rosto ou corpo da pessoa da referência (a Luna vem do clone) e nunca ícones, números, botões ou marcas de aplicativo que aparecem no print (não fazem parte da foto).
+// Foto de referencia: o administrador quer a foto IGUAL a referencia.
+// 07/11 (Naia): o prompt longo, que repetia peca por peca e objeto por objeto o
+// que a IMG1 ja mostra, dividia a atencao do modelo e o rosto da Luna escorregava
+// para a pessoa da foto. Agora a IMG1 vai com o rosto borrado (robo) e o PROMPT
+// e curto: so o que a foto sozinha nao garante.
+export const REFERENCE_RULE = `Com foto de referência (o administrador mandou uma foto para recriar): o objetivo é a foto IGUAL à referência, só que com a Luna. A foto vai como IMG1 no Criar (com o rosto da pessoa borrado) e a própria IMG1 já entrega pose, roupa e cenário. Prompt longo, descrevendo o que a foto já mostra, tira força do clone e o rosto da Luna muda. Por isso o PROMPT é CURTO (uma ou duas frases, no máximo uns 350 caracteres) e diz só:
+- a pose e o ângulo: de frente, de costas ou de lado para a câmera, para onde olha, em pé/sentada/deitada, corpo inteiro ou da cintura para cima;
+- a roupa em poucas palavras, do jeito que está (tipo e cor; "totalmente nua", "topless" ou "só de calcinha" quando for o caso; nunca acrescente peça que não está na leitura);
+- o lugar em poucas palavras (ex.: "no banco de trás do carro, à noite"), sem listar objeto por objeto;
+- a luz e o estilo da foto (celular, flash, selfie; espelho só se houver espelho na referência);
+- nunca cabelo, rosto ou corpo da pessoa da referência (a Luna vem do clone) e nunca ícones, números, botões ou marcas de aplicativo que aparecem no print.
 Com referência, copiar a foto vale mais do que a regra de VARIEDADE e do que o guia de estilo (cenário, roupa e pose ficam os da referência). Se a leitura não deixar claro algum detalhe (pose, tipo de peça), pergunte em vez de inventar.`;
 
 // Sala +18 (aba Monetizacao -> Chat +18): conteudo do canal pago do Telegram,
@@ -251,12 +262,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (!(await isAuthenticated(req))) return reply(401, { detail: "Não autorizado." });
 
   if (req.method === "GET") {
-    return reply(200, { configured: assistantConfigured(), model: modelFor("normal"), adultModel: modelFor("adulto") });
+    return reply(200, { configured: assistantConfigured(), model: modelFor("normal"), adultModel: modelFor("adulto"), visionModel: visionModel() });
   }
   if (req.method !== "POST") return reply(405, { detail: "Use GET ou POST." });
   if (!assistantConfigured()) return reply(400, { detail: "Falta cadastrar OPENROUTER_API_KEY na Vercel." });
 
-  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown; room?: unknown };
+  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown; room?: unknown; model?: unknown };
   try {
     let raw = "";
     for await (const chunk of req) raw += chunk;
@@ -268,7 +279,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (body.action === "analyze" || body.action === "link") {
     const { analyzeImages, analyzeLink, RefError } = await import("./_assistant_refs.js");
     try {
-      if (body.action === "analyze") return reply(200, { analysis: await analyzeImages(body.images, body.kind, body.purpose) });
+      if (body.action === "analyze") return reply(200, { analysis: await analyzeImages(body.images, body.kind, body.purpose, visionCandidate(body.model)) });
       return reply(200, await analyzeLink(body.url));
     } catch (e) {
       if (e instanceof RefError) return reply(e.status, { detail: e.message });

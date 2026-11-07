@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { AiError, askAi, chatSystem } from "./_assistant.js";
-import { ADULT_DESTS, ADULT_PHOTOS, REF_ASK, creditsFor, parsePhotoBlocks, type PhotoBlock } from "./_photo_blocks.js";
+import { ADULT_DESTS, ADULT_PHOTOS, REF_ASK, creditsFor, parsePhotoBlocks, refBotHintText, splitRefBotNote, type PhotoBlock } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
 import { storageUploadUrl } from "./_supabase.js";
@@ -230,7 +230,7 @@ export async function pedidoPhoto(token: string, msg: TgPhotoMessage, say: Say):
     const reading = await analyzeImages([`data:image/jpeg;base64,${bytes.toString("base64")}`], "photo");
     const p: Pedido = { id: randomUUID().slice(0, 8), ref, ...(album ? { album } : {}), reading, note, adult: ADULT_DESTS.map((d) => d.key), at: Date.now() };
     await save(p);
-    await say(`📷 Li a foto${p.note ? " e o seu recado" : ""}. Para onde vai?`, { ...replyTo, reply_markup: destButtons(p.id) });
+    await say(`📷 Li a foto${splitRefBotNote(p.note).hint ? " (a legenda do Reference Bot vai só como dica)" : p.note ? " e o seu recado" : ""}. Para onde vai?`, { ...replyTo, reply_markup: destButtons(p.id) });
   } catch (e) {
     if (album) await storeDelete(albumCount(album)).catch(() => undefined);
     await storeDelete(`luna:tg-foto:${msg.message_id}`).catch(() => undefined);
@@ -263,14 +263,16 @@ async function write(p: Pedido, change: string | null, say: Say, replyTo: Record
   try {
     await say(change ? "✍️ Mudando o pedido…" : "✍️ Escrevendo o pedido…", replyTo);
     const room = p.dest === "18" ? "18" : "chat";
-    const ask = p.note || "Recria essa foto com a Luna.";
+    // legenda do Reference Bot: dica, nao pedido do administrador
+    const { ask: typed, hint } = splitRefBotNote(p.note);
+    const ask = typed || "Recria essa foto com a Luna.";
     const recreate =
       room === "18"
         ? `${REF_ASK} Diga também a nudez (o que aparece), a expressão e a textura da pele. Termine com o bloco PROMPT/LEGENDA (a historinha safada do canal, sem hashtag)/DESTINO: +18 Telegram.`
         : `${REF_ASK} Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO: ${p.dest === "stories" ? "Stories" : "Feed"}.`;
     // mudanca sem resposta anterior (a IA tinha falhado): vai junto do primeiro pedido
     const extra = change && !p.reply ? `\n\nMudança pedida: ${change.slice(0, 1500)}` : "";
-    const first = `${ask}\n\n[Referência: foto]\n${p.reading}\n\n${recreate}${extra}`.slice(0, 7900);
+    const first = `${ask}\n\n[Referência: foto]\n${p.reading}${refBotHintText(hint)}\n\n${recreate}${extra}`.slice(0, 7900);
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: await chatSystem(room) },
       { role: "user", content: first },
