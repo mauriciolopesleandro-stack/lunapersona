@@ -91,7 +91,8 @@ export async function analyzeImages(rawImages: unknown, kind: unknown, purpose?:
   if (!images.length || images.length > MAX_IMAGES) throw new RefError(400, `Mande de 1 a ${MAX_IMAGES} imagens.`);
   if (images.some((i) => !JPEG.test(i) || i.length > MAX_IMAGE_CHARS)) throw new RefError(400, "Imagem inválida ou grande demais.");
   if (purpose === "review") return read(kind === "video" ? REVIEW_VIDEO : REVIEW_PHOTO, images, "", 0.1, model);
-  return read(kind === "video" ? VIDEO_PROMPT : PHOTO_PROMPT, images, "", undefined, model);
+  // leitura exata, sem criatividade (09/11: com 0,8 ela inventava roupa)
+  return read(kind === "video" ? VIDEO_PROMPT : PHOTO_PROMPT, images, "", 0.1, model);
 }
 
 // --- links -----------------------------------------------------------------------------------------
