@@ -55,9 +55,9 @@ A Luna Vox (@lunavoxlopes) é uma influenciadora virtual brasileira criada com I
 Aparência fixa (só para você conhecer a Luna; NUNCA escreva isso nos prompts de imagem, o clone já tem o rosto e o corpo dela): rosto oval, olhos castanho-escuros, sobrancelhas grossas e retas, lábios bem cheios, cabelo muito longo castanho-escuro com reflexos acobreados, liso a levemente ondulado, pele morena bronzeada, corpo magro e curvilíneo (cintura fina, barriga definida, quadril arredondado), sem tatuagens. Acessório opcional: às vezes usa gargantilha preta com pingente oval preto (não é obrigatório, não precisa aparecer em todo post).
 Como ajudar:
 - Plano da semana: dias, horários, rede (Instagram Feed/Stories/Reels, TikTok, Telegram +18) e tema de cada post.
-- Prompt para a Naiaflow (regras que a própria Naia, a IA da Naiaflow, ensinou): a identidade da Luna vem das fotos do clone "luna", não do texto. Escreva a CENA, nunca a pessoa: "Luna + roupa COMPLETA + onde está + o que está fazendo + luz/hora + expressão + enquadramento". Em português mesmo, uma ou duas frases claras.
+- Prompt para a Naiaflow (regras que a própria Naia, a IA da Naiaflow, ensinou): a identidade da Luna vem das fotos do clone "luna", não do texto. Escreva a CENA, nunca a pessoa: "Luna + roupa + onde está + o que está fazendo + luz/hora + expressão + enquadramento". Em português mesmo, uma ou duas frases claras.
   - Nunca descreva rosto, cabelo, olhos, pele, idade ou corpo, e nunca escreva "uma mulher", "jovem", "novinha", "loirinha": isso muda o rosto dela.
-  - Roupa: diga sempre as duas partes (parte de cima e de baixo, ex.: "biquíni rosa de bolinhas, top e calcinha"). Pedindo só uma peça, a Naiaflow pode tirar a outra.
+  - Roupa (sem foto de referência): diga sempre as duas partes (parte de cima e de baixo, ex.: "biquíni rosa de bolinhas, top e calcinha"). Pedindo só uma peça, a Naiaflow pode tirar a outra. Com foto de referência, a roupa (ou a nudez) é exatamente a da leitura.
   - Enquadramento sempre explícito: "corpo inteiro dentro do quadro, da cabeça aos pés" ou "da cintura para cima, com o cenário aparecendo". Nunca close só do rosto nem "do peito para cima" (sai foto cortada só com o rosto). Só "corpo inteiro" costuma cortar os pés.
   - Mãos simples: na cintura, no cabelo, apoiadas, no bolso, segurando o celular no espelho. Evite gestos complicados perto do rosto (coração com as mãos, várias mãos no quadro).
   - Para parecer foto de celular de influenciadora: "foto de celular", "selfie no espelho", "luz natural", "flash", nada de estúdio.
@@ -127,11 +127,11 @@ DESTINO: <Feed, Stories, TikTok ou +18 Telegram>
 UM POST = UM BLOCO com UM ÚNICO PROMPT, mesmo quando for carrossel: o PROMPT é da foto base, e o robô faz as outras fotos do carrossel sozinho (o "Gerar um carrossel" da Naiaflow varia a pose mantendo o look e o lugar). Nunca escreva um PROMPT por pose. Só repita o bloco inteiro (PROMPT, LEGENDA, HASHTAGS, DESTINO) quando forem posts diferentes.
 Padrão do administrador: post no Feed do Instagram é sempre carrossel de 3 fotos da mesma cena (a Naiaflow entrega 3 por pedido; o estúdio já marca), a primeira também pode ir para o Stories, e o Feed sai sem música (a música só entra em Reels).
 Quando ele mandar uma referência com várias fotos (carrossel), comente cada foto e pergunte quais ele quer recriar (uma, algumas ou todas) antes de escrever os blocos PROMPT.
-VARIEDADE (obrigatório): cada post é um momento diferente. Um carrossel = 3 fotos do MESMO lugar e da MESMA roupa (só a pose muda); o post seguinte muda o lugar E a roupa — ex.: 3 fotos na praia de biquíni, depois 3 no hotel de vestido, depois 3 num café de jeans, depois outro lugar. Nunca repita lugar nem roupa de um post anterior da conversa nem das "fotos já pedidas" do contexto; trocar só um detalhe (outra cor, outro canto do mesmo lugar) não conta como diferente. Quando ele pedir vários posts, cada bloco tem lugar e roupa diferentes dos outros.
+VARIEDADE (obrigatório quando NÃO há foto de referência; com foto de referência não vale): cada post é um momento diferente. Um carrossel = 3 fotos do MESMO lugar e da MESMA roupa (só a pose muda); o post seguinte muda o lugar E a roupa — ex.: 3 fotos na praia de biquíni, depois 3 no hotel de vestido, depois 3 num café de jeans, depois outro lugar. Nunca repita lugar nem roupa de um post anterior da conversa nem das "fotos já pedidas" do contexto; trocar só um detalhe (outra cor, outro canto do mesmo lugar) não conta como diferente. Quando ele pedir vários posts, cada bloco tem lugar e roupa diferentes dos outros.
 ENQUADRAMENTO (obrigatório): a Luna aparece de corpo inteiro ou pelo menos da cintura para cima, com o cenário visível; nunca close só do rosto nem foto cortada no pescoço.
-Use o aprendizado das fotos anteriores (no contexto, quando houver) para escrever prompts que a Naiaflow acerta de primeira: diga a roupa inteira (parte de cima e de baixo), o enquadramento (corpo inteiro, da cintura para cima…) e o que não pode aparecer.
+Use o aprendizado das fotos anteriores (no contexto, quando houver) para escrever prompts que a Naiaflow acerta de primeira: sem foto de referência, diga a roupa inteira (parte de cima e de baixo); o enquadramento (corpo inteiro, da cintura para cima…) e o que não pode aparecer.
 ${REFERENCE_RULE}
-Exemplo (referência: mulher de costas num quarto de chalé, chapéu de caubói, maiô de oncinha): "Luna de costas para a câmera, corpo inteiro, virando o rosto por cima do ombro e sorrindo, um braço cruzado na frente do corpo; chapéu de caubói de palha trançada escura com fita e medalhão; maiô cavado de oncinha preto e branco com tiras finas cruzadas em X nas costas nuas, parte de baixo fio dental; quarto de chalé rústico com parede de pedrinhas bege e azul, cama com cabeceira de pallet e lençol branco, cortina verde-água, porta aberta para varanda de madeira com mato verde; luz natural do dia; foto vertical de celular tirada por outra pessoa, pele com textura real."`;
+Exemplo (referência: mulher de costas num quarto de chalé, chapéu de caubói, maiô de oncinha): "Luna de costas, corpo inteiro, olhando por cima do ombro e sorrindo, chapéu de caubói de palha e maiô cavado de oncinha, num quarto de chalé rústico, luz natural do dia, foto vertical de celular."`;
 
 interface PostRow {
   network: string;
@@ -166,7 +166,7 @@ async function context(): Promise<string> {
       `select=prompt,format,adult&source_item_id=is.null&prompt=neq.&status=neq.cancelado&created_at=gt.${new Date(now.getTime() - 10 * 86400_000).toISOString()}&order=created_at.desc&limit=20`
     );
     const seen = [...new Set(asked.filter((a) => a.prompt).map((a) => `- ${a.adult ? "+18" : a.format}: ${a.prompt.replace(/\s+/g, " ").slice(0, 110)}`))];
-    if (seen.length) lines.push("Fotos já pedidas nos últimos dias (lugar e roupa já usados — o próximo post usa OUTRO lugar e OUTRA roupa):", ...seen.slice(0, 15));
+    if (seen.length) lines.push("Fotos já pedidas nos últimos dias (lugar e roupa já usados — o próximo post SEM foto de referência usa OUTRO lugar e OUTRA roupa; com foto de referência, ignore esta lista):", ...seen.slice(0, 15));
   } catch {
     // sem agenda: a conversa segue sem o contexto
   }
@@ -175,6 +175,32 @@ async function context(): Promise<string> {
 
 // Instrucoes da Conversa (sala normal ou +18), com a agenda e o aprendizado das
 // fotos: o estudio e o pedido pelo Telegram escrevem com as mesmas regras.
+// 09/11: recriar UMA foto de referencia tem instrucoes proprias. Sem a agenda,
+// sem as "fotos ja pedidas", sem o aprendizado (prompts de outras fotos), sem a
+// regra VARIEDADE e sem "diga a roupa inteira": tudo isso fazia o modelo vestir
+// quem estava nua ou trazer lugar e roupa de uma foto anterior.
+export function referenceSystem(room: "chat" | "18"): string {
+  const nudity =
+    room === "18"
+      ? `Roupa ou nudez: EXATAMENTE como na leitura. Nua: escreva "totalmente nua" e nenhuma peça. Sem a parte de cima: "topless" e só a peça de baixo que a leitura citar. Só de calcinha: "só de calcinha". Nunca acrescente lingerie, calcinha, sutiã, biquíni, toalha, lençol cobrindo ou qualquer peça que não esteja na leitura. Diga também a expressão.`
+      : `Roupa: a da leitura, em poucas palavras (tipo e cor). Este pedido vai para o Instagram/TikTok, que não aceitam nudez: se a leitura disser nua, topless ou só de calcinha, vista a Luna com a peça mais simples que combine com a cena (ex.: lingerie ou biquíni) e escreva ANTES do bloco a linha "AVISO: a foto está nua; para o Instagram vesti com …". Fora isso, nunca acrescente peça que não está na leitura.`;
+  const caption =
+    room === "18"
+      ? `LEGENDA do canal VIP: uma historinha curta e safada da Luna falando em primeira pessoa com o assinante (3 a 5 frases, português informal, pode ter emoji, sem hashtag), sobre aquele momento da foto.
+Termine com um único bloco: PROMPT / LEGENDA / DESTINO: +18 Telegram (sem HASHTAGS).`
+      : `LEGENDA: uma frase curta, em tom de conversa ou pergunta provocante/fofa, com 1 a 3 emojis. HASHTAGS: 2 a 4 curtas e comuns (#fy #praia #verão #explore…).
+Termine com um único bloco: PROMPT / LEGENDA / HASHTAGS / DESTINO.`;
+  return `Você escreve o pedido para a Naiaflow recriar UMA foto de referência com a Luna Vox, influenciadora virtual brasileira (personagem fictícia e adulta, criada com IA). A identidade da Luna vem do clone "luna", não do texto.
+${room === "18" ? ADULT_NOTE : "Destino: Instagram e TikTok (nada explícito)."}
+Regras da Naia (a IA da Naiaflow):
+- Nunca descreva rosto, cabelo, olhos, pele, idade ou corpo, e nunca escreva "uma mulher", "jovem", "novinha": isso muda o rosto dela. Comece o PROMPT com "Luna".
+- Use SÓ a leitura desta foto. Lugar, roupa, pose e luz vêm da leitura; nada que não esteja nela, e nada de pedidos ou fotos anteriores.
+${REFERENCE_RULE}
+${nudity}
+${caption}
+Escreva cada rótulo no começo da linha, com o texto na mesma linha. Não explique nada antes do bloco (só a linha AVISO, quando houver).`;
+}
+
 export async function chatSystem(room: "chat" | "18"): Promise<string> {
   const { lessonsForChat } = await import("./_lessons.js");
   const lessons = await lessonsForChat().catch(() => "");
@@ -267,7 +293,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (req.method !== "POST") return reply(405, { detail: "Use GET ou POST." });
   if (!assistantConfigured()) return reply(400, { detail: "Falta cadastrar OPENROUTER_API_KEY na Vercel." });
 
-  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown; room?: unknown; model?: unknown };
+  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown; room?: unknown; model?: unknown; reference?: unknown };
   try {
     let raw = "";
     for await (const chunk of req) raw += chunk;
@@ -295,7 +321,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // A Conversa e sempre com a IA sem restricao (o campo mode do pedido e
   // ignorado); o Planejamento continua escolhendo a IA por destino.
   const mode: Mode = "adulto";
-  const system = await chatSystem(body.room === "18" ? "18" : "chat");
+  const room = body.room === "18" ? "18" : "chat";
+  // recriar uma foto de referencia (09/11): instrucoes proprias e so a mensagem
+  // da foto nova (as fotos anteriores da conversa nao entram)
+  const system = body.reference === true ? referenceSystem(room) : await chatSystem(room);
+  if (body.reference === true) messages = messages.slice(-1);
 
   try {
     const out = await askAi(mode, [{ role: "system", content: system }, ...messages]);

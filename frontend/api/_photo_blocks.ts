@@ -106,3 +106,50 @@ export function splitRefBotNote(note: string): { ask: string; hint: string } {
 }
 export const refBotHintText = (hint: string) =>
   hint ? `\n\n[Dica do Reference Bot (outra IA, pode errar): se brigar com a leitura acima, vale a leitura]\n${hint}` : "";
+
+// 09/11: o pedido as vezes misturava lugar ou roupa de fotos anteriores. Vai no
+// comeco de todo pedido com foto de referencia (bot e estudio).
+export const REF_FRESH =
+  "Esta é uma foto NOVA. Use só a leitura abaixo. Ignore qualquer foto, lugar ou roupa de pedidos anteriores. Não troque nada para variar: aqui o objetivo é ficar IGUAL.";
+
+export type Nudity = "nua" | "topless" | null;
+
+const clean = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+// a nudez que a leitura descreve (na linha da roupa, se houver; senao no texto todo)
+export function readingNudity(reading: string): Nudity {
+  const lines = reading.split("\n");
+  const roupa = lines.filter((l) => /roupa|nua|topless|calcinha/i.test(l)).join(" ") || reading;
+  const t = clean(roupa).replace(/(nao|nem) (esta |aparece )?(totalmente |completamente )?nua/g, "");
+  if (/totalmente nua|completamente nua|sem (nenhuma )?roupa|\bnua\b|\bnuda\b/.test(t) && !/so de calcinha|apenas (de |com )?calcinha|so com calcinha/.test(t)) return "nua";
+  // so de calcinha: em cima nao tem nada (sutia ou top no prompt e erro)
+  if (/topless|sem a parte de cima|seios? (a mostra|de fora|nus)|sem sutia|sem top\b|so de calcinha|apenas (de |com )?calcinha|so com calcinha/.test(t)) return "topless";
+  return null;
+}
+
+const FULL_COVER = /\b(calcinha|sutia|lingerie|biquini|maio|body|vestido|camisola|short|shortinho|saia|blusa|camiseta|cropped|top|roupao|robe|pijama|meia-calca|fio dental)\b|(enrolada|coberta|cobrindo|segurando)[^.,;]{0,25}(toalha|lencol)/;
+const TOP_COVER = /\b(sutia|top|cropped|blusa|camiseta|vestido|body|maio|camisola|roupao|robe|pijama)\b|(?<!(calcinha|parte de baixo) d[eo] )\bbiquini\b(?! (so )?(a )?parte de baixo)|(enrolada|coberta|cobrindo)[^.,;]{0,25}(toalha|lencol)/;
+
+// Prompt que veste quem esta nua na foto (+18): devolve a peca que sobrou
+export function nudityMismatch(reading: string, prompt: string): { nudity: Exclude<Nudity, null>; word: string } | null {
+  const nudity = readingNudity(reading);
+  if (!nudity) return null;
+  // "totalmente nua, sem nenhuma peca de roupa" nao conta como roupa
+  const p = clean(prompt).replace(/sem (nenhuma |qualquer )?(peca (de roupa)?|roupa|calcinha|sutia|lingerie|top)( nenhuma)?/g, "");
+  const hit = p.match(nudity === "nua" ? FULL_COVER : TOP_COVER);
+  return hit ? { nudity, word: hit[0].trim() } : null;
+}
+
+// uma linha da leitura para o resumo: roupa/nudez e lugar
+export function readingGist(reading: string): string {
+  const lines = reading
+    .split("\n")
+    .map((l) => l.replace(/^[\s>*#\-•\d.)]+/, "").replace(/\*\*/g, "").trim())
+    .filter(Boolean);
+  const roupa = lines.find((l) => /roupa|nua|topless|calcinha|biqu|vestid/i.test(l));
+  const lugar = lines.find((l) => /lugar|cen[áa]rio/i.test(l) && l !== roupa);
+  return [roupa, lugar]
+    .filter(Boolean)
+    .map((l) => l!.slice(0, 160))
+    .join(" · ");
+}

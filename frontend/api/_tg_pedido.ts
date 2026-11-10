@@ -1,6 +1,19 @@
 import { randomUUID } from "crypto";
-import { AiError, askAi, chatSystem } from "./_assistant.js";
-import { ADULT_DESTS, ADULT_PHOTOS, REF_ASK, creditsFor, parsePhotoBlocks, refBotHintText, splitRefBotNote, type PhotoBlock } from "./_photo_blocks.js";
+import { AiError, askAi, referenceSystem } from "./_assistant.js";
+import {
+  ADULT_DESTS,
+  ADULT_PHOTOS,
+  REF_ASK,
+  REF_FRESH,
+  creditsFor,
+  nudityMismatch,
+  parsePhotoBlocks,
+  readingGist,
+  readingNudity,
+  refBotHintText,
+  splitRefBotNote,
+  type PhotoBlock,
+} from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
 import { storageUploadUrl } from "./_supabase.js";
@@ -166,6 +179,9 @@ function summaryButtons(p: Pedido) {
 function summaryText(p: Pedido): string {
   const b = p.block!;
   const tags = p.dest === "18" ? "" : b.hashtags ? `\n#️⃣ ${b.hashtags}` : "";
+  // o que a leitura viu (para ver na hora se errou a leitura ou o prompt)
+  const gist = readingGist(p.reading);
+  const wrong = p.dest === "18" ? nudityMismatch(p.reading, b.prompt) : null;
   return [
     `📝 Pedido pronto ${PEDIDO_TAG} ${p.id}`,
     "",
@@ -174,6 +190,9 @@ function summaryText(p: Pedido): string {
     ...(refsText(p) ? [refsText(p)!] : []),
     `💳 ${creditsFor(photosOf(p))} crédito${creditsFor(photosOf(p)) > 1 ? "s" : ""}`,
     "",
+    ...(gist ? [`👁️ Leitura: ${gist}`] : []),
+    ...(wrong ? [`⚠️ A foto está ${wrong.nudity}, mas o prompt ainda fala em "${wrong.word}". Responda dizendo o que tirar, ou toque em Escrever de novo.`] : []),
+    ...(p.dest !== "18" && readingNudity(p.reading) ? ["⚠️ A foto de referência tem nudez: para o Instagram a Luna vai vestida (confira o prompt)."] : []),
     `📸 ${b.prompt.slice(0, 1800)}`,
     "",
     `💬 ${b.caption.slice(0, 1200) || "(sem legenda)"}${tags}`,
@@ -272,21 +291,36 @@ async function write(p: Pedido, change: string | null, say: Say, replyTo: Record
         : `${REF_ASK} Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO: ${p.dest === "stories" ? "Stories" : "Feed"}.`;
     // mudanca sem resposta anterior (a IA tinha falhado): vai junto do primeiro pedido
     const extra = change && !p.reply ? `\n\nMudança pedida: ${change.slice(0, 1500)}` : "";
-    const first = `${ask}\n\n[Referência: foto]\n${p.reading}${refBotHintText(hint)}\n\n${recreate}${extra}`.slice(0, 7900);
+    const first = `${REF_FRESH}\n\n${ask}\n\n[Referência: foto]\n${p.reading}${refBotHintText(hint)}\n\n${recreate}${extra}`.slice(0, 7900);
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-      { role: "system", content: await chatSystem(room) },
+      { role: "system", content: referenceSystem(room) },
       { role: "user", content: first },
     ];
     if (change && p.reply) {
       messages.push({ role: "assistant", content: p.reply }, { role: "user", content: `${change.slice(0, 1500)}\n\nEscreva o bloco PROMPT/LEGENDA${room === "18" ? "" : "/HASHTAGS"}/DESTINO de novo com essa mudança.` });
     }
+    const started = Date.now();
     const out = await askAi("adulto", messages, { timeoutMs: 45_000 });
-    const block = parsePhotoBlocks(out.text)[0];
-    const next: Pedido = { ...p, reply: out.text.slice(0, 6000), block };
+    let text = out.text;
+    let block = parsePhotoBlocks(text)[0];
+    // trava da nudez (+18, 09/11): a foto esta nua e o prompt vestiu a Luna ->
+    // reescreve uma vez (se ele pediu a peca numa mudanca, fica como ele pediu)
+    const wrong = room === "18" && block && !change ? nudityMismatch(p.reading, block.prompt) : null;
+    const left = 55_000 - (Date.now() - started);
+    if (wrong && left > 8_000) {
+      const fix = `A foto está ${wrong.nudity === "nua" ? "totalmente nua" : "topless"}: o PROMPT tem "${wrong.word}", que não está na foto. Tire essa peça e escreva o bloco de novo, com a roupa exatamente como na leitura.`;
+      const retry = await askAi("adulto", [...messages, { role: "assistant", content: text }, { role: "user", content: fix }], { timeoutMs: left - 3_000 }).catch(() => null);
+      const again = retry ? parsePhotoBlocks(retry.text)[0] : undefined;
+      if (retry && again) {
+        text = retry.text;
+        block = again;
+      }
+    }
+    const next: Pedido = { ...p, reply: text.slice(0, 6000), block };
     await save(next);
     if (!block) {
       // a IA respondeu sem o bloco (ex.: perguntou algo): mostra e deixa tentar de novo
-      await say(`🤖 ${out.text.slice(0, 3500)}\n\n${PEDIDO_TAG} ${p.id}\nResponda esta mensagem para continuar, ou toque em Escrever de novo.`, { ...replyTo, reply_markup: summaryButtons(next) });
+      await say(`🤖 ${text.slice(0, 3500)}\n\n${PEDIDO_TAG} ${p.id}\nResponda esta mensagem para continuar, ou toque em Escrever de novo.`, { ...replyTo, reply_markup: summaryButtons(next) });
       return;
     }
     await say(summaryText(next), { ...replyTo, reply_markup: summaryButtons(next) });

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
-import { REF_ASK, refBotHintText, splitRefBotNote } from "../../api/_photo_blocks";
+import { REF_ASK, REF_FRESH, refBotHintText, splitRefBotNote } from "../../api/_photo_blocks";
 import { DANCE_LINK, DanceCard } from "./dance";
 import { LongVideoCard } from "./longVideo";
 import { CtaModal, CtaRow, brDay, useCtaDays, type CtaDay } from "./ctaDays";
@@ -282,7 +282,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       ? `${REF_ASK} Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO.`
       : "Recrie a ideia da referência com a Luna (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).";
     const message: Message = reads.length
-      ? { role: "user", content: `${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
+      ? { role: "user", content: `${refPhoto ? `${REF_FRESH}\n\n` : ""}${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
       : { role: "user", content: typed };
     // dancinha: o video enviado (o arquivo fica so na memoria) ou o link de rede social
     const danceFile = room !== "18" ? attachments.find((a) => a.kind === "video")?.file : undefined;
@@ -311,7 +311,13 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       const r = await fetch("/api/studio?r=assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next.map((m) => ({ role: m.role, content: m.content })), ...(room === "18" ? { room: "18" } : {}) }),
+        // foto de referencia (09/11): instrucoes proprias de recriar e so esta mensagem
+        // vai para a IA (as fotos anteriores da conversa nao se misturam), igual ao bot
+        body: JSON.stringify({
+          messages: next.map((m) => ({ role: m.role, content: m.content })),
+          ...(room === "18" ? { room: "18" } : {}),
+          ...(refPhoto ? { reference: true } : {}),
+        }),
         signal: abort.signal,
       });
       const b = await r.json().catch(() => ({}));
