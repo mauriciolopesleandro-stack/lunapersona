@@ -14,6 +14,7 @@ import sales from "./_sales.js";
 import salesHook from "./_sales_bot.js";
 import pixHook from "./_sales_pay.js";
 import refForward from "./_ref_forward.js";
+import { requestPersona, runAs } from "./_persona.js";
 
 // /api/studio?r=<rota> - uma funcao so para as rotas do estudio novo. O plano
 // Hobby da Vercel aceita no maximo 12 funcoes por deploy (projeto sem
@@ -63,5 +64,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.end(JSON.stringify({ detail: "Rota desconhecida." }));
     return;
   }
-  await run(req, res);
+  // varias personas (10/11): o pedido roda inteiro dentro da persona dele (?p= ou
+  // o cabecalho X-Persona; sem nada, a Luna, como sempre foi)
+  const who = requestPersona(req);
+  if (!who) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ detail: "Persona desconhecida." }));
+    return;
+  }
+  await runAs(who, () => run(req, res));
 }

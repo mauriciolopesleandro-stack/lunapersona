@@ -16,8 +16,9 @@ import { TikTokError, publishStatus, recentVideos, tiktokAccessToken, tiktokConn
 import { tiktokMediaUrl } from "./_tiktok_media.js";
 import { sendMediaNotice, sendToChannel } from "./_tg_review.js";
 import { salesTick } from "./_sales_pay.js";
+import { DEFAULT_PERSONA, PERSONAS, runAs } from "./_persona.js";
 import { ctaTick } from "./_sales_cta.js";
-import { dbInsert, dbRpc, dbSelect, dbUpdate, dbUpdateWhere, dbUpsert, storageReadUrl, supabaseConfigured } from "./_supabase.js";
+import { dbInsert, dbRpc, dbSelect, dbUpdate, dbUpdateWhere, dbUpsert, personasReady, storageReadUrl, supabaseConfigured } from "./_supabase.js";
 import { sendNotice, telegramChannel, telegramConfig, type TelegramChannel } from "./_telegram.js";
 
 // /api/studio?r=jobs - processa a fila (scheduled_jobs). Chamado:
@@ -71,6 +72,7 @@ interface JobRow {
   run_at: string;
   attempts: number;
   max_attempts: number;
+  persona?: string; // migracao 0010 (sem a coluna: Luna)
 }
 
 const BATCH = 10;
@@ -651,32 +653,49 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const url = appUrl(req);
     for (const job of jobs) {
       result.processadas++;
-      const outcome: Outcome =
+      // cada tarefa roda na persona dela (tokens, conta e canal certos)
+      const outcome: Outcome = await runAs(job.persona, async () =>
         job.kind === "lembrete_publicacao"
           ? await runReminder(job, url)
           : job.kind === "publicar_instagram"
             ? await runInstagram(job)
             : job.kind === "enviar_tiktok"
               ? await runTiktok(job, url)
-              : "obsoleta";
+              : "obsoleta"
+      );
       if (outcome === "ok") result.ok++;
       else if (outcome === "obsoleta") result.obsoletas++;
       else if (outcome === "nova_tentativa") result.novas_tentativas++;
       else if (outcome === "aguardando") result.aguardando++;
       else result.falhas++;
     }
-    // renova o token do Instagram de tempos em tempos (vale 60 dias)
-    result.token_instagram = await igRefreshIfDue();
-    // vendas: acesso vencido (VIP sai do canal, pacote para de abrir) recebe o
-    // convite para comprar de novo
-    result.acessos_vencidos = await salesTick(url);
-    // vendas: lembrete do Pix esquecido e a mensagem diaria para os fas
-    result.cta_mensagens = await ctaTick();
-    // metas do Instagram: aviso as 9h (hoje) e as 20h (amanha), uma vez por dia cada
-    result.aviso_metas = await goalsReminder();
-    // Instagram: a Luna responde os comentarios novos (no maximo a cada 4 min)
+    // o resto roda para cada persona, dentro dela (a Luna primeiro, como sempre;
+    // persona sem nada conectado nao faz nada). Os textos das outras personas
+    // vao no resultado com o nome na frente.
     const { commentsTick } = await import("./_ig_comments.js");
-    result.comentarios = await commentsTick().catch((e) => `erro: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`);
+    for (const id of Object.keys(PERSONAS)) {
+      const tag = (v: string | null) => (v && id !== DEFAULT_PERSONA ? `${id}: ${v}` : v);
+      const join = (a: string | null, b: string | null) => (a && b ? `${a} | ${b}` : a ?? b);
+      // persona nova sem a migracao 0010 no banco: fica de fora (a Luna segue igual)
+      if (id !== DEFAULT_PERSONA && !(await personasReady())) continue;
+      // erro numa persona nao atrapalha a outra
+      await runAs(id, async () => {
+        // renova o token do Instagram de tempos em tempos (vale 60 dias)
+        result.token_instagram = join(result.token_instagram, tag(await igRefreshIfDue()));
+        // vendas: acesso vencido (VIP sai do canal, pacote para de abrir) recebe o
+        // convite para comprar de novo
+        result.acessos_vencidos += await salesTick(url);
+        // vendas: lembrete do Pix esquecido e a mensagem diaria para os fas
+        result.cta_mensagens += await ctaTick();
+        // metas do Instagram: aviso as 9h (hoje) e as 20h (amanha), uma vez por dia cada
+        result.aviso_metas = join(result.aviso_metas, tag(await goalsReminder()));
+        // Instagram: a persona responde os comentarios novos (no maximo a cada 4 min)
+        result.comentarios = join(result.comentarios, tag(await commentsTick().catch((e) => `erro: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`)));
+      }).catch((e) => {
+        if (id === DEFAULT_PERSONA) throw e;
+        result.comentarios = join(result.comentarios, `${id}: erro: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`);
+      });
+    }
   } catch (e) {
     result.erro = (e instanceof Error ? e.message : String(e)).slice(0, 300);
   }
