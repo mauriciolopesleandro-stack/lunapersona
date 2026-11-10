@@ -71,6 +71,9 @@ export class RefError extends Error {
   }
 }
 
+// qual modelo fez a ultima leitura (09/11: aparece no resumo do Telegram)
+let lastModel = "";
+
 async function read(prompt: string, images: string[], extra = "", temperature?: number, model?: string): Promise<string> {
   const content: AiContent = [{ type: "text", text: extra ? `${prompt}\n\n${extra}` : prompt }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))];
   try {
@@ -79,6 +82,7 @@ async function read(prompt: string, images: string[], extra = "", temperature?: 
     if (!model && out.model !== FALLBACK_VISION_MODEL && REFUSAL.test(out.text.slice(0, 300)) && out.text.length < 600) {
       return read(prompt, images, extra, temperature, FALLBACK_VISION_MODEL);
     }
+    lastModel = out.model;
     return out.text.slice(0, 5000);
   } catch (e) {
     // lote de fotos recusado pelo provedor: tenta de novo com menos fotos
@@ -98,7 +102,8 @@ export async function analyzeImages(rawImages: unknown, kind: unknown, purpose?:
   if (images.some((i) => !JPEG.test(i) || i.length > MAX_IMAGE_CHARS)) throw new RefError(400, "Imagem inválida ou grande demais.");
   if (purpose === "review") return read(kind === "video" ? REVIEW_VIDEO : REVIEW_PHOTO, images, "", 0.1, model);
   // leitura exata, sem criatividade (09/11: com 0,8 ela inventava roupa)
-  return read(kind === "video" ? VIDEO_PROMPT : PHOTO_PROMPT, images, "", 0.1, model);
+  const text = await read(kind === "video" ? VIDEO_PROMPT : PHOTO_PROMPT, images, "", 0.1, model);
+  return kind === "video" ? text : `${text}\n\n(Leitura feita pelo modelo ${lastModel.split("/").pop()})`;
 }
 
 // --- links -----------------------------------------------------------------------------------------
