@@ -318,7 +318,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
           ...(room === "18" ? { room: "18" } : {}),
           ...(refPhoto ? { reference: true } : {}),
           // +18: a IA que ve a foto escreve o prompt (igual ao bot do Telegram)
-          ...(refPhoto && room === "18" ? { refImage: refPhoto, refAsk: fromBot.ask } : {}),
+          ...(refPhoto && room === "18" ? { refImage: refPhoto, refAsk: fromBot.ask, refReading: reads.map((r) => r.text).join("\n\n") } : {}),
         }),
         signal: abort.signal,
       });

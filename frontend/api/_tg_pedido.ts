@@ -16,7 +16,7 @@ import {
 } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
-import { adultBlockText, vipCaption, visionPrompt } from "./_ref_writer.js";
+import { adultBlockText, checkedVisionPrompt, vipCaption } from "./_ref_writer.js";
 import { storageReadUrl, storageUploadUrl } from "./_supabase.js";
 import { telegram } from "./_telegram.js";
 
@@ -287,13 +287,8 @@ async function adultByVision(p: Pedido, change: string | null): Promise<{ text: 
     if (!res.ok) return null;
     const image = `data:image/jpeg;base64,${Buffer.from(await res.arrayBuffer()).toString("base64")}`;
     const started = Date.now();
-    let prompt = await visionPrompt(image, change ? { change, previous: p.block?.prompt } : {});
-    // trava da nudez: a leitura diz nua/topless e o prompt pos uma peca -> confere na foto uma vez
-    const wrong = change ? null : nudityMismatch(p.reading, prompt);
-    if (wrong && Date.now() - started < 25_000) {
-      const fix = `Atenção: a leitura da foto diz "${wrong.nudity === "nua" ? "totalmente nua" : "topless"}" e o seu prompt tem "${wrong.word}". Olhe a foto de novo: se a peça não está lá, tire; se está (levantada, aberta ou afastada), diga exatamente assim.`;
-      prompt = await visionPrompt(image, { fix }).catch(() => prompt);
-    }
+    // a roupa da leitura vai junto; nudez errada ou peca esquecida -> confere na foto uma vez
+    const prompt = await checkedVisionPrompt(image, p.reading, change ? { change, previous: p.block?.prompt } : {});
     const caption = await vipCaption(prompt, change ?? undefined, Math.max(8_000, 50_000 - (Date.now() - started))).catch(() => p.block?.caption ?? "");
     const text = adultBlockText(prompt, caption);
     const block = parsePhotoBlocks(text)[0];
