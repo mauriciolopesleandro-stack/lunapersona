@@ -14,7 +14,11 @@ const API = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "deepseek/deepseek-v4-flash";
 const DEFAULT_ADULT_MODEL = "cognitivecomputations/dolphin-mistral-24b-venice-edition";
 // modelo que enxerga imagem (chamada pela previa do bot de vendas)
-const DEFAULT_VISION_MODEL = "mistralai/mistral-small-3.2-24b-instruct";
+// 09/11: o mistral-small descrevia "só de calcinha branca" numa foto com blusa
+// aberta e sem calcinha (e ja tinha inventado roupa no Reference Bot); o qwen
+// 72b descreveu certo as mesmas fotos. O mistral fica de reserva (erro ou recusa).
+const DEFAULT_VISION_MODEL = "qwen/qwen2.5-vl-72b-instruct";
+export const FALLBACK_VISION_MODEL = "mistralai/mistral-small-3.2-24b-instruct";
 
 export function visionModel(): string {
   return process.env.OPENROUTER_MODEL_VISION?.trim() || DEFAULT_VISION_MODEL;
@@ -23,7 +27,7 @@ export function visionModel(): string {
 // 07/11: comparar modelos de visao na leitura da foto (so estes, so logado)
 export const VISION_CANDIDATES = [
   DEFAULT_VISION_MODEL,
-  "qwen/qwen2.5-vl-72b-instruct",
+  FALLBACK_VISION_MODEL,
   "qwen/qwen3-vl-235b-a22b-instruct",
   "google/gemma-3-27b-it",
 ];
@@ -229,6 +233,23 @@ export async function askAi(
 ): Promise<{ text: string; model: string; usage: unknown }> {
   if (!assistantConfigured()) throw new AiError(400, "Falta cadastrar OPENROUTER_API_KEY na Vercel.");
   const model = opts.model ?? modelFor(mode);
+  // visao (09/11): se o modelo novo der erro de provedor, tenta uma vez o de reserva
+  if (model === DEFAULT_VISION_MODEL) {
+    try {
+      return await askAiOnce(model, messages, opts);
+    } catch (e) {
+      if (!(e instanceof AiError) || e.status !== 502) throw e;
+      return askAiOnce(FALLBACK_VISION_MODEL, messages, opts);
+    }
+  }
+  return askAiOnce(model, messages, opts);
+}
+
+async function askAiOnce(
+  model: string,
+  messages: { role: "system" | "user" | "assistant"; content: AiContent }[],
+  opts: { json?: boolean; maxTokens?: number; timeoutMs?: number; model?: string; temperature?: number }
+): Promise<{ text: string; model: string; usage: unknown }> {
   let res: Response;
   try {
     res = await fetch(API, {
