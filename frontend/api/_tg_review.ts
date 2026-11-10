@@ -53,6 +53,8 @@ interface PendingAction {
 }
 const LINK_TTL = 3 * 24 * 3600; // as fotos do Telegram ficam salvas no app; o link so precisa servir no envio
 
+import { personaPath } from "./_persona.js";
+
 export function webhookSecret(token: string): string {
   const key = process.env.TOKEN_ENCRYPTION_KEY || token;
   return createHmac("sha256", key).update(`telegram-webhook-v1|${token}`).digest("hex");
@@ -60,7 +62,7 @@ export function webhookSecret(token: string): string {
 
 export async function registerWebhook(token: string, baseUrl: string): Promise<void> {
   await telegram(token, "setWebhook", {
-    url: `${baseUrl}/api/telegram/webhook`,
+    url: `${baseUrl}/api/telegram/webhook${personaPath()}`,
     secret_token: webhookSecret(token),
     allowed_updates: ["callback_query", "message", "my_chat_member"],
   });

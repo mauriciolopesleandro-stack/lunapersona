@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { personaShort } from "./persona";
 import { CUT_SECONDS, longCut } from "../../api/_outfits";
 import { putSignedUpload } from "./cloud";
 import { videoSeconds } from "./dance";
@@ -115,7 +116,7 @@ export function LongVideoCard({ file }: { file?: File }) {
   if (!open) {
     return (
       <button type="button" className="st-btn st-btn-small st-btn-primary st-dance-open" onClick={() => setOpen(true)}>
-        🎬 Fazer vídeo longo com a Luna (+18)
+        🎬 Fazer vídeo longo com a {personaShort()} (+18)
       </button>
     );
   }

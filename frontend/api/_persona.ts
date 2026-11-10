@@ -76,6 +76,21 @@ export function requestPersona(req: IncomingMessage): string | null {
 // sessao, trava de senha errada e o Pix (mesma conta PushinPay, pedido de 10/11).
 const SHARED_KEYS = [/^luna:login_password$/, /^luna:session_version$/, /^luna:auth_fail:/, /^luna:pix-token$/, /^luna:pix-env$/, /^luna:runpod-/];
 
+// Enderecos do proprio site que o Telegram/PushinPay chamam de volta (webhooks,
+// aviso do Pix): levam a persona (?p=cleuza) para o pedido voltar na persona
+// certa. Luna: sem nada, como sempre (os webhooks dela continuam iguais).
+export function personaParam(sep: "?" | "&"): string {
+  const id = personaId();
+  return id === DEFAULT_PERSONA ? "" : `${sep}p=${encodeURIComponent(id)}`;
+}
+
+// Webhooks dos bots: a persona vai no caminho (/api/telegram/webhook/cleuza),
+// com regra propria no vercel.json - nao depende de a Vercel repassar o ?p=.
+export function personaPath(): string {
+  const id = personaId();
+  return id === DEFAULT_PERSONA ? "" : `/${encodeURIComponent(id)}`;
+}
+
 export function personaKey(key: string): string {
   const id = personaId();
   if (id === DEFAULT_PERSONA || !key.startsWith("luna:") || SHARED_KEYS.some((re) => re.test(key))) return key;

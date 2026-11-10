@@ -14,7 +14,7 @@ import sales from "./_sales.js";
 import salesHook from "./_sales_bot.js";
 import pixHook from "./_sales_pay.js";
 import refForward from "./_ref_forward.js";
-import { requestPersona, runAs } from "./_persona.js";
+import { isPersona, requestPersona, runAs } from "./_persona.js";
 
 // /api/studio?r=<rota> - uma funcao so para as rotas do estudio novo. O plano
 // Hobby da Vercel aceita no maximo 12 funcoes por deploy (projeto sem
@@ -50,9 +50,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       ? "tiktok-callback"
       : url.pathname.endsWith("/instagram/callback")
       ? "instagram-callback"
-      : url.pathname.endsWith("/telegram/webhook")
+      : /\/telegram\/webhook(\/[a-z0-9-]+)?$/.test(url.pathname)
       ? "telegram-hook"
-      : url.pathname.endsWith("/vendas/telegram")
+      : /\/vendas\/telegram(\/[a-z0-9-]+)?$/.test(url.pathname)
       ? "sales-hook"
       : url.pathname.startsWith("/api/tiktok/media/")
       ? "tiktok-media"
@@ -66,7 +66,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
   // varias personas (10/11): o pedido roda inteiro dentro da persona dele (?p= ou
   // o cabecalho X-Persona; sem nada, a Luna, como sempre foi)
-  const who = requestPersona(req);
+  // (webhook de bot: a persona tambem pode vir no fim do caminho, /api/telegram/webhook/cleuza)
+  const fromPath = url.pathname.match(/\/(?:telegram\/webhook|vendas\/telegram)\/([a-z0-9-]+)$/)?.[1];
+  const who = fromPath ? (isPersona(fromPath) ? fromPath : null) : requestPersona(req);
   if (!who) {
     res.statusCode = 400;
     res.setHeader("Content-Type", "application/json");

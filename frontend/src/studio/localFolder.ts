@@ -8,6 +8,8 @@
 //     luna-vox.json         status, titulos, publicacoes e historico
 //     luna-vox.backup.json  copia do json antes da primeira gravacao de cada sessao
 
+import { personaFolder } from "./persona";
+
 // Tipos que o TypeScript ainda nao traz para essa API.
 interface PermissionDescriptor {
   mode: "read" | "readwrite";
@@ -24,6 +26,12 @@ declare global {
 }
 
 export type { DirHandle };
+
+// Luna: a pasta escolhida; outras personas: <pasta>/<persona>/ (Fase 1, 10/11)
+async function personaRoot(root: DirHandle): Promise<DirHandle> {
+  const sub = personaFolder();
+  return sub ? ((await root.getDirectoryHandle(sub, { create: true })) as DirHandle) : root;
+}
 
 export const CONTENT_DIR = "conteudos";
 const DATA_FILE = "luna-vox.json";
@@ -115,7 +123,8 @@ export interface FoundFile {
   file: File;
 }
 
-export async function scanMedia(root: DirHandle): Promise<FoundFile[]> {
+export async function scanMedia(base: DirHandle): Promise<FoundFile[]> {
+  const root = await personaRoot(base);
   const dir = (await root.getDirectoryHandle(CONTENT_DIR, { create: true })) as DirHandle;
   const out: FoundFile[] = [];
   async function walk(d: DirHandle, prefix: string, depth: number) {
@@ -142,7 +151,8 @@ export async function fileSha256(file: File): Promise<string | null> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function subdirOf(root: DirHandle, rel: string): Promise<FileSystemDirectoryHandle> {
+async function subdirOf(base: DirHandle, rel: string): Promise<FileSystemDirectoryHandle> {
+  const root = await personaRoot(base);
   let dir = await root.getDirectoryHandle(CONTENT_DIR, { create: true });
   for (const part of rel.split("/").filter(Boolean)) dir = await dir.getDirectoryHandle(part, { create: true });
   return dir;
@@ -191,8 +201,9 @@ async function exists(dir: FileSystemDirectoryHandle, name: string): Promise<boo
 
 // --- Dados (json) ---------------------------------------------------------------
 
-export async function readData(root: DirHandle): Promise<unknown | null> {
+export async function readData(base: DirHandle): Promise<unknown | null> {
   try {
+    const root = await personaRoot(base);
     const handle = await root.getFileHandle(DATA_FILE);
     const text = await (await handle.getFile()).text();
     return text.trim() ? JSON.parse(text) : null;
@@ -211,15 +222,17 @@ async function writeText(root: DirHandle, name: string, text: string) {
 
 const backedUp = new WeakSet<object>();
 
-export async function writeData(root: DirHandle, data: unknown): Promise<void> {
-  if (!backedUp.has(root)) {
+export async function writeData(base: DirHandle, data: unknown): Promise<void> {
+  const root = await personaRoot(base);
+  // (a subpasta da persona vem como objeto novo a cada vez: a marca fica na pasta escolhida)
+  if (!backedUp.has(base)) {
     try {
       const old = await (await root.getFileHandle(DATA_FILE)).getFile();
       await writeText(root, BACKUP_FILE, await old.text());
     } catch {
       // primeira vez: ainda nao ha o que copiar
     }
-    backedUp.add(root);
+    backedUp.add(base);
   }
   await writeText(root, DATA_FILE, JSON.stringify(data, null, 1));
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { personaShort } from "./persona";
 import { Icon } from "./Icon";
 import { call, type Status } from "./sales";
 
@@ -315,7 +316,7 @@ export function PlansPage() {
       <div className="st-stats st-stats-2">
         <div className="st-panel st-mini-stat">
           <span>
-            <Icon name="telegram" size={15} /> Bot da Luna (canal principal)
+            <Icon name="telegram" size={15} /> Bot da {personaShort()} (canal principal)
           </span>
           <b>{status.fans.adults}</b>
           <small>

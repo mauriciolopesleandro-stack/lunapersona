@@ -14,6 +14,7 @@ import {
   telegramConfig,
 } from "./_telegram.js";
 import { registerWebhook } from "./_tg_review.js";
+import { requestPersona, runAs } from "./_persona.js";
 
 interface BotInfo {
   username?: string;
@@ -42,7 +43,19 @@ function siteUrl(req: IncomingMessage): string {
   return `${proto}://${host}`;
 }
 
+// varias personas (10/11): o bot de aprovacoes de cada persona e o dela (cabecalho X-Persona do estudio)
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  const who = requestPersona(req);
+  if (!who) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ detail: "Persona desconhecida." }));
+    return;
+  }
+  return runAs(who, () => telegramHandler(req, res));
+}
+
+async function telegramHandler(req: IncomingMessage, res: ServerResponse) {
   res.setHeader("Content-Type", "application/json");
   const reply = (status: number, body: object) => {
     res.statusCode = status;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { persona } from "./persona";
 import { AssistantPanel, type AssistantTab } from "./assistant";
 import { Icon } from "./Icon";
 import { CharactersPage } from "./pages";
@@ -92,7 +93,7 @@ export function Dock({ context, onOpenPost, onNewPost, go, request }: Props) {
     <>
       <aside className={open ? "st-drawer open" : "st-drawer"} aria-label="Assistente" aria-hidden={!open}>
         <header className="st-drawer-head">
-          <img src="/login/avatar-luna.webp" alt="" />
+          {persona().avatar ? <img src={persona().avatar!} alt="" /> : <span className="st-avatar-initial">{persona().short.slice(0, 1)}</span>}
           <span>
             <b>Assistente</b>
             <small>conversa, agenda e planejamento</small>

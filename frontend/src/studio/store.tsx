@@ -16,6 +16,7 @@ import {
   type DirHandle,
 } from "./localFolder";
 import { prepareForInstagram, prepareForTiktok } from "./mediaPrep";
+import { personaFolder } from "./persona";
 import {
   cloudInstagram,
   cloudInstagramAction,
@@ -830,7 +831,8 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     state,
     source,
     error,
-    folderName: root?.name ?? null,
+    // (outra persona: a subpasta dela dentro da pasta escolhida)
+    folderName: root ? (personaFolder() ? `${root.name}/${personaFolder()}` : root.name) : null,
     items,
     posts,
     characters: data.characters,

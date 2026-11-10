@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { personaShort } from "./persona";
 import { OUTFITS } from "../../api/_outfits";
 import { putSignedUpload } from "./cloud";
 
@@ -69,8 +70,8 @@ export function OutfitPicker({ value, onChange }: { value: OutfitChoice; onChang
   ];
   return (
     <div className="st-field">
-      <span>Roupa da Luna</span>
-      <div className="st-quick-slots" role="group" aria-label="Roupa da Luna">
+      <span>Roupa da {personaShort()}</span>
+      <div className="st-quick-slots" role="group" aria-label={`Roupa da ${personaShort()}`}>
         {options.map(([mode, label]) => (
           <button key={mode} type="button" aria-pressed={value.mode === mode} className={value.mode === mode ? "on" : ""} onClick={() => onChange({ ...value, mode })}>
             {value.mode === mode ? "✓ " : ""}
