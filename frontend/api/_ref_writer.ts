@@ -10,7 +10,8 @@ const VISION_WRITER = `Você olha uma foto de referência e escreve o PROMPT par
 Regras (da Naia, a IA da Naiaflow):
 - Comece com "Luna". Uma ou duas frases, no máximo uns 350 caracteres: prompt longo faz o rosto da Luna mudar.
 - Nunca descreva rosto, cabelo, olhos, pele, idade ou corpo, e nunca escreva "uma mulher", "jovem", "novinha".
-- Diga a pose (em pé, sentada, deitada de costas, de bruços, de lado, de quatro…; de frente, de costas ou de lado para a câmera), para onde ela olha e onde estão braços e mãos.
+- Diga a pose (em pé, sentada, deitada de costas, de bruços, de lado, de quatro…), onde ela está apoiada (sobre a cama, no sofá, no chão, na mesa…), para onde ela olha e onde estão braços e mãos.
+- Diga para que lado o corpo está virado: de frente, de costas ou de lado para a câmera. Bumbum virado para a câmera é "de costas" (se o corpo estiver um pouco girado, "de costas, levemente de lado"); "de lado" só quando a câmera vê o corpo de perfil.
 - Diga a câmera: de onde ela olha (de frente, de trás, de lado), em que altura (de baixo para cima, na altura do quadril, do peito, dos olhos, de cima) e a distância (bem perto, meio corpo, corpo inteiro, selfie). Só escreva "na altura dos olhos" se for mesmo.
 - Roupa EXATAMENTE como está: cite TODAS as peças que aparecem (em cima e embaixo: sutiã, top, blusa, saia, short, calcinha, meia…), cada uma com o nome certo e a cor (saia é saia, short é short). Peça levantada, aberta ou afastada diga assim (ex.: "moletom creme levantado até o peito", "saia azul-clara plissada levantada"); sem nada, "totalmente nua"; sem a parte de cima, "topless". Nunca acrescente peça que não está na foto.
 - O lugar em poucas palavras (só o que dá para ver), a luz e o estilo da foto (celular, flash, selfie no espelho só se houver espelho).
@@ -78,7 +79,7 @@ export async function vipCaption(prompt: string, change?: string, timeoutMs = 20
     [
       {
         role: "system",
-        content: `${ADULT_NOTE}\nVocê escreve a LEGENDA do canal VIP da Luna: uma historinha curta e bem safada, com a Luna falando em primeira pessoa com o assinante, de 3 a 5 frases, sobre aquele momento da foto (o que ela estava fazendo, o que sentiu, uma provocação ou convite para ver mais). Português do Brasil informal mas correto (ex.: "me imagina assim", nunca "imagina mim assim"), pode ter emoji, sem hashtag. Responda só com a legenda, sem rótulo e sem aspas.`,
+        content: `${ADULT_NOTE}\nVocê escreve a LEGENDA do canal VIP da Luna: uma historinha curta e bem safada, com a Luna falando em primeira pessoa com o assinante, de 3 a 5 frases, sobre aquele momento da foto (o que ela estava fazendo, o que sentiu, uma provocação ou convite para ver mais). Português do Brasil informal mas correto (ex.: "me imagina assim", nunca "imagina mim assim"; verbo no passado certo: "escondi", "senti", "vivi", nunca "escondei"), pode ter emoji, sem hashtag. Responda só com a legenda, sem rótulo e sem aspas.`,
       },
       { role: "user", content: `A foto: ${prompt}${change ? `\n\nO administrador pediu: ${change}` : ""}` },
     ],
@@ -97,6 +98,7 @@ export async function vipCaption(prompt: string, change?: string, timeoutMs = 20
     .replace(/\n\s*\n+/g, "\n")
     // erro que a IA sem censura repete ("Imagina mim assim")
     .replace(/\b([Ii])magin([ae]) mim\b/g, (_m, i: string, v: string) => `${i === "I" ? "Me" : "me"} imagin${v}`)
+    .replace(/\b([Ee])scondei\b/g, "$1scondi")
     .trim()
     .slice(0, 1200);
 }
