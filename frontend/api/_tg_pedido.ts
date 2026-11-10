@@ -320,7 +320,8 @@ async function write(p: Pedido, change: string | null, say: Say, replyTo: Record
     await save(next);
     if (!block) {
       // a IA respondeu sem o bloco (ex.: perguntou algo): mostra e deixa tentar de novo
-      await say(`🤖 ${text.slice(0, 3500)}\n\n${PEDIDO_TAG} ${p.id}\nResponda esta mensagem para continuar, ou toque em Escrever de novo.`, { ...replyTo, reply_markup: summaryButtons(next) });
+      const gist = readingGist(p.reading);
+      await say(`🤖 ${text.slice(0, 3500)}${gist ? `\n\n👁️ Leitura: ${gist}` : ""}\n\n${PEDIDO_TAG} ${p.id}\nResponda esta mensagem para continuar, ou toque em Escrever de novo.`, { ...replyTo, reply_markup: summaryButtons(next) });
       return;
     }
     await say(summaryText(next), { ...replyTo, reply_markup: summaryButtons(next) });

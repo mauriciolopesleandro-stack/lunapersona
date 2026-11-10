@@ -31,7 +31,10 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
   let cur: PhotoBlock | null = null;
   let sawSlot = false;
   let open: "prompt" | "caption" | "hashtags" | null = null; // rotulo sem texto: o texto vem nas linhas de baixo
-  for (const raw of text.split("\n")) {
+  // 09/11: a IA as vezes escreve o bloco todo numa linha ("... PROMPT: x LEGENDA: y
+  // DESTINO: z"); cada rotulo em MAIUSCULAS no meio da linha vira uma linha nova
+  const lines = text.replace(/[ \t]+(?:\*\*)?(PROMPT|LEGENDA|HASHTAGS|DESTINO)(?:\*\*)?\s*[:：]/g, "\n$1:").split("\n");
+  for (const raw of lines) {
     // tira numeracao, marcadores e titulo markdown ("### "), mas nao o # da hashtag
     const line = raw.replace(/\*\*|__|`/g, "").replace(/^(?:#+\s+|[^\p{L}#])+/u, "").trim();
     const m = line.match(LABEL);
@@ -148,8 +151,11 @@ export function readingGist(reading: string): string {
     .filter(Boolean);
   const roupa = lines.find((l) => /roupa|nua|topless|calcinha|biqu|vestid/i.test(l));
   const lugar = lines.find((l) => /lugar|cen[áa]rio/i.test(l) && l !== roupa);
+  // qual IA leu a foto (o estudio marca no fim da leitura)
+  const model = reading.match(/Leitura feita pelo modelo (\S+?)\)/)?.[1];
   return [roupa, lugar]
     .filter(Boolean)
     .map((l) => l!.slice(0, 160))
+    .concat(model ? [`(${model})`] : [])
     .join(" · ");
 }
