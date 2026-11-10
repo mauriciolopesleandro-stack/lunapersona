@@ -143,13 +143,48 @@ export function nudityMismatch(reading: string, prompt: string): { nudity: Exclu
   return hit ? { nudity, word: hit[0].trim() } : null;
 }
 
-// uma linha da leitura para o resumo: roupa/nudez e lugar
-export function readingGist(reading: string): string {
-  const lines = reading
+const readingLines = (reading: string) =>
+  reading
     .split("\n")
     .map((l) => l.replace(/^[\s>*#\-•\d.)]+/, "").replace(/\*\*/g, "").trim())
     .filter(Boolean);
-  const roupa = lines.find((l) => /roupa|nua|topless|calcinha|biqu|vestid/i.test(l));
+const isRoupaLine = (l: string) => /roupa|nua|topless|calcinha|biqu|vestid/i.test(l);
+
+// a linha da roupa da leitura ("" se nao houver)
+export const readingRoupa = (reading: string): string => readingLines(reading).find(isRoupaLine) ?? "";
+
+// 10/11: a IA que ve a foto escreveu "short" numa saia e esqueceu o sutia que a
+// leitura tinha visto. Cada grupo e uma peca (com os nomes que valem por ela).
+const GARMENTS: [string, RegExp][] = [
+  ["saia", /\bsaia\b/],
+  ["short", /\bshort(inho)?s?\b/],
+  ["calça", /\bcalca\b|\bjeans\b|\blegging\b/],
+  ["sutiã", /\bsutia\b|\bbralette\b/],
+  ["calcinha", /\bcalcinha\b|\bfio dental\b|\btanga\b|\bthong\b/],
+  ["vestido", /\bvestido\b/],
+  ["moletom", /\bmoletom\b/],
+  ["camiseta", /\bcamiseta\b|\bcamisa\b|\bblusa\b/],
+  ["top", /\btop\b|\bcropped\b/],
+  ["body", /\bbody\b/],
+  ["biquíni", /\bbiquini\b/],
+  ["meia", /\bmeias?\b|\bmeia-calca\b/],
+  ["camisola", /\bcamisola\b|\bbaby ?doll\b/],
+  ["roupão", /\broupao\b|\brobe\b/],
+  ["cinta-liga", /\bcinta-?liga\b/],
+  ["salto", /\bsalto\b/],
+];
+
+// pecas que a leitura viu e o prompt nao cita ("sem sutia" nao conta como peca)
+export function missingGarments(reading: string, prompt: string): string[] {
+  const roupa = clean(readingRoupa(reading)).replace(/\b(sem|nem|nao tem|nao usa)\b [^,.;]{0,30}/g, "");
+  const p = clean(prompt);
+  return GARMENTS.filter(([, re]) => re.test(roupa) && !re.test(p)).map(([name]) => name);
+}
+
+// uma linha da leitura para o resumo: roupa/nudez e lugar
+export function readingGist(reading: string): string {
+  const lines = readingLines(reading);
+  const roupa = lines.find(isRoupaLine);
   const lugar = lines.find((l) => /lugar|cen[áa]rio/i.test(l) && l !== roupa);
   // qual IA leu a foto (o estudio marca no fim da leitura)
   const model = reading.match(/Leitura feita pelo modelo (\S+?)\)/)?.[1];

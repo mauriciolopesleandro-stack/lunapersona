@@ -314,7 +314,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (req.method !== "POST") return reply(405, { detail: "Use GET ou POST." });
   if (!assistantConfigured()) return reply(400, { detail: "Falta cadastrar OPENROUTER_API_KEY na Vercel." });
 
-  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown; room?: unknown; model?: unknown; reference?: unknown; refImage?: unknown; refAsk?: unknown };
+  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown; room?: unknown; model?: unknown; reference?: unknown; refImage?: unknown; refAsk?: unknown; refReading?: unknown };
   try {
     let raw = "";
     for await (const chunk of req) raw += chunk;
@@ -352,9 +352,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const refImage = typeof body.refImage === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(body.refImage) && body.refImage.length < 2_000_000 ? body.refImage : null;
   if (body.reference === true && room === "18" && refImage) {
     try {
-      const { adultBlockText, vipCaption, visionPrompt } = await import("./_ref_writer.js");
+      const { adultBlockText, checkedVisionPrompt, vipCaption } = await import("./_ref_writer.js");
       const asked = typeof body.refAsk === "string" && body.refAsk.trim() ? body.refAsk.trim().slice(0, 1500) : undefined;
-      const prompt = await visionPrompt(refImage, asked ? { change: asked } : {});
+      const refReading = typeof body.refReading === "string" ? body.refReading.slice(0, 6000) : "";
+      const prompt = await checkedVisionPrompt(refImage, refReading, asked ? { change: asked } : {});
       const caption = await vipCaption(prompt, asked).catch(() => "");
       return reply(200, { reply: `✍️ Escrito pela IA que vê a foto.\n\n${adultBlockText(prompt, caption)}`, model: visionModel(), mode });
     } catch {
