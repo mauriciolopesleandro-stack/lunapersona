@@ -16,7 +16,8 @@ import {
 } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
-import { storageUploadUrl } from "./_supabase.js";
+import { adultBlockText, vipCaption, visionPrompt } from "./_ref_writer.js";
+import { storageReadUrl, storageUploadUrl } from "./_supabase.js";
 import { telegram } from "./_telegram.js";
 
 // Pedido pelo Telegram (01/11): o administrador manda uma foto de referencia no
@@ -59,6 +60,7 @@ interface Pedido {
   photos?: number; // +18: fotos da mesma cena no post (3, 6 ou 9)
   reply?: string; // a ultima resposta da IA (para mudar sem perder o resto)
   block?: PhotoBlock;
+  by?: "visao"; // +18: o prompt saiu da IA que ve a foto
   at: number;
 }
 
@@ -191,6 +193,7 @@ function summaryText(p: Pedido): string {
     `💳 ${creditsFor(photosOf(p))} crédito${creditsFor(photosOf(p)) > 1 ? "s" : ""}`,
     "",
     ...(gist ? [`👁️ Leitura: ${gist}`] : []),
+    ...(p.by === "visao" ? ["✍️ Escrito pela IA que vê a foto (prompt)"] : []),
     ...(wrong ? [`⚠️ A foto está ${wrong.nudity}, mas o prompt ainda fala em "${wrong.word}". Responda dizendo o que tirar, ou toque em Escrever de novo.`] : []),
     ...(p.dest !== "18" && readingNudity(p.reading) ? ["⚠️ A foto de referência tem nudez: para o Instagram a Luna vai vestida (confira o prompt)."] : []),
     `📸 ${b.prompt.slice(0, 1800)}`,
@@ -276,12 +279,47 @@ export async function fetchPhoto(token: string, fileId: string): Promise<{ ref: 
 
 // Escreve (ou reescreve com a mudanca pedida) o bloco PROMPT/LEGENDA com as
 // regras do chat do estudio (sala normal ou +18)
+// +18 (09/11): o prompt sai da IA que ve a foto; a IA sem censura so escreve a
+// legenda. Sem a foto, com erro ou recusa: null (segue o jeito das duas IAs).
+async function adultByVision(p: Pedido, change: string | null): Promise<{ text: string; block: PhotoBlock } | null> {
+  try {
+    const res = await fetch(await storageReadUrl(UPLOAD_BUCKET, p.ref, 300), { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return null;
+    const image = `data:image/jpeg;base64,${Buffer.from(await res.arrayBuffer()).toString("base64")}`;
+    const started = Date.now();
+    let prompt = await visionPrompt(image, change ? { change, previous: p.block?.prompt } : {});
+    // trava da nudez: a leitura diz nua/topless e o prompt pos uma peca -> confere na foto uma vez
+    const wrong = change ? null : nudityMismatch(p.reading, prompt);
+    if (wrong && Date.now() - started < 25_000) {
+      const fix = `Atenção: a leitura da foto diz "${wrong.nudity === "nua" ? "totalmente nua" : "topless"}" e o seu prompt tem "${wrong.word}". Olhe a foto de novo: se a peça não está lá, tire; se está (levantada, aberta ou afastada), diga exatamente assim.`;
+      prompt = await visionPrompt(image, { fix }).catch(() => prompt);
+    }
+    const caption = await vipCaption(prompt, change ?? undefined, Math.max(8_000, 50_000 - (Date.now() - started))).catch(() => p.block?.caption ?? "");
+    const text = adultBlockText(prompt, caption);
+    const block = parsePhotoBlocks(text)[0];
+    return block ? { text, block } : null;
+  } catch {
+    return null;
+  }
+}
+
 async function write(p: Pedido, change: string | null, say: Say, replyTo: Record<string, unknown>): Promise<void> {
   // um pedido escrevendo por vez (dois toques seguidos nao gastam a IA duas vezes)
   if (!(await storeSetIfAbsent(`luna:tg-pedido-escrevendo:${p.id}`, "1", 60))) return;
   try {
     await say(change ? "✍️ Mudando o pedido…" : "✍️ Escrevendo o pedido…", replyTo);
     const room = p.dest === "18" ? "18" : "chat";
+    if (room === "18") {
+      // o recado escrito junto da foto vale como pedido de mudanca
+      const asked = change ?? (splitRefBotNote(p.note).ask || null);
+      const vision = await adultByVision(p, asked);
+      if (vision) {
+        const next: Pedido = { ...p, reply: vision.text, block: vision.block, by: "visao" };
+        await save(next);
+        await say(summaryText(next), { ...replyTo, reply_markup: summaryButtons(next) });
+        return;
+      }
+    }
     // legenda do Reference Bot: dica, nao pedido do administrador
     const { ask: typed, hint } = splitRefBotNote(p.note);
     const ask = typed || "Recria essa foto com a Luna.";
@@ -316,7 +354,7 @@ async function write(p: Pedido, change: string | null, say: Say, replyTo: Record
         block = again;
       }
     }
-    const next: Pedido = { ...p, reply: text.slice(0, 6000), block };
+    const next: Pedido = { ...p, reply: text.slice(0, 6000), block, by: undefined };
     await save(next);
     if (!block) {
       // a IA respondeu sem o bloco (ex.: perguntou algo): mostra e deixa tentar de novo

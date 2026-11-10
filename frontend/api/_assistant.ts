@@ -314,7 +314,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (req.method !== "POST") return reply(405, { detail: "Use GET ou POST." });
   if (!assistantConfigured()) return reply(400, { detail: "Falta cadastrar OPENROUTER_API_KEY na Vercel." });
 
-  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown; room?: unknown; model?: unknown; reference?: unknown };
+  let body: { messages?: unknown; mode?: unknown; action?: unknown; images?: unknown; kind?: unknown; url?: unknown; purpose?: unknown; room?: unknown; model?: unknown; reference?: unknown; refImage?: unknown; refAsk?: unknown };
   try {
     let raw = "";
     for await (const chunk of req) raw += chunk;
@@ -347,6 +347,20 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // da foto nova (as fotos anteriores da conversa nao entram)
   const system = body.reference === true ? referenceSystem(room) : await chatSystem(room);
   if (body.reference === true) messages = messages.slice(-1);
+  // +18 com foto (09/11, igual ao bot): o PROMPT sai da IA que ve a foto e a IA
+  // sem censura so escreve a legenda; com erro ou recusa, segue o jeito antigo
+  const refImage = typeof body.refImage === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(body.refImage) && body.refImage.length < 2_000_000 ? body.refImage : null;
+  if (body.reference === true && room === "18" && refImage) {
+    try {
+      const { adultBlockText, vipCaption, visionPrompt } = await import("./_ref_writer.js");
+      const asked = typeof body.refAsk === "string" && body.refAsk.trim() ? body.refAsk.trim().slice(0, 1500) : undefined;
+      const prompt = await visionPrompt(refImage, asked ? { change: asked } : {});
+      const caption = await vipCaption(prompt, asked).catch(() => "");
+      return reply(200, { reply: `✍️ Escrito pela IA que vê a foto.\n\n${adultBlockText(prompt, caption)}`, model: visionModel(), mode });
+    } catch {
+      // segue com as duas IAs
+    }
+  }
 
   try {
     const out = await askAi(mode, [{ role: "system", content: system }, ...messages]);
