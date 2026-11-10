@@ -76,7 +76,28 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
   }
   // aspas em volta do texto que veio na linha de baixo do rotulo
   const unquote = (s: string) => s.replace(/^["“]\s*|\s*["”]$/g, "").trim();
-  return blocks.filter((b) => b.prompt).map((b) => ({ ...b, prompt: unquote(b.prompt), caption: unquote(b.caption) }));
+  const found = blocks.filter((b) => b.prompt);
+  return (found.length ? found : unlabeledBlock(lines)).map((b) => ({ ...b, prompt: unquote(b.prompt), caption: unquote(b.caption) }));
+}
+
+// 10/11: a IA mandou o bloco sem os rotulos PROMPT/LEGENDA/HASHTAGS, so com o
+// DESTINO no fim ("Luna, sentada…" / legenda / #hashtags / DESTINO: Feed) e o
+// botao de gerar sumiu. Com DESTINO e um paragrafo que comeca com "Luna": esse
+// paragrafo e o prompt, as linhas de # sao as hashtags e o resto e a legenda.
+function unlabeledBlock(lines: string[]): PhotoBlock[] {
+  const clean = lines.map((raw) => raw.replace(/\*\*|__|`/g, "").replace(/^(?:#+\s+|[^\p{L}#])+/u, "").trim());
+  const dest = clean.findIndex((l) => /^DESTINO\b/i.test(l));
+  if (dest < 0) return [];
+  const start = clean.slice(0, dest).findIndex((l) => /^luna\b/i.test(l));
+  if (start < 0) return [];
+  let i = start;
+  const prompt: string[] = [];
+  while (i < dest && clean[i] && !/^#\S/.test(clean[i])) prompt.push(clean[i++]);
+  const rest = clean.slice(i, dest).filter(Boolean);
+  const hashtags = rest.filter((l) => /^#\S/.test(l)).join(" ");
+  const caption = rest.filter((l) => !/^#\S/.test(l)).join("\n");
+  const value = clean[dest].match(LABEL)?.[2] ?? "";
+  return [{ prompt: prompt.join(" "), caption, hashtags, slot: slotFrom(value) }];
 }
 
 // creditos do carrossel: cada Criar da Naiaflow entrega 3 fotos da mesma cena
