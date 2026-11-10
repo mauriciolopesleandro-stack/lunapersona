@@ -3,6 +3,7 @@
 // variaveis TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID na Vercel) - nunca vai
 // para o navegador nem para o pod, que nao tem login.
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
+import { DEFAULT_PERSONA, personaId } from "./_persona.js";
 
 const TOKEN_KEY = "luna:telegram-token";
 const CHAT_KEY = "luna:telegram-chat";
@@ -27,8 +28,10 @@ async function safeGet(key: string): Promise<string | null> {
 }
 
 export async function telegramConfig(): Promise<TelegramConfig> {
-  const token = (await safeGet(TOKEN_KEY)) ?? process.env.TELEGRAM_BOT_TOKEN ?? null;
-  const chatId = (await safeGet(CHAT_KEY)) ?? process.env.TELEGRAM_CHAT_ID ?? null;
+  // as variaveis da Vercel sao do bot da Luna: outra persona so usa o bot dela
+  const luna = personaId() === DEFAULT_PERSONA;
+  const token = (await safeGet(TOKEN_KEY)) ?? (luna ? process.env.TELEGRAM_BOT_TOKEN : undefined) ?? null;
+  const chatId = (await safeGet(CHAT_KEY)) ?? (luna ? process.env.TELEGRAM_CHAT_ID : undefined) ?? null;
   const media = (await safeGet(MEDIA_KEY)) !== "0";
   return { token, chatId, media };
 }

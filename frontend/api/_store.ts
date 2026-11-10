@@ -3,6 +3,10 @@
 // Storage da Vercel), via fetch puro - sem dependencia nova. A Vercel
 // injeta KV_REST_API_URL/KV_REST_API_TOKEN ao conectar o banco ao projeto;
 // os nomes UPSTASH_REDIS_REST_* tambem valem, se criado direto na Upstash.
+// Varias personas (10/11): toda chave passa por personaKey (_persona.ts) - a
+// Luna continua com as mesmas chaves; a Cleuza ganha as dela ("cleuza:...").
+
+import { personaKey } from "./_persona.js";
 
 function storeCredentials(): { url: string; token: string } | null {
   const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
@@ -31,37 +35,37 @@ async function command(args: string[]): Promise<unknown> {
 }
 
 export async function storeGet(key: string): Promise<string | null> {
-  const result = await command(["GET", key]);
+  const result = await command(["GET", personaKey(key)]);
   return typeof result === "string" ? result : null;
 }
 
 export async function storeSet(key: string, value: string): Promise<void> {
-  await command(["SET", key, value]);
+  await command(["SET", personaKey(key), value]);
 }
 
 // Grava so se a chave nao existir, com validade em segundos. Devolve true
 // se gravou - serve de trava simples entre funcoes serverless.
 export async function storeSetIfAbsent(key: string, value: string, ttlSeconds: number): Promise<boolean> {
-  const result = await command(["SET", key, value, "NX", "EX", String(ttlSeconds)]);
+  const result = await command(["SET", personaKey(key), value, "NX", "EX", String(ttlSeconds)]);
   return result === "OK";
 }
 
 export async function storeDelete(key: string): Promise<void> {
-  await command(["DEL", key]);
+  await command(["DEL", personaKey(key)]);
 }
 
 export async function storeIncr(key: string): Promise<number> {
-  return Number(await command(["INCR", key]));
+  return Number(await command(["INCR", personaKey(key)]));
 }
 
 // Soma 1 e, na primeira vez, poe a validade - numa operacao so (script Lua),
 // para o contador nunca ficar sem validade se a funcao cair no meio.
 export async function storeIncrWithTtl(key: string, ttlSeconds: number): Promise<number> {
   const script = "local n = redis.call('INCR', KEYS[1]) if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end return n";
-  return Number(await command(["EVAL", script, "1", key, String(ttlSeconds)]));
+  return Number(await command(["EVAL", script, "1", personaKey(key), String(ttlSeconds)]));
 }
 
 // Segundos que faltam para a chave expirar (-2 = nao existe, -1 = sem validade).
 export async function storeTtl(key: string): Promise<number> {
-  return Number(await command(["TTL", key]));
+  return Number(await command(["TTL", personaKey(key)]));
 }
