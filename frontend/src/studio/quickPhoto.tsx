@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { personaStorageKey } from "./persona";
 import { putSignedUpload } from "./cloud";
 import { ADULT_DESTS, ADULT_PHOTOS, creditsFor, parsePhotoBlocks, type PhotoBlock, type Slot } from "../../api/_photo_blocks";
 
@@ -32,7 +33,7 @@ export function placedText(items: { format: string; scheduled_at: string }[]): s
 }
 
 // pedidos ja mandados para a fila (neste navegador, 2 dias): o botao vira "Ja pedida"
-const ASKED_KEY = "luna-fotos-pedidas";
+const ASKED_KEY = personaStorageKey("luna-fotos-pedidas");
 function askedMap(): Record<string, number> {
   try {
     return JSON.parse(localStorage.getItem(ASKED_KEY) ?? "{}");

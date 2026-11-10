@@ -12,6 +12,14 @@
   },
   "rewrites": [
     {
+      "source": "/api/telegram/webhook/:p",
+      "destination": "/api/studio?r=telegram-hook&p=:p"
+    },
+    {
+      "source": "/api/vendas/telegram/:p",
+      "destination": "/api/studio?r=sales-hook&p=:p"
+    },
+    {
       "source": "/api/telegram/webhook",
       "destination": "/api/studio?r=telegram-hook"
     },

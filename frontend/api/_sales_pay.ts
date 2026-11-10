@@ -5,6 +5,7 @@ import { audit, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpda
 import { sendNotice, telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 import type { FanRow, ProductRow } from "./_sales_bot.js";
 import { promoConfig, withPromo } from "./_sales_promo.js";
+import { personaParam } from "./_persona.js";
 
 // Pix pela PushinPay (gateway escolhido pelo administrador em 27/10/2026: R$ 0,35
 // por Pix, aceita conteudo adulto com a confirmacao de 18+ do comprador).
@@ -265,7 +266,7 @@ export async function startPayment(salesToken: string, fan: FanRow, sold: Produc
     ...(product.billing === "mensal" ? { installment: 1 } : {}),
   });
   try {
-    const webhook_url = `${site}/api/studio?r=sales-pix&o=${order.id}&s=${orderSignature(order.id)}`;
+    const webhook_url = `${site}/api/studio?r=sales-pix&o=${order.id}&s=${orderSignature(order.id)}${personaParam("&")}`;
     const charge =
       product.billing === "mensal"
         ? await pushin<Charge>("POST", "/api/pix/cashIn/subscription", {

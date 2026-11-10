@@ -19,6 +19,7 @@ import { ctaConfig, ctaDays, fill, previews, saveCtaConfig, savePreviews, sendCt
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
+import { personaPath } from "./_persona.js";
 
 // /api/studio?r=sales - pagina Vendas do estudio (com login).
 //   GET                                  estado: bot, pacotes com o conteudo, fas, pedidos
@@ -357,7 +358,7 @@ async function status() {
   if (token) {
     bot = await telegram<{ username?: string }>(token, "getMe").then((m) => m.username ?? null).catch(() => null);
     hooked = await telegram<{ url?: string }>(token, "getWebhookInfo")
-      .then((w) => Boolean(w.url?.endsWith("/api/vendas/telegram")))
+      .then((w) => Boolean(w.url?.endsWith(`/api/vendas/telegram${personaPath()}`)))
       .catch(() => false);
   }
   const config = await telegramConfig();

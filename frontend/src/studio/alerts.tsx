@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { personaStorageKey } from "./persona";
 import { Icon } from "./Icon";
 import { POST_STATUS } from "./PostFlow";
 import type { Nav } from "./pages";
@@ -16,7 +17,7 @@ interface Alert {
   action?: () => void;
 }
 
-const CLEARED_KEY = "luna:alertas-limpos";
+const CLEARED_KEY = personaStorageKey("luna:alertas-limpos");
 
 function readCleared(): string[] {
   try {

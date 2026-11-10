@@ -15,7 +15,14 @@ import { FinancePage, PlansPage, SubscriptionsPage, useSalesStatus } from "./mon
 import { SalesPage } from "./sales";
 import { TelegramFoldersPage } from "./telegramFolders";
 import { StudioProvider, useStudio, type Post } from "./store";
+import { PERSONAS, persona, switchPersona, type PersonaInfo } from "./persona";
 import "./studio.css";
+
+// foto da persona (sem foto: a inicial num circulo)
+function PersonaAvatar({ p }: { p: PersonaInfo }) {
+  return p.avatar ? <img src={p.avatar} alt="" /> : <span className="st-avatar-initial" aria-hidden="true">{p.name.slice(0, 1)}</span>;
+}
+
 
 // Menu enxuto: o que e do dia a dia de criar fica em "Creator", o que e de
 // ganhar dinheiro em "Monetizacao" e as contas em "Configuracoes". O Assistente
@@ -144,11 +151,12 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
     },
   };
 
+  const me = persona();
   const group = groupOf(page);
   const waitingCount = studio.source === "banco" ? studio.posts.filter(needsYou).length : 0;
 
   return (
-    <div className="st-shell">
+    <div className={`st-shell persona-${me.id}`}>
       {menuOpen && <div className="st-scrim" onClick={() => setMenuOpen(false)} />}
       <aside className={menuOpen ? "st-sidebar open" : "st-sidebar"}>
         <div className="st-brand">
@@ -172,12 +180,24 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
           ))}
         </nav>
         <div className="st-sidebar-foot">
-          <div className="st-persona">
-            <img src="/login/avatar-luna.webp" alt="" />
-            <span>
-              <b>Luna Vox</b>
-              <small>Influenciadora Virtual</small>
-            </span>
+          {/* Luna ou Cleuza (10/11): trocar recarrega o estudio com os dados da outra */}
+          <div className="st-persona-switch" role="group" aria-label="Persona do estúdio">
+            {PERSONAS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={p.id === me.id ? "st-persona active" : "st-persona"}
+                aria-pressed={p.id === me.id}
+                onClick={() => switchPersona(p.id)}
+                title={p.id === me.id ? `Você está no estúdio da ${p.name}` : `Trocar para o estúdio da ${p.name}`}
+              >
+                <PersonaAvatar p={p} />
+                <span>
+                  <b>{p.name}</b>
+                  <small>{p.id === me.id ? "Estúdio aberto" : p.subtitle}</small>
+                </span>
+              </button>
+            ))}
           </div>
           <div className="st-storage">
             <span>Pasta local</span>
@@ -215,15 +235,20 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
             <Icon name="plus" size={18} />
             <span>Novo Conteúdo</span>
           </button>
+          {me.id !== "luna" && (
+            <span className="st-persona-chip" title="Tudo o que você fizer aqui vale só para esta persona">
+              Estúdio da {me.name}
+            </span>
+          )}
           <AlertsBell nav={nav} />
           <button type="button" className="st-icon-btn" onClick={onToggleTheme} aria-label={theme === "dark" ? "Tema claro" : "Tema escuro"}>
             <Icon name={theme === "dark" ? "sun" : "moon"} size={18} />
           </button>
           <div className="st-user">
             <button type="button" className="st-user-btn" onClick={() => setUserMenu((v) => !v)} aria-expanded={userMenu}>
-              <img src="/login/avatar-luna.webp" alt="" />
+              <PersonaAvatar p={me} />
               <span className="st-user-text">
-                <b>Luna Vox</b>
+                <b>{me.name}</b>
                 <small>Admin</small>
               </span>
               <Icon name="chevronDown" size={16} />
@@ -240,6 +265,12 @@ function Shell({ theme, onToggleTheme, onLogout }: Props) {
                   <Icon name="user" size={16} />
                   Meu perfil
                 </button>
+                {PERSONAS.filter((p) => p.id !== me.id).map((p) => (
+                  <button key={p.id} type="button" onClick={() => switchPersona(p.id)}>
+                    <Icon name="user" size={16} />
+                    Trocar para {p.name}
+                  </button>
+                ))}
                 <button type="button" onClick={onLogout}>
                   <Icon name="logout" size={16} />
                   Sair

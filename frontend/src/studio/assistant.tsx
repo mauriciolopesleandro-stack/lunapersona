@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { isDefaultPersona, personaShort, personaStorageKey } from "./persona";
 import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
@@ -39,14 +40,14 @@ interface Status {
 }
 export type AssistantTab = "conversa" | "agenda" | "plano";
 
-const STORE_KEY = "luna-assistente-v2";
+const STORE_KEY = personaStorageKey("luna-assistente-v2");
 // Antes havia duas conversas (redes e +18); a primeira abertura aproveita a
 // que tiver mensagens.
 const OLD_STORE_KEY = "luna-assistente-v1";
 // pedido de revisao junto com a foto/Reels da Luna ("o que esta errado?")
 const REVIEW_ASK = /errad|defeito|problema|revis|analis|corrig|ruim|ficou bo|pode postar|t[aá] bo/i;
 const QUICK = [
-  "Planeje a semana da Luna de segunda a quinta: 2 posts no Feed, 3 Stories e 1 TikTok por dia, com horário, tema, prompt para a Naiaflow e legenda.",
+  `Planeje a semana da ${personaShort()} de segunda a quinta: 2 posts no Feed, 3 Stories e 1 TikTok por dia, com horário, tema, prompt para a Naiaflow e legenda.`,
   "Planeje os posts do canal +18 do Telegram de segunda a quinta (1 por dia), com prompt para a Naiaflow e texto do post.",
   "Me dê 5 ideias de fotos para amanhã, em cenários reais do Brasil.",
 ];
@@ -60,11 +61,11 @@ const CONTEXT: Record<string, string[]> = {
     "Escreva 5 chamadas novas para a mensagem diária do bot de vendas, com {nome}, sem nada explícito.",
     "Ideias de ensaio novo para segurar quem está no VIP e não deixar cancelar.",
   ],
-  visao: ["O que está faltando nesta semana para a Luna não ficar sem post?", "Resuma o que está agendado para os próximos 3 dias."],
+  visao: [`O que está faltando nesta semana para a ${personaShort()} não ficar sem post?`, "Resuma o que está agendado para os próximos 3 dias."],
 };
 
 // sala +18 (aba Monetizacao): conversa separada, so para o canal pago
-const ROOM18_KEY = "luna-assistente-18";
+const ROOM18_KEY = personaStorageKey("luna-assistente-18");
 // a IA respondeu so com ideias: pede os blocos que viram o botao "Gerar esta foto"
 const MAKE_BLOCKS =
   "Pode gerar. Para cada ideia acima escreva o bloco pronto para a Naiaflow, exatamente com os rótulos PROMPT, LEGENDA, HASHTAGS e DESTINO (um bloco por post, no destino que combinamos; no +18 do Telegram sem HASHTAGS e a LEGENDA é a historinha do canal).";
@@ -87,7 +88,8 @@ function load(room: string): Message[] {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) ?? "null");
     if (Array.isArray(saved)) return saved;
-    const old = JSON.parse(localStorage.getItem(OLD_STORE_KEY) ?? "{}");
+    // (a conversa antiga, de antes do v2, era da Luna)
+    const old = isDefaultPersona() ? JSON.parse(localStorage.getItem(OLD_STORE_KEY) ?? "{}") : {};
     if (Array.isArray(old.adulto) && old.adulto.length > 0) return old.adulto;
     return Array.isArray(old.normal) ? old.normal : [];
   } catch {
@@ -270,17 +272,17 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
     const refPhoto = review || profile ? undefined : attachments.find((a) => a.kind === "foto")?.images[0];
     // texto colado do Reference Bot ("📌 FOTO DE REFERÊNCIA…"): vai como dica, a leitura vale
     const fromBot = reads.length ? splitRefBotNote(typed) : { ask: typed, hint: "" };
-    const ask = fromBot.ask || (profile ? "Analise essa página e crie conteúdos para a Luna nesse estilo." : "Recria essa ideia com a Luna.");
+    const ask = fromBot.ask || (profile ? `Analise essa página e crie conteúdos para a ${personaShort()} nesse estilo.` : `Recria essa ideia com a ${personaShort()}.`);
     const reading = reads.map((r) => `[Referência: ${r.label}]\n${r.text}`).join("\n\n") + refBotHintText(fromBot.hint);
     const recreate = review
-      ? "Esta é uma foto/Reels da própria Luna gerado pela Naiaflow. Com a revisão acima, diga em tópicos curtos o que está errado (ou se está pronta para postar) e como acertar: se der para corrigir editando, escreva o pedido curto para o ✏️ Pedir correção do Telegram (Editar pelo texto da Naiaflow); se for melhor gerar de novo, escreva o prompt corrigido com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO, seguindo as regras de prompt (roupa completa, enquadramento, mãos simples)."
+      ? `Esta é uma foto/Reels da própria ${personaShort()} gerado pela Naiaflow. Com a revisão acima, diga em tópicos curtos o que está errado (ou se está pronta para postar) e como acertar: se der para corrigir editando, escreva o pedido curto para o ✏️ Pedir correção do Telegram (Editar pelo texto da Naiaflow); se for melhor gerar de novo, escreva o prompt corrigido com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO, seguindo as regras de prompt (roupa completa, enquadramento, mãos simples).`
       : profile
-      ?"Use a leitura da página para criar 5 conteúdos para a Luna no mesmo estilo (inspire-se, não copie a pessoa, o rosto nem a marca). Termine com um bloco PROMPT/LEGENDA/HASHTAGS/DESTINO para cada um."
+      ?`Use a leitura da página para criar 5 conteúdos para a ${personaShort()} no mesmo estilo (inspire-se, não copie a pessoa, o rosto nem a marca). Termine com um bloco PROMPT/LEGENDA/HASHTAGS/DESTINO para cada um.`
       : room === "18"
       ? `${REF_ASK} Diga também a nudez (o que aparece), a expressão e a textura da pele.\n${blockTemplate("+18 Telegram", { hashtags: false, caption: "a historinha safada do canal (sem hashtag)" })}`
       : refPhoto
       ? `${REF_ASK}\n${blockTemplate("…")}`
-      : "Recrie a ideia da referência com a Luna (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).";
+      : `Recrie a ideia da referência com a ${personaShort()} (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).`;
     const message: Message = reads.length
       ? { role: "user", content: `${refPhoto ? `${REF_FRESH}\n\n` : ""}${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
       : { role: "user", content: typed };

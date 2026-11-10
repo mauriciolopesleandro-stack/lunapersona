@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { personaShort } from "./persona";
 import { putSignedUpload } from "./cloud";
 import { placedText } from "./quickPhoto";
 import { OUTFIT_VIDEO, OutfitPicker, outfitFields, outfitLabel, outfitReady, type OutfitChoice } from "./outfitPicker";
@@ -169,12 +170,12 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
           }}
         >
           <option value="trocar">🔄 Trocar pessoa (recomendado): a cena fica igual, só a pessoa vira a Luna</option>
-          <option value="copiar">💃 Copiar dancinha: a Luna faz o movimento numa cena refeita</option>
+          <option value="copiar">💃 Copiar dancinha: a {personaShort()} faz o movimento numa cena refeita</option>
         </select>
       </label>
       {swap ? (
         <label className="st-field">
-          <span>Quem vira a Luna (se tiver mais de uma pessoa no vídeo)</span>
+          <span>Quem vira a {personaShort()} (se tiver mais de uma pessoa no vídeo)</span>
           <select className="st-input st-dance-who" value={who} onChange={(e) => setWho(e.target.value as (typeof WHO)[number]["key"])}>
             {WHO.map((w) => (
               <option key={w.key} value={w.key}>
@@ -229,7 +230,7 @@ export function DanceCard({ link, file }: { link?: string; file?: File }) {
       <p className="st-hint">
         {swap
           ? "O robô faz o Trocar pessoa: o vídeo fica igual (cena, roupa e fundo) e só a pessoa escolhida vira a Luna."
-          : "O robô faz o Copiar dancinha com a Luna no lugar da pessoa do vídeo. O cenário sempre vem do vídeo; a roupa, do jeito escolhido acima."}
+          : `O robô faz o Copiar dancinha com a ${personaShort()} no lugar da pessoa do vídeo. O cenário sempre vem do vídeo; a roupa, do jeito escolhido acima.`}
       </p>
       {error && <p className="st-error">{error}</p>}
       <div className="st-row">

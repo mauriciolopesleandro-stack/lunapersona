@@ -25,6 +25,8 @@ import { sendWelcome } from "./_sales_cta.js";
 //   /ver              so o administrador: escolhe um pacote e recebe igual ao fa
 // O Telegram avisa quando o fa bloqueia o bot (my_chat_member): para de mandar.
 
+import { personaPath } from "./_persona.js";
+
 const TOKEN_KEY = "luna:sales-token";
 const TOKEN_PATTERN = /^\d{5,15}:[A-Za-z0-9_-]{30,60}$/;
 
@@ -75,7 +77,7 @@ export function salesWebhookSecret(token: string): string {
 
 export async function registerSalesWebhook(token: string, baseUrl: string): Promise<void> {
   await telegram(token, "setWebhook", {
-    url: `${baseUrl}/api/vendas/telegram`,
+    url: `${baseUrl}/api/vendas/telegram${personaPath()}`,
     secret_token: salesWebhookSecret(token),
     allowed_updates: ["message", "callback_query", "my_chat_member"],
   });
