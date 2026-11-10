@@ -1,3 +1,4 @@
+import { blockTemplate } from "./_photo_blocks.js";
 import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
 import { dbSelect, supabaseConfigured } from "./_supabase.js";
@@ -191,9 +192,9 @@ export function referenceSystem(room: "chat" | "18"): string {
   const caption =
     room === "18"
       ? `LEGENDA do canal VIP: uma historinha curta e safada da Luna falando em primeira pessoa com o assinante (3 a 5 frases, português informal, pode ter emoji, sem hashtag), sobre aquele momento da foto.
-Termine com um único bloco: PROMPT / LEGENDA / DESTINO: +18 Telegram (sem HASHTAGS).`
+${blockTemplate("+18 Telegram", { hashtags: false, caption: "a historinha (sem hashtag)" })}`
       : `LEGENDA: uma frase curta, em tom de conversa ou pergunta provocante/fofa, com 1 a 3 emojis. HASHTAGS: 2 a 4 curtas e comuns (#fy #praia #verão #explore…).
-Termine com um único bloco: PROMPT / LEGENDA / HASHTAGS / DESTINO.`;
+${blockTemplate("o destino pedido")}`;
   return `Você escreve o pedido para a Naiaflow recriar UMA foto de referência com a Luna Vox, influenciadora virtual brasileira (personagem fictícia e adulta, criada com IA). A identidade da Luna vem do clone "luna", não do texto.
 ${room === "18" ? ADULT_NOTE : "Destino: Instagram e TikTok (nada explícito)."}
 Regras da Naia (a IA da Naiaflow):

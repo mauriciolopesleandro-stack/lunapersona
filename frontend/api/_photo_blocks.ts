@@ -33,7 +33,9 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
   let open: "prompt" | "caption" | "hashtags" | null = null; // rotulo sem texto: o texto vem nas linhas de baixo
   // 09/11: a IA as vezes escreve o bloco todo numa linha ("... PROMPT: x LEGENDA: y
   // DESTINO: z"); cada rotulo em MAIUSCULAS no meio da linha vira uma linha nova
-  const lines = text.replace(/[ \t]+(?:\*\*)?(PROMPT|LEGENDA|HASHTAGS|DESTINO)(?:\*\*)?\s*[:：]/g, "\n$1:").split("\n");
+  const lines = dropHeaders(text.replace(/\*\*|__/g, ""))
+    .replace(/[ \t]+(PROMPT|LEGENDA|HASHTAGS|DESTINO)\s*[:：]/g, "\n$1:")
+    .split("\n");
   for (const raw of lines) {
     // tira numeracao, marcadores e titulo markdown ("### "), mas nao o # da hashtag
     const line = raw.replace(/\*\*|__|`/g, "").replace(/^(?:#+\s+|[^\p{L}#])+/u, "").trim();
@@ -76,9 +78,30 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
   }
   // aspas em volta do texto que veio na linha de baixo do rotulo
   const unquote = (s: string) => s.replace(/^["“]\s*|\s*["”]$/g, "").trim();
-  const found = blocks.filter((b) => b.prompt);
-  return (found.length ? found : unlabeledBlock(lines)).map((b) => ({ ...b, prompt: unquote(b.prompt), caption: unquote(b.caption) }));
+  // "PROMPT: Luna …" e o modelo do blockTemplate repetido, nao um pedido
+  const found = blocks.filter((b) => b.prompt && !/^luna\s*…$/i.test(b.prompt.trim()));
+  return (blocks.length ? found : unlabeledBlock(lines)).map((b) => ({ ...b, prompt: unquote(b.prompt), caption: unquote(b.caption) }));
 }
+
+// 10/11: "Termine com o bloco PROMPT / LEGENDA / HASHTAGS / DESTINO" a IA copiava
+// como titulo ("PROMPT / LEGENDA / HASHTAGS / DESTINO: Feed") e escrevia o texto
+// embaixo sem rotulo. O modelo do bloco vai escrito, um rotulo por linha.
+export function blockTemplate(dest: string, opts: { hashtags?: boolean; caption?: string } = {}): string {
+  return [
+    "Termine com o bloco abaixo, cada rótulo no começo da própria linha e o texto logo depois dos dois-pontos (nunca escreva os rótulos juntos numa linha só, como título):",
+    "PROMPT: Luna …",
+    `LEGENDA: ${opts.caption ?? "…"}`,
+    ...(opts.hashtags === false ? [] : ["HASHTAGS: #… #…"]),
+    `DESTINO: ${dest}`,
+  ].join("\n");
+}
+
+// linha de titulo com os rotulos juntos ("PROMPT / LEGENDA / HASHTAGS / DESTINO: Feed",
+// "PROMPT/LEGENDA/DESTINO"): nao e o bloco; fica so o DESTINO, se tiver valor
+const LABEL_WORD = "(?:PROMPT|LEGENDA|HASHTAGS|DESTINO)";
+const HEADER = new RegExp(`^[^\\p{L}\\n]*${LABEL_WORD}(?:\\s*\\([^)]*\\))?(?:\\s*[\\/|,]\\s*${LABEL_WORD}(?:\\s*\\([^)]*\\))?)+\\s*\\/?\\s*(?:[:：]\\s*(.*))?$`, "gimu");
+const dropHeaders = (text: string) =>
+  text.replace(HEADER, (line, value: string | undefined) => (/DESTINO\s*(?:\([^)]*\))?\s*[:：]/i.test(line) && value?.trim() ? `DESTINO: ${value.trim()}` : ""));
 
 // 10/11: a IA mandou o bloco sem os rotulos PROMPT/LEGENDA/HASHTAGS, so com o
 // DESTINO no fim ("Luna, sentada…" / legenda / #hashtags / DESTINO: Feed) e o
@@ -86,18 +109,37 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
 // paragrafo e o prompt, as linhas de # sao as hashtags e o resto e a legenda.
 function unlabeledBlock(lines: string[]): PhotoBlock[] {
   const clean = lines.map((raw) => raw.replace(/\*\*|__|`/g, "").replace(/^(?:#+\s+|[^\p{L}#])+/u, "").trim());
-  const dest = clean.findIndex((l) => /^DESTINO\b/i.test(l));
+  // o DESTINO pode vir no fim ou em cima (de um titulo "PROMPT / … / DESTINO: Feed")
+  let dest = -1;
+  clean.forEach((l, k) => {
+    if (/^DESTINO\b/i.test(l)) dest = k;
+  });
   if (dest < 0) return [];
-  const start = clean.slice(0, dest).findIndex((l) => /^luna\b/i.test(l));
+  const start = clean.findIndex((l) => /^luna\b/i.test(l));
   if (start < 0) return [];
-  let i = start;
-  const prompt: string[] = [];
-  while (i < dest && clean[i] && !/^#\S/.test(clean[i])) prompt.push(clean[i++]);
-  const rest = clean.slice(i, dest).filter(Boolean);
-  const hashtags = rest.filter((l) => /^#\S/.test(l)).join(" ");
-  const caption = rest.filter((l) => !/^#\S/.test(l)).join("\n");
+  const end = dest > start ? dest : clean.length;
+  // o prompt e a linha do "Luna" (a IA nao quebra o prompt em linhas; a legenda
+  // as vezes vem na linha de baixo, sem linha em branco)
+  const prompt = [clean[start]];
+  const rest = clean.slice(start + 1, end);
+  // legenda: o paragrafo depois do prompt (com o DESTINO em cima, o texto
+  // depois da legenda e das hashtags e conversa, nao entra)
+  const caption: string[] = [];
+  const tags: string[] = [];
+  for (let k = 0; k < rest.length; k++) {
+    const l = rest[k];
+    if (/^#\S/.test(l)) {
+      tags.push(l);
+      continue;
+    }
+    if (!l) continue;
+    if (tags.length) break; // texto depois das hashtags: conversa
+    if (caption.length && !rest[k - 1] && dest < start) break; // 2o paragrafo sem DESTINO embaixo: conversa
+    caption.push(l);
+  }
+  const hashtags = tags.join(" ");
   const value = clean[dest].match(LABEL)?.[2] ?? "";
-  return [{ prompt: prompt.join(" "), caption, hashtags, slot: slotFrom(value) }];
+  return [{ prompt: prompt.join(" "), caption: caption.join("\n"), hashtags, slot: slotFrom(value) }];
 }
 
 // creditos do carrossel: cada Criar da Naiaflow entrega 3 fotos da mesma cena

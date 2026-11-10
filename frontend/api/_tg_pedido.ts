@@ -3,6 +3,7 @@ import { AiError, askAi, referenceSystem } from "./_assistant.js";
 import {
   ADULT_DESTS,
   ADULT_PHOTOS,
+  blockTemplate,
   REF_ASK,
   REF_FRESH,
   creditsFor,
@@ -320,8 +321,8 @@ async function write(p: Pedido, change: string | null, say: Say, replyTo: Record
     const ask = typed || "Recria essa foto com a Luna.";
     const recreate =
       room === "18"
-        ? `${REF_ASK} Diga também a nudez (o que aparece), a expressão e a textura da pele. Termine com o bloco PROMPT/LEGENDA (a historinha safada do canal, sem hashtag)/DESTINO: +18 Telegram.`
-        : `${REF_ASK} Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO: ${p.dest === "stories" ? "Stories" : "Feed"}.`;
+        ? `${REF_ASK} Diga também a nudez (o que aparece), a expressão e a textura da pele.\n${blockTemplate("+18 Telegram", { hashtags: false, caption: "a historinha safada do canal (sem hashtag)" })}`
+        : `${REF_ASK}\n${blockTemplate(p.dest === "stories" ? "Stories" : "Feed")}`;
     // mudanca sem resposta anterior (a IA tinha falhado): vai junto do primeiro pedido
     const extra = change && !p.reply ? `\n\nMudança pedida: ${change.slice(0, 1500)}` : "";
     const first = `${REF_FRESH}\n\n${ask}\n\n[Referência: foto]\n${p.reading}${refBotHintText(hint)}\n\n${recreate}${extra}`.slice(0, 7900);
@@ -330,7 +331,7 @@ async function write(p: Pedido, change: string | null, say: Say, replyTo: Record
       { role: "user", content: first },
     ];
     if (change && p.reply) {
-      messages.push({ role: "assistant", content: p.reply }, { role: "user", content: `${change.slice(0, 1500)}\n\nEscreva o bloco PROMPT/LEGENDA${room === "18" ? "" : "/HASHTAGS"}/DESTINO de novo com essa mudança.` });
+      messages.push({ role: "assistant", content: p.reply }, { role: "user", content: `${change.slice(0, 1500)}\n\nEscreva o bloco de novo com essa mudança.\n${blockTemplate(room === "18" ? "+18 Telegram" : p.dest === "stories" ? "Stories" : "Feed", { hashtags: room !== "18" })}` });
     }
     const started = Date.now();
     const out = await askAi("adulto", messages, { timeoutMs: 45_000 });
