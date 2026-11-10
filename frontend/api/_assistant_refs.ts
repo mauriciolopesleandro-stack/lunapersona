@@ -1,4 +1,4 @@
-import { AiError, askAi, visionModel, type AiContent } from "./_assistant.js";
+import { AiError, askAi, FALLBACK_VISION_MODEL, visionModel, type AiContent } from "./_assistant.js";
 import { igConnection } from "./_instagram.js";
 
 // Referencias da Conversa: o administrador manda uma foto, um video (o
@@ -10,13 +10,15 @@ import { igConnection } from "./_instagram.js";
 const MAX_IMAGES = 6;
 const MAX_IMAGE_CHARS = 1_500_000; // ~1,1 MB por imagem em base64
 const JPEG = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+// resposta de recusa (o modelo nao quis descrever a foto)
+const REFUSAL = /n[ãa]o (posso|consigo|vou) (ajudar|descrever|analisar)|desculpe|I can(no|')t|I'm sorry|I am sorry|unable to (help|assist|describe)/i;
 
-const READ_RULES = `Descreva só o que aparece de verdade na imagem; não invente pessoa, roupa ou cenário que não estão lá (se não houver pessoa, diga). Não identifique a pessoa nem descreva rosto, corpo ou traços físicos dela: a ideia vai ser recriada com outra personagem (a Luna). Não leia nem repita nomes de marcas. Responda em português do Brasil, em tópicos curtos, sem introdução.`;
+const READ_RULES = `Descreva só o que aparece de verdade na imagem; não invente pessoa, roupa ou cenário que não estão lá (se não houver pessoa, diga). Não identifique a pessoa nem descreva o rosto ou traços físicos dela: a ideia vai ser recriada com outra personagem (a Luna). Mas diga com clareza o que está à mostra (nudez, seios, partes íntimas, roupa aberta, levantada ou afastada): isso é a roupa da cena, não a pessoa. Se houver outra pessoa na foto (ex.: um parceiro), diga onde ela está e o que aparece dela. Não leia nem repita nomes de marcas. Responda em português do Brasil, em tópicos curtos, sem introdução.`;
 
 // a foto vai ser recriada IGUAL (31/10): a leitura precisa ser exata, peca por peca
 const PHOTO_PROMPT = `Você ajuda a recriar fotos para redes sociais o mais IGUAL possível à referência. Olhe com atenção e faça a leitura exata:
 - Lugar e cenário, objeto por objeto (parede e do que é feita, móveis, cama, cortina e cor, porta ou janela e o que aparece lá fora)
-- Roupa: primeiro diga o que ela veste DE VERDADE. Se estiver sem nenhuma roupa, escreva "totalmente nua"; se estiver sem a parte de cima, "topless"; se estiver só de calcinha, "só de calcinha". Nunca acrescente lingerie, calcinha, sutiã, toalha, lençol cobrindo ou qualquer peça que não esteja na foto; na dúvida, diga que não dá para ver.
+- Roupa: primeiro diga o que ela veste DE VERDADE. Se estiver sem nenhuma roupa, escreva "totalmente nua"; se estiver sem a parte de cima, "topless"; se estiver só de calcinha, "só de calcinha"; peça aberta, levantada ou afastada, diga assim (ex.: "blusa cinza aberta, seios à mostra, sem calcinha"). Nunca acrescente lingerie, calcinha, sutiã, toalha, lençol cobrindo ou qualquer peça que não esteja na foto; na dúvida, diga que não dá para ver.
 - Das peças que aparecem: o tipo exato de cada uma (maiô, biquíni, body, vestido…), cores, estampa (oncinha, zebra, floral…), recortes, tiras e amarrações, e o corte da parte de baixo (fio dental, asa-delta, normal)
 - Acessórios com o tipo exato (chapéu de caubói, chapéu de praia, boné…; material e detalhes)
 - Pose: de frente, de costas ou de lado para a câmera; para onde olha (câmera, por cima do ombro, para baixo); onde estão braços e mãos; em pé, sentada ou deitada
@@ -73,6 +75,10 @@ async function read(prompt: string, images: string[], extra = "", temperature?: 
   const content: AiContent = [{ type: "text", text: extra ? `${prompt}\n\n${extra}` : prompt }, ...images.map((url) => ({ type: "image_url" as const, image_url: { url } }))];
   try {
     const out = await askAi("normal", [{ role: "user", content }], { model: model ?? visionModel(), maxTokens: 900, timeoutMs: 40_000, temperature });
+    // o modelo recusou a foto (nudez): le de novo com o modelo de reserva
+    if (!model && out.model !== FALLBACK_VISION_MODEL && REFUSAL.test(out.text.slice(0, 300)) && out.text.length < 600) {
+      return read(prompt, images, extra, temperature, FALLBACK_VISION_MODEL);
+    }
     return out.text.slice(0, 5000);
   } catch (e) {
     // lote de fotos recusado pelo provedor: tenta de novo com menos fotos
