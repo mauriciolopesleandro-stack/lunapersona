@@ -241,7 +241,9 @@ const GARMENTS: [string, RegExp][] = [
 export function missingGarments(reading: string, prompt: string): string[] {
   const roupa = clean(readingRoupa(reading)).replace(/\b(sem|nem|nao tem|nao usa)\b [^,.;]{0,30}/g, "");
   const p = clean(prompt);
-  return GARMENTS.filter(([, re]) => re.test(roupa) && !re.test(p)).map(([name]) => name);
+  // "vestido … saia curta": a saia e a parte de baixo do vestido, nao outra peca
+  const dress = /\bvestido\b/.test(roupa);
+  return GARMENTS.filter(([name, re]) => re.test(roupa) && !re.test(p) && !(dress && name === "saia")).map(([name]) => name);
 }
 
 // uma linha da leitura para o resumo: roupa/nudez e lugar

@@ -17,7 +17,7 @@ import {
 } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
-import { adultBlockText, checkedVisionPrompt, vipCaption } from "./_ref_writer.js";
+import { adultBlockText, checkedVisionPrompt, feedBlockText, feedCaption, vipCaption } from "./_ref_writer.js";
 import { storageReadUrl, storageUploadUrl } from "./_supabase.js";
 import { telegram } from "./_telegram.js";
 
@@ -280,18 +280,27 @@ export async function fetchPhoto(token: string, fileId: string): Promise<{ ref: 
 
 // Escreve (ou reescreve com a mudanca pedida) o bloco PROMPT/LEGENDA com as
 // regras do chat do estudio (sala normal ou +18)
-// +18 (09/11): o prompt sai da IA que ve a foto; a IA sem censura so escreve a
-// legenda. Sem a foto, com erro ou recusa: null (segue o jeito das duas IAs).
-async function adultByVision(p: Pedido, change: string | null): Promise<{ text: string; block: PhotoBlock } | null> {
+// O prompt sai da IA que ve a foto; a IA de texto so escreve a legenda (e as
+// hashtags no Feed/Stories). +18 desde 09/11, Feed e Stories desde 10/11.
+// Sem a foto, com erro ou recusa: null (segue o jeito das duas IAs).
+async function byVision(p: Pedido, change: string | null): Promise<{ text: string; block: PhotoBlock } | null> {
   try {
     const res = await fetch(await storageReadUrl(UPLOAD_BUCKET, p.ref, 300), { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return null;
     const image = `data:image/jpeg;base64,${Buffer.from(await res.arrayBuffer()).toString("base64")}`;
     const started = Date.now();
+    const room = p.dest === "18" ? "18" : "feed";
     // a roupa da leitura vai junto; nudez errada ou peca esquecida -> confere na foto uma vez
-    const prompt = await checkedVisionPrompt(image, p.reading, change ? { change, previous: p.block?.prompt } : {});
-    const caption = await vipCaption(prompt, change ?? undefined, Math.max(8_000, 50_000 - (Date.now() - started))).catch(() => p.block?.caption ?? "");
-    const text = adultBlockText(prompt, caption);
+    const prompt = await checkedVisionPrompt(image, p.reading, { room, ...(change ? { change, previous: p.block?.prompt } : {}) });
+    const left = Math.max(8_000, 50_000 - (Date.now() - started));
+    let text: string;
+    if (room === "18") {
+      const caption = await vipCaption(prompt, change ?? undefined, left).catch(() => p.block?.caption ?? "");
+      text = adultBlockText(prompt, caption);
+    } else {
+      const words = await feedCaption(prompt, change ?? undefined, left).catch(() => ({ caption: p.block?.caption ?? "", hashtags: p.block?.hashtags ?? "" }));
+      text = feedBlockText(prompt, words.caption, words.hashtags, p.dest === "stories" ? "Stories" : "Feed");
+    }
     const block = parsePhotoBlocks(text)[0];
     return block ? { text, block } : null;
   } catch {
@@ -305,10 +314,10 @@ async function write(p: Pedido, change: string | null, say: Say, replyTo: Record
   try {
     await say(change ? "✍️ Mudando o pedido…" : "✍️ Escrevendo o pedido…", replyTo);
     const room = p.dest === "18" ? "18" : "chat";
-    if (room === "18") {
+    {
       // o recado escrito junto da foto vale como pedido de mudanca
       const asked = change ?? (splitRefBotNote(p.note).ask || null);
-      const vision = await adultByVision(p, asked);
+      const vision = await byVision(p, asked);
       if (vision) {
         const next: Pedido = { ...p, reply: vision.text, block: vision.block, by: "visao" };
         await save(next);

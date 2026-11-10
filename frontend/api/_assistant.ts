@@ -348,17 +348,24 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   // da foto nova (as fotos anteriores da conversa nao entram)
   const system = body.reference === true ? referenceSystem(room) : await chatSystem(room);
   if (body.reference === true) messages = messages.slice(-1);
-  // +18 com foto (09/11, igual ao bot): o PROMPT sai da IA que ve a foto e a IA
-  // sem censura so escreve a legenda; com erro ou recusa, segue o jeito antigo
+  // foto de referencia (igual ao bot; +18 desde 09/11, Feed/Stories desde 10/11):
+  // o PROMPT sai da IA que ve a foto e a IA de texto so escreve legenda/hashtags;
+  // com erro ou recusa, segue o jeito antigo
   const refImage = typeof body.refImage === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(body.refImage) && body.refImage.length < 2_000_000 ? body.refImage : null;
-  if (body.reference === true && room === "18" && refImage) {
+  if (body.reference === true && refImage) {
     try {
-      const { adultBlockText, checkedVisionPrompt, vipCaption } = await import("./_ref_writer.js");
+      const { adultBlockText, checkedVisionPrompt, feedBlockText, feedCaption, vipCaption } = await import("./_ref_writer.js");
       const asked = typeof body.refAsk === "string" && body.refAsk.trim() ? body.refAsk.trim().slice(0, 1500) : undefined;
       const refReading = typeof body.refReading === "string" ? body.refReading.slice(0, 6000) : "";
-      const prompt = await checkedVisionPrompt(refImage, refReading, asked ? { change: asked } : {});
-      const caption = await vipCaption(prompt, asked).catch(() => "");
-      return reply(200, { reply: `✍️ Escrito pela IA que vê a foto.\n\n${adultBlockText(prompt, caption)}`, model: visionModel(), mode });
+      const writer = room === "18" ? "18" : "feed";
+      const prompt = await checkedVisionPrompt(refImage, refReading, { room: writer, ...(asked ? { change: asked } : {}) });
+      let block: string;
+      if (writer === "18") block = adultBlockText(prompt, await vipCaption(prompt, asked).catch(() => ""));
+      else {
+        const words = await feedCaption(prompt, asked).catch(() => ({ caption: "", hashtags: "" }));
+        block = feedBlockText(prompt, words.caption, words.hashtags, "Feed");
+      }
+      return reply(200, { reply: `✍️ Escrito pela IA que vê a foto.\n\n${block}`, model: visionModel(), mode });
     } catch {
       // segue com as duas IAs
     }
