@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
-import { REF_ASK, REF_FRESH, refBotHintText, splitRefBotNote } from "../../api/_photo_blocks";
+import { blockTemplate, REF_ASK, REF_FRESH, refBotHintText, splitRefBotNote } from "../../api/_photo_blocks";
 import { DANCE_LINK, DanceCard } from "./dance";
 import { LongVideoCard } from "./longVideo";
 import { CtaModal, CtaRow, brDay, useCtaDays, type CtaDay } from "./ctaDays";
@@ -277,9 +277,9 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       : profile
       ?"Use a leitura da página para criar 5 conteúdos para a Luna no mesmo estilo (inspire-se, não copie a pessoa, o rosto nem a marca). Termine com um bloco PROMPT/LEGENDA/HASHTAGS/DESTINO para cada um."
       : room === "18"
-      ? `${REF_ASK} Diga também a nudez (o que aparece), a expressão e a textura da pele. Termine com o bloco PROMPT/LEGENDA (a historinha safada do canal, sem hashtag)/DESTINO: +18 Telegram.`
+      ? `${REF_ASK} Diga também a nudez (o que aparece), a expressão e a textura da pele.\n${blockTemplate("+18 Telegram", { hashtags: false, caption: "a historinha safada do canal (sem hashtag)" })}`
       : refPhoto
-      ? `${REF_ASK} Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO.`
+      ? `${REF_ASK}\n${blockTemplate("…")}`
       : "Recrie a ideia da referência com a Luna (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).";
     const message: Message = reads.length
       ? { role: "user", content: `${refPhoto ? `${REF_FRESH}\n\n` : ""}${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
