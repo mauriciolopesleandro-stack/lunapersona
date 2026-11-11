@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { CUT_SECONDS, DANCE_LINK, longCut, longPieces } from "./_outfits.js";
 import { outfitList } from "./_outfit_list.js";
-import { ADULT_DESTS } from "./_photo_blocks.js";
+import { ADULT_DESTS, splitRefBotNote } from "./_photo_blocks.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeSet, storeSetIfAbsent } from "./_store.js";
 import { storageRemove } from "./_supabase.js";
@@ -285,8 +285,15 @@ export async function videoMessage(msg: TgVideoMessage, say: Say): Promise<void>
     return;
   }
   const duration = msg.video?.duration;
-  const v = newOrder({ tgFile: file.file_id, ext, ...(duration !== undefined ? { duration, seconds: danceSecondsFor(duration) } : {}), caption: (msg.caption ?? "").trim().slice(0, 2200), rating: { status: "pendente" } });
+  const v = newOrder({ tgFile: file.file_id, ext, ...(duration !== undefined ? { duration, seconds: danceSecondsFor(duration) } : {}), caption: ownCaption(msg.caption ?? ""), rating: { status: "pendente" } });
   await askOrder(v, `🎬 Recebi o vídeo${receivedTip(v)}.`, replyTo, say);
+}
+
+// 11/11: o texto que o Reference Bot manda junto ("📌 FOTO DE REFERÊNCIA — usar so
+// como referencia...") virou a legenda do rascunho do TikTok. Fica so o recado do
+// administrador (sem recado: a legenda automatica do dia).
+function ownCaption(text: string): string {
+  return splitRefBotNote(text).ask.slice(0, 2200);
 }
 
 function receivedTip(v: VideoOrder): string {
@@ -307,7 +314,7 @@ export async function videoLink(text: string, messageId: number, say: Say): Prom
   const link = text.match(DANCE_LINK)?.[0];
   if (!link || !storeConfigured()) return false;
   if (!(await storeSetIfAbsent(`luna:tg-video:${messageId}`, "1", 3600))) return true;
-  const caption = text.replace(link, "").trim().slice(0, 2200);
+  const caption = ownCaption(text.replace(link, ""));
   const v = newOrder({ link, caption, kind: "danca", rating: { status: "pendente" } });
   await askOrder(v, "🔗 Recebi o link da dancinha.", { reply_to_message_id: messageId }, say);
   return true;
