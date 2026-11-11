@@ -26,6 +26,12 @@ function slotFrom(text: string): Slot {
 // texto na linha de baixo do rotulo.
 const LABEL = /^(PROMPT|LEGENDA|HASHTAGS|DESTINO)\b\s*(?:\([^)]*\))?\s*[:：\-–]?\s*(.*)$/i;
 
+// O prompt comeca com o nome de uma persona ("Luna ...", "Cleuza ..."). Este
+// arquivo tambem roda no navegador, por isso a lista fica aqui (igual a _persona.ts).
+const PERSONA_START = /^(luna|cleuza)\b/i;
+// "PROMPT: Luna …" / "PROMPT: Cleuza …": o modelo do blockTemplate repetido, nao um pedido
+const PLACEHOLDER = /^(luna|cleuza)\s*…$/i;
+
 export function parsePhotoBlocks(text: string): PhotoBlock[] {
   const blocks: PhotoBlock[] = [];
   let cur: PhotoBlock | null = null;
@@ -79,7 +85,7 @@ export function parsePhotoBlocks(text: string): PhotoBlock[] {
   // aspas em volta do texto que veio na linha de baixo do rotulo
   const unquote = (s: string) => s.replace(/^["“]\s*|\s*["”]$/g, "").trim();
   // "PROMPT: Luna …" e o modelo do blockTemplate repetido, nao um pedido
-  const found = blocks.filter((b) => b.prompt && !/^luna\s*…$/i.test(b.prompt.trim()));
+  const found = blocks.filter((b) => b.prompt && !PLACEHOLDER.test(b.prompt.trim()));
   return (blocks.length ? found : unlabeledBlock(lines)).map((b) => ({ ...b, prompt: unquote(b.prompt), caption: unquote(b.caption) }));
 }
 
@@ -115,7 +121,7 @@ function unlabeledBlock(lines: string[]): PhotoBlock[] {
     if (/^DESTINO\b/i.test(l)) dest = k;
   });
   if (dest < 0) return [];
-  const start = clean.findIndex((l) => /^luna\b/i.test(l));
+  const start = clean.findIndex((l) => PERSONA_START.test(l));
   if (start < 0) return [];
   const end = dest > start ? dest : clean.length;
   // o prompt e a linha do "Luna" (a IA nao quebra o prompt em linhas; a legenda

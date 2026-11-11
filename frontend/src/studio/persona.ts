@@ -37,6 +37,11 @@ export const persona = (): PersonaInfo => PERSONAS.find((p) => p.id === current)
 export const isDefaultPersona = () => current === DEFAULT;
 export const personaShort = () => persona().short;
 
+// Texto escrito para a Luna (pedidos que o estudio manda para a IA) virado para
+// a persona aberta. Luna: igual, letra por letra.
+export const personaClientText = (text: string) =>
+  current === DEFAULT ? text : text.replace(/Luna Vox/g, persona().name).replace(/\bLuna\b/g, persona().short);
+
 // Chaves do navegador que sao de uma persona so (conversas do chat, fotos ja
 // pedidas, avisos limpos): a Luna usa as de sempre; as outras, com o nome no fim.
 export const personaStorageKey = (key: string) => (current === DEFAULT ? key : `${key}:${current}`);

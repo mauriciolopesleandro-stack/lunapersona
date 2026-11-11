@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { personaShort } from "./persona";
+import { isDefaultPersona, personaShort } from "./persona";
 import { Icon } from "./Icon";
 import { call, type Status } from "./sales";
 
@@ -339,6 +339,21 @@ export function PlansPage() {
 
       {notice && <p className="st-ok">{notice}</p>}
       {error && <p className="st-error">{error}</p>}
+
+      {/* Fase 3 (11/11): persona nova comeca sem planos - copia os da Luna (nome, descricao, preco e prazo) */}
+      {!isDefaultPersona() && status.products.length === 0 && (
+        <section className="st-panel st-settings">
+          <h2>Planos da {personaShort()}</h2>
+          <p className="st-hint">
+            Ainda não há nenhum plano. Copie os planos da Luna: os mesmos pacotes, preços e prazos, com as descrições trocando "Luna" por "{personaShort()}". O conteúdo de cada pacote (as fotos) não é copiado; ele é da {personaShort()} e entra pela aba Conteúdo do Telegram.
+          </p>
+          <div className="st-row">
+            <button type="button" className="st-btn st-btn-primary" disabled={busy !== null} onClick={() => run("copy", { action: "copy-products" }, `Planos da Luna copiados para a ${personaShort()}. Confira os nomes, as descrições e os preços abaixo.`)}>
+              {busy === "copy" ? "Copiando…" : "Copiar os planos da Luna"}
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="st-panel st-settings">
         <h2>Planos</h2>

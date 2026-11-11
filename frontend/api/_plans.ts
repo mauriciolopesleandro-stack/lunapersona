@@ -2,7 +2,8 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { flagProblem, normalizeFlags } from "./_flags.js";
 import { coverage, nextSlot } from "./_metas.js";
 import { isAuthenticated } from "./_auth.js";
-import { ADULT_NOTE, AiError, PERSONA, STYLE_GUIDE, askAi, type Mode } from "./_assistant.js";
+import { AiError, adultNote, askAi, personaPrompt, styleGuide, type Mode } from "./_assistant.js";
+import { personaText } from "./_persona.js";
 import { audit, dbDelete, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { creditsFor } from "./_photo_blocks.js";
@@ -183,15 +184,15 @@ function cleanTags(raw: unknown): string[] {
 async function writeBatch(mode: Mode, plan: PlanRow, batch: ItemRow[]): Promise<number> {
   const theme = typeof plan.request.theme === "string" && plan.request.theme.trim() ? plan.request.theme.trim() : "livre, variado, cenários reais do Brasil";
   const system = [
-    PERSONA,
-    mode === "adulto" ? ADULT_NOTE : STYLE_GUIDE,
+    personaPrompt(),
+    mode === "adulto" ? adultNote() : styleGuide(),
     'Responda SÓ com JSON no formato {"items":[{"i":0,"prompt":"...","caption":"...","hashtags":["#..."]}]}, um objeto por item pedido, com o mesmo "i".',
   ]
     .filter(Boolean)
     .join("\n\n");
   const user = [
     `Tema do período: ${theme}.`,
-    "Para cada publicação abaixo, escreva: prompt (frase simples para a Naiaflow: Luna + roupa + lugar + o que faz + clima), caption (legenda curta) e hashtags (até 5).",
+    personaText("Para cada publicação abaixo, escreva: prompt (frase simples para a Naiaflow: Luna + roupa + lugar + o que faz + clima), caption (legenda curta) e hashtags (até 5)."),
     "Varie roupas, lugares e momentos entre os itens; nada repetido.",
     ...batch.map((it, i) => `${i}) ${weekday(it.scheduled_at)} · ${SLOTS[(Object.keys(SLOTS) as SlotKey[]).find((k) => SLOTS[k].network === it.network && SLOTS[k].format === it.format)!].label}${it.kind === "video" ? " (foto que vira Reels com zoom leve)" : " (foto)"}`),
   ].join("\n");

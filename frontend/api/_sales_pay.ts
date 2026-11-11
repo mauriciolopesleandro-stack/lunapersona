@@ -5,7 +5,7 @@ import { audit, dbInsert, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpda
 import { sendNotice, telegram, telegramChannel, telegramConfig } from "./_telegram.js";
 import type { FanRow, ProductRow } from "./_sales_bot.js";
 import { promoConfig, withPromo } from "./_sales_promo.js";
-import { personaParam } from "./_persona.js";
+import { persona, personaParam } from "./_persona.js";
 
 // Pix pela PushinPay (gateway escolhido pelo administrador em 27/10/2026: R$ 0,35
 // por Pix, aceita conteudo adulto com a confirmacao de 18+ do comprador).
@@ -274,10 +274,10 @@ export async function startPayment(salesToken: string, fan: FanRow, sold: Produc
             frequency: FREQUENCY_MONTHLY,
             pix_recurring_retry_policy: RETRY_3X_7_DAYS,
             webhook_url,
-            name: `Luna Vox - ${product.title}`.slice(0, 200),
+            name: `${persona().fullName} - ${product.title}`.slice(0, 200),
             customer: { name: customer!.name, document: { type: "cpf", number: customer!.cpf } },
           })
-        : await pushin<Charge>("POST", "/api/pix/cashIn", { value: product.price_cents, description: `Luna Vox - ${product.title}`.slice(0, 255), webhook_url });
+        : await pushin<Charge>("POST", "/api/pix/cashIn", { value: product.price_cents, description: `${persona().fullName} - ${product.title}`.slice(0, 255), webhook_url });
     if (!charge.id || !charge.qr_code) throw new Error("a PushinPay não devolveu o Pix");
     if (product.billing === "mensal" && !charge.subscription_id) throw new Error("a PushinPay não devolveu a assinatura");
     const saved = await dbUpdate<OrderRow>("sales_orders", `id=eq.${order.id}`, {

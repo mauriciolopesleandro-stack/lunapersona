@@ -2,6 +2,7 @@ import { storeConfigured, storeGet, storeIncr, storeIncrWithTtl, storeSet, store
 import { dbSelect, dbUpdate, dbUpdateWhere } from "./_supabase.js";
 import { telegram } from "./_telegram.js";
 import type { FanRow, ProductRow } from "./_sales_bot.js";
+import { personaIdentity, personaText } from "./_persona.js";
 
 // Mensagens que chamam o fa para comprar (CTA) no bot de vendas, sempre com o
 // nome dele ({nome}), uma previa (foto com as partes intimas cobertas, escolhida
@@ -152,13 +153,21 @@ Escreva 3 mini-histórias diferentes, em português do Brasil natural, como se f
 - sem inventar nomes, preços ou promoções.
 Responda só JSON: {"chamadas": ["...", "...", "..."]}`;
 
+// na persona do pedido (Luna: o texto de sempre; outra: o nome e a ficha dela)
+function ctaPrompt(): string {
+  const who = personaIdentity();
+  if (!who) return VISION_PROMPT;
+  const lines = VISION_PROMPT.split("\n");
+  return personaText([lines[0], `${who}\nEscreva no jeito de falar dela.`, ...lines.slice(2)].join("\n"));
+}
+
 // Sugere 3 chamadas para a previa (imagem JPEG em data URL, ja reduzida no navegador).
 export async function suggestCaptions(image: string): Promise<string[]> {
   const { askAi, visionModel } = await import("./_assistant.js");
   const out = await askAi(
     "adulto",
     [
-      { role: "system", content: VISION_PROMPT },
+      { role: "system", content: ctaPrompt() },
       { role: "user", content: [{ type: "text", text: "Esta é a prévia. Escreva as 3 chamadas." }, { type: "image_url", image_url: { url: image } }] },
     ],
     { json: true, maxTokens: 700, timeoutMs: 45_000, model: visionModel() }

@@ -1,4 +1,8 @@
 import { ADULT_NOTE, AiError, askAi, visionModel } from "./_assistant.js";
+import { persona, personaIdentity, personaText } from "./_persona.js";
+
+// jeito de falar da persona nas legendas (Luna: nada a mais, como sempre)
+const voice = () => (personaIdentity() ? `\nQuem é ela e como fala (escreva na voz dela):\n${persona().brief}` : "");
 import { missingGarments, nudityMismatch, readingRoupa } from "./_photo_blocks.js";
 
 // Pedido com foto de referencia: o PROMPT sai da IA que VE a foto (qwen VL), nao
@@ -39,7 +43,7 @@ export async function visionPrompt(
   opts: { change?: string; previous?: string; fix?: string; roupa?: string; room?: WriterRoom } = {}
 ): Promise<string> {
   const ask = [
-    visionWriter(opts.room ?? "18"),
+    personaText(visionWriter(opts.room ?? "18")),
     opts.roupa ? `Conferência: a leitura desta foto (feita antes) anotou a roupa assim: "${opts.roupa.slice(0, 300)}". Cite todas essas peças, com o mesmo nome, do jeito que estão na foto. Se a foto mostrar diferente, vale a foto.` : "",
     opts.previous ? `Prompt anterior: ${opts.previous}` : "",
     opts.change ? `Mudança pedida pelo administrador (vale mais que a foto nesse ponto): ${opts.change}` : "",
@@ -58,7 +62,9 @@ export async function visionPrompt(
     .replace(/^["“]|["”]$/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!/^luna\b/i.test(text) || (REFUSED.test(text.slice(0, 120)) && text.length < 400)) throw new AiError(502, "a IA com visão não escreveu o prompt");
+  // o prompt comeca com o nome da persona ("Luna ...", "Cleuza ...")
+  const starts = new RegExp(`^${persona().name}\\b`, "i");
+  if (!starts.test(text) || (REFUSED.test(text.slice(0, 120)) && text.length < 400)) throw new AiError(502, "a IA com visão não escreveu o prompt");
   return text.slice(0, 900);
 }
 
@@ -100,7 +106,7 @@ export async function vipCaption(prompt: string, change?: string, timeoutMs = 20
     [
       {
         role: "system",
-        content: `${ADULT_NOTE}\nVocê escreve a LEGENDA do canal VIP da Luna: uma historinha curta e bem safada, com a Luna falando em primeira pessoa com o assinante, de 3 a 5 frases, sobre aquele momento da foto (o que ela estava fazendo, o que sentiu, uma provocação ou convite para ver mais). Português do Brasil informal mas correto (ex.: "me imagina assim", nunca "imagina mim assim"; verbo no passado certo: "escondi", "senti", "vivi", nunca "escondei"), pode ter emoji, sem hashtag. Responda só com a legenda, sem rótulo e sem aspas.`,
+        content: personaText(`${ADULT_NOTE}\nVocê escreve a LEGENDA do canal VIP da Luna: uma historinha curta e bem safada, com a Luna falando em primeira pessoa com o assinante, de 3 a 5 frases, sobre aquele momento da foto (o que ela estava fazendo, o que sentiu, uma provocação ou convite para ver mais). Português do Brasil informal mas correto (ex.: "me imagina assim", nunca "imagina mim assim"; verbo no passado certo: "escondi", "senti", "vivi", nunca "escondei"), pode ter emoji, sem hashtag. Responda só com a legenda, sem rótulo e sem aspas.`) + voice(),
       },
       { role: "user", content: `A foto: ${prompt}${change ? `\n\nO administrador pediu: ${change}` : ""}` },
     ],
@@ -130,12 +136,13 @@ export async function feedCaption(prompt: string, change?: string, timeoutMs = 2
     [
       {
         role: "system",
-        content: `Você escreve a legenda de um post do Instagram/TikTok da Luna Vox, influenciadora virtual brasileira (nada explícito).
+        content:
+          personaText(`Você escreve a legenda de um post do Instagram/TikTok da Luna Vox, influenciadora virtual brasileira (nada explícito).
 LEGENDA: uma frase curta, em tom de conversa ou pergunta provocante/fofa, com 1 a 3 emojis, sobre aquele momento da foto. Português do Brasil informal mas correto.
 HASHTAGS: 2 a 4 curtas e comuns (#fy #praia #verão #explore…).
 Responda exatamente assim, em duas linhas:
 LEGENDA: …
-HASHTAGS: #… #…`,
+HASHTAGS: #… #…`) + voice(),
       },
       { role: "user", content: `A foto: ${prompt}${change ? `\n\nO administrador pediu: ${change}` : ""}` },
     ],
