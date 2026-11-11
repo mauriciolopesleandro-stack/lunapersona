@@ -70,6 +70,31 @@ REFERENCE_IDENTITY = (" IMG1 é só referência de pose, roupa, enquadramento e 
 # referencia e o que mais segura o rosto da Luna. A copia borrada fica aqui.
 IMG1_DIR = Path(os.environ.get("TEMP", ".")) / "luna-img1"
 
+# Varias personas (11/11, Fase 2): um robo so, uma fila por persona. O estudio
+# diz no ping quais personas existem (id, nome, clone na Naiaflow, cabelo). A Luna
+# usa a pasta do estudio como sempre; as outras, a subpasta delas (cleuza/),
+# a mesma que o estudio usa. Antes de cada pedido o robo troca para a persona dele.
+BASE_ROOT = STUDIO_ROOT
+LUNA = {"id": "luna", "name": "Luna", "clone": "luna", "hair": "castanho escuro, longo"}
+PERSONA = LUNA
+OTHER_CLONES: list[str] = []
+
+
+def reference_identity(p: dict) -> str:
+    # (para a Luna sai exatamente a frase de sempre)
+    return (" IMG1 é só referência de pose, roupa, enquadramento e cenário: o rosto, o cabelo"
+            f" ({p['hair']}) e o corpo são os da {p['clone']}, nunca os da mulher da IMG1."
+            f" Mantenha o rosto da {p['name']} exatamente igual ao das fotos do clone, sem alterar as feições.")
+
+
+def use_persona(p: dict, everyone: list[dict]) -> None:
+    global STUDIO_ROOT, CLONE, REFERENCE_IDENTITY, PERSONA, OTHER_CLONES
+    PERSONA = p
+    STUDIO_ROOT = BASE_ROOT if p["id"] == "luna" else BASE_ROOT / p["id"]
+    CLONE = p["clone"]
+    REFERENCE_IDENTITY = reference_identity(p)
+    OTHER_CLONES = [o["clone"] for o in everyone if o["clone"].lower() != CLONE.lower()]
+
 
 def face_hidden(photo: Path) -> Path:
     """A foto de referencia com o rosto da pessoa borrado (NudeNet do borrar.py).
@@ -161,9 +186,9 @@ def load_config() -> tuple[str, str]:
 
 
 class Studio:
-    def __init__(self, url: str, token: str) -> None:
+    def __init__(self, url: str, token: str, persona: str = "luna") -> None:
         self.url = f"{url}/api/studio?r=worker"
-        self.headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        self.headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "X-Persona": persona}
 
     def call(self, action: str, **payload) -> dict:
         r = requests.post(self.url, json={"action": action, **payload}, headers=self.headers, timeout=60)
@@ -403,7 +428,29 @@ class Naiaflow:
     def _clone_list_open(self) -> bool:
         return self.page.get_by_placeholder("Pesquisar").count() > 0 and self.page.get_by_placeholder("Pesquisar").first.is_visible()
 
+    def _remove_other_clones(self) -> None:
+        """Etiqueta do clone de outra persona no composer (ex.: a Cleuza ficou de
+        um pedido anterior) sai antes: com duas, a foto sairia com as duas."""
+        for name in OTHER_CLONES:
+            chip = self.page.locator("button.rounded-full").filter(
+                has=self.page.locator("span").filter(has_text=re.compile(rf"^\s*{re.escape(name)}\s*$", re.I))
+            )
+            for _ in range(2):
+                if not chip.count():
+                    break
+                chip.first.click()
+                self.page.wait_for_timeout(800)
+                rem = self.page.get_by_text(re.compile(r"^\s*(Remover|Remover clone|Tirar)\s*$", re.I))
+                if not rem.count():
+                    self.page.keyboard.press("Escape")
+                    break
+                rem.first.click()
+                self.page.wait_for_timeout(800)
+            if chip.count():
+                raise RuntimeError(f'Nao consegui tirar o clone "{name}" do composer da Naiaflow.')
+
     def _ensure_clone(self) -> None:
+        self._remove_other_clones()
         # Tela de 10/2026: com o clone escolhido aparece a etiqueta "luna" no
         # composer (e o cartao dele fica com um check). Clicar no cartao de novo
         # tiraria o clone - por isso so abre a lista se a etiqueta nao estiver la.
@@ -1795,10 +1842,21 @@ def main() -> None:
     studio = Studio(url, token)
     # start: o que ficou "gerando" quando o robo foi fechado no meio volta para a fila
     pong = studio.call("ping", start=True)
+    # as personas que o estudio conhece (estudio antigo, sem a lista: so a Luna)
+    personas = [p for p in (pong.get("personas") or []) if p.get("id") and p.get("clone")] or [LUNA]
+    personas = [{**LUNA, **p} if p["id"] == "luna" else {"hair": "do clone", **p} for p in personas]
+    studios = {p["id"]: (studio if p["id"] == "luna" else Studio(url, token, p["id"])) for p in personas}
     queue = pong["queue"]
-    log(f"Conectado ao estúdio ({url}). Itens na fila: {queue}.")
-    if pong.get("released"):
-        log(f"{pong['released']} pedido(s) que ficaram no meio quando o robô foi fechado voltaram para a fila.")
+    released = pong.get("released") or 0
+    for p in personas:
+        if p["id"] != "luna":
+            other = studios[p["id"]].call("ping", start=True)
+            queue += other.get("queue") or 0
+            released += other.get("released") or 0
+    names = ", ".join(p["name"] for p in personas)
+    log(f"Conectado ao estúdio ({url}). Personas: {names}. Itens na fila: {queue}.")
+    if released:
+        log(f"{released} pedido(s) que ficaram no meio quando o robô foi fechado voltaram para a fila.")
     naia: Naiaflow | None = None
     try:
         if not (args.imagem_teste or args.video_teste):
@@ -1816,13 +1874,26 @@ def main() -> None:
                         break
                     time.sleep(10 * QUEUE_POLL_S)
                     continue
-            # erro do estudio (ou sem internet) nao derruba o robo: espera e tenta de novo
-            try:
-                blur_previews(studio)
-                rate_orders(studio, args.video_teste)
-                item = studio.call("next")["item"]
-            except Exception as e:  # noqa: BLE001
-                log(f"Não consegui pegar o próximo pedido: {e}")
+            # erro do estudio (ou sem internet) nao derruba o robo: espera e tenta de novo.
+            # Cada persona na vez dela (a Luna primeiro); o primeiro pedido achado e o feito.
+            item = None
+            failed = False
+            for p in personas:
+                use_persona(p, personas)
+                studio = studios[p["id"]]
+                try:
+                    blur_previews(studio)
+                    rate_orders(studio, args.video_teste)
+                    item = studio.call("next")["item"]
+                except Exception as e:  # noqa: BLE001
+                    log(f"Não consegui pegar o próximo pedido{'' if p['id'] == 'luna' else ' da ' + p['name']}: {e}")
+                    failed = True
+                    continue
+                if item:
+                    if p["id"] != "luna":
+                        log(f"Pedido da {p['name']} (clone {p['clone']}, pasta {STUDIO_ROOT.name}).")
+                    break
+            if not item and failed:
                 if args.uma_vez:
                     break
                 time.sleep(QUEUE_POLL_S)
@@ -1833,7 +1904,8 @@ def main() -> None:
                     break
                 # roupas novas na galeria aparecem no Telegram e no estudio (a cada 6 h)
                 if naia and time.time() - last_sync > 6 * 3600:
-                    sync_outfits(studio, naia)
+                    use_persona(personas[0], personas)
+                    sync_outfits(studios[personas[0]["id"]], naia)
                     last_sync = time.time()
                 time.sleep(QUEUE_POLL_S)
                 continue

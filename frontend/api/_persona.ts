@@ -18,15 +18,17 @@ export interface Persona {
   id: string; // vai no banco e nas chaves (so a-z, 0-9 e -)
   name: string; // nome que aparece para o publico
   clone: string; // nome do clone na Naiaflow
+  hair: string; // cabelo do clone (vai na frase do rosto quando ha foto de referencia)
   brief: string; // ficha da persona (aprovada pelo administrador) - vai para as regras das IAs numa fase seguinte
 }
 
 export const PERSONAS: Record<string, Persona> = {
-  luna: { id: "luna", name: "Luna", clone: "luna", brief: "" }, // a Luna segue com os textos de sempre (_assistant.ts)
+  luna: { id: "luna", name: "Luna", clone: "luna", hair: "castanho escuro, longo", brief: "" }, // a Luna segue com os textos de sempre (_assistant.ts)
   cleuza: {
     id: "cleuza",
     name: "Cleuza",
     clone: "Cleuza",
+    hair: "castanho escuro, longo e ondulado",
     // ficha ditada pelo administrador por audio em 10/11/2026
     brief: [
       "Cleuza é uma coroa: mulher madura, mais velha, e orgulhosa disso. Retrato de uma mulher mais velha de verdade, nada de pose fitness.",
@@ -74,7 +76,9 @@ export function requestPersona(req: IncomingMessage): string | null {
 
 // Chaves do armazenamento (Upstash) que valem para todas as personas: login,
 // sessao, trava de senha errada e o Pix (mesma conta PushinPay, pedido de 10/11).
-const SHARED_KEYS = [/^luna:login_password$/, /^luna:session_version$/, /^luna:auth_fail:/, /^luna:pix-token$/, /^luna:pix-env$/, /^luna:runpod-/];
+// O robo do PC e um so (11/11): a chave dele, quando apareceu e as roupas da
+// galeria da Naiaflow tambem valem para todas.
+const SHARED_KEYS = [/^luna:login_password$/, /^luna:session_version$/, /^luna:auth_fail:/, /^luna:pix-token$/, /^luna:pix-env$/, /^luna:runpod-/, /^luna:worker-gen$/, /^luna:worker-seen$/, /^luna:naia-outfits$/];
 
 // Enderecos do proprio site que o Telegram/PushinPay chamam de volta (webhooks,
 // aviso do Pix): levam a persona (?p=cleuza) para o pedido voltar na persona

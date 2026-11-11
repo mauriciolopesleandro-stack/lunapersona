@@ -4312,6 +4312,15 @@
   font-size: 12px;
 }
 
+/* a inicial da persona sem foto (Cleuza) nao estica como os textos do cabecalho */
+.st-drawer-head .st-avatar-initial {
+  flex: none;
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+}
+
 .st-drawer .st-assistant {
   flex: 1;
   min-height: 0;
