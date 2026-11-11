@@ -165,7 +165,8 @@ export const REF_ASK =
 // A foto que chega do Reference Bot traz uma legenda propria ("📌 FOTO DE
 // REFERÊNCIA…" + uma descricao de outra IA). Ela nao e recado do administrador:
 // vira so uma dica, e a leitura do estudio e que vale (07/11).
-const REF_BOT_HEADER = /^\s*📌\s*FOTO DE REFER[ÊE]NCIA[^\n]*\n?/i;
+// (11/11: o Reference Bot manda o mesmo cabecalho tambem nos videos)
+const REF_BOT_HEADER = /^\s*📌\s*(?:FOTO|V[IÍ]DEO) DE REFER[ÊE]NCIA[^\n]*\n?/i;
 export function splitRefBotNote(note: string): { ask: string; hint: string } {
   if (!REF_BOT_HEADER.test(note)) return { ask: note.trim(), hint: "" };
   return { ask: "", hint: note.replace(REF_BOT_HEADER, "").trim().slice(0, 800) };
