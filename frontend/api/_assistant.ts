@@ -2,6 +2,7 @@ import { blockTemplate } from "./_photo_blocks.js";
 import type { IncomingMessage, ServerResponse } from "http";
 import { isAuthenticated } from "./_auth.js";
 import { dbSelect, supabaseConfigured } from "./_supabase.js";
+import { persona, personaIdentity, personaText } from "./_persona.js";
 
 // /api/studio?r=assistant - o Assistente do Luna Studio: um chat so do
 // administrador com uma IA (OpenRouter) que conhece a Luna, as regras e a
@@ -195,7 +196,7 @@ export function referenceSystem(room: "chat" | "18"): string {
 ${blockTemplate("+18 Telegram", { hashtags: false, caption: "a historinha (sem hashtag)" })}`
       : `LEGENDA: uma frase curta, em tom de conversa ou pergunta provocante/fofa, com 1 a 3 emojis. HASHTAGS: 2 a 4 curtas e comuns (#fy #praia #verão #explore…).
 ${blockTemplate("o destino pedido")}`;
-  return `Você escreve o pedido para a Naiaflow recriar UMA foto de referência com a Luna Vox, influenciadora virtual brasileira (personagem fictícia e adulta, criada com IA). A identidade da Luna vem do clone "luna", não do texto.
+  return personaText(`Você escreve o pedido para a Naiaflow recriar UMA foto de referência com a Luna Vox, influenciadora virtual brasileira (personagem fictícia e adulta, criada com IA). A identidade da Luna vem do clone "luna", não do texto.
 ${room === "18" ? ADULT_NOTE : "Destino: Instagram e TikTok (nada explícito)."}
 Regras da Naia (a IA da Naiaflow):
 - Nunca descreva rosto, cabelo, olhos, pele, idade ou corpo, e nunca escreva "uma mulher", "jovem", "novinha": isso muda o rosto dela. Comece o PROMPT com "Luna".
@@ -203,16 +204,29 @@ Regras da Naia (a IA da Naiaflow):
 ${REFERENCE_RULE}
 ${nudity}
 ${caption}
-Escreva cada rótulo no começo da linha, com o texto na mesma linha. Não explique nada antes do bloco (só a linha AVISO, quando houver).`;
+Escreva cada rótulo no começo da linha, com o texto na mesma linha. Não explique nada antes do bloco (só a linha AVISO, quando houver).`);
 }
+
+// Varias personas (Fase 3, 11/11): as regras acima sao as da Luna (iguais, letra
+// por letra). Para outra persona: a descricao e a aparencia viram a ficha dela, o
+// guia de estilo e o dela e os nomes trocam (personaText).
+export function personaPrompt(): string {
+  const who = personaIdentity();
+  if (!who) return PERSONA;
+  const lines = PERSONA.split("\n");
+  // linha 1: o assistente; 2 e 3: quem e a Luna e a aparencia -> a ficha da persona
+  return personaText([lines[0], who, ...lines.slice(3)].join("\n"));
+}
+export const styleGuide = () => persona().style || STYLE_GUIDE;
+export const adultNote = () => personaText(ADULT_NOTE);
 
 export async function chatSystem(room: "chat" | "18"): Promise<string> {
   const { lessonsForChat } = await import("./_lessons.js");
   const lessons = await lessonsForChat().catch(() => "");
   // sala +18 (aba Monetizacao): so o canal pago do Telegram, com o guia detalhado
   return room === "18"
-    ? [PERSONA, ADULT_NOTE, ADULT18_GUIDE, await context(), lessons].filter(Boolean).join("\n\n")
-    : [PERSONA, STYLE_GUIDE, CHAT_NOTE, await context(), lessons].filter(Boolean).join("\n\n");
+    ? [personaPrompt(), adultNote(), personaText(ADULT18_GUIDE), await context(), lessons].filter(Boolean).join("\n\n")
+    : [personaPrompt(), styleGuide(), personaText(CHAT_NOTE), await context(), lessons].filter(Boolean).join("\n\n");
 }
 
 class BadRequest extends Error {}

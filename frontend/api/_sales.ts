@@ -19,7 +19,7 @@ import { ctaConfig, ctaDays, fill, previews, saveCtaConfig, savePreviews, sendCt
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
-import { personaPath } from "./_persona.js";
+import { DEFAULT_PERSONA, personaId, personaPath, personaText, runAs } from "./_persona.js";
 
 // /api/studio?r=sales - pagina Vendas do estudio (com login).
 //   GET                                  estado: bot, pacotes com o conteudo, fas, pedidos
@@ -479,6 +479,25 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const days = Math.min(42, Math.max(1, Number(body.days ?? 14) || 14));
       return reply(200, { days: await ctaDays(start, days) });
     }
+    // Fase 3 (11/11): persona nova copia os planos da Luna (nome, descricao, preco,
+    // prazo e cobranca; nome "Luna" trocado). O conteudo dos pacotes nao vem junto.
+    if (body.action === "copy-products") {
+      if (personaId() === DEFAULT_PERSONA) throw new Problem(400, "Os planos da Luna já são os originais.");
+      if ((await dbSelect<{ id: string }>("sales_products", "select=id&limit=1")).length) throw new Problem(400, "Esta persona já tem planos: edite os que estão aqui.");
+      const luna = await runAs(DEFAULT_PERSONA, () =>
+        dbSelect<{ slug: string; kind: string; title: string; description: string; price_cents: number; period_days: number; billing: string; active: boolean; position: number }>(
+          "sales_products",
+          "select=slug,kind,title,description,price_cents,period_days,billing,active,position&order=position.asc"
+        )
+      );
+      if (!luna.length) throw new Problem(400, "A Luna ainda não tem planos para copiar.");
+      for (const p of luna) {
+        await dbInsert("sales_products", { ...p, title: personaText(p.title).slice(0, 80), description: personaText(p.description ?? "").slice(0, 600) });
+      }
+      await audit("copiar_planos_da_luna", "sales_products", null, { planos: luna.length });
+      return reply(200, await status());
+    }
+
     const token = await salesToken();
     const needToken = () => {
       if (!token) throw new Problem(400, "Cole o token do bot de vendas primeiro.");

@@ -25,7 +25,7 @@ import { sendWelcome } from "./_sales_cta.js";
 //   /ver              so o administrador: escolhe um pacote e recebe igual ao fa
 // O Telegram avisa quando o fa bloqueia o bot (my_chat_member): para de mandar.
 
-import { personaPath } from "./_persona.js";
+import { personaPath, personaText } from "./_persona.js";
 
 const TOKEN_KEY = "luna:sales-token";
 const TOKEN_PATTERN = /^\d{5,15}:[A-Za-z0-9_-]{30,60}$/;
@@ -193,7 +193,7 @@ async function listMine(token: string, fan: FanRow, chatId: number): Promise<voi
 async function askAge(token: string, chatId: number): Promise<void> {
   await telegram(token, "sendMessage", {
     chat_id: chatId,
-    text: AGE_TEXT,
+    text: personaText(AGE_TEXT),
     reply_markup: {
       inline_keyboard: [[{ text: "✅ Tenho 18 anos ou mais", callback_data: "age:yes" }], [{ text: "Sair", callback_data: "age:no" }]],
     },

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { isDefaultPersona, personaShort, personaStorageKey } from "./persona";
+import { isDefaultPersona, personaClientText, personaShort, personaStorageKey } from "./persona";
 import { Icon } from "./Icon";
 import { PlanPanel } from "./plans";
 import { parsePhotoBlocks, QuickPhoto } from "./quickPhoto";
@@ -284,7 +284,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
       ? `${REF_ASK}\n${blockTemplate("…")}`
       : `Recrie a ideia da referência com a ${personaShort()} (inspire-se: mesmo clima, cenário, roupa, pose e ângulo; nunca a pessoa da referência). Termine com o bloco PROMPT/LEGENDA/HASHTAGS/DESTINO (um por foto). Se for vídeo, diga também como fazer o Reels (foto da Luna com zoom no PC ou o Copiar movimento da Naiaflow).`;
     const message: Message = reads.length
-      ? { role: "user", content: `${refPhoto ? `${REF_FRESH}\n\n` : ""}${ask}\n\n${reading}\n\n${recreate}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
+      ? { role: "user", content: `${refPhoto ? `${REF_FRESH}\n\n` : ""}${ask}\n\n${reading}\n\n${personaClientText(recreate)}`.slice(0, 7900), display: ask, refs: attachments.map((a) => a.thumb), reading }
       : { role: "user", content: typed };
     // dancinha: o video enviado (o arquivo fica so na memoria) ou o link de rede social
     const danceFile = room !== "18" ? attachments.find((a) => a.kind === "video")?.file : undefined;

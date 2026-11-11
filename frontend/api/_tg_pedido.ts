@@ -19,6 +19,7 @@ import { UPLOAD_BUCKET } from "./_posts.js";
 import { storeConfigured, storeDelete, storeGet, storeIncrWithTtl, storeSet, storeSetIfAbsent } from "./_store.js";
 import { adultBlockText, checkedVisionPrompt, feedBlockText, feedCaption, vipCaption } from "./_ref_writer.js";
 import { storageReadUrl, storageUploadUrl } from "./_supabase.js";
+import { personaText } from "./_persona.js";
 import { telegram } from "./_telegram.js";
 
 // Pedido pelo Telegram (01/11): o administrador manda uma foto de referencia no
@@ -198,7 +199,7 @@ function summaryText(p: Pedido): string {
     ...(gist ? [`👁️ Leitura: ${gist}`] : []),
     ...(p.by === "visao" ? ["✍️ Escrito pela IA que vê a foto (prompt)"] : []),
     ...(wrong ? [`⚠️ A foto está ${wrong.nudity}, mas o prompt ainda fala em "${wrong.word}". Responda dizendo o que tirar, ou toque em Escrever de novo.`] : []),
-    ...(p.dest !== "18" && readingNudity(p.reading) ? ["⚠️ A foto de referência tem nudez: para o Instagram a Luna vai vestida (confira o prompt)."] : []),
+    ...(p.dest !== "18" && readingNudity(p.reading) ? [personaText("⚠️ A foto de referência tem nudez: para o Instagram a Luna vai vestida (confira o prompt).")] : []),
     `📸 ${b.prompt.slice(0, 1800)}`,
     "",
     `💬 ${b.caption.slice(0, 1200) || "(sem legenda)"}${tags}`,
@@ -329,11 +330,13 @@ async function write(p: Pedido, change: string | null, say: Say, replyTo: Record
     }
     // legenda do Reference Bot: dica, nao pedido do administrador
     const { ask: typed, hint } = splitRefBotNote(p.note);
-    const ask = typed || "Recria essa foto com a Luna.";
-    const recreate =
+    const ask = typed || personaText("Recria essa foto com a Luna.");
+    // (outra persona: "com a Cleuza", "PROMPT: Cleuza …")
+    const recreate = personaText(
       room === "18"
         ? `${REF_ASK} Diga também a nudez (o que aparece), a expressão e a textura da pele.\n${blockTemplate("+18 Telegram", { hashtags: false, caption: "a historinha safada do canal (sem hashtag)" })}`
-        : `${REF_ASK}\n${blockTemplate(p.dest === "stories" ? "Stories" : "Feed")}`;
+        : `${REF_ASK}\n${blockTemplate(p.dest === "stories" ? "Stories" : "Feed")}`
+    );
     // mudanca sem resposta anterior (a IA tinha falhado): vai junto do primeiro pedido
     const extra = change && !p.reply ? `\n\nMudança pedida: ${change.slice(0, 1500)}` : "";
     const first = `${REF_FRESH}\n\n${ask}\n\n[Referência: foto]\n${p.reading}${refBotHintText(hint)}\n\n${recreate}${extra}`.slice(0, 7900);
