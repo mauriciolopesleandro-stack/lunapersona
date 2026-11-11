@@ -428,11 +428,30 @@ class Naiaflow:
     def _clone_list_open(self) -> bool:
         return self.page.get_by_placeholder("Pesquisar").count() > 0 and self.page.get_by_placeholder("Pesquisar").first.is_visible()
 
+    def _clone_pills(self):
+        # etiquetas de clone no composer (a da luna, a da Cleuza...)
+        return self.page.locator('[data-onboarding="pill-do-clone"]')
+
+    def _wait_clone_pills(self, seconds: float = 10) -> None:
+        """11/11: as etiquetas dos clones aparecem uns 5 s depois da pagina; antes
+        disso o composer parece vazio (a etiqueta da luna nao foi tirada e a foto
+        da Cleuza saiu com as duas). Espera elas aparecerem (sem nenhuma: segue)."""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            if self._clone_pills().count():
+                self.page.wait_for_timeout(500)  # a segunda etiqueta pode vir logo depois
+                return
+            self.page.wait_for_timeout(300)
+
+    def _other_clones_on(self) -> list[str]:
+        names = [t.strip().lower() for t in self._clone_pills().all_inner_texts()]
+        return [o for o in OTHER_CLONES if o.lower() in names]
+
     def _remove_other_clones(self) -> None:
         """Etiqueta do clone de outra persona no composer (ex.: a Cleuza ficou de
         um pedido anterior) sai antes: com duas, a foto sairia com as duas."""
         for name in OTHER_CLONES:
-            chip = self.page.locator("button.rounded-full").filter(
+            chip = self._clone_pills().filter(
                 has=self.page.locator("span").filter(has_text=re.compile(rf"^\s*{re.escape(name)}\s*$", re.I))
             )
             for _ in range(2):
@@ -450,7 +469,15 @@ class Naiaflow:
                 raise RuntimeError(f'Nao consegui tirar o clone "{name}" do composer da Naiaflow.')
 
     def _ensure_clone(self) -> None:
+        self._wait_clone_pills()
         self._remove_other_clones()
+        self._select_clone()
+        # trava final: com o clone de outra persona no composer, nao gera (nenhum credito gasto)
+        others = self._other_clones_on()
+        if others:
+            raise RuntimeError(f"O composer da Naiaflow ainda tem o clone {', '.join(others)} junto do {CLONE}: nao gerei nada (nenhum credito gasto).")
+
+    def _select_clone(self) -> None:
         # Tela de 10/2026: com o clone escolhido aparece a etiqueta "luna" no
         # composer (e o cartao dele fica com um check). Clicar no cartao de novo
         # tiraria o clone - por isso so abre a lista se a etiqueta nao estiver la.
