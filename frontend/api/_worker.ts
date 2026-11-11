@@ -3,7 +3,8 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { isAuthenticated } from "./_auth.js";
 import { Problem, cancelDraftPost, cancelUnpublishedPost, createDraftPost, reviewOnTelegram, submitPost, uploadUrlsFor } from "./_posts_api.js";
 import { storeConfigured, storeGet, storeIncr, storeSet } from "./_store.js";
-import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
+import { audit, dbInsertIgnoringDuplicates, dbSelect, dbUpdate, dbUpdateWhere, personasReady, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
+import { DEFAULT_PERSONA, PERSONAS } from "./_persona.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
 import { sendNotice, telegram, telegramConfig } from "./_telegram.js";
 import { normalizeFlags, type AdultDest, type IgAudioFlag } from "./_flags.js";
@@ -395,7 +396,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         if (stuck.length) await dbUpdateWhere("content_plan_items", "status=eq.gerando", { status: "na_fila", updated_at: now() });
         released = stuck.length;
       }
-      return reply(200, { ok: true, queue: await queueSize(), released });
+      // as personas que o robo atende (a Luna sempre; as outras so com a migracao 0010 no banco)
+      const ready = await personasReady();
+      const personas = Object.values(PERSONAS)
+        .filter((p) => p.id === DEFAULT_PERSONA || ready)
+        .map(({ id, name, clone, hair }) => ({ id, name, clone, hair }));
+      return reply(200, { ok: true, queue: await queueSize(), released, personas });
     }
 
     // --- previas da chamada (CTA) borradas no PC ----------------------------------------------------

@@ -411,7 +411,7 @@ export function AssistantPanel({ context, tab, onTab, draft, onDraftUsed, onRepl
                 <span className="st-hint">
                   {room === "18"
                     ? "Sala +18: só para o canal VIP do Telegram. Peça ideias, prompts detalhados e textos; mande uma foto de referência (📎) e a IA diz o caminho mais barato na Naiaflow (retoque grátis, Ação ou Criar)."
-                    : "Peça o plano da semana, prompts para a Naiaflow, legendas e ideias. Mande uma foto ou vídeo de referência (📎) ou cole o link de um perfil do Instagram: a IA faz a leitura e recria a ideia com a Luna."}
+                    : `Peça o plano da semana, prompts para a Naiaflow, legendas e ideias. Mande uma foto ou vídeo de referência (📎) ou cole o link de um perfil do Instagram: a IA faz a leitura e recria a ideia com a ${personaShort()}.`}
                 </span>
                 {quick.map((q) => (
                   <button key={q} type="button" className="st-btn st-btn-small" disabled={busy || !status?.configured} onClick={() => send(q)}>
