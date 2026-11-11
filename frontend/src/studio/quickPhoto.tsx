@@ -89,7 +89,7 @@ export function QuickPhoto({ block, reference }: { block: PhotoBlock; reference?
   // +18: canal VIP e os dois pacotes do bot de vendas, todos marcados (pedido de 30/10)
   const [adult, setAdult] = useState<string[]>(ADULT_DESTS.map((d) => d.key));
   // +18: quantas fotos da mesma cena vao no post (3 = um Criar)
-  const [adultPhotos, setAdultPhotos] = useState(ADULT_PHOTOS[0]);
+  const adultPhotos = ADULT_PHOTOS[0]; // +18: um Criar = 3 fotos (11/11)
   const [prompt, setPrompt] = useState(block.prompt);
   const [caption, setCaption] = useState(block.caption);
   const [hashtags, setHashtags] = useState(block.hashtags);
@@ -274,16 +274,8 @@ Gerar de novo mesmo assim?`)) return queue(true);
             ))}
           </div>
           <p className="st-hint">Só no Telegram (não junta com Instagram e TikTok). Os pacotes recebem a foto no conteúdo do bot de vendas; o canal VIP recebe o post.</p>
-          <span>Fotos no post (a mesma cena, uma historinha só)</span>
-          <div className="st-quick-slots" role="group" aria-label="Fotos do post +18">
-            {ADULT_PHOTOS.map((n) => (
-              <button key={n} type="button" aria-pressed={adultPhotos === n} className={adultPhotos === n ? "on" : ""} onClick={() => setAdultPhotos(n)}>
-                {adultPhotos === n ? "✓ " : ""}
-                {n} fotos · {creditsFor(n)} crédito{creditsFor(n) > 1 ? "s" : ""}
-              </button>
-            ))}
-          </div>
-          <p className="st-hint">Chegam todas no Telegram para aprovar (ou escolher as melhores). Mais de 3: o robô faz outro Criar a cada 3 fotos, com a mesma referência, roupa e lugar, mudando só a pose (o rosto fica mais firme).</p>
+          {/* 11/11: um botao so (Gerar 3 fotos, 1 credito); a escolha 3/6/9 parecia outro "gerar" */}
+          <p className="st-hint">Saem 3 fotos da mesma cena por 1 crédito, com uma historinha só. Chegam todas no Telegram para aprovar (ou escolher as melhores).</p>
         </div>
       ) : (
         <>
@@ -306,7 +298,7 @@ Gerar de novo mesmo assim?`)) return queue(true);
           disabled={busy || !prompt.trim() || !slots.length || (slots.includes("telegram18") && !adult.length)}
           onClick={() => queue()}
         >
-          {busy ? "Mandando…" : `Gerar (${cost} crédito${cost > 1 ? "s" : ""})${slots.length > 1 ? ` · ${slots.length} destinos` : ""}`}
+          {busy ? "Mandando…" : `Gerar${adultOnly ? ` ${total} fotos` : ""} (${cost} crédito${cost > 1 ? "s" : ""})${slots.length > 1 ? ` · ${slots.length} destinos` : ""}`}
         </button>
         <button type="button" className="st-btn st-btn-small" disabled={busy} onClick={() => setOpen(false)}>
           Cancelar
