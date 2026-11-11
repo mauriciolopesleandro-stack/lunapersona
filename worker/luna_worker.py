@@ -185,6 +185,10 @@ def load_config() -> tuple[str, str]:
     return url.rstrip("/"), token
 
 
+class NeedsUser(RuntimeError):
+    """Algo que so o administrador resolve (ex.: aceitar os termos novos da Naiaflow)."""
+
+
 class Studio:
     def __init__(self, url: str, token: str, persona: str = "luna") -> None:
         self.url = f"{url}/api/studio?r=worker"
@@ -604,6 +608,8 @@ class Naiaflow:
         box.click()
         box.fill((REFERENCE_POSE if reference and copy_pose else "") + prompt + (REFERENCE_IDENTITY if reference else ""))
         self._create_button().click()
+        self.page.wait_for_timeout(2500)
+        self._check_terms()
         log("Gerando na Naiaflow…")
         return self._wait_result(before)
 
@@ -623,6 +629,8 @@ class Naiaflow:
         if chips != [EDIT_CHIP]:
             raise RuntimeError(f'A Naiaflow marcou a acao errada ({", ".join(chips) or "nenhuma"}); nao cliquei em Criar.')
         self._create_button().click()
+        self.page.wait_for_timeout(2500)
+        self._check_terms()
         log("Editando na Naiaflow…")
         return self._wait_result(before)[0]
 
@@ -713,6 +721,23 @@ class Naiaflow:
         chips = self.page.locator("div.rounded-full[class*='border-accent'] span.whitespace-nowrap")
         return [chips.nth(i).inner_text().strip() for i in range(chips.count()) if chips.nth(i).is_visible()]
 
+    def _check_terms(self) -> None:
+        """11/11: a Naiaflow atualizou os termos (Politica de Privacidade v3) e,
+        ate alguem aceitar, o Criar so abre a janela "Atualizamos os nossos termos"
+        e nao gera nada. O robo nao aceita termos sozinho: avisa e para o pedido
+        (nenhum credito gasto), em vez de esperar 10 minutos calado."""
+        try:
+            hit = self.page.get_by_text("Atualizamos os nossos termos", exact=False)
+            if hit.count() and hit.first.is_visible():
+                raise NeedsUser(
+                    "A Naiaflow pediu para aceitar os novos termos (Política de Privacidade) e não gera nada antes disso. "
+                    "Abra \"Entrar na Naiaflow.bat\" (pasta worker), aceite os termos e religue o robô. Nenhum crédito gasto."
+                )
+        except NeedsUser:
+            raise
+        except Exception:
+            pass
+
     def _create_button(self):
         # o botao virou "Criar" (com o custo, ex. "Criar 1"); "Criar novo clone" fica de fora
         return self.page.get_by_role("button", name=re.compile(r"^\s*(Criar|Gerar)(\s*\d+)?\s*$", re.I)).last
@@ -727,6 +752,7 @@ class Naiaflow:
         seen: set[str] = set()
         while time.time() < deadline:
             time.sleep(5)
+            self._check_terms()
             try:
                 new = {s for s in self._job_images() - before if _job_time_ms(s) > since_ms}
                 # a galeria pode nao se atualizar sozinha (e a tela da foto pronta
@@ -893,6 +919,7 @@ class Naiaflow:
             final.first.click(timeout=15000, force=True)
         log(f"Gerando a dancinha ({seconds} s, {seconds + 1} créditos)…")
         p.wait_for_timeout(3000)
+        self._check_terms()
         p.remove_listener("response", on_resp)
         self._after_click_report(bad)
         self._wait_preparing()
