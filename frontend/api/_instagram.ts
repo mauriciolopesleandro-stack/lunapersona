@@ -144,6 +144,33 @@ export async function igReplyComment(conn: IgConnection, commentId: string, mess
   return res.id;
 }
 
+// --- Resposta privada (direct) a um comentario ------------------------------------------
+// instagram_business_manage_messages (Instagram Login) ou instagram_manage_messages
+// (Login do Facebook). Regras da Meta: ate 7 dias depois do comentario, uma
+// mensagem por comentario. Pelo Facebook a mensagem sai pela Pagina ligada a
+// conta, com o token da Pagina.
+export async function igPrivateReply(conn: IgConnection, commentId: string, text: string): Promise<string> {
+  const body = JSON.stringify({ recipient: { comment_id: commentId }, message: { text } });
+  let url = `${conn.host}/${conn.userId}/messages`;
+  let token = conn.token;
+  if (conn.provider === "facebook_login") {
+    const pages = await graph<{ data?: { id: string; access_token?: string; instagram_business_account?: { id: string } }[] }>(
+      `${FB_GRAPH}/me/accounts?fields=id,access_token,instagram_business_account{id}&limit=50`,
+      auth(conn.token)
+    );
+    const page = (pages.data ?? []).find((p) => p.instagram_business_account?.id === conn.userId);
+    if (!page?.access_token) throw new InstagramError("Instagram: Pagina ligada a conta nao encontrada (permission).", false, false, 200);
+    url = `${FB_GRAPH}/${page.id}/messages`;
+    token = page.access_token;
+  }
+  const res = await graph<{ message_id?: string; recipient_id?: string }>(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body,
+  });
+  return res.message_id ?? res.recipient_id ?? "";
+}
+
 // --- Login do Facebook para Empresas -----------------------------------------------------
 
 export function fbConfigured(): boolean {
