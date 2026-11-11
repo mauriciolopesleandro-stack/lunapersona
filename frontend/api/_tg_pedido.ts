@@ -168,10 +168,12 @@ function summaryButtons(p: Pedido) {
   const rows: { text: string; callback_data: string }[][] = [];
   if (p.dest === "18") {
     rows.push(ADULT_DESTS.map((d) => ({ text: `${p.adult.includes(d.key) ? "✅" : "▫️"} ${d.label}`, callback_data: `pa:${p.id}:${d.key}` })));
-    rows.push(ADULT_PHOTOS.map((n) => ({ text: `${photosOf(p) === n ? "✅" : "▫️"} ${n} fotos`, callback_data: `pp:${p.id}:${n}` })));
+    // 11/11: sem os botoes 3/6/9 fotos (pareciam outro "gerar"); sai um Criar = 3 fotos
+    // (album de 2 ou 3 fotos continua com 6 ou 9); o toque em pp de resumo antigo ainda vale
   }
   const credits = creditsFor(photosOf(p));
-  if (p.block) rows.push([{ text: `✅ Gerar (${credits} crédito${credits > 1 ? "s" : ""})`, callback_data: `pg:${p.id}` }]);
+  const what = p.dest === "18" ? ` ${photosOf(p)} fotos` : "";
+  if (p.block) rows.push([{ text: `✅ Gerar${what} (${credits} crédito${credits > 1 ? "s" : ""})`, callback_data: `pg:${p.id}` }]);
   rows.push([
     { text: "🔁 Escrever de novo", callback_data: `pn:${p.id}` },
     { text: "✖ Cancelar", callback_data: `px:${p.id}` },
