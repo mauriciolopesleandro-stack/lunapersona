@@ -18,7 +18,7 @@ import {
   igSaveFacebookConnection,
 } from "./_instagram.js";
 import { audit, supabaseConfigured } from "./_supabase.js";
-import { PERSONAS, personaId, personaState, runAs, stateTarget } from "./_persona.js";
+import { PERSONAS, persona, personaId, personaState, runAs, stateTarget } from "./_persona.js";
 
 // /api/studio?r=instagram - conexao da conta profissional do Instagram.
 // GET                          estado (nunca devolve o token)
@@ -78,7 +78,7 @@ export async function instagramCallback(req: IncomingMessage, res: ServerRespons
           .map((id) => runAs(id, () => igConnectionRow().catch(() => null)))
       );
       const avoid = others.map((o) => o?.handle).filter((h): h is string => Boolean(h));
-      const found = await fbFindInstagram(token.access_token, current?.handle, avoid);
+      const found = await fbFindInstagram(token.access_token, current?.handle ?? persona().handle, avoid);
       if (!found) return back(res, avoid.length ? "so-instagram-de-outra-persona" : "sem-instagram-na-pagina");
       await igSaveFacebookConnection(found, token.access_token, token.expires_in);
       await audit("conectar", "instagram", found.igId, { username: found.username, via: "facebook", pagina: found.pageName });
