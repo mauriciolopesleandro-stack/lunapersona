@@ -46,10 +46,17 @@ export function InstagramPage() {
         "O Facebook só liberou o Instagram de outra persona. Conecte de novo e, na tela do Facebook, marque também a Página e o Instagram desta persona.",
       "nao-configurado": "Faltam META_APP_ID, META_APP_SECRET ou META_LOGIN_CONFIG_ID na Vercel.",
     };
+    // "so-instagram-de-outra-persona:Cleuza (sem Instagram), ...": as Paginas que o Facebook mostrou
+    const [key, pages] = code.includes(":") && text[code.split(":")[0]] ? [code.split(":")[0], code.slice(code.indexOf(":") + 1)] : [code, ""];
     setMessage(
       code === "conectado"
         ? { ok: true, text: text.conectado }
-        : { ok: false, text: text[code] ?? (code.startsWith("recusado:") ? `Autorização cancelada (${code.slice(9)}).` : `Não consegui conectar: ${code.replace(/^erro:/, "")}`) }
+        : {
+            ok: false,
+            text:
+              (text[key] ? text[key] + (pages ? ` Páginas que o Facebook mostrou: ${pages}.` : "") : null) ??
+              (code.startsWith("recusado:") ? `Autorização cancelada (${code.slice(9)}).` : `Não consegui conectar: ${code.replace(/^erro:/, "")}`),
+          }
     );
   }, []);
 

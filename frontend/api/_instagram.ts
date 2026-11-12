@@ -218,15 +218,35 @@ export interface FbInstagram {
 // conta que ja estava conectada (mesmo usuario), senao a primeira.
 // Varias personas no mesmo Facebook (11/11): prefere a conta que ja era desta
 // persona; senao, a primeira que nao e de outra persona (avoid).
-export async function fbFindInstagram(token: string, preferUsername?: string | null, avoid: string[] = []): Promise<FbInstagram | null> {
-  const res = await graph<{ data?: { name: string; instagram_business_account?: { id: string; username?: string } }[] }>(
-    `${FB_GRAPH}/me/accounts?fields=name,instagram_business_account{id,username}&limit=50`,
+// Paginas do Facebook liberadas no token e o Instagram de cada uma. Algumas
+// paginas novas so trazem o Instagram em connected_instagram_account (12/11).
+type FbPage = { name: string; instagram_business_account?: { id: string; username?: string }; connected_instagram_account?: { id: string; username?: string } };
+async function fbPages(token: string): Promise<FbPage[]> {
+  const res = await graph<{ data?: FbPage[] }>(
+    `${FB_GRAPH}/me/accounts?fields=name,instagram_business_account{id,username},connected_instagram_account{id,username}&limit=50`,
     auth(token)
   );
-  const found = (res.data ?? [])
-    .filter((p) => p.instagram_business_account?.id)
-    .map((p) => ({ igId: p.instagram_business_account!.id, username: p.instagram_business_account!.username ?? p.name, pageName: p.name }));
+  return res.data ?? [];
+}
+
+export async function fbFindInstagram(token: string, preferUsername?: string | null, avoid: string[] = []): Promise<FbInstagram | null> {
+  const found = (await fbPages(token))
+    .map((p) => ({ page: p, ig: p.instagram_business_account ?? p.connected_instagram_account }))
+    .filter((x) => x.ig?.id)
+    .map(({ page, ig }) => ({ igId: ig!.id, username: ig!.username ?? page.name, pageName: page.name }));
   return found.find((f) => f.username === preferUsername) ?? found.find((f) => !avoid.includes(f.username)) ?? null;
+}
+
+// Para a mensagem de erro: "Cleuza (sem Instagram), Luna Vox (@lunavoxlopes)"
+export async function fbPagesSummary(token: string): Promise<string> {
+  const pages = await fbPages(token).catch(() => []);
+  if (!pages.length) return "nenhuma Página";
+  return pages
+    .map((p) => {
+      const ig = p.instagram_business_account ?? p.connected_instagram_account;
+      return `${p.name} (${ig ? `@${ig.username ?? ig.id}` : "sem Instagram"})`;
+    })
+    .join(", ");
 }
 
 export interface IgAudio {
