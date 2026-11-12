@@ -18,7 +18,7 @@
 // por dia e segue respondendo so no comentario.
 import { askAi, assistantConfigured } from "./_assistant.js";
 import { InstagramError, igComments, igConnection, igPrivateReply, igRecentMedia, igReplyComment, type IgComment, type IgConnection, type IgMedia } from "./_instagram.js";
-import { persona } from "./_persona.js";
+import { DEFAULT_PERSONA, persona } from "./_persona.js";
 import { storeConfigured, storeDelete, storeGet, storeSet, storeSetIfAbsent } from "./_store.js";
 import { sendNotice, telegramConfig } from "./_telegram.js";
 
@@ -196,6 +196,9 @@ const isPermission = (e: unknown) => e instanceof InstagramError && (e.code === 
 export async function commentsTick(): Promise<string | null> {
   if (!storeConfigured() || !assistantConfigured()) return null;
   if (!(await commentsEnabled())) return null;
+  // outras personas (11/11): as regras da resposta (REPLY_SYSTEM) ainda sao as da
+  // Luna - ate ganharem o texto proprio, nao respondem nada (nem direct)
+  if (persona().id !== DEFAULT_PERSONA) return null;
   if (!(await storeSetIfAbsent(TICK_KEY, "1", 240).catch(() => false))) return null;
   const conn = await igConnection().catch(() => null);
   if (!conn) return null;

@@ -216,7 +216,9 @@ export interface FbInstagram {
 
 // Contas do Instagram ligadas as Paginas que a pessoa administra. Prefere a
 // conta que ja estava conectada (mesmo usuario), senao a primeira.
-export async function fbFindInstagram(token: string, preferUsername?: string | null): Promise<FbInstagram | null> {
+// Varias personas no mesmo Facebook (11/11): prefere a conta que ja era desta
+// persona; senao, a primeira que nao e de outra persona (avoid).
+export async function fbFindInstagram(token: string, preferUsername?: string | null, avoid: string[] = []): Promise<FbInstagram | null> {
   const res = await graph<{ data?: { name: string; instagram_business_account?: { id: string; username?: string } }[] }>(
     `${FB_GRAPH}/me/accounts?fields=name,instagram_business_account{id,username}&limit=50`,
     auth(token)
@@ -224,7 +226,7 @@ export async function fbFindInstagram(token: string, preferUsername?: string | n
   const found = (res.data ?? [])
     .filter((p) => p.instagram_business_account?.id)
     .map((p) => ({ igId: p.instagram_business_account!.id, username: p.instagram_business_account!.username ?? p.name, pageName: p.name }));
-  return found.find((f) => f.username === preferUsername) ?? found[0] ?? null;
+  return found.find((f) => f.username === preferUsername) ?? found.find((f) => !avoid.includes(f.username)) ?? null;
 }
 
 export interface IgAudio {

@@ -4,6 +4,7 @@ import { isAuthenticated, parseCookies, safeEqual } from "./_auth.js";
 import { encryptionConfigured } from "./_crypto.js";
 import { audit, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
+import { personaState, runAs, stateTarget } from "./_persona.js";
 import { tiktokMediaUrl } from "./_tiktok_media.js";
 import { authorizeUrl, disconnectTiktok, exchangeCode, publishStatus, saveTiktok, tiktokAccessToken, tiktokConfigured, tiktokConnectionRow, uploadPhotoDraft, userInfo } from "./_tiktok.js";
 
@@ -48,16 +49,19 @@ export async function tiktokCallback(req: IncomingMessage, res: ServerResponse) 
   const code = params.get("code");
   if (!code) return back(res, "sem-codigo");
   if (!tiktokConfigured() || !encryptionConfigured() || !supabaseConfigured()) return back(res, "nao-configurado");
-  try {
-    const tokens = await exchangeCode(code, redirectUri(req));
-    if (!tokens.scope.split(",").includes("video.upload")) return back(res, "sem-permissao-video-upload");
-    const user = await userInfo(tokens.access_token).catch(() => ({ open_id: tokens.open_id, display_name: "" }));
-    await saveTiktok(tokens, user.display_name);
-    await audit("conectar", "tiktok", tokens.open_id, { nome: user.display_name });
-    return back(res, "conectado");
-  } catch (e) {
-    return back(res, `erro:${(e instanceof Error ? e.message : String(e)).slice(0, 150)}`);
-  }
+  // a persona que pediu a conexao (fim do state, ja conferido pelo cookie)
+  return runAs(stateTarget(state), async () => {
+    try {
+      const tokens = await exchangeCode(code, redirectUri(req));
+      if (!tokens.scope.split(",").includes("video.upload")) return back(res, "sem-permissao-video-upload");
+      const user = await userInfo(tokens.access_token).catch(() => ({ open_id: tokens.open_id, display_name: "" }));
+      await saveTiktok(tokens, user.display_name);
+      await audit("conectar", "tiktok", tokens.open_id, { nome: user.display_name });
+      return back(res, "conectado");
+    } catch (e) {
+      return back(res, `erro:${(e instanceof Error ? e.message : String(e)).slice(0, 150)}`);
+    }
+  });
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
@@ -74,7 +78,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   if (req.method === "GET" && params.get("action") === "connect") {
     if (!tiktokConfigured()) return reply(501, { detail: "Falta cadastrar TIKTOK_CLIENT_KEY e TIKTOK_CLIENT_SECRET na Vercel." });
     if (!encryptionConfigured()) return reply(501, { detail: "Falta TOKEN_ENCRYPTION_KEY na Vercel." });
-    const state = randomBytes(24).toString("base64url");
+    const state = personaState(randomBytes(24).toString("base64url"));
     res.setHeader("Set-Cookie", `${STATE_COOKIE}=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
     res.statusCode = 302;
     res.setHeader("Location", authorizeUrl(redirectUri(req), state));
