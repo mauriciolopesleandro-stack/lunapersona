@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { cloudInstagram, cloudTiktok, type InstagramStatus, type TikTokStatus } from "./cloud";
 import { Icon } from "./Icon";
 import { useStudio } from "./store";
+import { personaId } from "./persona";
 import type { Nav } from "./pages";
 
 function fmt(iso: string | null) {
@@ -41,6 +42,8 @@ export function InstagramPage() {
       "sessao-expirada": "Sua sessão do estúdio expirou no meio do caminho. Entre de novo e conecte outra vez.",
       "state-invalido": "A autorização demorou mais de 10 minutos ou veio de outra aba. Tente de novo.",
       "sem-instagram-na-pagina": "Nenhuma Página sua tem um Instagram profissional ligado. Ligue o Instagram à Página e tente de novo.",
+      "so-instagram-de-outra-persona":
+        "O Facebook só liberou o Instagram de outra persona. Conecte de novo e, na tela do Facebook, marque também a Página e o Instagram desta persona.",
       "nao-configurado": "Faltam META_APP_ID, META_APP_SECRET ou META_LOGIN_CONFIG_ID na Vercel.",
     };
     setMessage(
@@ -101,6 +104,14 @@ export function InstagramPage() {
               <span className="st-badge st-badge-rascunho">{instagram?.status === "expirado" ? "Token expirado" : "Não conectado"}</span> Cole aqui o
               token de acesso gerado no painel da Meta (passo a passo abaixo). Ele é guardado cifrado e nunca volta para o navegador.
             </p>
+            {instagram?.fbConfigured && (
+              <p>
+                <a className="st-btn st-btn-primary" href={`/api/studio?r=instagram&action=fb-connect&p=${personaId()}`}>
+                  {instagram.status === "expirado" ? "Reconectar pelo Facebook" : "Conectar pelo Facebook"}
+                </a>{" "}
+                <span className="st-hint">Recomendado: entra com o Facebook e já libera a música nos Reels. Ou cole um token abaixo.</span>
+              </p>
+            )}
             {instagram && !instagram.encryption && (
               <p className="st-warn">Falta cadastrar TOKEN_ENCRYPTION_KEY na Vercel (só servidor, 32+ caracteres aleatórios) e fazer um novo deploy.</p>
             )}
@@ -144,7 +155,7 @@ export function InstagramPage() {
                 fica guardada e dá para voltar a ela.
               </p>
               {instagram.fbConfigured ? (
-                <a className="st-btn st-btn-primary" href="/api/studio?r=instagram&action=fb-connect">
+                <a className="st-btn st-btn-primary" href={`/api/studio?r=instagram&action=fb-connect&p=${personaId()}`}>
                   Conectar pelo Facebook
                 </a>
               ) : (
@@ -288,7 +299,7 @@ export function TikTokPage() {
             ) : (
               <p className="st-warn">
                 Reconecte o TikTok para o estúdio achar sozinho, no seu perfil, os rascunhos que você publicar (permissão nova: ler seus posts públicos).{" "}
-                <a className="st-link" href="/api/studio?r=tiktok&action=connect">
+                <a className="st-link" href={`/api/studio?r=tiktok&action=connect&p=${personaId()}`}>
                   Reconectar agora
                 </a>
               </p>
@@ -317,7 +328,7 @@ export function TikTokPage() {
             )}
             {tiktok && !tiktok.encryption && <p className="st-warn">Falta cadastrar TOKEN_ENCRYPTION_KEY na Vercel.</p>}
             {ready ? (
-              <a className="st-btn st-btn-primary" href="/api/studio?r=tiktok&action=connect">
+              <a className="st-btn st-btn-primary" href={`/api/studio?r=tiktok&action=connect&p=${personaId()}`}>
                 <Icon name="tiktok" size={16} />
                 Conectar TikTok
               </a>

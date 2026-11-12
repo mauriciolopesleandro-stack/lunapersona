@@ -18,6 +18,7 @@ import {
   igSaveFacebookConnection,
 } from "./_instagram.js";
 import { audit, supabaseConfigured } from "./_supabase.js";
+import { PERSONAS, personaId, personaState, runAs, stateTarget } from "./_persona.js";
 
 // /api/studio?r=instagram - conexao da conta profissional do Instagram.
 // GET                          estado (nunca devolve o token)
@@ -64,17 +65,28 @@ export async function instagramCallback(req: IncomingMessage, res: ServerRespons
   const code = params.get("code");
   if (!code) return back(res, "sem-codigo");
   if (!fbConfigured() || !encryptionConfigured() || !supabaseConfigured()) return back(res, "nao-configurado");
-  try {
-    const token = await fbExchangeCode(code, redirectUri(req));
-    const current = await igConnectionRow().catch(() => null);
-    const found = await fbFindInstagram(token.access_token, current?.handle);
-    if (!found) return back(res, "sem-instagram-na-pagina");
-    await igSaveFacebookConnection(found, token.access_token, token.expires_in);
-    await audit("conectar", "instagram", found.igId, { username: found.username, via: "facebook", pagina: found.pageName });
-    return back(res, "conectado");
-  } catch (e) {
-    return back(res, `erro:${(e instanceof Error ? e.message : String(e)).slice(0, 150)}`);
-  }
+  // a persona que pediu a conexao (fim do state, ja conferido pelo cookie)
+  return runAs(stateTarget(state), async () => {
+    try {
+      const token = await fbExchangeCode(code, redirectUri(req));
+      const current = await igConnectionRow().catch(() => null);
+      // o mesmo Facebook pode ter o Instagram de varias personas: nao pega o de outra
+      const me = personaId();
+      const others = await Promise.all(
+        Object.keys(PERSONAS)
+          .filter((id) => id !== me)
+          .map((id) => runAs(id, () => igConnectionRow().catch(() => null)))
+      );
+      const avoid = others.map((o) => o?.handle).filter((h): h is string => Boolean(h));
+      const found = await fbFindInstagram(token.access_token, current?.handle, avoid);
+      if (!found) return back(res, avoid.length ? "so-instagram-de-outra-persona" : "sem-instagram-na-pagina");
+      await igSaveFacebookConnection(found, token.access_token, token.expires_in);
+      await audit("conectar", "instagram", found.igId, { username: found.username, via: "facebook", pagina: found.pageName });
+      return back(res, "conectado");
+    } catch (e) {
+      return back(res, `erro:${(e instanceof Error ? e.message : String(e)).slice(0, 150)}`);
+    }
+  });
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
@@ -109,7 +121,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     if (req.method === "GET" && params.get("action") === "fb-connect") {
       if (!fbConfigured()) return reply(501, { detail: "Falta cadastrar META_APP_ID, META_APP_SECRET e META_LOGIN_CONFIG_ID na Vercel." });
       if (!encryptionConfigured()) return reply(501, { detail: "Falta TOKEN_ENCRYPTION_KEY na Vercel." });
-      const state = randomBytes(24).toString("base64url");
+      const state = personaState(randomBytes(24).toString("base64url"));
       res.setHeader("Set-Cookie", `${STATE_COOKIE}=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
       res.statusCode = 302;
       res.setHeader("Location", fbAuthorizeUrl(redirectUri(req), state));

@@ -132,6 +132,18 @@ export function personaPath(): string {
   return id === DEFAULT_PERSONA ? "" : `/${encodeURIComponent(id)}`;
 }
 
+// Conexao pelo Facebook / TikTok (OAuth, 11/11): a volta (/api/.../callback)
+// nao traz a persona, entao ela vai no fim do state ("<aleatorio>.cleuza"),
+// que o cookie confere. Luna: o state de sempre, sem nada no fim.
+export function personaState(random: string): string {
+  const id = personaId();
+  return id === DEFAULT_PERSONA ? random : `${random}.${id}`;
+}
+export function stateTarget(state: string): string {
+  const tail = state.split(".")[1];
+  return isPersona(tail) ? tail : DEFAULT_PERSONA;
+}
+
 export function personaKey(key: string): string {
   const id = personaId();
   if (id === DEFAULT_PERSONA || !key.startsWith("luna:") || SHARED_KEYS.some((re) => re.test(key))) return key;
