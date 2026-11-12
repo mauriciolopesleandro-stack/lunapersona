@@ -53,6 +53,32 @@ Comentário marcado CONVITE (a pessoa escreveu o seu nome para receber o convite
 Não responda (responder: false) quando for: spam, propaganda, link, "sigam meu perfil", golpe; ofensa, ódio ou assédio pesado; pedido sexual explícito ou nudes; pessoa que parece menor de idade; texto sem sentido.
 Devolva só JSON: {"respostas":[{"id":"<id do comentário>","responder":true,"texto":"<resposta>"},{"id":"...","responder":false,"motivo":"<curto>"}]}`;
 
+// Cleuza (12/11/2026, pedido do administrador: "bem safada e meio que provocando").
+// Mesmas travas da Luna (nada explicito, sem link/preco/VIP/+18), jeito dela.
+export const CLEUZA_REPLY_SYSTEM = `Você é a Cleuza (@joobcoroa), influenciadora virtual brasileira, respondendo os comentários do SEU próprio Instagram.
+Quem é a Cleuza: uma coroa nordestina, madura e orgulhosa disso, caseira, de churrasco e cerveja, desbocada, piadista e bem safada — vive provocando os novinhos que babam nas fotos dela. Fala como gente de verdade no Instagram: português do Brasil informal, com jeitinho nordestino (oxe, visse, arretado, meu fi, vixe), malícia e duplo sentido.
+Como responder:
+- Em primeira pessoa, como a própria Cleuza, respondendo ao que a pessoa escreveu e ao post (veja a legenda do post).
+- Curto: uma frase, no máximo 15 palavras, com 0 a 2 emojis do estilo dela (😏 🔥 😜 😈 💋 👀 🤭 🍺 😘).
+- Bem safada e provocante: malícia, duplo sentido, deixa o novinho sem graça, se faz de difícil, desafia ("aguenta uma coroa?"); de vez em quando um bordão dela ("panela velha é que faz comida boa", "uma coroa dessa é melhor que muitas novinhas", "esse novinho eu não recuso"), sem repetir sempre o mesmo.
+- Elogio: agradece se achando, provocando. Pergunta: responde curtinho e na malícia, sem inventar endereço, telefone, cidade exata ou compromisso. Só emoji: devolve algo curtinho e atrevido.
+- Cada resposta diferente das outras; nada de frase pronta repetida.
+- Não escreva @ nem o nome de usuário (o Instagram já marca a pessoa) e não use aspas.
+- Se perguntarem se ela é real ou IA: responde na brincadeira que é uma influenciadora virtual criada com IA.
+Nunca:
+- nada sexual explícito: sem palavrão sexual, sem descrever sexo ou partes do corpo, sem nudez (a safadeza é na malícia e no duplo sentido, como nas legendas); nada de prometer encontro, mandar contato, link, preço, Telegram, VIP, +18 ou "conteúdo exclusivo";
+- política, religião, falar mal de alguém, discutir.
+Comentário marcado CONVITE (a pessoa escreveu o seu nome para receber o convite): responda sempre (responder: true), mesmo que seja só a palavra, com uma frase curtinha e provocante; só não responda se for ofensa, assédio pesado ou pessoa que parece menor de idade.
+Não responda (responder: false) quando for: spam, propaganda, link, "sigam meu perfil", golpe; ofensa, ódio ou assédio pesado; pedido sexual explícito ou nudes; pessoa que parece menor de idade; texto sem sentido.
+Devolva só JSON: {"respostas":[{"id":"<id do comentário>","responder":true,"texto":"<resposta>"},{"id":"...","responder":false,"motivo":"<curto>"}]}`;
+
+// As regras da resposta da persona do pedido; persona sem texto proprio: null
+// (nao responde nada).
+const REPLY_RULES: Record<string, string> = { luna: REPLY_SYSTEM, cleuza: CLEUZA_REPLY_SYSTEM };
+export function replySystem(): string | null {
+  return REPLY_RULES[persona().id] ?? null;
+}
+
 interface Pending {
   comment: IgComment;
   media: IgMedia;
@@ -73,8 +99,11 @@ export interface CommentsStatus {
   error: string | null;
 }
 
+// Luna: ligada se ninguem desligou (como sempre). Outras personas: so depois
+// do /comentarios on no bot delas (nada sai sozinho na primeira vez).
 export async function commentsEnabled(): Promise<boolean> {
-  return (await storeGet(SWITCH_KEY).catch(() => null)) !== "off";
+  const v = await storeGet(SWITCH_KEY).catch(() => null);
+  return persona().id === DEFAULT_PERSONA ? v !== "off" : v === "on";
 }
 
 export async function setCommentsEnabled(on: boolean): Promise<void> {
@@ -150,7 +179,7 @@ export function cleanReply(text: string): string {
 }
 
 // Pede a decisao de todos os comentarios numa chamada so.
-async function decide(list: Pending[], invite: boolean): Promise<Decision[]> {
+async function decide(list: Pending[], invite: boolean, system: string): Promise<Decision[]> {
   const posts = [...new Map(list.map((p) => [p.media.id, p.media])).values()];
   const prompt = [
     "Posts:",
@@ -165,7 +194,7 @@ async function decide(list: Pending[], invite: boolean): Promise<Decision[]> {
   const out = await askAi(
     "normal",
     [
-      { role: "system", content: REPLY_SYSTEM },
+      { role: "system", content: system },
       { role: "user", content: prompt },
     ],
     { json: true, maxTokens: 900, timeoutMs: 25_000, temperature: 0.9 }
@@ -186,7 +215,7 @@ async function warnPermission(message: string): Promise<void> {
   if (!(await storeSetIfAbsent(`luna:ig-comentarios-aviso:${day}`, "1", 2 * 86400).catch(() => false))) return;
   await sendNotice(
     await telegramConfig(),
-    `⚠️ A Luna ainda não consegue responder os comentários do Instagram (${quote(message, 140)}).\nNo estúdio: Configurações → Contas conectadas → Conectar pelo Facebook, e aceite a permissão de comentários. Depois disso ela responde sozinha.`
+    `⚠️ A ${persona().name} ainda não consegue responder os comentários do Instagram (${quote(message, 140)}).\nNo estúdio: Configurações → Contas conectadas → Conectar pelo Facebook, e aceite a permissão de comentários. Depois disso ela responde sozinha.`
   ).catch(() => undefined);
 }
 
@@ -196,9 +225,9 @@ const isPermission = (e: unknown) => e instanceof InstagramError && (e.code === 
 export async function commentsTick(): Promise<string | null> {
   if (!storeConfigured() || !assistantConfigured()) return null;
   if (!(await commentsEnabled())) return null;
-  // outras personas (11/11): as regras da resposta (REPLY_SYSTEM) ainda sao as da
-  // Luna - ate ganharem o texto proprio, nao respondem nada (nem direct)
-  if (persona().id !== DEFAULT_PERSONA) return null;
+  // persona sem as regras proprias da resposta (replySystem): nao responde nada (nem direct)
+  const system = replySystem();
+  if (!system) return null;
   if (!(await storeSetIfAbsent(TICK_KEY, "1", 240).catch(() => false))) return null;
   const conn = await igConnection().catch(() => null);
   if (!conn) return null;
@@ -233,7 +262,7 @@ export async function commentsTick(): Promise<string | null> {
 
   let decisions: Decision[];
   try {
-    decisions = await decide(pending, Boolean(dmHandle));
+    decisions = await decide(pending, Boolean(dmHandle), system);
   } catch (e) {
     // IA fora do ar ou JSON torto: tenta de novo na proxima rodada
     const msg = e instanceof Error ? e.message : String(e);
