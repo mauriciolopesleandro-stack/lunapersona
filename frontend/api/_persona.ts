@@ -32,7 +32,7 @@ export const PERSONAS: Record<string, Persona> = {
     id: "cleuza",
     name: "Cleuza",
     fullName: "Cleuza",
-    handle: null,
+    handle: "joobcoroa", // Instagram da Cleuza (12/11/2026)
     clone: "Cleuza",
     hair: "castanho escuro, longo e ondulado",
     style: [
