@@ -50,6 +50,8 @@ LOG_FILE = CONFIG_FILE.with_name("luna-worker.log") if "LUNA_WORKER_CONFIG" in o
 NAIAFLOW = "https://app.naiaflow.com/generations"
 # a foto pronta abre direto por este link (painel de Acoes: Editar pelo texto)
 NAIAFLOW_JOB = "https://app.naiaflow.com/generations/preview/job/"
+# botao de modo do composer (12/11: "Modo Livre" sem clone, "Modo imagem" com clone, "Ações" com imagem)
+MODE_BUTTON = re.compile(r"^\s*(Modo\s+\w+|A[çc][õo]es)\b", re.I)
 # qual job da Naiaflow gerou cada foto do estudio (para a correcao editar a foto certa)
 JOBS_FILE = HERE / "naia-jobs.json"
 EDIT_ACTION = "Editar pelo texto"  # nome da acao no painel
@@ -338,6 +340,19 @@ class Naiaflow:
     def _prompt_box(self):
         return self.page.locator("textarea").filter(has_not=self.page.locator("[readonly]")).first
 
+    # 12/11 a Naiaflow passou a abrir SEM clone escolhido, e o botao de modo diz
+    # "Modo Livre" (com clone: "Modo imagem"; com so uma imagem: "Ações"). O robo
+    # esperava "Modo imagem" e travava. A pagina esta pronta quando a caixa do
+    # prompt aparece; o botao de modo e qualquer um desses nomes.
+    def _composer_ready(self):
+        return self.page.get_by_placeholder("Digite seu prompt", exact=False)
+
+    def _wait_composer(self, timeout: int = 60000) -> None:
+        self._composer_ready().first.wait_for(state="visible", timeout=timeout)
+
+    def _mode_button(self):
+        return self.page.get_by_role("button", name=MODE_BUTTON)
+
     def open(self) -> None:
         self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
         deadline = time.time() + 15 * 60
@@ -347,7 +362,7 @@ class Naiaflow:
             try:
                 if self.page.is_closed():
                     self.page = self.ctx.pages[-1] if self.ctx.pages else self.ctx.new_page()
-                if "/generations" in self.page.url and self.page.locator("text=Modo imagem").count():
+                if "/generations" in self.page.url and self._composer_ready().count():
                     return
             except Exception:
                 pass
@@ -427,7 +442,10 @@ class Naiaflow:
 
     def _clone_chip(self):
         # etiqueta do clone ja escolhido no composer (botao arredondado com o nome)
-        return self.page.locator("button.rounded-full").filter(has=self._clone_name())
+        # (12/11: a etiqueta e o [data-onboarding="pill-do-clone"] com o nome)
+        return self.page.locator("button.rounded-full").filter(has=self._clone_name()).or_(
+            self._clone_pills().filter(has=self._clone_name())
+        )
 
     def _clone_list_open(self) -> bool:
         return self.page.get_by_placeholder("Pesquisar").count() > 0 and self.page.get_by_placeholder("Pesquisar").first.is_visible()
@@ -495,8 +513,14 @@ class Naiaflow:
         # Tela de 29/10: "Adicionar" abre um menu (Outro clone, Modelos de Poses,
         # Enviar imagem); "Outro clone" abre a lista de clones
         self.page.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
+        self.page.wait_for_timeout(1500)
+        # Tela de 12/11: "Adicionar" abre o painel com o cartao "Clones Digitais"
+        # (abre a lista) e as acoes; tela de 29/10: o item "Outro clone"
+        opener = self.page.get_by_role("button", name=re.compile(r"^\s*Clones Digitais", re.I)).or_(
+            self.page.get_by_text(re.compile(r"^\s*Outro clone\s*$", re.I))
+        )
         try:
-            self.page.get_by_text(re.compile(r"^\s*Outro clone\s*$", re.I)).first.click(timeout=5000)
+            opener.first.click(timeout=5000)
         except Exception:
             pass  # tela antiga: Adicionar ja abria a lista
         # cartao do clone na lista (carrega depois de abrir); a propria etiqueta
@@ -575,24 +599,30 @@ class Naiaflow:
         dispositivo. Ela entra no composer como IMG1, ao lado do clone."""
         photo = face_hidden(photo)
         self._close_popovers()
-        self.page.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
-        self.page.wait_for_timeout(1200)
-        self.page.get_by_text(re.compile(r"^\s*Enviar imagem\s*$", re.I)).first.click()
-        self.page.wait_for_timeout(2500)
-        with self.page.expect_file_chooser(timeout=15000) as chooser:
-            # 02/11 a Naiaflow trocou "Enviar do dispositivo" por "Do dispositivo"
-            self.page.get_by_role("button", name=re.compile(r"(Enviar )?do dispositivo", re.I)).last.click()
-        chooser.value.set_files(str(photo))
+        # Tela de 12/11: o menu do Adicionar nao tem mais "Enviar imagem"; a foto
+        # entra pelo campo de arquivo do proprio composer (o mesmo do arrastar).
+        upload = self.page.locator("input[type=file][accept='image/*'][multiple]")
+        if upload.count():
+            upload.first.set_input_files(str(photo))
+        else:
+            self.page.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
+            self.page.wait_for_timeout(1200)
+            self.page.get_by_text(re.compile(r"^\s*Enviar imagem\s*$", re.I)).first.click()
+            self.page.wait_for_timeout(2500)
+            with self.page.expect_file_chooser(timeout=15000) as chooser:
+                # 02/11 a Naiaflow trocou "Enviar do dispositivo" por "Do dispositivo"
+                self.page.get_by_role("button", name=re.compile(r"(Enviar )?do dispositivo", re.I)).last.click()
+            chooser.value.set_files(str(photo))
         self.page.wait_for_timeout(8000)
         self._close_popovers()
-        if not self.page.get_by_text(re.compile(r"^\s*IMG1\s*$")).count():
+        if not self.page.get_by_text(re.compile(r"^\s*(IMG1|Imagem)\s*$")).count():
             raise RuntimeError("A foto de referencia nao entrou no composer da Naiaflow (IMG1).")
         log("Referência anexada (IMG1).")
 
     def generate(self, prompt: str, aspect: str | None = None, reference: Path | None = None, copy_pose: bool = False) -> list[str]:
         """Gera pelo prompt; devolve as fotos do mesmo Criar (3 desde 29/10)."""
         self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
-        self.page.wait_for_selector("text=Modo imagem", timeout=60000)
+        self._wait_composer()
         self.page.wait_for_timeout(1500)  # os avisos aparecem logo depois de carregar
         self._dismiss_overlays()
         self._ensure_clone()
@@ -679,7 +709,7 @@ class Naiaflow:
         job, _, variant = job_id.partition("#")
         if variant and variant != "1":
             self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
-            self.page.wait_for_selector("text=Modo imagem", timeout=60000)
+            self._wait_composer()
             self.page.wait_for_timeout(2500)
             self._dismiss_overlays()
             thumb = self.page.locator(f"img[src*='job-{job}-pro{variant}-']").first
@@ -784,13 +814,18 @@ class Naiaflow:
         se o custo for o esperado (1 por segundo + 1 do clone). Devolve o link do MP4."""
         p = self.page
         p.goto(NAIAFLOW, wait_until="domcontentloaded")
-        p.wait_for_selector("text=Modo imagem", timeout=60000)
+        self._wait_composer()
         p.wait_for_timeout(2000)
         self._dismiss_overlays()
         # para conferir depois do Gerar se a Naiaflow comecou mesmo (05/11)
         credits_before, busy_before = self.credits(), self._busy_count()
-        p.get_by_role("button", name=re.compile(r"Modo imagem")).first.click()
+        self._mode_button().first.click()
         p.wait_for_timeout(1200)
+        # 12/11: o menu abre nos Favoritos (a acao fica na aba Video): busca pelo nome
+        search = p.get_by_placeholder(re.compile(r"Filtrar a", re.I))
+        if search.count() and search.first.is_visible():
+            search.first.fill("dancinha")
+            p.wait_for_timeout(1500)
         # 04/11 a Naiaflow renomeou "Copiar movimento" para "Copiar dancinha"
         p.get_by_text(re.compile(r"Copiar (movimento|dancinha)", re.I)).first.click()
         p.wait_for_timeout(2500)
@@ -955,11 +990,11 @@ class Naiaflow:
         luna -> "Trocar pessoa N" (N = segundos + 1, conferido). Devolve o MP4."""
         p = self.page
         p.goto(NAIAFLOW, wait_until="domcontentloaded")
-        p.wait_for_selector("text=Modo imagem", timeout=60000)
+        self._wait_composer()
         p.wait_for_timeout(2000)
         self._dismiss_overlays()
         credits_before, busy_before = self.credits(), self._busy_count()
-        p.get_by_role("button", name=re.compile(r"Modo imagem")).first.click()
+        self._mode_button().first.click()
         p.wait_for_timeout(1200)
         p.get_by_placeholder(re.compile(r"Filtrar a", re.I)).first.fill("trocar")
         p.wait_for_timeout(1500)
@@ -1080,12 +1115,25 @@ class Naiaflow:
         Roupas, e fecha com Esc."""
         p = self.page
         p.goto(NAIAFLOW, wait_until="domcontentloaded")
-        p.wait_for_selector("text=Modo imagem", timeout=60000)
+        self._wait_composer()
         p.wait_for_timeout(2500)
         self._dismiss_overlays()
-        p.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
-        p.get_by_text(re.compile(r"^\s*Enviar imagem\s*$", re.I)).first.click(timeout=10000)
-        p.get_by_text("Roupas", exact=True).first.click(timeout=15000)
+        # Tela de 12/11: etiqueta do clone -> Roupa -> Abrir galeria (o menu do
+        # Adicionar nao tem mais "Enviar imagem"); tela antiga como reserva
+        self._ensure_clone()
+        self._close_popovers()
+        self._clone_pills().filter(has=self._clone_name()).first.click()
+        p.wait_for_timeout(1200)
+        roupa = p.get_by_role("button", name="Roupa", exact=True)
+        if roupa.count() and roupa.first.is_visible():
+            roupa.first.click()
+            p.wait_for_timeout(1200)
+            p.get_by_role("menuitem", name="Abrir galeria").first.click(timeout=10000)
+        else:
+            p.keyboard.press("Escape")
+            p.get_by_role("button", name=re.compile(r"^\s*Adicionar( clone)?\s*$", re.I)).first.click()
+            p.get_by_text(re.compile(r"^\s*Enviar imagem\s*$", re.I)).first.click(timeout=10000)
+            p.get_by_text("Roupas", exact=True).first.click(timeout=15000)
         p.get_by_text("Minhas roupas", exact=True).first.wait_for(state="visible", timeout=15000)
         p.wait_for_timeout(2000)
         # o texto tem as abas ("Minhas roupas | 17 | Casual | 33 ...") e depois as
@@ -1206,7 +1254,7 @@ class Naiaflow:
             p.wait_for_timeout(15000)
             try:
                 p.goto(NAIAFLOW, wait_until="domcontentloaded")
-                p.wait_for_selector("text=Modo imagem", timeout=60000)
+                self._wait_composer()
                 p.wait_for_timeout(4000)
             except Exception:  # noqa: BLE001
                 pass
