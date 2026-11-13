@@ -634,6 +634,26 @@ function ProductCard({
         </>
       )}
       {!ready && p.active && <p className="st-hint">Ainda não aparece no menu dos fãs.</p>}
+      {ready && (
+        <button
+          type="button"
+          className="st-btn st-btn-small"
+          disabled={busy !== null}
+          title="Cortesia para você: chega no seu Telegram igual a uma compra, sem Pix e sem contar como venda"
+          onClick={() =>
+            window.confirm(`Liberar “${p.title}” para você, de cortesia? Chega no seu Telegram igual a um fã que pagou (sem Pix, não conta como venda).`) &&
+            run(
+              `gift-${p.id}`,
+              { action: "gift", product_id: p.id },
+              p.kind === "vip"
+                ? `🎁 Liberei “${p.title}” para você: o convite do canal chegou no seu Telegram, na conversa com o bot de vendas.`
+                : `🎁 Liberei “${p.title}” para você: chegou no seu Telegram e fica em 📂 Meus pacotes.`
+            )
+          }
+        >
+          🎁 Liberar pra mim
+        </button>
+      )}
     </section>
   );
 }

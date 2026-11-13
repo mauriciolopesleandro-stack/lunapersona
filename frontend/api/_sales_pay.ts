@@ -380,6 +380,25 @@ export async function previewPack(productId: string, salesToken: string, chatId:
   return product.title;
 }
 
+// Cortesia (pedido de 13/11): o administrador libera um pacote ou o VIP para si
+// mesmo e recebe tudo igual ao fa que pagou (convite do canal, Meus pacotes),
+// sem Pix. Fica registrado como cortesia e nao conta nas vendas.
+export const GIFT_GATEWAY = "cortesia";
+
+export async function giftToFan(product: ProductRow, fan: FanRow, salesToken: string): Promise<void> {
+  const order = await dbInsert<OrderRow>("sales_orders", {
+    fan_id: fan.id,
+    product_id: product.id,
+    amount_cents: product.price_cents, // (o banco nao aceita 0; a cortesia sai das vendas pelo gateway)
+    status: "pago",
+    gateway: GIFT_GATEWAY,
+    paid_at: new Date().toISOString(),
+    note: "Cortesia do administrador (sem Pix)",
+  });
+  if (!order) throw new Error("não consegui registrar a cortesia");
+  await deliver(order, salesToken);
+}
+
 async function deliver(order: OrderRow, salesToken: string): Promise<void> {
   const [fan] = await dbSelect<FanRow>("fans", `select=*&id=eq.${order.fan_id}`);
   const [product] = await dbSelect<ProductRow>("sales_products", `select=*&id=eq.${order.product_id}`);
@@ -399,6 +418,11 @@ async function deliver(order: OrderRow, salesToken: string): Promise<void> {
       });
     }
     await dbUpdate("sales_orders", `id=eq.${order.id}`, { status: "entregue", delivered_at: new Date().toISOString(), access_until: accessUntil });
+    if (order.gateway === GIFT_GATEWAY) {
+      await audit("cortesia", "sales_orders", order.id, { produto: product.slug });
+      await adminNotice(`🎁 Cortesia: “${product.title}” liberado para ${fanName(fan)} (sem Pix, não conta como venda).`);
+      return;
+    }
     await audit("venda", "sales_orders", order.id, { produto: product.slug, valor: order.amount_cents, parcela: order.installment });
     const what = order.installment && order.installment > 1 ? `renovou “${product.title}” (parcela ${order.installment})` : `comprou “${product.title}”`;
     await adminNotice(`💰 Venda! ${fanName(fan)} ${what} por ${brl(order.amount_cents)} (Pix).`);
@@ -606,7 +630,8 @@ async function renewalReminders(token: string, products: Map<string, ProductRow>
       // texto e previa andam junto com os dias que faltam: muda todo dia
       await sendCta(token, fan.telegram_id, text, Math.ceil((nowMs - dueMs) / 86400_000) + 3, [[{ text: "💎 Renovar agora", callback_data: `buy:${product.id}` }]]);
       // primeiro aviso: o Pix de renovacao ja vai junto
-      if (first) await startPayment(token, fan, product, fan.telegram_id, site).catch(() => false);
+      // (cortesia: so o aviso, sem gerar Pix de verdade)
+      if (first && order.gateway !== GIFT_GATEWAY) await startPayment(token, fan, product, fan.telegram_id, site).catch(() => false);
       sent++;
     } catch {
       // bloqueou o bot ou o Telegram falhou: tenta no proximo dia
