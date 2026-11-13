@@ -14,7 +14,7 @@ import {
   type FanRow,
   type ProductRow,
 } from "./_sales_bot.js";
-import { forgetPix, pixConfig, previewPack, savePixConfig } from "./_sales_pay.js";
+import { forgetPix, giftToFan, GIFT_GATEWAY, pixConfig, previewPack, savePixConfig } from "./_sales_pay.js";
 import { ctaConfig, ctaDays, fill, previews, saveCtaConfig, savePreviews, sendCta, suggestCaptions } from "./_sales_cta.js";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
@@ -35,6 +35,8 @@ import { DEFAULT_PERSONA, personaId, personaPath, personaText, runAs } from "./_
 //                                        copia: o pacote fica no Telegram, nao no servidor
 //   POST { action: "media-remove", product_id, media_id }
 //   POST { action: "test" }              o bot de vendas manda o menu para o administrador
+//   POST { action: "gift", product_id }  cortesia: libera o pacote/VIP para o administrador,
+//                                        entregue igual a uma compra (sem Pix, fora das vendas)
 //   POST { action: "pix", token, env }   guarda o token da PushinPay (producao ou sandbox)
 //   POST { action: "pix-forget" }        desliga o Pix (os pacotes voltam a "quase pronto")
 //   POST { action: "vip-url", mime_type, size_bytes }  link para a copia de um arquivo da pasta do VIP
@@ -366,9 +368,9 @@ async function status() {
     dbSelect<ProductRow>("sales_products", "select=*&order=position.asc"),
     dbSelect<ProductMediaRow>("sales_product_media", "select=product_id,media_id,position,kind&order=position.asc"),
     dbSelect<FanRow & { started_at: string }>("fans", "select=id,telegram_id,username,first_name,adult_confirmed_at,opted_out_at,blocked_at,started_at"),
-    dbSelect<{ id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; access_until: string | null; product_id: string; fan_id: string; note: string | null }>(
+    dbSelect<{ id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; access_until: string | null; product_id: string; fan_id: string; note: string | null; gateway: string | null }>(
       "sales_orders",
-      "select=id,status,amount_cents,created_at,paid_at,access_until,product_id,fan_id,note&order=created_at.desc&limit=200"
+      "select=id,status,amount_cents,created_at,paid_at,access_until,product_id,fan_id,note,gateway&order=created_at.desc&limit=200"
     ),
   ]);
   const vipIds = Object.keys(await vipPosts());
@@ -390,7 +392,8 @@ async function status() {
   const pix = await pixConfig();
   const fanOf = new Map(fans.map((f) => [f.id, f.username ? `@${f.username}` : f.first_name || `fã ${f.telegram_id}`]));
   const titleOf = new Map(products.map((p) => [p.id, p.title]));
-  const sold = orders.filter((o) => o.status === "entregue" || o.status === "expirado" || o.status === "pago");
+  // (cortesia do administrador nao e venda)
+  const sold = orders.filter((o) => (o.status === "entregue" || o.status === "expirado" || o.status === "pago") && o.gateway !== GIFT_GATEWAY);
   const month = Date.now() - 30 * 86400_000;
   // quem esta no VIP agora (ate 3 dias depois de vencer a pessoa ainda fica no canal)
   const vipProducts = new Set(products.filter((p) => p.kind === "vip").map((p) => p.id));
@@ -732,6 +735,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       await sendCta(needToken(), chat, fill(config.daily[Math.floor(Date.now() / 86400_000) % config.daily.length], me), Math.floor(Math.random() * 1000));
     } else if (body.action === "test") {
       await sendMenu(needToken(), await adminChat());
+    } else if (body.action === "gift") {
+      // cortesia para o proprio administrador: ve o VIP/pacote como o fa que pagou
+      const p = await getProduct(body.product_id);
+      if (p.kind === "vip" && !(await telegramChannel().catch(() => null))) throw new Problem(400, "Conecte o canal VIP primeiro (Meu perfil → Canal +18).");
+      const chat = await adminChat();
+      const [me] = await dbSelect<FanRow>("fans", `select=*&telegram_id=eq.${chat}`);
+      try {
+        await giftToFan(p, me, needToken());
+      } catch (e) {
+        throw new Problem(400, e instanceof Error ? e.message : String(e));
+      }
+      return reply(200, { ...(await status()), gifted: p.title });
     } else {
       throw new Problem(400, "Ação desconhecida.");
     }
