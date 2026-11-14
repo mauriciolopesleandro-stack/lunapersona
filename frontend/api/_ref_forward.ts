@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { telegram, telegramConfig } from "./_telegram.js";
 import { pedidoPhoto, type TgPhotoMessage } from "./_tg_pedido.js";
 import { videoMessage, type TgVideoMessage } from "./_tg_video.js";
+import { PERSONAS, personaId, runAs } from "./_persona.js";
 
 // Referencia aprovada no Reference Bot (bot "Aprova Luna", 05/11): o Reference Bot
 // manda a foto/video no chat do administrador com o bot Luna studii (sendPhoto /
@@ -13,6 +14,10 @@ import { videoMessage, type TgVideoMessage } from "./_tg_video.js";
 //
 // Assinatura: X-Ref-Signature = HMAC-SHA256(chave = token do Luna studii, corpo).
 // O Reference Bot ja tem esse token (entrega para o gerador); nada novo a guardar.
+//
+// Varias personas (14/11): o Reference Bot chama sem ?p=, entao a persona sai
+// do token que assinou (Cleuza Studio assina com o token da Cleuza). Antes a
+// rota so conferia com o token da Luna e a foto da Cleuza parava aqui (401).
 
 type Sent = TgPhotoMessage & TgVideoMessage & { chat?: { id: number | string } };
 
@@ -30,11 +35,23 @@ export default async function refForward(req: IncomingMessage, res: ServerRespon
     res.end(JSON.stringify(body));
   };
   if (req.method !== "POST") return reply(405, { detail: "Use POST." });
-  const config = await telegramConfig();
-  if (!config.token || !config.chatId) return reply(503, { detail: "Bot do Telegram não configurado no estúdio." });
   let raw = "";
   for await (const chunk of req) raw += chunk;
-  if (!signatureOk(raw, String(req.headers["x-ref-signature"] ?? ""), config.token)) return reply(401, { detail: "Assinatura inválida." });
+  const given = String(req.headers["x-ref-signature"] ?? "");
+  // a persona do pedido primeiro (?p=), depois as outras
+  const order = [personaId(), ...Object.keys(PERSONAS).filter((id) => id !== personaId())];
+  let configured = false;
+  for (const id of order) {
+    const { token, chatId } = await runAs(id, () => telegramConfig());
+    if (!token || !chatId) continue;
+    configured = true;
+    if (signatureOk(raw, given, token)) return runAs(id, () => forward(raw, token, chatId, reply));
+  }
+  if (!configured) return reply(503, { detail: "Bot do Telegram não configurado no estúdio." });
+  return reply(401, { detail: "Assinatura inválida." });
+}
+
+async function forward(raw: string, token: string, chatId: string, reply: (status: number, body: Record<string, unknown>) => void) {
   let body: { message?: Sent; source_url?: string };
   try {
     body = JSON.parse(raw || "{}");
@@ -42,11 +59,9 @@ export default async function refForward(req: IncomingMessage, res: ServerRespon
     return reply(400, { detail: "JSON inválido." });
   }
   const msg = body.message;
-  if (!msg?.message_id || String(msg.chat?.id ?? config.chatId) !== String(config.chatId)) {
+  if (!msg?.message_id || String(msg.chat?.id ?? chatId) !== String(chatId)) {
     return reply(400, { detail: "Mensagem do Telegram ausente ou de outro chat." });
   }
-  const token = config.token;
-  const chatId = config.chatId;
   const say = (text: string, extra: Record<string, unknown> = {}) =>
     telegram(token, "sendMessage", { chat_id: chatId, text, ...extra }).catch(() => undefined);
   if (msg.photo?.length) {
