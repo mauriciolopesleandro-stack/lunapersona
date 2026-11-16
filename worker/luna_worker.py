@@ -742,6 +742,16 @@ class Naiaflow:
         title = self.page.get_by_text(name, exact=True)
         action = self.page.locator("button").filter(has=title)
         if action.count() != 1:
+            # 15/11: o cartao separou o verbo do nome ("Adicionar" em cima, "Rachadinha"
+            # embaixo, e "Aumentar os seios" virou "Aumentar / Seios"): vale o cartao
+            # visivel com a primeira e a ultima palavra do nome (e so um)
+            first, last = name.split()[0], name.split()[-1]
+            action = (
+                self.page.locator("button:visible")
+                .filter(has_text=re.compile(re.escape(first), re.I))
+                .filter(has_text=re.compile(re.escape(last), re.I))
+            )
+        if action.count() != 1:
             raise RuntimeError(f'Nao achei uma unica acao "{name}" na Naiaflow (achei {action.count()}).')
         action.click()
         self.page.wait_for_timeout(800)
@@ -769,8 +779,14 @@ class Naiaflow:
             pass
 
     def _create_button(self):
-        # o botao virou "Criar" (com o custo, ex. "Criar 1"); "Criar novo clone" fica de fora
-        return self.page.get_by_role("button", name=re.compile(r"^\s*(Criar|Gerar)(\s*\d+)?\s*$", re.I)).last
+        # o botao virou "Criar" (com o custo, ex. "Criar 1"); "Criar novo clone" fica de fora.
+        # 16/11: a pagina ganhou um "Gerar 1" ESCONDIDO (outro painel) depois do Criar; o
+        # .last pegava ele, o clique nao fazia nada e o robo esperava 10 min. So vale
+        # botao visivel, e o "Criar" do composer tem preferencia.
+        name = re.compile(r"^\s*(Criar|Gerar)(\s*\d+)?\s*$", re.I)
+        visible = self.page.get_by_role("button", name=name).and_(self.page.locator(":visible"))
+        criar = visible.filter(has_text=re.compile(r"^\s*Criar", re.I))
+        return criar.last if criar.count() else visible.last
 
     def _wait_result(self, before: set[str]) -> list[str]:
         # o link da foto traz a hora em que ficou pronta (job-<id>-0-<ms>); a
