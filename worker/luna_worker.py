@@ -149,7 +149,8 @@ def log(msg: str) -> None:
 
 # link da foto: job-<id>-<n>-<ms> (ate 28/10) ou job-<id>-pro<n>-<ms> (29/10: cada
 # Criar entrega 3 fotos da mesma cena, pro1..pro3); <ms> = hora em que ficou pronta
-JOB_LINK = re.compile(r"job-([0-9a-f-]{36})-(?:pro)?(\d+)-(\d{12,14})")
+# (pro1..pro3: as 3 fotos no mesmo job; desde 16/11: "-0-" e outro job com "-var1/-var2-")
+JOB_LINK = re.compile(r"job-([0-9a-f-]{36})-(?:pro|var)?(\d+)-(\d{12,14})")
 
 
 def _job_time_ms(src: str) -> float:
@@ -170,7 +171,8 @@ def remember_job(local_path: str, url: str) -> None:
     # Criar com 3 fotos (pro1..pro3): anota qual delas ("<job>#3"); cada uma tem
     # a sua pagina na Naiaflow
     _, variant = _job_variant(url)
-    jobs[local_path] = m.group(1) + (f"#{variant}" if "-pro" in url and variant else "")
+    # 16/11+: a 1a foto e "job-<a>-0-", as outras sao outro job "job-<b>-var1/var2-" ("#v1")
+    jobs[local_path] = m.group(1) + (f"#{variant}" if "-pro" in url and variant else f"#v{variant}" if "-var" in url else "")
     JOBS_FILE.write_text(json.dumps(jobs, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
@@ -732,7 +734,9 @@ class Naiaflow:
             self._wait_composer()
             self.page.wait_for_timeout(2500)
             self._dismiss_overlays()
-            thumb = self.page.locator(f"img[src*='job-{job}-pro{variant}-']").first
+            # (16/11+: as fotos 2 e 3 do Criar sao outro job, "var1"/"var2" -> "#v1")
+            kind = "var" if variant.startswith("v") else "pro"
+            thumb = self.page.locator(f"img[src*='job-{job}-{kind}{variant.lstrip('v')}-']").first
             for _ in range(8):  # foto mais antiga: rola a galeria ate aparecer
                 if thumb.count():
                     break
@@ -816,14 +820,16 @@ class Naiaflow:
         deadline = time.time() + GENERATION_TIMEOUT_S
         last_reload = time.time()
         seen: set[str] = set()
+        first_at: float | None = None
         while time.time() < deadline:
             time.sleep(5)
             self._check_terms()
             try:
                 new = {s for s in self._job_images() - before if _job_time_ms(s) > since_ms}
                 # a galeria pode nao se atualizar sozinha (e a tela da foto pronta
-                # nao mostra a nova): recarrega a galeria a cada minuto
-                if not new and time.time() - last_reload > 60:
+                # nao mostra a nova): recarrega a galeria a cada minuto (e a cada
+                # 30 s enquanto espera as fotos 2 e 3 do mesmo Criar)
+                if (not new and time.time() - last_reload > 60) or (first_at and time.time() - last_reload > 30):
                     self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
                     last_reload = time.time()
                     continue
@@ -833,11 +839,22 @@ class Naiaflow:
             # mais o "Gerando" da pagina: uma geracao travada na galeria deixava
             # o aviso para sempre e o robo nunca achava a foto (29/10).
             stable = new & seen
-            if stable:
-                # todas as fotos do job novo (pro1, pro2, pro3), na ordem
+            if stable and any("-pro" in x for x in stable):
+                # tela antiga: as 3 fotos no mesmo job (pro1, pro2, pro3), na ordem
                 job = _job_variant(sorted(stable)[0])[0]
                 same = sorted({x for x in new if _job_variant(x)[0] == job}, key=lambda x: _job_variant(x)[1])
                 return [x.rsplit("/", 1)[0] + "/public" for x in same]
+            if stable:
+                # 16/11+ (achado em 20/11): a 1a foto vem num job ("-0-") e as outras 2
+                # num job separado ("-var1-", "-var2-"), ~40 s depois. O robo so via a 1a
+                # e fazia um Criar novo para cada foto do carrossel (3 creditos em vez de 1).
+                # Espera as variacoes ate 2 min depois da 1a foto.
+                first_at = first_at or time.time()
+                bases = sorted((x for x in stable if "-var" not in x), key=_job_time_ms)
+                variants = sorted({x for x in stable if "-var" in x}, key=lambda x: _job_variant(x)[1])
+                if (bases and len(variants) >= 2) or time.time() - first_at > 120:
+                    picked = (bases[:1] + variants[:2]) if bases else variants[:3]
+                    return [x.rsplit("/", 1)[0] + "/public" for x in picked]
             seen = new
         raise RuntimeError("A Naiaflow nao terminou a foto em 10 minutos.")
 
