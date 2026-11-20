@@ -337,8 +337,17 @@ class Naiaflow:
         from playwright.sync_api import sync_playwright
 
         self._pw = sync_playwright().start()
+        # 20/11: a Naiaflow agora prepara e envia o video da dancinha DENTRO do navegador
+        # ("Registrando o pedido 93%", "Enviando 22%"). Com a janela do robo minimizada
+        # ou atras de outras, o Chrome economiza (congela timers e a aba) e o envio
+        # para no meio. Estas opcoes mantem a aba trabalhando mesmo escondida.
         self.ctx = self._pw.chromium.launch_persistent_context(
-            str(PROFILE_DIR), channel="chrome", headless=False, viewport={"width": 1280, "height": 900}
+            str(PROFILE_DIR), channel="chrome", headless=False, viewport={"width": 1280, "height": 900},
+            args=[
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+            ],
         )
         self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
 
