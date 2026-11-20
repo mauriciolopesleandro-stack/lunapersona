@@ -1555,6 +1555,7 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
         if m.get("file_url") and not test_video:
             source = folder / f"referencia-{item['id'][:8]}{Path(m.get('file_name') or 'video.mp4').suffix}"
             download_video(m["file_url"], source, 300)
+            source = standard_reference(source)
         # nota do video antes de gastar credito; "gerar mesmo assim" no Telegram pula
         # (a nota ja dada no pedido pelo Telegram tambem: rated)
         if not m.get("force") and m.get("rated") is None and not rate_reference(studio, item, test_video or source):
@@ -1659,6 +1660,39 @@ def has_audio(path: Path) -> bool:
     meta = next(reader)
     reader.close()
     return bool(meta.get("audio_codec"))
+
+
+def standard_reference(src: Path) -> Path:
+    """20/11: um video de 480x854, 24 fps e SEM trilha de som travou 3 vezes em
+    "Enviando 22%" na Naiaflow (os de 720x1280, 30 fps, com som passam). Video fora
+    desse padrao vira uma copia padrao (<nome>-padrao.mp4): 720x1280 (sem cortar,
+    com borda se precisar), 30 fps, H.264 e som AAC (silencio se nao tinha som).
+    Se o ffmpeg falhar, segue com o original."""
+    import imageio_ffmpeg
+
+    ff = imageio_ffmpeg.get_ffmpeg_exe()
+    probe = subprocess.run([ff, "-hide_banner", "-i", str(src)], capture_output=True, text=True, encoding="utf-8", errors="replace").stderr
+    video = re.search(r"Stream #\S+.*Video: (\w+).*?, (\d{2,5})x(\d{2,5}).*?, ([\d.]+) fps", probe)
+    has_audio = bool(re.search(r"Stream #\S+.*Audio:", probe))
+    if video and video.group(1) == "h264" and (int(video.group(2)), int(video.group(3))) == (720, 1280) and abs(float(video.group(4)) - 30) < 0.5 and has_audio:
+        return src
+    out = src.with_name(src.stem + "-padrao.mp4")
+    args = [ff, "-y", "-loglevel", "error", "-i", str(src)]
+    if not has_audio:
+        args += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+    args += ["-vf", "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p",
+             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart"]
+    if not has_audio:
+        args += ["-map", "0:v:0", "-map", "1:a:0"]
+    args.append(str(out))
+    try:
+        run_ff(args)
+    except RuntimeError as e:
+        log(f"Não consegui deixar o vídeo no padrão ({e}); sigo com o original.")
+        return src
+    what = f"{video.group(2)}x{video.group(3)}, {float(video.group(4)):g} fps" if video else "formato desconhecido"
+    log(f"Vídeo de referência convertido para o padrão (era {what}{'' if has_audio else ', sem som'}): 720x1280, 30 fps, com trilha de som.")
+    return out
 
 
 def run_ff(args: list[str]) -> None:
