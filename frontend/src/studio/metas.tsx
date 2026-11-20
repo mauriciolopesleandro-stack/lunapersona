@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 
-// Metas do dia (3 Feed, 3 Stories e 1 Reels no Instagram; 1 post no Canal VIP +18): quanto de cada dia
+// Metas do dia (1 Feed desde 20/11, 3 Stories e 1 Reels no Instagram; 1 post no Canal VIP +18): quanto de cada dia
 // ja foi aprovado, o que espera aprovacao (ou o robo) e qual o proximo dia a
 // completar. O conteudo novo vai sozinho para o proximo buraco.
 
 type Goal = "Feed" | "Stories" | "Reels" | "Canal";
-const GOALS: Record<Goal, number> = { Feed: 3, Stories: 3, Reels: 1, Canal: 1 };
+const GOALS: Record<Goal, number> = { Feed: 1, Stories: 3, Reels: 1, Canal: 1 };
 const LABEL: Record<Goal, string> = { Feed: "Feed", Stories: "Stories", Reels: "Reels", Canal: "Canal +18" };
 interface Day {
   day: string;
@@ -59,7 +59,7 @@ export function MetasPanel({ days = 14, compact = false }: { days?: number; comp
         <h2>
           <Icon name="calendar" size={17} /> Metas do dia
         </h2>
-        <span className="st-hint">3 Feed · 3 Stories · 1 Reels · 1 Canal +18 por dia · conta só o que você aprovou (⏳ = esperando aprovação)</span>
+        <span className="st-hint">1 Feed · 3 Stories · 1 Reels · 1 Canal +18 por dia · conta só o que você aprovou (⏳ = esperando aprovação)</span>
       </div>
       <p className={next === -1 ? "st-metas-next ok" : "st-metas-next"}>
         {next === -1
