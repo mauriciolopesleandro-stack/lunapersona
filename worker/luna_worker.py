@@ -116,13 +116,14 @@ def face_hidden(photo: Path) -> Path:
         import borrar
 
         dst = IMG1_DIR / f"{photo.stem}-sem-rosto.jpg"
-        n = borrar.borrar_rosto(photo, dst)
-    except Exception as e:  # noqa: BLE001 - borrar o rosto nunca pode parar o Criar
-        log(f"Não consegui borrar o rosto da IMG1 ({e}); vai a foto original.")
+        # 20/11 (Naia): quadrado cinza liso no rosto, nao borrao (o borrao vazava para o resultado)
+        n = borrar.cobrir_rosto(photo, dst)
+    except Exception as e:  # noqa: BLE001 - esconder o rosto nunca pode parar o Criar
+        log(f"Não consegui cobrir o rosto da IMG1 ({e}); vai a foto original.")
         return photo
     if not n:
         return photo
-    log(f"Rosto da pessoa da IMG1 borrado ({n}).")
+    log(f"Rosto da pessoa da IMG1 coberto com quadrado cinza ({n}).")
     return dst
 # 05/11: a IA do Telegram escreveu "de costas" para uma foto de frente e a Naiaflow
 # seguiu o texto, nao a IMG1. No 1o Criar a pose da IMG1 vem primeiro e vale mais

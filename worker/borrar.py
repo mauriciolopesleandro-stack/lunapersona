@@ -106,7 +106,7 @@ FACE_THRESHOLD = 0.3
 FACE_GROW = 0.7  # o rosto inteiro, com testa, queixo e um pouco do cabelo
 
 
-def face_boxes(img) -> list[tuple[int, int, int, int]]:
+def face_boxes(img, grow: float = FACE_GROW) -> list[tuple[int, int, int, int]]:
     """Caixas (x, y, w, h) dos rostos, aumentadas e dentro da imagem."""
     h, w = img.shape[:2]
     out = []
@@ -114,7 +114,7 @@ def face_boxes(img) -> list[tuple[int, int, int, int]]:
         if d["class"] not in FACE_LABELS or d["score"] < FACE_THRESHOLD:
             continue
         x, y, bw, bh = d["box"]
-        gx, gy = int(bw * FACE_GROW / 2), int(bh * FACE_GROW / 2)
+        gx, gy = int(bw * grow / 2), int(bh * grow / 2)
         x0, y0 = max(0, x - gx), max(0, y - gy)
         x1, y1 = min(w, x + bw + gx), min(h, y + bh + gy)
         if x1 > x0 and y1 > y0:
@@ -133,6 +133,29 @@ def borrar_rosto(src: Path, dst: Path) -> int:
     if not regions:
         return 0
     ok, buf = cv2.imencode(".jpg", apply(img, regions), [cv2.IMWRITE_JPEG_QUALITY, 92])
+    if not ok:
+        raise ValueError("não consegui salvar a foto")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    buf.tofile(str(dst))
+    return len(regions)
+
+
+def cobrir_rosto(src: Path, dst: Path) -> int:
+    """Foto de referencia (IMG1) com cada rosto coberto por um quadrado cinza
+    liso (20/11, dica da Naia: o borrao ainda deixa tracos e a Naiaflow copiava
+    o borrao para o resultado - saiu um parceiro com o rosto borrado). Devolve
+    quantos rostos cobriu; com 0, nao salva nada (o robo usa a foto original)."""
+    import cv2
+
+    img = _read(src)
+    # caixa mais justa que a do borrao: so o rosto (a pose, o cabelo e os ombros ficam visiveis)
+    regions = face_boxes(img, grow=0.25)
+    if not regions:
+        return 0
+    out = img.copy()
+    for x, y, bw, bh in regions:
+        out[y : y + bh, x : x + bw] = (128, 128, 128)
+    ok, buf = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 92])
     if not ok:
         raise ValueError("não consegui salvar a foto")
     dst.parent.mkdir(parents=True, exist_ok=True)
