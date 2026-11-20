@@ -61,6 +61,7 @@ CAROUSEL_ACTION = "Gerar um carrossel"  # 3 creditos, 3 variacoes do mesmo look 
 ACTION_CATEGORY = {EDIT_ACTION: "Editar", CAROUSEL_ACTION: "Nova Cena", "Adicionar rachadinha": "Corpo", "Aumentar os seios": "Corpo", "Aumentar coxas e bunda": "Corpo"}
 CLONE = "luna"
 MIN_CREDITS = 2  # abaixo disso para e avisa (nao gasta o resto)
+MOTION_MAX_WAIT_S = 3 * 3600  # video ainda "Gerando" na Naiaflow: espera ate isso
 # 20/11: plano do mes (Luna + Cleuza juntas): 280 creditos em 30 dias a partir de 20/11.
 # Uma vez por dia o robo confere se o gasto esta acima do ritmo e avisa no Telegram.
 # Para o proximo mes: LUNA_CREDITOS_MES="creditos:AAAA-MM-DD:dias" no luna-worker.env.
@@ -1295,13 +1296,24 @@ class Naiaflow:
         p = self.page
         before = set(before)
         deadline = time.time() + wait_s
-        while time.time() < deadline:
+        # 20/11: a Naiaflow ficou mais de 1 h em "Gerando... 22%" (fila cheia deles) e o
+        # robo desistia aos 35 min com o credito ja pago. Passado o prazo, enquanto a
+        # galeria mostrar um cartao "Gerando"/"Na fila", continua esperando (ate 3 h).
+        hard_deadline = time.time() + max(wait_s, MOTION_MAX_WAIT_S)
+        warned = False
+        while time.time() < hard_deadline:
             time.sleep(15)
             if on_wait:
                 on_wait()
             try:
                 p.goto(NAIAFLOW, wait_until="domcontentloaded")
                 p.wait_for_timeout(4000)
+                if time.time() > deadline:
+                    if not self._busy_count():
+                        break  # nada mais gerando na Naiaflow: nao adianta esperar
+                    if not warned:
+                        log("A Naiaflow ainda está gerando (fila lenta deles): sigo esperando, sem gastar crédito de novo.")
+                        warned = True
                 thumbs = self._stream_thumbs()
                 if not thumbs or thumbs[0] in before:
                     continue
