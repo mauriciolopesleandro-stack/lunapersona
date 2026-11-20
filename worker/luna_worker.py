@@ -62,6 +62,7 @@ ACTION_CATEGORY = {EDIT_ACTION: "Editar", CAROUSEL_ACTION: "Nova Cena", "Adicion
 CLONE = "luna"
 MIN_CREDITS = 2  # abaixo disso para e avisa (nao gasta o resto)
 MOTION_MAX_WAIT_S = 3 * 3600  # video ainda "Gerando" na Naiaflow: espera ate isso
+MOTION_STUCK_S = 30 * 60  # porcentagem parada esse tempo = geracao travada: para de esperar
 # 20/11: plano do mes (Luna + Cleuza juntas): 280 creditos em 30 dias a partir de 20/11.
 # Uma vez por dia o robo confere se o gasto esta acima do ritmo e avisa no Telegram.
 # Para o proximo mes: LUNA_CREDITOS_MES="creditos:AAAA-MM-DD:dias" no luna-worker.env.
@@ -1249,6 +1250,23 @@ class Naiaflow:
         except Exception:  # noqa: BLE001
             return 0
 
+    def _busy_state(self, settle_s: float = 12) -> tuple[bool, str | None]:
+        """Ha algo gerando na galeria? E a porcentagem do primeiro cartao ("22%").
+        Espera a galeria carregar (o cartao aparece uns segundos depois da pagina)."""
+        end = time.time() + settle_s
+        while True:
+            try:
+                text = self.page.locator("body").inner_text(timeout=5000)
+            except Exception:  # noqa: BLE001
+                text = ""
+            # ("Enviando 22%": o video de referencia subindo - 20/11 travou assim)
+            m = re.search(r"\b(Gerando|Enviando|Na fila|Processando)\b[.…\s]*(\d{1,3}\s*%)?", text, re.I)
+            if m:
+                return True, (m.group(2) or "").replace(" ", "") or None
+            if time.time() >= end:
+                return False, None
+            self.page.wait_for_timeout(2000)
+
     def _motion_started(self, credits_before: int | None, busy_before: int, thumbs_before: set[str], wait_s: int = 120) -> bool:
         """Depois do Gerar: a Naiaflow comecou? Sim se os creditos baixaram, se
         apareceu um "Gerando" a mais ou um video novo na galeria. Sem como ler os
@@ -1299,8 +1317,13 @@ class Naiaflow:
         # 20/11: a Naiaflow ficou mais de 1 h em "Gerando... 22%" (fila cheia deles) e o
         # robo desistia aos 35 min com o credito ja pago. Passado o prazo, enquanto a
         # galeria mostrar um cartao "Gerando"/"Na fila", continua esperando (ate 3 h).
+        # (20/11 tarde: o cartao "Gerando" demora uns segundos para aparecer na galeria -
+        # o robo olhava cedo demais, nao via nada e desistia; e a geracao de 06:08 ficou
+        # TRAVADA em 22% por horas: se a porcentagem nao muda em 30 min, para de esperar
+        # para nao segurar a fila dos outros pedidos.)
         hard_deadline = time.time() + max(wait_s, MOTION_MAX_WAIT_S)
         warned = False
+        last_pct, pct_since = None, time.time()
         while time.time() < hard_deadline:
             time.sleep(15)
             if on_wait:
@@ -1309,10 +1332,16 @@ class Naiaflow:
                 p.goto(NAIAFLOW, wait_until="domcontentloaded")
                 p.wait_for_timeout(4000)
                 if time.time() > deadline:
-                    if not self._busy_count():
+                    busy, pct = self._busy_state()
+                    if not busy:
                         break  # nada mais gerando na Naiaflow: nao adianta esperar
+                    if pct != last_pct:
+                        last_pct, pct_since = pct, time.time()
+                    elif time.time() - pct_since > MOTION_STUCK_S:
+                        log(f"A geração na Naiaflow parece travada ({pct or 'sem porcentagem'} há {MOTION_STUCK_S // 60} min): parei de esperar.")
+                        break
                     if not warned:
-                        log("A Naiaflow ainda está gerando (fila lenta deles): sigo esperando, sem gastar crédito de novo.")
+                        log(f"A Naiaflow ainda está gerando ({pct or 'na fila'}; fila lenta deles): sigo esperando, sem gastar crédito de novo.")
                         warned = True
                 thumbs = self._stream_thumbs()
                 if not thumbs or thumbs[0] in before:
