@@ -678,7 +678,11 @@ class Naiaflow:
         # a lista tem acoes parecidas lado a lado (ex.: "Adicionar esperma"): so
         # gasta o credito se a etiqueta no composer for exatamente a da edicao
         chips = self._action_chips()
-        if chips != [EDIT_CHIP]:
+        # 20/11: a tela nova nao tem mais a etiqueta "Editar"; o botao de modo do
+        # composer vira "Modo editar" quando a acao escolhida e a edicao pelo texto
+        editing = self.page.get_by_text(re.compile(r"^\s*Modo editar\s*$", re.I))
+        mode_ok = any(e.is_visible() for e in editing.all())
+        if chips != [EDIT_CHIP] and not mode_ok:
             raise RuntimeError(f'A Naiaflow marcou a acao errada ({", ".join(chips) or "nenhuma"}); nao cliquei em Criar.')
         self._create_button().click()
         self.page.wait_for_timeout(2500)
