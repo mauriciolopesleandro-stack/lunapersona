@@ -970,6 +970,7 @@ class Naiaflow:
         if dry:  # conferencia sem gastar credito: para antes do Gerar
             return label
         before = set(self._stream_thumbs())
+        sending_before = self._sending_count()  # cartoes 'Enviando' travados de antes
         # 05/11 o Gerar nao comecava nada: guarda as respostas com erro do site
         # logo depois do clique, para o diagnostico
         bad: list[str] = []
@@ -984,7 +985,7 @@ class Naiaflow:
         self._check_terms()
         p.remove_listener("response", on_resp)
         self._after_click_report(bad)
-        self._wait_preparing()
+        self._wait_preparing(sending_before=sending_before)
         if on_started:  # o credito ja foi gasto: a proxima tentativa so procura o video
             on_started(sorted(before))
         # 05/11: o clique no Gerar nao comecou nada (creditos iguais, galeria sem
@@ -1122,10 +1123,11 @@ class Naiaflow:
             p.screenshot(path=str(shot))
             return label
         before = set(self._stream_thumbs())
+        sending_before = self._sending_count()  # cartoes 'Enviando' travados de antes
         final.last.click(timeout=15000)
         log(f"Trocando a pessoa ({seconds} s, {seconds + 1} créditos)…")
         p.wait_for_timeout(3000)
-        self._wait_preparing()
+        self._wait_preparing(sending_before=sending_before)
         if on_started:  # o credito ja foi gasto: a proxima tentativa so procura o video
             on_started(sorted(before))
         if not self._motion_started(credits_before, busy_before, before):
@@ -1220,13 +1222,25 @@ class Naiaflow:
         except Exception as e:  # noqa: BLE001
             log(f"Depois do Gerar: não consegui guardar a tela ({e}).")
 
-    def _wait_preparing(self, wait_s: int = 600) -> None:
+    def _sending_count(self) -> int:
+        """Cartoes "Enviando" visiveis na galeria (video subindo pelo navegador)."""
+        try:
+            return sum(1 for t in self.page.get_by_text(re.compile(r"^\s*Enviando", re.I)).all() if t.is_visible())
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _wait_preparing(self, wait_s: int = 600, sending_before: int = 0) -> None:
         """05/11: depois do Gerar a Naiaflow prepara o trecho NO NAVEGADOR
         ("Preparando o trecho · 3 de 5 s · 18%") e so depois manda o pedido.
         Recarregar a pagina nesse meio cancelava tudo (nada comecava, nenhum
-        credito gasto). Espera a preparacao acabar sem sair da pagina."""
+        credito gasto). Espera a preparacao acabar sem sair da pagina.
+        20/11: agora o envio aparece como "Registrando o pedido · 94%" na janela e
+        "Enviando 22%" no cartao da galeria. O robo so esperava "Preparando", saia
+        da pagina no meio do envio e a dancinha morria (06:08 e 07:34 de 20/11,
+        nenhum credito gasto). sending_before: cartoes "Enviando" que ja estavam
+        na galeria antes do clique (travados de antes) - so os novos contam."""
         p = self.page
-        prep = p.get_by_text(re.compile(r"Preparando", re.I))
+        prep = p.get_by_text(re.compile(r"Preparando|Registrando o pedido", re.I))
         deadline = time.time() + wait_s
         next_log = 0.0
         while time.time() < deadline:
@@ -1234,11 +1248,13 @@ class Naiaflow:
                 visible = [t for t in prep.all() if t.is_visible()]
             except Exception:  # noqa: BLE001
                 visible = []
-            if not visible:
+            sending = self._sending_count() > sending_before
+            if not visible and not sending:
                 p.wait_for_timeout(3000)  # o envio pode ainda estar terminando
                 return
             if time.time() >= next_log:  # progresso no log a cada 30 s
-                log(f"Naiaflow: {visible[0].inner_text().strip()[:80]}")
+                what = visible[0].inner_text().strip()[:80] if visible else "enviando o vídeo (cartão na galeria)"
+                log(f"Naiaflow: {what}")
                 next_log = time.time() + 30
             p.wait_for_timeout(2000)
         log("A preparação do trecho na Naiaflow passou de 10 minutos; sigo conferindo.")
