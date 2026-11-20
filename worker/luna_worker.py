@@ -61,6 +61,15 @@ CAROUSEL_ACTION = "Gerar um carrossel"  # 3 creditos, 3 variacoes do mesmo look 
 ACTION_CATEGORY = {EDIT_ACTION: "Editar", CAROUSEL_ACTION: "Nova Cena", "Adicionar rachadinha": "Corpo", "Aumentar os seios": "Corpo", "Aumentar coxas e bunda": "Corpo"}
 CLONE = "luna"
 MIN_CREDITS = 2  # abaixo disso para e avisa (nao gasta o resto)
+# 20/11: plano do mes (Luna + Cleuza juntas): 280 creditos em 30 dias a partir de 20/11.
+# Uma vez por dia o robo confere se o gasto esta acima do ritmo e avisa no Telegram.
+# Para o proximo mes: LUNA_CREDITOS_MES="creditos:AAAA-MM-DD:dias" no luna-worker.env.
+CREDIT_PLAN = os.environ.get("LUNA_CREDITOS_MES", "280:2026-11-20:30")
+CREDIT_SLACK = 15  # folga antes de avisar (uma dancinha e meia)
+BUDGET_FILE = HERE / "creditos-aviso.txt"
+# 16/11: no Trocar pessoa o corpo vem da moca do video (a Cleuza saia magra). Para
+# estas personas a dancinha e sempre pelo Copiar dancinha (quem dança e o clone).
+BODY_FROM_CLONE = {"cleuza"}
 GENERATION_TIMEOUT_S = 10 * 60
 # com foto de referencia (IMG1) a Naiaflow puxava o rosto e o cabelo da mulher da
 # foto (31/10: saiu loira); a IMG1 serve so para pose, roupa e cenario
@@ -1509,7 +1518,9 @@ def process_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_video
         else:
             started = lambda before: marker.write_text(json.dumps({"before": before, "at": time.time()}), encoding="utf-8")  # noqa: E731
             try:
-                if m.get("mode") == "trocar":
+                if m.get("mode") == "trocar" and PERSONA["id"] in BODY_FROM_CLONE:
+                    log(f"{PERSONA['name']}: dancinha pelo Copiar dancinha (o corpo é o do clone, não o da moça do vídeo).")
+                if m.get("mode") == "trocar" and PERSONA["id"] not in BODY_FROM_CLONE:
                     pt = m.get("point") or {}
                     point = (float(pt["x"]), float(pt["y"])) if "x" in pt and "y" in pt else None
                     url = naia.swap_person(m.get("link"), source, int(m.get("seconds") or 5), sound=m.get("sound") or "original", point=point, on_started=started)
@@ -1949,6 +1960,47 @@ def blur_previews(studio: "Studio") -> None:
             log(f"Não consegui pôr {dst.name} na chamada: {e}")
 
 
+def credit_pace(credits: int, now: float | None = None) -> tuple[float, str] | None:
+    """Creditos que deviam sobrar hoje no plano do mes (CREDIT_PLAN) e o dia
+    (AAAA-MM-DD). None fora do periodo do plano ou com o plano mal escrito."""
+    try:
+        total_s, start_s, days_s = CREDIT_PLAN.split(":")
+        total, days = float(total_s), float(days_s)
+        start = datetime.strptime(start_s, "%Y-%m-%d").timestamp()
+    except ValueError:
+        return None
+    now = time.time() if now is None else now
+    elapsed = (now - start) / 86400
+    if elapsed < 0 or elapsed > days:
+        return None
+    return total * (1 - elapsed / days), datetime.fromtimestamp(now).strftime("%Y-%m-%d")
+
+
+def credit_pace_check(studio: "Studio", credits: int | None) -> None:
+    """Uma vez por dia: gasto acima do ritmo do plano do mes -> aviso no Telegram."""
+    if credits is None:
+        return
+    pace = credit_pace(credits)
+    if not pace:
+        return
+    expected, day = pace
+    try:
+        if BUDGET_FILE.exists() and BUDGET_FILE.read_text(encoding="utf-8").strip() == day:
+            return
+    except OSError:
+        pass
+    if credits >= expected - CREDIT_SLACK:
+        return
+    text = (f"💳 Créditos da Naiaflow: sobram {credits}, e pelo plano do mês deviam sobrar uns {expected:.0f}. "
+            "Está gastando mais rápido que o planejado (Luna + Cleuza): segure as dancinhas extras ou recarregue.")
+    log(text)
+    try:
+        studio.call("notice", text=text)
+        BUDGET_FILE.write_text(day, encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Luna Studio - automacao local da Naiaflow")
     ap.add_argument("--uma-vez", action="store_true", help="processa a fila e sai")
@@ -1992,6 +2044,7 @@ def main() -> None:
                         break
                     time.sleep(10 * QUEUE_POLL_S)
                     continue
+                credit_pace_check(studio, credits)
             # erro do estudio (ou sem internet) nao derruba o robo: espera e tenta de novo.
             # Cada persona na vez dela (a Luna primeiro); o primeiro pedido achado e o feito.
             item = None

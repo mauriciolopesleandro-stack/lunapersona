@@ -7,9 +7,11 @@ import { dbSelect } from "./_supabase.js";
 // e as 20h (amanha) o que falta.
 
 export type Goal = "Feed" | "Stories" | "Reels" | "Canal";
-export const GOALS: Record<Goal, number> = { Feed: 3, Stories: 3, Reels: 1, Canal: 1 };
+// 20/11: plano do mes com 280 creditos (Luna + Cleuza) - 1 Feed por dia (carrossel; a 3a
+// foto vira Stories), 3 Stories, 1 Reels (dancinha 2x por semana, foto com zoom nos outros) e 1 Canal.
+export const GOALS: Record<Goal, number> = { Feed: 1, Stories: 3, Reels: 1, Canal: 1 };
 // horarios padrao de cada formato (os mesmos do Planejamento)
-export const GOAL_TIMES: Record<Goal, string[]> = { Feed: ["12:00", "15:30", "19:00"], Stories: ["09:00", "13:00", "17:00"], Reels: ["18:00"], Canal: ["22:00"] };
+export const GOAL_TIMES: Record<Goal, string[]> = { Feed: ["12:00"], Stories: ["09:00", "13:00", "17:00"], Reels: ["18:00"], Canal: ["22:00"] };
 export const GOAL_LABEL: Record<Goal, string> = { Feed: "Feed", Stories: "Stories", Reels: "Reels", Canal: "Canal VIP +18" };
 const TZ = "America/Sao_Paulo";
 const OFFSET = "-03:00"; // Brasilia (sem horario de verao)
