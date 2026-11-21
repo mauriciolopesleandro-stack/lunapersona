@@ -10,7 +10,8 @@ import { personaIdentity, personaText } from "./_persona.js";
 //   boas-vindas    logo depois de confirmar os 18 anos
 //   Pix esquecido  20 min depois de gerar o Pix sem pagar (uma vez)
 //   diaria         nos horarios escolhidos (padrao 12h e 19h), para quem nao e VIP
-//                  (para com /parar, bloqueio ou VIP ativo); cada fa recebe os
+//                  (para com /parar, bloqueio ou VIP ativo; o administrador recebe
+//                  mesmo com VIP, desde 21/11); cada fa recebe os
 //                  modelos em sequencia (1, 2, ... o ultimo e volta ao 1), a
 //                  previa pode repetir
 //   renovacao      VIP perto de vencer (3 dias antes) e vencido (3 dias de folga
@@ -382,6 +383,10 @@ export async function ctaTick(): Promise<number> {
     // uma por horario: quem recebeu depois do inicio do horario (ou ha menos de 3 h) espera o proximo
     const slotStart = Date.parse(`${brDay()}T${String(slot).padStart(2, "0")}:00:00-03:00`);
     const since = new Date(Math.min(slotStart, now - MIN_GAP_MS)).toISOString();
+    // o administrador recebe a chamada mesmo com VIP (cortesia para ver como o cliente ve):
+    // assim ele confere as duas mensagens do dia em todas as personas
+    const { telegramConfig } = await import("./_telegram.js");
+    const adminChat = (await telegramConfig().catch(() => null))?.chatId ?? null;
     const fans = await dbSelect<CtaFan>(
       "fans",
       `select=*&adult_confirmed_at=not.is.null&opted_out_at=is.null&blocked_at=is.null&or=(cta_sent_at.is.null,cta_sent_at.lt.${since})&order=cta_sent_at.asc&limit=${BATCH}`
@@ -392,7 +397,8 @@ export async function ctaTick(): Promise<number> {
         cta_count: fan.cta_count + 1,
       });
       // VIP ativo (ou nos dias de renovacao) nao recebe a chamada para comprar
-      if (!claimed || (await activeVip(fan.id, true))) continue;
+      if (!claimed) continue;
+      if (String(fan.telegram_id) !== String(adminChat) && (await activeVip(fan.id, true))) continue;
       // a previa da vez tem chamada propria (feita olhando a foto)? vai ela; senao, a frase do dia
       const turn = fan.cta_count + 1;
       const list = await previews();
