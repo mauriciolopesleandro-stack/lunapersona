@@ -99,11 +99,12 @@ export interface CommentsStatus {
   error: string | null;
 }
 
-// Luna: ligada se ninguem desligou (como sempre). Outras personas: so depois
-// do /comentarios on no bot delas (nada sai sozinho na primeira vez).
+// Ligada se ninguem desligou com /comentarios off (Luna desde sempre; as outras
+// personas desde 21/11 - antes so depois do /comentarios on no bot delas).
 export async function commentsEnabled(): Promise<boolean> {
   const v = await storeGet(SWITCH_KEY).catch(() => null);
-  return persona().id === DEFAULT_PERSONA ? v !== "off" : v === "on";
+  // ligado por padrao em todas as personas (21/11: a Cleuza igual a Luna); so /comentarios off desliga
+  return v !== "off";
 }
 
 export async function setCommentsEnabled(on: boolean): Promise<void> {
