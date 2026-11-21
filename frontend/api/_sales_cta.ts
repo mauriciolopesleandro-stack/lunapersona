@@ -362,6 +362,10 @@ export async function ctaTick(): Promise<number> {
       await settle(order.id, token).catch(() => undefined);
     }
 
+    // pagamento internacional pendente: confere na NOWPayments (aviso que nao chegou)
+    const { intlSweep } = await import("./_sales_intl.js");
+    await intlSweep(token).catch(() => undefined);
+
     // Pix gerado e nao pago ha 20 min (no maximo 1 dia): um lembrete
     const pending = await dbSelect<{ id: string; fan_id: string; product_id: string }>(
       "sales_orders",

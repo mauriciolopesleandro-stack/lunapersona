@@ -233,15 +233,21 @@ async function sendPix(salesToken: string, chatId: number, product: ProductRow, 
     chat_id: chatId,
     text: `<code>${escapeHtml(order.pix_code ?? "")}</code>`,
     parse_mode: "HTML",
-    reply_markup: { inline_keyboard: [[{ text: "✅ Já paguei", callback_data: `paid:${order.id}` }], ...(await starsRow(product))] },
+    reply_markup: { inline_keyboard: [[{ text: "✅ Já paguei", callback_data: `paid:${order.id}` }], ...(await abroadRows(product))] },
   });
 }
 
-// Pix de quem esta no Brasil: tambem da para pagar em estrelas (fora do Brasil)
-async function starsRow(product: ProductRow): Promise<{ text: string; callback_data: string }[][]> {
+// Pix de quem esta no Brasil: tambem da para pagar de fora do Brasil
+// (pagamento internacional em dolar e/ou estrelas, o que estiver ligado)
+export async function abroadRows(product: ProductRow, skip: "intl" | "estrelas" | null = null): Promise<{ text: string; callback_data: string }[][]> {
   const { starsConfig, starsPrice } = await import("./_sales_stars.js");
-  const stars = starsPrice(product, await starsConfig().catch(() => ({ enabled: false, prices: {} })));
-  return stars ? [[{ text: `⭐ Pagar com estrelas (fora do Brasil) — ${stars}`, callback_data: `stars:${product.id}` }]] : [];
+  const { intlConfig, intlPrice, usd } = await import("./_sales_intl.js");
+  const rows: { text: string; callback_data: string }[][] = [];
+  const cents = skip === "intl" ? null : intlPrice(product, await intlConfig().catch(() => ({ enabled: false, apiKey: null, ipnSecret: null, prices: {} })));
+  if (cents) rows.push([{ text: `🌎 Pay from abroad / Pagar de fora do Brasil — ${usd(cents)}`, callback_data: `intl:${product.id}` }]);
+  const stars = skip === "estrelas" ? null : starsPrice(product, await starsConfig().catch(() => ({ enabled: false, prices: {} })));
+  if (stars) rows.push([{ text: `⭐ Telegram Stars — ${stars}`, callback_data: `stars:${product.id}` }]);
+  return rows;
 }
 
 // Botao do pacote, com o Pix ligado: cria (ou reaproveita) o pedido e manda o Pix.
@@ -393,6 +399,15 @@ export async function previewPack(productId: string, salesToken: string, chatId:
 export const GIFT_GATEWAY = "cortesia";
 // estrelas do Telegram (_sales_stars.ts): amount_cents guarda as estrelas, nao centavos
 export const STARS_GATEWAY = "estrelas";
+// pagamento internacional (_sales_intl.ts): amount_cents em centavos de dolar
+export const INTL_GATEWAY = "nowpayments";
+const abroad = (o: Pick<OrderRow, "gateway">) => o.gateway === STARS_GATEWAY || o.gateway === INTL_GATEWAY;
+const paidWithText = (o: Pick<OrderRow, "gateway" | "amount_cents">) =>
+  o.gateway === STARS_GATEWAY
+    ? `${o.amount_cents} ⭐ (estrelas do Telegram)`
+    : o.gateway === INTL_GATEWAY
+      ? `US$ ${(o.amount_cents / 100).toFixed(2)} (internacional)`
+      : `${brl(o.amount_cents)} (Pix)`;
 
 export async function giftToFan(product: ProductRow, fan: FanRow, salesToken: string): Promise<void> {
   const order = await dbInsert<OrderRow>("sales_orders", {
@@ -415,7 +430,7 @@ export async function deliver(order: OrderRow, salesToken: string): Promise<void
   try {
     let accessUntil: string;
     // pagou em estrelas (fora do Brasil): as mensagens vao tambem em ingles
-    const en = order.gateway === STARS_GATEWAY;
+    const en = abroad(order);
     if (product.kind === "vip") {
       accessUntil = await deliverVip(order, fan, product, salesToken);
     } else {
@@ -438,12 +453,11 @@ export async function deliver(order: OrderRow, salesToken: string): Promise<void
     }
     await audit("venda", "sales_orders", order.id, { produto: product.slug, valor: order.amount_cents, parcela: order.installment });
     const what = order.installment && order.installment > 1 ? `renovou “${product.title}” (parcela ${order.installment})` : `comprou “${product.title}”`;
-    const paidWith = order.gateway === STARS_GATEWAY ? `${order.amount_cents} ⭐ (estrelas do Telegram)` : `${brl(order.amount_cents)} (Pix)`;
-    await adminNotice(`💰 Venda! ${fanName(fan)} ${what} por ${paidWith}.`);
+    await adminNotice(`💰 Venda! ${fanName(fan)} ${what} por ${paidWithText(order)}.`);
   } catch (e) {
     const error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
     await dbUpdate("sales_orders", `id=eq.${order.id}`, { note: `Entrega: ${error}` });
-    await adminNotice(`⚠️ ${order.gateway === STARS_GATEWAY ? "Estrelas pagas" : "Pix pago"}, mas não consegui entregar “${product.title}” para ${fanName(fan)}: ${error}\nEntregue à mão e confira em Vendas.`);
+    await adminNotice(`⚠️ Pago (${paidWithText(order)}), mas não consegui entregar “${product.title}” para ${fanName(fan)}: ${error}\nEntregue à mão e confira em Vendas.`);
     await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Pagamento confirmado! 💛 Tive um probleminha para te mandar agora, mas já estou resolvendo e te mando aqui." }).catch(() => undefined);
   }
 }
@@ -470,7 +484,7 @@ async function deliverVip(order: OrderRow, fan: FanRow, product: ProductRow, sal
   await telegram(salesToken, "sendMessage", {
     chat_id: fan.telegram_id,
     text:
-      (order.gateway === STARS_GATEWAY ? `Payment confirmed! 💎 Welcome to the VIP — access until ${day(until)}. Join the channel with the button below (the invite is only yours, valid for ${INVITE_HOURS} h).\n\n` : "") +
+      (abroad(order) ? `Payment confirmed! 💎 Welcome to the VIP — access until ${day(until)}. Join the channel with the button below (the invite is only yours, valid for ${INVITE_HOURS} h).\n\n` : "") +
       (renewing ? `VIP renovado! 💎 Seu acesso agora vale até ${day(until)}.` : `Pagamento confirmado! 💎 Bem-vindo ao VIP.\n\nSeu acesso vale até ${day(until)}.`) +
       ` Se ainda não estiver no canal, entre pelo botão (o convite é só seu e vale por ${INVITE_HOURS} h):` +
       (product.billing === "mensal" ? "\n\nO VIP mensal renova sozinho pelo Pix. Para cancelar: /cancelar" : ""),
@@ -646,10 +660,15 @@ async function renewalReminders(token: string, products: Map<string, ProductRow>
       await sendCta(token, fan.telegram_id, text, Math.ceil((nowMs - dueMs) / 86400_000) + 3, [[{ text: "💎 Renovar agora", callback_data: `buy:${product.id}` }]]);
       // primeiro aviso: o Pix de renovacao ja vai junto
       // (cortesia: so o aviso, sem gerar Pix de verdade)
-      if (first && order.gateway === STARS_GATEWAY) {
-        // comprou em estrelas (fora do Brasil): a renovacao vai em estrelas
+      if (first && abroad(order)) {
+        // comprou de fora do Brasil: a renovacao vai pelo mesmo caminho (internacional ou estrelas)
+        const { startIntl } = await import("./_sales_intl.js");
         const { sendStarsInvoice } = await import("./_sales_stars.js");
-        if (!(await sendStarsInvoice(token, fan, product, fan.telegram_id, true).catch(() => false))) await startPayment(token, fan, product, fan.telegram_id, site).catch(() => false);
+        const ok =
+          (order.gateway === INTL_GATEWAY && (await startIntl(token, fan, product, fan.telegram_id, site).catch(() => false))) ||
+          (await sendStarsInvoice(token, fan, product, fan.telegram_id, true).catch(() => false)) ||
+          (await startIntl(token, fan, product, fan.telegram_id, site).catch(() => false));
+        if (!ok) await startPayment(token, fan, product, fan.telegram_id, site).catch(() => false);
       } else if (first && order.gateway !== GIFT_GATEWAY) await startPayment(token, fan, product, fan.telegram_id, site).catch(() => false);
       sent++;
     } catch {

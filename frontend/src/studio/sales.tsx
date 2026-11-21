@@ -43,7 +43,7 @@ export interface Status {
   products: Product[];
   fans: { total: number; adults: number; optedOut: number; blocked: number; today: number };
   pix: { configured: boolean; env: "producao" | "sandbox" };
-  sales: { count30: number; total30: number; pending: number; starsCount30?: number; stars30?: number };
+  sales: { count30: number; total30: number; pending: number; starsCount30?: number; stars30?: number; intlCount30?: number; intl30?: number };
   vipPosts: { media_id: string; path: string | null }[]; // arquivos da pasta do VIP ja postados no canal
   // publicacoes do Chat +18: entram nos pacotes ao aprovar e no canal no horario
   chat18?: { post_id: string; status: string; scheduled_at: string | null; channel: boolean; packs: string[]; media: { media_id: string; path: string | null }[] }[];
@@ -58,6 +58,8 @@ export interface Status {
   channelMembers: number | null; // o Telegram conta os membros do canal VIP (com os administradores)
   promo: Promo;
   stars?: { enabled: boolean; prices: Record<string, number>; suggested: Record<string, number> }; // estrelas do Telegram (fora do Brasil)
+  // pagamento internacional (NOWPayments): precos em centavos de dolar; as chaves nunca vem
+  intl?: { enabled: boolean; configured: boolean; apiKeySet: boolean; ipnSecretSet: boolean; prices: Record<string, number>; suggested: Record<string, number> };
 }
 export interface Promo {
   enabled: boolean;
@@ -331,6 +333,11 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
               <span>
                 <b>{status.sales.pending}</b> Pix esperando pagamento
               </span>
+              {status.intl?.enabled || status.sales.intlCount30 ? (
+                <span>
+                  <b>US$ {((status.sales.intl30 ?? 0) / 100).toFixed(2)}</b> internacional ({status.sales.intlCount30 ?? 0} venda(s))
+                </span>
+              ) : null}
               {status.stars?.enabled || status.sales.starsCount30 ? (
                 <span>
                   <b>⭐ {status.sales.stars30 ?? 0}</b> em estrelas ({status.sales.starsCount30 ?? 0} venda(s), fora do Brasil)
@@ -346,7 +353,7 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
                     <span>{new Date(o.paid_at ?? o.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>
                     <span>{o.fan}</span>
                     <span>{o.product}</span>
-                    <b>{o.gateway === "estrelas" ? `⭐ ${o.amount_cents}` : `R$ ${money(o.amount_cents)}`}</b>
+                    <b>{o.gateway === "estrelas" ? `⭐ ${o.amount_cents}` : o.gateway === "nowpayments" ? `US$ ${(o.amount_cents / 100).toFixed(2)}` : `R$ ${money(o.amount_cents)}`}</b>
                     <span className={o.note ? "st-sales-warn" : ""} title={o.note ?? undefined}>
                       {ORDER_STATUS[o.status] ?? o.status}
                       {o.note ? " ⚠" : ""}

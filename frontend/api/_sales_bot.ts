@@ -218,7 +218,7 @@ function fanName(f: Pick<FanRow, "username" | "first_name" | "telegram_id">): st
 }
 
 // how: "auto" (pela lingua do fa), "pix" (botao Pix) ou "estrelas" (botao das estrelas)
-async function buy(token: string, fan: FanRow, productId: string, chatId: number, site: string, lang?: string, how: "auto" | "pix" | "estrelas" = "auto"): Promise<void> {
+async function buy(token: string, fan: FanRow, productId: string, chatId: number, site: string, lang?: string, how: "auto" | "pix" | "estrelas" | "intl" = "auto"): Promise<void> {
   if (!/^[0-9a-f-]{36}$/i.test(productId)) return;
   const [product] = (await productsForSale()).filter((p) => p.id === productId);
   if (!product) {
@@ -227,13 +227,21 @@ async function buy(token: string, fan: FanRow, productId: string, chatId: number
     return;
   }
   const { isForeign, sendStarsInvoice } = await import("./_sales_stars.js");
+  const { startIntl } = await import("./_sales_intl.js");
+  const { abroadRows } = await import("./_sales_pay.js");
   const foreign = isForeign(lang);
-  // fora do Brasil (Telegram em outra lingua) ou botao das estrelas: fatura em estrelas
+  const pixRow = [{ text: "🇧🇷 Pix (Brasil)", callback_data: `pix:${product.id}` }];
+  // fora do Brasil (Telegram em outra lingua) ou botao internacional: pagina em
+  // dolar (com as estrelas e o Pix de alternativa); sem ela, fatura em estrelas
+  if (how === "intl" || (how === "auto" && foreign)) {
+    if (await startIntl(token, fan, product, chatId, site, [...(await abroadRows(product, "intl")), pixRow]).catch(() => false)) return;
+  }
   if (how === "estrelas" || (how === "auto" && foreign)) {
     if (await sendStarsInvoice(token, fan, product, chatId, foreign).catch(() => false)) return;
   }
   if (await startPayment(token, fan, product, chatId, site)) return;
-  // Pix desligado: ainda da para pagar em estrelas
+  // Pix desligado: ainda da para pagar de fora do Brasil
+  if (how !== "intl" && (await startIntl(token, fan, product, chatId, site, await abroadRows(product, "intl")).catch(() => false))) return;
   if (how !== "estrelas" && (await sendStarsInvoice(token, fan, product, chatId, foreign).catch(() => false))) return;
   // Pix ainda nao configurado: avisa e conta o interesse
   await telegram(token, "sendMessage", {
@@ -309,8 +317,11 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
         await askAge(token, chatId);
       } else if (kind === "buy") {
         await buy(token, fan, arg ?? "", chatId, baseUrl(req), cb.from.language_code);
-      } else if (kind === "stars" || kind === "pix") {
-        await buy(token, fan, arg ?? "", chatId, baseUrl(req), cb.from.language_code, kind === "stars" ? "estrelas" : "pix");
+      } else if (kind === "stars" || kind === "pix" || kind === "intl") {
+        await buy(token, fan, arg ?? "", chatId, baseUrl(req), cb.from.language_code, kind === "stars" ? "estrelas" : kind === "intl" ? "intl" : "pix");
+      } else if (kind === "intlpaid") {
+        const { checkIntlPaid } = await import("./_sales_intl.js");
+        await checkIntlPaid(arg ?? "", fan, token, chatId);
       } else if (kind === "paid") {
         await checkPaid(arg ?? "", fan, token, chatId);
       } else if (kind === "mine") {
