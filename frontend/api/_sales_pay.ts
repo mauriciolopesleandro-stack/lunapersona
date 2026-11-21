@@ -233,8 +233,15 @@ async function sendPix(salesToken: string, chatId: number, product: ProductRow, 
     chat_id: chatId,
     text: `<code>${escapeHtml(order.pix_code ?? "")}</code>`,
     parse_mode: "HTML",
-    reply_markup: { inline_keyboard: [[{ text: "✅ Já paguei", callback_data: `paid:${order.id}` }]] },
+    reply_markup: { inline_keyboard: [[{ text: "✅ Já paguei", callback_data: `paid:${order.id}` }], ...(await starsRow(product))] },
   });
+}
+
+// Pix de quem esta no Brasil: tambem da para pagar em estrelas (fora do Brasil)
+async function starsRow(product: ProductRow): Promise<{ text: string; callback_data: string }[][]> {
+  const { starsConfig, starsPrice } = await import("./_sales_stars.js");
+  const stars = starsPrice(product, await starsConfig().catch(() => ({ enabled: false, prices: {} })));
+  return stars ? [[{ text: `⭐ Pagar com estrelas (fora do Brasil) — ${stars}`, callback_data: `stars:${product.id}` }]] : [];
 }
 
 // Botao do pacote, com o Pix ligado: cria (ou reaproveita) o pedido e manda o Pix.
@@ -384,6 +391,8 @@ export async function previewPack(productId: string, salesToken: string, chatId:
 // mesmo e recebe tudo igual ao fa que pagou (convite do canal, Meus pacotes),
 // sem Pix. Fica registrado como cortesia e nao conta nas vendas.
 export const GIFT_GATEWAY = "cortesia";
+// estrelas do Telegram (_sales_stars.ts): amount_cents guarda as estrelas, nao centavos
+export const STARS_GATEWAY = "estrelas";
 
 export async function giftToFan(product: ProductRow, fan: FanRow, salesToken: string): Promise<void> {
   const order = await dbInsert<OrderRow>("sales_orders", {
@@ -399,21 +408,25 @@ export async function giftToFan(product: ProductRow, fan: FanRow, salesToken: st
   await deliver(order, salesToken);
 }
 
-async function deliver(order: OrderRow, salesToken: string): Promise<void> {
+export async function deliver(order: OrderRow, salesToken: string): Promise<void> {
   const [fan] = await dbSelect<FanRow>("fans", `select=*&id=eq.${order.fan_id}`);
   const [product] = await dbSelect<ProductRow>("sales_products", `select=*&id=eq.${order.product_id}`);
   const chatId = fan.telegram_id;
   try {
     let accessUntil: string;
+    // pagou em estrelas (fora do Brasil): as mensagens vao tambem em ingles
+    const en = order.gateway === STARS_GATEWAY;
     if (product.kind === "vip") {
       accessUntil = await deliverVip(order, fan, product, salesToken);
     } else {
       accessUntil = new Date(Date.now() + product.period_days * 86400_000).toISOString();
-      await telegram(salesToken, "sendMessage", { chat_id: chatId, text: `Pagamento confirmado! 💛 Aqui está: ${product.title}` });
+      await telegram(salesToken, "sendMessage", { chat_id: chatId, text: en ? `Payment confirmed! 💛 Here it is: ${product.title}` : `Pagamento confirmado! 💛 Aqui está: ${product.title}` });
       await sendPack(product, chatId, salesToken);
       await telegram(salesToken, "sendMessage", {
         chat_id: chatId,
-        text: `Aproveite 💛 Você pode abrir este pacote de novo até ${day(accessUntil)} em 📂 Meus pacotes.`,
+        text: en
+          ? `Enjoy 💛 You can open this package again until ${day(accessUntil)} in 📂 Meus pacotes (/pacotes).`
+          : `Aproveite 💛 Você pode abrir este pacote de novo até ${day(accessUntil)} em 📂 Meus pacotes.`,
         reply_markup: { inline_keyboard: [[{ text: "📂 Meus pacotes", callback_data: "mine" }]] },
       });
     }
@@ -425,11 +438,12 @@ async function deliver(order: OrderRow, salesToken: string): Promise<void> {
     }
     await audit("venda", "sales_orders", order.id, { produto: product.slug, valor: order.amount_cents, parcela: order.installment });
     const what = order.installment && order.installment > 1 ? `renovou “${product.title}” (parcela ${order.installment})` : `comprou “${product.title}”`;
-    await adminNotice(`💰 Venda! ${fanName(fan)} ${what} por ${brl(order.amount_cents)} (Pix).`);
+    const paidWith = order.gateway === STARS_GATEWAY ? `${order.amount_cents} ⭐ (estrelas do Telegram)` : `${brl(order.amount_cents)} (Pix)`;
+    await adminNotice(`💰 Venda! ${fanName(fan)} ${what} por ${paidWith}.`);
   } catch (e) {
     const error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
     await dbUpdate("sales_orders", `id=eq.${order.id}`, { note: `Entrega: ${error}` });
-    await adminNotice(`⚠️ Pix pago, mas não consegui entregar “${product.title}” para ${fanName(fan)}: ${error}\nEntregue à mão e confira em Vendas.`);
+    await adminNotice(`⚠️ ${order.gateway === STARS_GATEWAY ? "Estrelas pagas" : "Pix pago"}, mas não consegui entregar “${product.title}” para ${fanName(fan)}: ${error}\nEntregue à mão e confira em Vendas.`);
     await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Pagamento confirmado! 💛 Tive um probleminha para te mandar agora, mas já estou resolvendo e te mando aqui." }).catch(() => undefined);
   }
 }
@@ -456,6 +470,7 @@ async function deliverVip(order: OrderRow, fan: FanRow, product: ProductRow, sal
   await telegram(salesToken, "sendMessage", {
     chat_id: fan.telegram_id,
     text:
+      (order.gateway === STARS_GATEWAY ? `Payment confirmed! 💎 Welcome to the VIP — access until ${day(until)}. Join the channel with the button below (the invite is only yours, valid for ${INVITE_HOURS} h).\n\n` : "") +
       (renewing ? `VIP renovado! 💎 Seu acesso agora vale até ${day(until)}.` : `Pagamento confirmado! 💎 Bem-vindo ao VIP.\n\nSeu acesso vale até ${day(until)}.`) +
       ` Se ainda não estiver no canal, entre pelo botão (o convite é só seu e vale por ${INVITE_HOURS} h):` +
       (product.billing === "mensal" ? "\n\nO VIP mensal renova sozinho pelo Pix. Para cancelar: /cancelar" : ""),
@@ -631,7 +646,11 @@ async function renewalReminders(token: string, products: Map<string, ProductRow>
       await sendCta(token, fan.telegram_id, text, Math.ceil((nowMs - dueMs) / 86400_000) + 3, [[{ text: "💎 Renovar agora", callback_data: `buy:${product.id}` }]]);
       // primeiro aviso: o Pix de renovacao ja vai junto
       // (cortesia: so o aviso, sem gerar Pix de verdade)
-      if (first && order.gateway !== GIFT_GATEWAY) await startPayment(token, fan, product, fan.telegram_id, site).catch(() => false);
+      if (first && order.gateway === STARS_GATEWAY) {
+        // comprou em estrelas (fora do Brasil): a renovacao vai em estrelas
+        const { sendStarsInvoice } = await import("./_sales_stars.js");
+        if (!(await sendStarsInvoice(token, fan, product, fan.telegram_id, true).catch(() => false))) await startPayment(token, fan, product, fan.telegram_id, site).catch(() => false);
+      } else if (first && order.gateway !== GIFT_GATEWAY) await startPayment(token, fan, product, fan.telegram_id, site).catch(() => false);
       sent++;
     } catch {
       // bloqueou o bot ou o Telegram falhou: tenta no proximo dia

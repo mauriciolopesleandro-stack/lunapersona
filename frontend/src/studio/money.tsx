@@ -180,7 +180,9 @@ export function FinancePage() {
   const { status, error } = useSalesStatus();
   if (error) return <p className="st-error">{error}</p>;
   if (!status) return <div className="st-empty st-empty-small">Carregando…</div>;
-  const sold = status.orders.filter((o) => SOLD.has(o.status));
+  // em reais: sem cortesia e sem estrelas (as estrelas aparecem a parte)
+  const sold = status.orders.filter((o) => SOLD.has(o.status) && o.gateway !== "cortesia" && o.gateway !== "estrelas");
+  const stars30 = status.orders.filter((o) => SOLD.has(o.status) && o.gateway === "estrelas" && Date.now() - Date.parse(o.paid_at ?? o.created_at) < 30 * DAY);
   const in30 = sold.filter((o) => Date.now() - Date.parse(o.paid_at ?? o.created_at) < 30 * DAY);
   const in7 = in30.filter((o) => Date.now() - Date.parse(o.paid_at ?? o.created_at) < 7 * DAY);
   const total = (list: typeof sold) => list.reduce((t, o) => t + o.amount_cents, 0);
@@ -188,7 +190,7 @@ export function FinancePage() {
     .map((name) => ({ name, list: in30.filter((o) => o.product === name) }))
     .sort((a, b) => total(b.list) - total(a.list));
   const max = Math.max(1, ...byProduct.map((p) => total(p.list)));
-  const pending = status.orders.filter((o) => o.status === "pendente");
+  const pending = status.orders.filter((o) => o.status === "pendente" && o.gateway !== "estrelas");
   // ultimos 14 dias, um traco por dia
   const days = Array.from({ length: 14 }, (_, i) => {
     const start = new Date();
@@ -222,6 +224,13 @@ export function FinancePage() {
           <b>{pending.length}</b>
           <small>{brl(total(pending))} em aberto</small>
         </div>
+        {(status.stars?.enabled || stars30.length > 0) && (
+          <div className="st-panel st-mini-stat">
+            <span>Estrelas (30 dias)</span>
+            <b>⭐ {stars30.reduce((t, o) => t + o.amount_cents, 0)}</b>
+            <small>{stars30.length} venda(s) fora do Brasil</small>
+          </div>
+        )}
       </div>
 
       <div className="st-finance">
@@ -255,7 +264,7 @@ export function FinancePage() {
           )}
         </section>
       </div>
-      <p className="st-hint">Valores brutos, antes da taxa da PushinPay. Custos (créditos de IA, Naiaflow) ainda não entram aqui.</p>
+      <p className="st-hint">Valores brutos, antes da taxa da PushinPay. Estrelas do Telegram ficam a parte (saldo em @BotFather → Balance). Custos (créditos de IA, Naiaflow) ainda não entram aqui.</p>
     </div>
   );
 }
@@ -277,12 +286,14 @@ export function PlansPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [prices, setPrices] = useState<Record<string, { price: string; days: string }>>({});
   const [promo, setPromo] = useState<{ enabled: boolean; days: number[]; label: string; prices: Record<string, string> } | null>(null);
+  const [stars, setStars] = useState<{ enabled: boolean; prices: Record<string, string> }>({ enabled: false, prices: {} });
 
   function load(s: Status) {
     setStatus(s);
     shared = Promise.resolve(s);
     sharedAt = Date.now();
     setPrices(Object.fromEntries(s.products.map((p) => [p.id, { price: toText(p.price_cents), days: String(p.period_days) }])));
+    setStars({ enabled: Boolean(s.stars?.enabled), prices: Object.fromEntries(Object.entries(s.stars?.prices ?? {}).map(([id, n]) => [id, String(n)])) });
     setPromo({ enabled: s.promo.enabled, days: s.promo.days, label: s.promo.label, prices: Object.fromEntries(Object.entries(s.promo.prices).map(([id, c]) => [id, toText(c)])) });
   }
   useEffect(() => {
@@ -487,6 +498,64 @@ export function PlansPage() {
             }
           >
             {busy === "promo" ? "Salvando…" : "Salvar promoção"}
+          </button>
+        </div>
+      </section>
+
+      <section className="st-panel st-settings">
+        <div className="st-panel-head">
+          <h2>Estrelas do Telegram (fora do Brasil)</h2>
+          <span className={`st-badge ${stars.enabled ? "st-badge-aprovado" : "st-badge-arquivado"}`}>{stars.enabled ? "ligadas" : "desligadas"}</span>
+        </div>
+        <p className="st-hint">
+          Quem não tem Pix paga com estrelas ⭐ dentro do Telegram (cartão, Apple Pay ou Google Pay, na moeda do país). Fã com o Telegram em outra língua recebe a
+          fatura em estrelas primeiro (e o botão do Pix); no Pix aparece o botão “Pagar com estrelas”. Não precisa de conta: o saldo fica no bot (@BotFather →
+          o bot → Balance) e sai pelo Fragment a partir de 1.000 estrelas. VIP mensal continua só no Pix.
+        </p>
+        <label className="st-check">
+          <input type="checkbox" checked={stars.enabled} onChange={(e) => setStars({ ...stars, enabled: e.target.checked })} />
+          Vender também em estrelas
+        </label>
+        <div className="st-plan-rows">
+          {products
+            .filter((p) => p.billing !== "mensal")
+            .map((p) => (
+              <div key={p.id} className="st-plan-row st-plan-row-promo">
+                <b>
+                  {p.title} <small>Pix {brl(p.price_cents)}</small>
+                </b>
+                <label>
+                  <span>Em estrelas ⭐</span>
+                  <input
+                    className="st-input"
+                    inputMode="numeric"
+                    placeholder={String(status.stars?.suggested[p.id] ?? 250)}
+                    value={stars.prices[p.id] ?? ""}
+                    onChange={(e) => setStars({ ...stars, prices: { ...stars.prices, [p.id]: e.target.value.replace(/\D/g, "") } })}
+                  />
+                </label>
+                <span className="st-hint">≈ US$ {(((Number(stars.prices[p.id]) || status.stars?.suggested[p.id] || 250) * 0.013)).toFixed(2)} para você</span>
+              </div>
+            ))}
+        </div>
+        <div className="st-composer-actions">
+          <button
+            type="button"
+            className="st-btn st-btn-primary"
+            disabled={busy !== null}
+            onClick={() =>
+              run(
+                "stars",
+                {
+                  action: "stars-save",
+                  enabled: stars.enabled,
+                  prices: Object.fromEntries(Object.entries(stars.prices).filter(([, t]) => t).map(([id, t]) => [id, Number(t)])),
+                },
+                stars.enabled ? "Estrelas ligadas: quem está fora do Brasil já consegue pagar." : "Estrelas desligadas (só Pix)."
+              )
+            }
+          >
+            {busy === "stars" ? "Salvando…" : "Salvar estrelas"}
           </button>
         </div>
       </section>
