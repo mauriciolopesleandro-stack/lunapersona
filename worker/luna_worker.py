@@ -195,6 +195,10 @@ def load_config() -> tuple[str, str]:
         if "=" in raw and not raw.lstrip().startswith("#"):
             k, v = raw.split("=", 1)
             values[k.strip()] = v.strip()
+    # opcoes do robo no arquivo (ex.: LUNA_JANELA=visivel) valem como variavel de ambiente
+    for k, v in values.items():
+        if k.startswith("LUNA_"):
+            os.environ.setdefault(k, v)
     url, token = values.get("STUDIO_URL", ""), values.get("WORKER_TOKEN", "")
     if not url or not token:
         sys.exit("O luna-worker.env esta incompleto. Gere de novo no estudio.")
@@ -335,6 +339,17 @@ class NaiaNotStarted(RuntimeError):
     """O Gerar foi clicado mas a Naiaflow nao comecou (nenhum credito gasto)."""
 
 
+# 21/11 (pedido do administrador): a janela da Naiaflow nao aparece mais na tela
+# (fotos +18 abrindo no PC). O Chrome continua o normal, com janela, so que aberta
+# FORA da tela - a Naiaflow ve um navegador comum (headless poderia ser barrado) e a
+# aba segue trabalhando (as opcoes acima impedem o congelamento). Para ver a janela
+# de novo (conferir algo): LUNA_JANELA=visivel em luna-worker.env.
+def hidden_window_args() -> list[str]:
+    if os.environ.get("LUNA_JANELA", "").strip().lower() in ("visivel", "visível", "1", "sim"):
+        return []
+    return ["--window-position=-32000,-32000", "--window-size=1300,1000"]
+
+
 class Naiaflow:
     def __init__(self) -> None:
         from playwright.sync_api import sync_playwright
@@ -350,6 +365,7 @@ class Naiaflow:
                 "--disable-background-timer-throttling",
                 "--disable-backgrounding-occluded-windows",
                 "--disable-renderer-backgrounding",
+                *hidden_window_args(),
             ],
         )
         self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
