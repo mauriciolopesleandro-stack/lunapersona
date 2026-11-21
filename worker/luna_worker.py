@@ -350,6 +350,43 @@ def hidden_window_args() -> list[str]:
     return ["--window-position=-32000,-32000", "--window-size=1300,1000"]
 
 
+def hide_offscreen_windows() -> int:
+    """Tira da barra de tarefas e do Alt+Tab as janelas do Chrome abertas fora da tela
+    (21/11: a miniatura da barra de tarefas mostrava a Naiaflow). A janela continua
+    "aberta" para o Chrome (so muda o estilo no Windows): a pagina segue trabalhando."""
+    if os.name != "nt":
+        return 0
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    GWL_EXSTYLE, WS_EX_TOOLWINDOW, WS_EX_APPWINDOW = -20, 0x80, 0x40000
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def each(hwnd, _):
+        cls = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(hwnd, cls, 64)
+        if cls.value == "Chrome_WidgetWin_1" and user32.IsWindowVisible(hwnd):
+            r = wintypes.RECT()
+            user32.GetWindowRect(hwnd, ctypes.byref(r))
+            if r.left <= -10000 and r.top <= -10000:
+                found.append(hwnd)
+        return True
+
+    user32.EnumWindows(each, 0)
+    changed = 0
+    for hwnd in found:
+        ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        if ex & WS_EX_TOOLWINDOW and not ex & WS_EX_APPWINDOW:
+            continue
+        user32.ShowWindow(hwnd, 0)  # SW_HIDE: o estilo novo so vale depois de esconder e mostrar
+        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, (ex | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW)
+        user32.ShowWindow(hwnd, 4)  # SW_SHOWNOACTIVATE
+        changed += 1
+    return changed
+
+
 class Naiaflow:
     def __init__(self) -> None:
         from playwright.sync_api import sync_playwright
@@ -371,6 +408,13 @@ class Naiaflow:
             ],
         )
         self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
+        self._hide()
+
+    def _hide(self) -> None:
+        try:
+            hide_offscreen_windows()
+        except Exception:
+            pass  # esconder da barra de tarefas nunca atrapalha o pedido
 
     def close(self) -> None:
         try:
@@ -395,6 +439,7 @@ class Naiaflow:
         return self.page.get_by_role("button", name=MODE_BUTTON)
 
     def open(self) -> None:
+        self._hide()
         self.page.goto(NAIAFLOW, wait_until="domcontentloaded")
         deadline = time.time() + 15 * 60
         warned = False
@@ -2177,6 +2222,7 @@ def main() -> None:
         last_sync = time.time()
         while True:
             if naia:
+                naia._hide()  # janela nova do Chrome (ou reaberta): fora da barra de tarefas
                 credits = naia.credits()
                 if credits is not None and credits < MIN_CREDITS:
                     log(f"Só {credits} crédito(s) na Naiaflow: parei para não zerar. Compre créditos e reinicie.")
