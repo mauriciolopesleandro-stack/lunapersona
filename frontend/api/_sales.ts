@@ -14,7 +14,9 @@ import {
   type FanRow,
   type ProductRow,
 } from "./_sales_bot.js";
-import { forgetPix, giftToFan, GIFT_GATEWAY, pixConfig, previewPack, savePixConfig } from "./_sales_pay.js";
+import { forgetPix, giftToFan, GIFT_GATEWAY, pixConfig, previewPack, savePixConfig, STARS_GATEWAY } from "./_sales_pay.js";
+import { saveStars, STARS_MAX, STARS_MIN, starsConfig, suggestedStars } from "./_sales_stars.js";
+import { checkIntlKey, forgetIntl, INTL_GATEWAY, INTL_MAX_CENTS, INTL_MIN_CENTS, intlConfig, saveIntl, suggestedUsd } from "./_sales_intl.js";
 import { ctaConfig, ctaDays, fill, previews, saveCtaConfig, savePreviews, sendCta, suggestCaptions } from "./_sales_cta.js";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
@@ -25,6 +27,9 @@ import { DEFAULT_PERSONA, personaId, personaPath, personaText, runAs } from "./_
 //   GET                                  estado: bot, pacotes com o conteudo, fas, pedidos
 //   POST { action: "token", token }      confere o token do bot de vendas (getMe) e guarda
 //   POST { action: "connect" }           liga o webhook do bot de vendas
+//   POST { action: "stars-save", enabled, prices }  estrelas do Telegram (fora do Brasil)
+//   POST { action: "intl-save", enabled, apiKey?, ipnSecret?, prices }  pagamento internacional (NOWPayments)
+//   POST { action: "intl-forget" }       apaga as chaves da NOWPayments
 //   POST { action: "forget" }            desliga o bot de vendas
 //   POST { action: "product", id, ... }  muda nome, descricao, preco, dias de acesso, ativo
 //   POST { action: "media-url", product_id, mime_type, size_bytes }
@@ -393,7 +398,11 @@ async function status() {
   const fanOf = new Map(fans.map((f) => [f.id, f.username ? `@${f.username}` : f.first_name || `fã ${f.telegram_id}`]));
   const titleOf = new Map(products.map((p) => [p.id, p.title]));
   // (cortesia do administrador nao e venda)
-  const sold = orders.filter((o) => (o.status === "entregue" || o.status === "expirado" || o.status === "pago") && o.gateway !== GIFT_GATEWAY);
+  const paidOrders = orders.filter((o) => (o.status === "entregue" || o.status === "expirado" || o.status === "pago") && o.gateway !== GIFT_GATEWAY);
+  // em reais (Pix); as estrelas contam a parte
+  const sold = paidOrders.filter((o) => o.gateway !== STARS_GATEWAY && o.gateway !== INTL_GATEWAY);
+  const soldIntl = paidOrders.filter((o) => o.gateway === INTL_GATEWAY);
+  const soldStars = paidOrders.filter((o) => o.gateway === STARS_GATEWAY);
   const month = Date.now() - 30 * 86400_000;
   // quem esta no VIP agora (ate 3 dias depois de vencer a pessoa ainda fica no canal)
   const vipProducts = new Set(products.filter((p) => p.kind === "vip").map((p) => p.id));
@@ -450,12 +459,26 @@ async function status() {
     sales: {
       count30: sold.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).length,
       total30: sold.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).reduce((t, o) => t + o.amount_cents, 0),
-      pending: orders.filter((o) => o.status === "pendente").length,
+      pending: orders.filter((o) => o.status === "pendente" && o.gateway !== STARS_GATEWAY && o.gateway !== INTL_GATEWAY).length,
+      intlCount30: soldIntl.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).length,
+      intl30: soldIntl.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).reduce((t, o) => t + o.amount_cents, 0),
+      starsCount30: soldStars.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).length,
+      stars30: soldStars.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).reduce((t, o) => t + o.amount_cents, 0),
     },
     orders: orders.slice(0, 50).map((o) => ({ ...o, product: titleOf.get(o.product_id) ?? "?", fan: fanOf.get(o.fan_id) ?? "?" })),
     vipMembers,
     channelMembers,
     promo: { ...promo, active: promoActive(promo), today: weekdayInBrazil() },
+    stars: { ...(await starsConfig()), suggested: Object.fromEntries(products.map((p) => [p.id, suggestedStars(p)])) },
+    // as chaves nunca voltam ao navegador: so se estao coladas
+    intl: await intlConfig().then((c) => ({
+      enabled: c.enabled,
+      configured: Boolean(c.apiKey && c.ipnSecret),
+      apiKeySet: Boolean(c.apiKey),
+      ipnSecretSet: Boolean(c.ipnSecret),
+      prices: c.prices,
+      suggested: Object.fromEntries(products.map((p) => [p.id, suggestedUsd(p)])),
+    })),
   };
 }
 
@@ -721,6 +744,48 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const label = typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 60) : "Promoção de domingo";
       await savePromo({ enabled: Boolean(body.enabled), days, label, prices });
       await audit("promocao", "sales", null, { ligada: Boolean(body.enabled), dias: days, pacotes: Object.keys(prices).length });
+    } else if (body.action === "stars-save") {
+      const products = await dbSelect<ProductRow>("sales_products", "select=id,title");
+      const prices: Record<string, number> = {};
+      const raw = body.prices && typeof body.prices === "object" ? (body.prices as Record<string, unknown>) : {};
+      for (const p of products) {
+        if (raw[p.id] === undefined || raw[p.id] === null || raw[p.id] === "") continue;
+        const stars = Number(raw[p.id]);
+        if (!Number.isInteger(stars) || stars < STARS_MIN || stars > STARS_MAX) throw new Problem(400, `Estrelas de “${p.title}”: de ${STARS_MIN} a ${STARS_MAX}.`);
+        prices[p.id] = stars;
+      }
+      await saveStars({ enabled: Boolean(body.enabled), prices });
+      // o webhook passa a receber a pergunta do Telegram antes de cobrar (pre_checkout_query)
+      if (body.enabled) await registerSalesWebhook(needToken(), siteUrl(req));
+      await audit("estrelas", "sales", null, { ligadas: Boolean(body.enabled), pacotes: Object.keys(prices).length });
+    } else if (body.action === "intl-save") {
+      const current = await intlConfig();
+      const apiKey = typeof body.apiKey === "string" && body.apiKey.trim() ? body.apiKey.trim() : current.apiKey;
+      const ipnSecret = typeof body.ipnSecret === "string" && body.ipnSecret.trim() ? body.ipnSecret.trim() : current.ipnSecret;
+      if (apiKey && !/^[A-Za-z0-9-]{10,80}$/.test(apiKey)) throw new Problem(400, "Essa não parece a chave da API da NOWPayments (Settings → Payments → API keys).");
+      if (ipnSecret && !/^[A-Za-z0-9+/=_-]{10,120}$/.test(ipnSecret)) throw new Problem(400, "Essa não parece a chave do IPN da NOWPayments (Settings → Payments → Instant payment notifications).");
+      if (apiKey && apiKey !== current.apiKey) {
+        try {
+          await checkIntlKey(apiKey);
+        } catch (e) {
+          throw new Problem(400, `A NOWPayments recusou a chave da API: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      if (body.enabled && (!apiKey || !ipnSecret)) throw new Problem(400, "Cole as duas chaves (API e IPN) antes de ligar.");
+      const products = await dbSelect<ProductRow>("sales_products", "select=id,title");
+      const prices: Record<string, number> = {};
+      const raw = body.prices && typeof body.prices === "object" ? (body.prices as Record<string, unknown>) : {};
+      for (const p of products) {
+        if (raw[p.id] === undefined || raw[p.id] === null || raw[p.id] === "") continue;
+        const cents = Number(raw[p.id]);
+        if (!Number.isInteger(cents) || cents < INTL_MIN_CENTS || cents > INTL_MAX_CENTS) throw new Problem(400, `Preço em dólar de “${p.title}”: de US$ ${INTL_MIN_CENTS / 100} a US$ ${INTL_MAX_CENTS / 100}.`);
+        prices[p.id] = cents;
+      }
+      await saveIntl({ enabled: Boolean(body.enabled), apiKey, ipnSecret, prices });
+      await audit("internacional", "sales", null, { ligado: Boolean(body.enabled), pacotes: Object.keys(prices).length });
+    } else if (body.action === "intl-forget") {
+      await forgetIntl();
+      await audit("internacional_apagado", "sales", null);
     } else if (body.action === "cta-save") {
       try {
         await saveCtaConfig(body);

@@ -79,7 +79,7 @@ export async function registerSalesWebhook(token: string, baseUrl: string): Prom
   await telegram(token, "setWebhook", {
     url: `${baseUrl}/api/vendas/telegram${personaPath()}`,
     secret_token: salesWebhookSecret(token),
-    allowed_updates: ["message", "callback_query", "my_chat_member"],
+    allowed_updates: ["message", "callback_query", "my_chat_member", "pre_checkout_query"],
   });
   await telegram(token, "setMyCommands", {
     commands: [
@@ -88,6 +88,7 @@ export async function registerSalesWebhook(token: string, baseUrl: string): Prom
       { command: "cancelar", description: "Cancelar o VIP mensal" },
       { command: "parar", description: "Parar de receber novidades" },
       { command: "voltar", description: "Voltar a receber novidades" },
+      { command: "paysupport", description: "Ajuda com pagamento / Payment support" },
     ],
   }).catch(() => undefined);
 }
@@ -131,10 +132,18 @@ interface From {
   id: number;
   username?: string;
   first_name?: string;
+  language_code?: string; // lingua do Telegram do fa (fora de "pt": estrelas primeiro)
 }
 
 interface Update {
-  message?: { message_id: number; chat: { id: number; type: string }; from?: From; text?: string };
+  message?: {
+    message_id: number;
+    chat: { id: number; type: string };
+    from?: From;
+    text?: string;
+    successful_payment?: { currency: string; total_amount: number; invoice_payload: string; telegram_payment_charge_id: string };
+  };
+  pre_checkout_query?: { id: string; from: From; currency: string; total_amount: number; invoice_payload: string };
   callback_query?: { id: string; from: From; data?: string; message?: { message_id: number; chat: { id: number; type: string } } };
   my_chat_member?: { chat: { id: number; type: string }; from: From; new_chat_member: { status: string } };
 }
@@ -208,7 +217,8 @@ function fanName(f: Pick<FanRow, "username" | "first_name" | "telegram_id">): st
   return f.username ? `@${f.username}` : f.first_name || `fã ${f.telegram_id}`;
 }
 
-async function buy(token: string, fan: FanRow, productId: string, chatId: number, site: string): Promise<void> {
+// how: "auto" (pela lingua do fa), "pix" (botao Pix) ou "estrelas" (botao das estrelas)
+async function buy(token: string, fan: FanRow, productId: string, chatId: number, site: string, lang?: string, how: "auto" | "pix" | "estrelas" | "intl" = "auto"): Promise<void> {
   if (!/^[0-9a-f-]{36}$/i.test(productId)) return;
   const [product] = (await productsForSale()).filter((p) => p.id === productId);
   if (!product) {
@@ -216,7 +226,23 @@ async function buy(token: string, fan: FanRow, productId: string, chatId: number
     await sendMenu(token, chatId);
     return;
   }
+  const { isForeign, sendStarsInvoice } = await import("./_sales_stars.js");
+  const { startIntl } = await import("./_sales_intl.js");
+  const { abroadRows } = await import("./_sales_pay.js");
+  const foreign = isForeign(lang);
+  const pixRow = [{ text: "🇧🇷 Pix (Brasil)", callback_data: `pix:${product.id}` }];
+  // fora do Brasil (Telegram em outra lingua) ou botao internacional: pagina em
+  // dolar (com as estrelas e o Pix de alternativa); sem ela, fatura em estrelas
+  if (how === "intl" || (how === "auto" && foreign)) {
+    if (await startIntl(token, fan, product, chatId, site, [...(await abroadRows(product, "intl")), pixRow]).catch(() => false)) return;
+  }
+  if (how === "estrelas" || (how === "auto" && foreign)) {
+    if (await sendStarsInvoice(token, fan, product, chatId, foreign).catch(() => false)) return;
+  }
   if (await startPayment(token, fan, product, chatId, site)) return;
+  // Pix desligado: ainda da para pagar de fora do Brasil
+  if (how !== "intl" && (await startIntl(token, fan, product, chatId, site, await abroadRows(product, "intl")).catch(() => false))) return;
+  if (how !== "estrelas" && (await sendStarsInvoice(token, fan, product, chatId, foreign).catch(() => false))) return;
   // Pix ainda nao configurado: avisa e conta o interesse
   await telegram(token, "sendMessage", {
     chat_id: chatId,
@@ -246,6 +272,19 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
   }
 
   try {
+    // estrelas: o Telegram pergunta antes de cobrar (responder em ate 10 s)
+    if (update.pre_checkout_query) {
+      const { answerPreCheckout } = await import("./_sales_stars.js");
+      await answerPreCheckout(token, update.pre_checkout_query);
+      return done();
+    }
+    // estrelas: cobrou -> marca pago e entrega
+    if (update.message?.successful_payment && update.message.chat.type === "private") {
+      const { starsPaid } = await import("./_sales_stars.js");
+      await starsPaid(token, update.message.successful_payment);
+      return done();
+    }
+
     const member = update.my_chat_member;
     if (member && member.chat.type === "private") {
       const blocked = member.new_chat_member.status === "kicked";
@@ -277,7 +316,12 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
       } else if (!fan.adult_confirmed_at) {
         await askAge(token, chatId);
       } else if (kind === "buy") {
-        await buy(token, fan, arg ?? "", chatId, baseUrl(req));
+        await buy(token, fan, arg ?? "", chatId, baseUrl(req), cb.from.language_code);
+      } else if (kind === "stars" || kind === "pix" || kind === "intl") {
+        await buy(token, fan, arg ?? "", chatId, baseUrl(req), cb.from.language_code, kind === "stars" ? "estrelas" : kind === "intl" ? "intl" : "pix");
+      } else if (kind === "intlpaid") {
+        const { checkIntlPaid } = await import("./_sales_intl.js");
+        await checkIntlPaid(arg ?? "", fan, token, chatId);
       } else if (kind === "paid") {
         await checkPaid(arg ?? "", fan, token, chatId);
       } else if (kind === "mine") {
@@ -306,6 +350,18 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
           text: packs.length ? "👀 Qual pacote você quer ver como o fã recebe?" : "Nenhum pacote ativo.",
           ...(packs.length ? { reply_markup: { inline_keyboard: packs.map((p) => [{ text: `👀 ${p.title}`, callback_data: `ver:${p.id}` }]) } } : {}),
         });
+        return done();
+      }
+      // ajuda com pagamento (o Telegram pede /paysupport em bots que cobram em estrelas)
+      if (text.startsWith("/paysupport") || text.startsWith("/terms")) {
+        await telegram(token, "sendMessage", {
+          chat_id: msg.chat.id,
+          text: text.startsWith("/terms")
+            ? "Conteúdo digital só para maiores de 18 anos, entregue aqui no chat logo após o pagamento, com acesso pelo prazo do pacote. Pagamentos em estrelas seguem os termos do Telegram.\n\nDigital content for adults (18+) only, delivered in this chat right after payment, with access for the package period. Star payments follow Telegram's terms."
+            : "Pagou e não recebeu? Toque em /pacotes para abrir o que você comprou. Se ainda tiver problema, mande /paysupport e o que aconteceu (ex.: /paysupport paguei e não recebi) que eu verifico 💛\n\nPaid and didn't get it? Tap /pacotes to open what you bought. Still a problem? Send /paysupport with what happened (e.g. /paysupport I paid but got nothing) and I will check it 💛",
+        });
+        const said = (msg.text ?? "").replace(/^\/\w+(@\w+)?\s*/, "").slice(0, 300);
+        if (text.startsWith("/paysupport")) await adminNotice(`🆘 ${fanName(fan)} pediu ajuda com pagamento${said ? `: “${said}”` : ""}. Confira em Vendas (pedidos) ou em @BotFather → Balance (estrelas).`);
         return done();
       }
       if (!fan.adult_confirmed_at) {
