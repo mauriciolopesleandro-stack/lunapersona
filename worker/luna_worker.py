@@ -365,6 +365,8 @@ class Naiaflow:
                 "--disable-background-timer-throttling",
                 "--disable-backgrounding-occluded-windows",
                 "--disable-renderer-backgrounding",
+                # robo fechado a forca (religar): sem o balao "Restaurar paginas?" na tela
+                "--hide-crash-restore-bubble",
                 *hidden_window_args(),
             ],
         )
