@@ -25,6 +25,15 @@ const PREVIEWS_KEY = "luna:sales-previews";
 const PIX_REMINDER_MS = 20 * 60_000;
 const MIN_GAP_MS = 3 * 3600_000; // boas-vindas ou diaria ha menos de 3 h: espera o proximo horario
 const BATCH = 25; // fas por minuto (o processador roda a cada minuto)
+// 21/11 (Cleuza viralizando): o Pix pago nunca depende so do aviso da PushinPay.
+// A cada minuto confere na PushinPay os Pix pendentes das ultimas horas (cada
+// pedido no maximo a cada 3 min) e, se pagou, entrega na hora.
+const PIX_SWEEP_WINDOW_MS = 6 * 3600_000;
+const PIX_SWEEP_EVERY_S = 180;
+const PIX_SWEEP_MAX = 8;
+// a diaria para de mandar no minuto quando passa disto (a funcao tem 60 s para
+// todas as personas e o resto do processador); quem ficou recebe no minuto seguinte
+const CTA_BUDGET_MS = 20_000;
 
 export interface CtaConfig {
   enabled: boolean; // mensagem diaria ligada
@@ -333,12 +342,25 @@ interface CtaFan extends FanRow {
 export async function ctaTick(): Promise<number> {
   try {
     const { salesToken } = await import("./_sales_bot.js");
-    const { activeVip } = await import("./_sales_pay.js");
+    const { activeVip, settle } = await import("./_sales_pay.js");
     const token = await salesToken();
     if (!token) return 0;
     const config = await ctaConfig();
     const now = Date.now();
     let sent = 0;
+
+    // Pix pendente das ultimas horas: confere na PushinPay (aviso que nao chegou)
+    const open = await dbSelect<{ id: string }>(
+      "sales_orders",
+      `select=id&status=eq.pendente&gateway=eq.pushinpay&gateway_charge_id=not.is.null&created_at=gt.${new Date(now - PIX_SWEEP_WINDOW_MS).toISOString()}&order=created_at.desc&limit=40`
+    ).catch(() => [] as { id: string }[]);
+    let checked = 0;
+    for (const order of open) {
+      if (checked >= PIX_SWEEP_MAX) break;
+      if (!(await storeSetIfAbsent(`luna:pix-conferido:${order.id}`, "1", PIX_SWEEP_EVERY_S).catch(() => false))) continue;
+      checked++;
+      await settle(order.id, token).catch(() => undefined);
+    }
 
     // Pix gerado e nao pago ha 20 min (no maximo 1 dia): um lembrete
     const pending = await dbSelect<{ id: string; fan_id: string; product_id: string }>(
@@ -346,6 +368,8 @@ export async function ctaTick(): Promise<number> {
       `select=id,fan_id,product_id&status=eq.pendente&reminded_at=is.null&gateway_charge_id=not.is.null&created_at=lt.${new Date(now - PIX_REMINDER_MS).toISOString()}&created_at=gt.${new Date(now - 86400_000).toISOString()}&limit=${BATCH}`
     );
     for (const order of pending) {
+      // pagou e o aviso nao chegou: entrega em vez de cobrar de novo
+      if ((await settle(order.id, token).catch(() => "pendente")) !== "pendente") continue;
       const marked = await dbUpdate("sales_orders", `id=eq.${order.id}&reminded_at=is.null`, { reminded_at: new Date().toISOString() });
       if (!marked) continue;
       const [fan] = await dbSelect<FanRow>("fans", `select=*&id=eq.${order.fan_id}`);
@@ -392,6 +416,7 @@ export async function ctaTick(): Promise<number> {
       `select=*&adult_confirmed_at=not.is.null&opted_out_at=is.null&blocked_at=is.null&or=(cta_sent_at.is.null,cta_sent_at.lt.${since})&order=cta_sent_at.asc&limit=${BATCH}`
     );
     for (const fan of fans) {
+      if (Date.now() - now > CTA_BUDGET_MS) break;
       const claimed = await dbUpdate("fans", `id=eq.${fan.id}&or=(cta_sent_at.is.null,cta_sent_at.lt.${since})`, {
         cta_sent_at: new Date().toISOString(),
         cta_count: fan.cta_count + 1,
