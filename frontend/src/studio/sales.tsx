@@ -53,7 +53,7 @@ export interface Status {
   folderRejected?: { media_id: string; target: "pack" | "vip" | "previa" }[];
   cta: Cta;
   // gateway "estrelas": amount_cents sao estrelas do Telegram, nao centavos
-  orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; access_until: string | null; product: string; fan: string; note: string | null; gateway?: string | null }[];
+  orders: { id: string; status: string; amount_cents: number; created_at: string; paid_at: string | null; access_until: string | null; product: string; fan: string; fan_id?: string; note: string | null; gateway?: string | null }[];
   vipMembers: { fan: string; until: string }[]; // quem esta no canal VIP agora (vencido ha ate 3 dias ainda conta)
   channelMembers: number | null; // o Telegram conta os membros do canal VIP (com os administradores)
   promo: Promo;
@@ -413,10 +413,26 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
               <p className="st-hint">Nenhum pedido ainda.</p>
             ) : (
               <ul className="st-sales-orders">
-                {status.orders.map((o) => (
+                {status.orders.map((o, i) => (
                   <li key={o.id}>
                     <span>{new Date(o.paid_at ?? o.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</span>
-                    <span>{o.fan}</span>
+                    <span>
+                      {o.fan}
+                      {o.status === "pendente" && o.fan_id && status.orders.findIndex((x) => x.fan_id === o.fan_id && x.status === "pendente") === i && (
+                        <>
+                          {" "}
+                          <button
+                            type="button"
+                            className="st-btn st-btn-small"
+                            disabled={busy !== null}
+                            title="Manda para o fã um guia de como pagar (estrelas com cartão, cripto em USDT/Litecoin) com os botões do pacote"
+                            onClick={() => window.confirm(`Mandar para ${o.fan} o guia de como pagar, com os botões do pacote?`) && run(`help-${o.fan_id}`, { action: "fan-help", fan_id: o.fan_id }, `🆘 Mandei o guia de pagamento para ${o.fan}.`)}
+                          >
+                            {busy === `help-${o.fan_id}` ? "Mandando..." : "🆘 Ajudar a pagar"}
+                          </button>
+                        </>
+                      )}
+                    </span>
                     <span>{o.product}</span>
                     <b>{o.gateway === "estrelas" ? `⭐ ${o.amount_cents}` : o.gateway === "nowpayments" ? `US$ ${(o.amount_cents / 100).toFixed(2)}` : `R$ ${money(o.amount_cents)}`}</b>
                     <span className={o.note ? "st-sales-warn" : ""} title={o.note ?? undefined}>

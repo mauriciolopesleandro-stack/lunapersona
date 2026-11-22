@@ -820,6 +820,22 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       await sendCta(needToken(), chat, fill(config.daily[Math.floor(Date.now() / 86400_000) % config.daily.length], me), Math.floor(Math.random() * 1000));
     } else if (body.action === "test") {
       await sendMenu(needToken(), await adminChat());
+    } else if (body.action === "fan-help") {
+      // fa que tentou pagar e nao conseguiu: manda o guia de pagamento com os botoes
+      const fanId = String(body.fan_id ?? "");
+      if (!/^[0-9a-f-]{36}$/i.test(fanId)) throw new Problem(400, "Fã inválido.");
+      const [fan] = await dbSelect<FanRow>("fans", `select=*&id=eq.${fanId}`);
+      if (!fan) throw new Problem(404, "Fã não encontrado.");
+      if (fan.blocked_at) throw new Problem(400, "Esse fã bloqueou o bot.");
+      const { payAttempts, sendPayHelp } = await import("./_sales_help.js");
+      const { tried, paid } = await payAttempts(fan);
+      if (paid) throw new Problem(400, "Esse fã já pagou nas últimas 24 h.");
+      try {
+        await sendPayHelp(needToken(), fan.telegram_id, tried);
+      } catch (e) {
+        throw new Problem(400, `Não consegui mandar: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      await audit("ajuda_pagamento", "fans", fan.id, {}).catch(() => undefined);
     } else if (body.action === "gift") {
       // cortesia para o proprio administrador: ve o VIP/pacote como o fa que pagou
       const p = await getProduct(body.product_id);
