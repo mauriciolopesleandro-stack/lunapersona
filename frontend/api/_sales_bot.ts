@@ -330,6 +330,8 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
         await checkIntlPaid(arg ?? "", fan, token, chatId);
       } else if (kind === "paid") {
         await checkPaid(arg ?? "", fan, token, chatId);
+      } else if (kind === "menu") {
+        await sendMenu(token, chatId, fan);
       } else if (kind === "mine") {
         await listMine(token, fan, chatId);
       } else if (kind === "open") {
@@ -360,14 +362,26 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
       }
       // ajuda com pagamento (o Telegram pede /paysupport em bots que cobram em estrelas)
       if (text.startsWith("/paysupport") || text.startsWith("/terms")) {
+        const said = (msg.text ?? "").replace(/^\/\w+(@\w+)?\s*/, "").slice(0, 300);
+        // tentou pagar e nao conseguiu: guia de como pagar + botoes do pacote
+        if (text.startsWith("/paysupport")) {
+          const { attemptsSummary, payAttempts, sendPayHelp, shouldNotifyHelp } = await import("./_sales_help.js");
+          const { tried, paid } = await payAttempts(fan);
+          if (tried.length && !paid) {
+            await sendPayHelp(token, msg.chat.id, tried);
+            if (said || (await shouldNotifyHelp(fan))) {
+              await adminNotice(`🆘 ${fanName(fan)} pediu ajuda com pagamento${said ? `: “${said}”` : ""}. Ele ${attemptsSummary(tried)} e não pagou; já mandei o guia (estrelas com cartão, cripto em USDT/Litecoin).`);
+            }
+            return done();
+          }
+        }
         await telegram(token, "sendMessage", {
           chat_id: msg.chat.id,
           text: text.startsWith("/terms")
             ? "Conteúdo digital só para maiores de 18 anos, entregue aqui no chat logo após o pagamento, com acesso pelo prazo do pacote. Pagamentos em estrelas seguem os termos do Telegram.\n\nDigital content for adults (18+) only, delivered in this chat right after payment, with access for the package period. Star payments follow Telegram's terms."
             : "Pagou e não recebeu? Toque em /pacotes para abrir o que você comprou. Se ainda tiver problema, mande /paysupport e o que aconteceu (ex.: /paysupport paguei e não recebi) que eu verifico 💛\n\nPaid and didn't get it? Tap /pacotes to open what you bought. Still a problem? Send /paysupport with what happened (e.g. /paysupport I paid but got nothing) and I will check it 💛",
         });
-        const said = (msg.text ?? "").replace(/^\/\w+(@\w+)?\s*/, "").slice(0, 300);
-        if (text.startsWith("/paysupport")) await adminNotice(`🆘 ${fanName(fan)} pediu ajuda com pagamento${said ? `: “${said}”` : ""}. Confira em Vendas (pedidos) ou em @BotFather → Balance (estrelas).`);
+        if (text.startsWith("/paysupport") && (said || (await (await import("./_sales_help.js")).shouldNotifyHelp(fan)))) await adminNotice(`🆘 ${fanName(fan)} pediu ajuda com pagamento${said ? `: “${said}”` : ""}. Confira em Vendas (pedidos) ou em @BotFather → Balance (estrelas).`);
         return done();
       }
       if (!fan.adult_confirmed_at) {
