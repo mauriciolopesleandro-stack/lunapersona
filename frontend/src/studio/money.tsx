@@ -520,8 +520,8 @@ export function PlansPage() {
           </span>
         </div>
         <p className="st-hint">
-          Para quem está fora do Brasil, em dólar. Fã com o Telegram em outra língua recebe o botão “Pay” com a página da NOWPayments (e o Pix de
-          alternativa); no Pix aparece “Pagar de fora do Brasil”. Pagou: o bot entrega sozinho, igual ao Pix. As chaves ficam guardadas no servidor e não
+          Para quem está fora do Brasil, em dólar (cripto). Fã com o Telegram em outra língua recebe primeiro o cartão (estrelas, se ligadas) com o botão
+          “🪙 Crypto (Litecoin / USDT)” e o Pix de alternativa; sem estrelas, recebe direto a página da NOWPayments. No Pix aparece o botão da cripto. Pagou: o bot entrega sozinho, igual ao Pix. As chaves ficam guardadas no servidor e não
           aparecem de novo aqui. Na NOWPayments: Settings → Payments → API keys e Instant payment notifications (IPN). VIP mensal continua só no Pix.
         </p>
         <label className="st-field">
@@ -615,7 +615,7 @@ export function PlansPage() {
         </div>
         <p className="st-hint">
           Quem não tem Pix paga com estrelas ⭐ dentro do Telegram (cartão, Apple Pay ou Google Pay, na moeda do país). Fã com o Telegram em outra língua recebe a
-          fatura em estrelas primeiro (e o botão do Pix); no Pix aparece o botão “Pagar com estrelas”. Não precisa de conta: o saldo fica no bot (@BotFather →
+          fatura primeiro (“💳 Pay”, com os botões da cripto e do Pix); no Pix aparece o botão “💳 Card / Apple Pay / Google Pay”. Não precisa de conta: o saldo fica no bot (@BotFather →
           o bot → Balance) e sai pelo Fragment a partir de 1.000 estrelas. VIP mensal continua só no Pix.
         </p>
         <label className="st-check">

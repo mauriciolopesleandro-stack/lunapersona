@@ -140,11 +140,11 @@ async function sendIntl(salesToken: string, chatId: number, product: ProductRow,
     chat_id: chatId,
     text:
       `🌎 ${product.title} — ${usd(order.amount_cents)}\n\n` +
-      "Tap the button to pay (international payment, in USD). As soon as it is confirmed, everything arrives here automatically 💛\n\n" +
-      "Toque no botão para pagar (pagamento internacional, em dólar). Assim que confirmar, chega tudo aqui sozinho 💛",
+      "Tap the button to pay in crypto (choose Litecoin or USDT TRC20 and send the exact amount shown). As soon as it is confirmed, everything arrives here automatically 💛\n\n" +
+      "Toque no botão para pagar em cripto (escolha Litecoin ou USDT TRC20 e mande o valor exato da página). Assim que confirmar, chega tudo aqui sozinho 💛",
     reply_markup: {
       inline_keyboard: [
-        [{ text: `💳 Pay ${usd(order.amount_cents)}`, url: order.pix_code }],
+        [{ text: `🪙 Pay ${usd(order.amount_cents)} (crypto)`, url: order.pix_code }],
         [{ text: "✅ I paid / Já paguei", callback_data: `intlpaid:${order.id}` }],
         ...extraRows,
       ],

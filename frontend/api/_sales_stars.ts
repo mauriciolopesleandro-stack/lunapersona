@@ -86,7 +86,8 @@ interface StarsOrder {
 
 // Fatura em estrelas do pacote. Devolve false quando o pacote nao vende em
 // estrelas ou o Telegram recusou a fatura (quem chamou segue com o Pix).
-export async function sendStarsInvoice(salesToken: string, fan: FanRow, product: ProductRow, chatId: number, foreign: boolean): Promise<boolean> {
+// otherRows: botoes de outras formas de pagar abaixo do "Pay" (padrao: Pix para o fa de fora)
+export async function sendStarsInvoice(salesToken: string, fan: FanRow, product: ProductRow, chatId: number, foreign: boolean, otherRows?: object[][]): Promise<boolean> {
   const stars = starsPrice(product, await starsConfig());
   if (!stars) return false;
   const order = await dbInsert<StarsOrder>("sales_orders", {
@@ -112,8 +113,8 @@ export async function sendStarsInvoice(salesToken: string, fan: FanRow, product:
       prices: [{ label: product.title.slice(0, 32), amount: stars }],
       reply_markup: {
         inline_keyboard: [
-          [{ text: foreign ? `Pay ⭐ ${stars}` : `Pagar ⭐ ${stars}`, pay: true }],
-          ...(foreign ? [[{ text: "🇧🇷 Pix (Brasil)", callback_data: `pix:${product.id}` }]] : []),
+          [{ text: foreign ? `💳 Pay ⭐ ${stars}` : `💳 Pagar ⭐ ${stars}`, pay: true }],
+          ...(otherRows ?? (foreign ? [[{ text: "🇧🇷 Pix (Brasil)", callback_data: `pix:${product.id}` }]] : [])),
         ],
       },
     });

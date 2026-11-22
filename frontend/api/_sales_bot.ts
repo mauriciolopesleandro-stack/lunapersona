@@ -231,13 +231,17 @@ async function buy(token: string, fan: FanRow, productId: string, chatId: number
   const { abroadRows } = await import("./_sales_pay.js");
   const foreign = isForeign(lang);
   const pixRow = [{ text: "🇧🇷 Pix (Brasil)", callback_data: `pix:${product.id}` }];
-  // fora do Brasil (Telegram em outra lingua) ou botao internacional: pagina em
-  // dolar (com as estrelas e o Pix de alternativa); sem ela, fatura em estrelas
+  // fora do Brasil (Telegram em outra lingua): primeiro o cartao (fatura em
+  // estrelas: cartao, Apple Pay ou Google Pay no Telegram), com cripto e Pix de
+  // alternativa; sem estrelas, a pagina em dolar (cripto)
+  const others = foreign ? [...(await abroadRows(product, "estrelas")), pixRow] : undefined;
+  if (how === "estrelas" || (how === "auto" && foreign)) {
+    if (await sendStarsInvoice(token, fan, product, chatId, foreign, others).catch(() => false)) return;
+  }
   if (how === "intl" || (how === "auto" && foreign)) {
     if (await startIntl(token, fan, product, chatId, site, [...(await abroadRows(product, "intl")), pixRow]).catch(() => false)) return;
-  }
-  if (how === "estrelas" || (how === "auto" && foreign)) {
-    if (await sendStarsInvoice(token, fan, product, chatId, foreign).catch(() => false)) return;
+    // cripto fora do ar: o fa de fora que tocou nela recebe o cartao (estrelas)
+    if (how === "intl" && foreign && (await sendStarsInvoice(token, fan, product, chatId, foreign, others).catch(() => false))) return;
   }
   if (await startPayment(token, fan, product, chatId, site)) return;
   // Pix desligado: ainda da para pagar de fora do Brasil
