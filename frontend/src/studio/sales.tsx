@@ -60,6 +60,69 @@ export interface Status {
   stars?: { enabled: boolean; prices: Record<string, number>; suggested: Record<string, number> }; // estrelas do Telegram (fora do Brasil)
   // pagamento internacional (NOWPayments): precos em centavos de dolar; as chaves nunca vem
   intl?: { enabled: boolean; configured: boolean; apiKeySet: boolean; ipnSecretSet: boolean; prices: Record<string, number>; suggested: Record<string, number> };
+  // chamada para quem gerou o pagamento e nao pagou (22/11)
+  chamada?: Chamada | null;
+}
+interface Chamada {
+  id: string;
+  status: "pronta" | "enviando" | "feita" | "cancelada";
+  created_at: string;
+  total: number;
+  done: number;
+  sent: number;
+  blocked: number;
+  failed: number;
+  error: string | null;
+  example: { pt: string; en: string } | null;
+}
+
+const CHAMADA_STATUS: Record<Chamada["status"], string> = {
+  pronta: "esperando você enviar",
+  enviando: "enviando aos poucos",
+  feita: "enviada",
+  cancelada: "cancelada",
+};
+
+function ChamadaPanel({ chamada, busy, run }: { chamada: Chamada | null | undefined; busy: string | null; run: (key: string, body: object, done?: string) => Promise<boolean> }) {
+  const c = chamada ?? null;
+  return (
+    <section className="st-panel st-settings">
+      <h2>Chamar quem não pagou</h2>
+      <p className="st-hint">
+        Uma mensagem para quem gerou o pagamento nos últimos 3 dias e não pagou (+18, sem bloqueio, sem compra): prévia borrada, texto da IA em
+        português e inglês e os botões do pacote que escolheu (dólar e Pix). Cada fã recebe uma vez. Antes, o exemplo chega no seu Telegram.
+      </p>
+      {c && (
+        <p className={c.status === "cancelada" ? "st-hint" : "st-ok"}>
+          Última: {new Date(c.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })} · {c.total} fã(s) · {CHAMADA_STATUS[c.status]}
+          {c.status !== "pronta" ? ` · ${c.sent} receberam${c.blocked ? `, ${c.blocked} tinham bloqueado` : ""}${c.failed ? `, ${c.failed} falharam` : ""}` : ""}
+          {c.status === "enviando" ? ` (${c.done}/${c.total})` : ""}
+        </p>
+      )}
+      {c?.example && c.status === "pronta" && <p className="st-hint">Exemplo: “{c.example.pt}”</p>}
+      {c?.error && <p className="st-sales-warn">{c.error}</p>}
+      <div className="st-row">
+        <button
+          type="button"
+          className="st-btn"
+          disabled={busy !== null || c?.status === "enviando"}
+          onClick={() => run("chamada-prepare", { action: "chamada-prepare" }, "Chamada preparada: o exemplo chegou no seu Telegram.")}
+        >
+          {busy === "chamada-prepare" ? "Preparando (a IA está escrevendo)..." : "Preparar chamada"}
+        </button>
+        {c?.status === "pronta" && c.total > 0 && (
+          <button type="button" className="st-btn st-btn-primary" disabled={busy !== null} onClick={() => run("chamada-send", { action: "chamada-send", id: c.id }, "Enviando aos poucos. O resultado chega no seu Telegram.")}>
+            {busy === "chamada-send" ? "Ligando..." : `Enviar para ${c.total} fã(s)`}
+          </button>
+        )}
+        {(c?.status === "pronta" || c?.status === "enviando") && (
+          <button type="button" className="st-btn" disabled={busy !== null} onClick={() => run("chamada-cancel", { action: "chamada-cancel", id: c.id }, "Chamada cancelada.")}>
+            Cancelar
+          </button>
+        )}
+      </div>
+    </section>
+  );
 }
 export interface Promo {
   enabled: boolean;
@@ -314,6 +377,8 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
           </section>
 
           <CtaEditor cta={status.cta} previews={status.previews.length} busy={busy} run={run} onFolders={onFolders} />
+
+          {status.connected && <ChamadaPanel chamada={status.chamada} busy={busy} run={run} />}
 
           <div className="st-sales-products">
             {status.products.map((p) => (

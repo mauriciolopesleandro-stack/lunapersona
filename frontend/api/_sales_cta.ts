@@ -366,6 +366,10 @@ export async function ctaTick(): Promise<number> {
     const { intlSweep } = await import("./_sales_intl.js");
     await intlSweep(token).catch(() => undefined);
 
+    // chamada para quem gerou o pagamento e nao pagou (22/11): aos poucos, depois do "Enviar"
+    const { chamadaTick } = await import("./_sales_chamada.js");
+    sent += await chamadaTick(token).catch(() => 0);
+
     // Pix gerado e nao pago ha 20 min (no maximo 1 dia): um lembrete
     const pending = await dbSelect<{ id: string; fan_id: string; product_id: string }>(
       "sales_orders",
