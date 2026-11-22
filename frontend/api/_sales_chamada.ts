@@ -133,35 +133,59 @@ Regras:
 - diga que agora aceita pagamento de fora do Brasil / em dólar;
 - provoque com a foto borrada (é só o começo, o resto está sem censura no pacote);
 - termine chamando para tocar no botão;
-- sem descrever ato sexual nem partes íntimas (o fã ainda não pagou), sem preço, sem link, sem prometer encontro.
+- sem descrever ato sexual nem partes íntimas (o fã ainda não pagou), sem preço, sem link, sem prometer encontro;
+- o fã é homem: fale com ele no masculino (nunca "gostosa", "linda");
+- é um convite safado, não uma cobrança: nada de "paga o que deve", "resolve esse negócio", tom de dívida ou bronca;
+- português correto e natural, só letras do português e do inglês (sem outros alfabetos), sem gíria inventada, sem palavra em CAIXA ALTA.
+Exemplos do tom (não copie, varie):
+{"pt": "Ei {nome}… tu deixou a coroa aqui esperando, foi? 😏 Agora dá pra pagar de fora do Brasil também, em dólar, no cartão ou cripto. Essa foto borrada é só o aperitivo… o resto tá sem censura te esperando 🔥 Toca aqui embaixo.", "en": "Hey {nome}… you left me waiting 😏 Now you can pay from anywhere: card or crypto in US$. That blurry pic? Just a taste. The rest is waiting for you, uncensored 🔥 Tap below."}
 Responda só JSON: {"mensagens": [{"pt": "...", "en": "..."}]}`);
 }
 
+// texto que nao vai para o fa: outro alfabeto (a IA misturou arabe em 22/11),
+// sem o {nome}, chamando o fa no feminino, tom de divida ou gritando
+function badText(t: string): boolean {
+  return (
+    /[Ͱ-ϿЀ-ӿ֐-ࣿ฀-๿぀-ヿ一-鿿가-힯]/.test(t) ||
+    !t.includes("{nome}") ||
+    /\b(gostosa|linda|gatinha|princesa)\b/i.test(t) ||
+    /\b(o que (você|tu) deve|resolve (logo )?esse neg[oó]cio|pay what you owe|pay up)\b/i.test(t) ||
+    /\b[A-ZÀ-Ú]{5,}\b.*\b[A-ZÀ-Ú]{5,}\b/.test(t)
+  );
+}
+
+async function askTexts(mode: "normal" | "adulto"): Promise<ChamadaText[]> {
+  const { askAi } = await import("./_assistant.js");
+  const out = await askAi(
+    mode,
+    [
+      { role: "system", content: chamadaPrompt() },
+      { role: "user", content: "Escreva as 6 mensagens." },
+    ],
+    { json: true, maxTokens: 1800, timeoutMs: 25_000, temperature: 0.85 }
+  );
+  const raw = out.text.replace(/^```(?:json)?\s*|\s*```$/g, "");
+  const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
+  return (Array.isArray(parsed.mensagens) ? parsed.mensagens : [])
+    .map((m: unknown) => {
+      const x = m as Record<string, unknown>;
+      const pt = typeof x?.pt === "string" ? x.pt.trim().slice(0, 450) : "";
+      const en = typeof x?.en === "string" ? x.en.trim().slice(0, 450) : "";
+      return pt.length > 10 && en.length > 10 && !badText(pt) && !badText(en) ? { pt, en } : null;
+    })
+    .filter(Boolean) as ChamadaText[];
+}
+
+// 22/11: o modelo sem censura (dolphin) escreveu mal (arabe no meio, "gostosa",
+// tom de cobranca); o texto aqui e so provocante, entao vai primeiro o modelo
+// normal (melhor portugues) e o sem censura so se ele falhar. O que nao passa
+// no filtro sai; sobrando menos de 3, entram os textos prontos.
 export async function writeChamadaTexts(): Promise<ChamadaText[]> {
-  try {
-    const { askAi } = await import("./_assistant.js");
-    const out = await askAi(
-      "adulto",
-      [
-        { role: "system", content: chamadaPrompt() },
-        { role: "user", content: "Escreva as 6 mensagens." },
-      ],
-      { json: true, maxTokens: 1800, timeoutMs: 40_000, temperature: 0.9 }
-    );
-    const raw = out.text.replace(/^```(?:json)?\s*|\s*```$/g, "");
-    const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
-    const list = (Array.isArray(parsed.mensagens) ? parsed.mensagens : [])
-      .map((m: unknown) => {
-        const x = m as Record<string, unknown>;
-        const pt = typeof x?.pt === "string" ? x.pt.trim().slice(0, 450) : "";
-        const en = typeof x?.en === "string" ? x.en.trim().slice(0, 450) : "";
-        return pt.length > 10 && en.length > 10 ? { pt, en } : null;
-      })
-      .filter(Boolean) as ChamadaText[];
-    return list.length >= 2 ? list.slice(0, 6) : FALLBACK;
-  } catch {
-    return FALLBACK;
+  for (const mode of ["normal", "adulto"] as const) {
+    const list = await askTexts(mode).catch(() => [] as ChamadaText[]);
+    if (list.length >= 3) return list.slice(0, 6);
   }
+  return FALLBACK;
 }
 
 // --- a mensagem ---------------------------------------------------------------------------------
