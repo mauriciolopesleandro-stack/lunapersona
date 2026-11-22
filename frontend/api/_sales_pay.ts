@@ -237,16 +237,16 @@ async function sendPix(salesToken: string, chatId: number, product: ProductRow, 
   });
 }
 
-// Pix de quem esta no Brasil: tambem da para pagar de fora do Brasil
-// (pagamento internacional em dolar e/ou estrelas, o que estiver ligado)
+// Outras formas de pagar (o que estiver ligado): cartao primeiro (estrelas do
+// Telegram: cartao, Apple Pay ou Google Pay sem sair do app), cripto depois
 export async function abroadRows(product: ProductRow, skip: "intl" | "estrelas" | null = null): Promise<{ text: string; callback_data: string }[][]> {
   const { starsConfig, starsPrice } = await import("./_sales_stars.js");
   const { intlConfig, intlPrice, usd } = await import("./_sales_intl.js");
   const rows: { text: string; callback_data: string }[][] = [];
-  const cents = skip === "intl" ? null : intlPrice(product, await intlConfig().catch(() => ({ enabled: false, apiKey: null, ipnSecret: null, prices: {} })));
-  if (cents) rows.push([{ text: `🌎 Pay from abroad / Pagar de fora do Brasil — ${usd(cents)}`, callback_data: `intl:${product.id}` }]);
   const stars = skip === "estrelas" ? null : starsPrice(product, await starsConfig().catch(() => ({ enabled: false, prices: {} })));
-  if (stars) rows.push([{ text: `⭐ Telegram Stars — ${stars}`, callback_data: `stars:${product.id}` }]);
+  if (stars) rows.push([{ text: `💳 Card / Apple Pay / Google Pay — ⭐ ${stars}`, callback_data: `stars:${product.id}` }]);
+  const cents = skip === "intl" ? null : intlPrice(product, await intlConfig().catch(() => ({ enabled: false, apiKey: null, ipnSecret: null, prices: {} })));
+  if (cents) rows.push([{ text: `🪙 Crypto (Litecoin / USDT) — ${usd(cents)}`, callback_data: `intl:${product.id}` }]);
   return rows;
 }
 

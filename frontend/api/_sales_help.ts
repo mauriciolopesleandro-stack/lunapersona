@@ -19,14 +19,14 @@ const DAY_MS = 24 * 3600_000;
 export const PAY_HELP_TEXT = [
   "Having trouble paying? Here is the easy way 💛",
   "",
-  "⭐ Telegram Stars: pay with card, Apple Pay or Google Pay right here in Telegram. Tap the ⭐ button and, if you don't have enough stars, tap “Buy stars” on the screen that opens.",
-  "🌎 Crypto: on the payment page choose Litecoin (LTC) or USDT (TRC20). Send the exact amount shown on the page.",
+  "💳 Card, Apple Pay or Google Pay: tap the 💳 button and pay right here in Telegram (it uses Telegram Stars ⭐; if asked, tap “Buy stars” and pay with your card).",
+  "🪙 Crypto: tap the 🪙 button and choose Litecoin (LTC) or USDT (TRC20) on the page. Send the exact amount shown.",
   "🇧🇷 Pix only works with a Brazilian bank.",
   "",
   "Still not working? Send /paysupport and what the error says.",
   "",
-  "— Português: pague com ⭐ estrelas (cartão dentro do Telegram) ou cripto (Litecoin ou USDT TRC20; mande o valor exato da página). Pix só com banco brasileiro.",
-  "— Русский: оплата ⭐ Stars картой прямо в Telegram или криптой (Litecoin или USDT TRC20; отправьте точную сумму со страницы). Pix только для банков Бразилии.",
+  "— Português: toque no 💳 e pague com cartão, Apple Pay ou Google Pay dentro do Telegram (usa estrelas ⭐), ou no 🪙 para cripto (Litecoin ou USDT TRC20; mande o valor exato da página). Pix só com banco brasileiro.",
+  "— Русский: нажмите 💳 и оплатите картой, Apple Pay или Google Pay прямо в Telegram (через Stars ⭐), или 🪙 для криптовалюты (Litecoin или USDT TRC20; отправьте точную сумму со страницы). Pix только для банков Бразилии.",
 ].join("\n");
 
 // tentativas das ultimas 24 h (pedidos pendentes ou cancelados) e se ja pagou
@@ -52,7 +52,7 @@ export function attemptsSummary(tried: TriedOrder[]): string {
   return `tentou ${tried.length}x nas últimas 24 h (${parts.join(", ")})`;
 }
 
-// guia + botoes do ultimo pacote tentado (estrelas e cripto primeiro, Pix por ultimo)
+// guia + botoes do ultimo pacote tentado (cartao/estrelas, cripto e Pix por ultimo)
 export async function sendPayHelp(token: string, chatId: number, tried: TriedOrder[]): Promise<void> {
   const { productsForSale } = await import("./_sales_bot.js");
   const { abroadRows } = await import("./_sales_pay.js");
