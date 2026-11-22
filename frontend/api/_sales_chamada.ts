@@ -109,8 +109,8 @@ export async function chamadaAudience(adminChat: string | null): Promise<{ fan: 
 
 const FALLBACK: ChamadaText[] = [
   {
-    pt: "Ei {nome}… tu deixou a gente aqui esperando, foi? 😏 Agora dá pra pagar de fora do Brasil também, em dólar, no cartão ou cripto. Essa aí borrada é só o aperitivo… o resto tá sem censura te esperando 🔥 Toca aqui embaixo.",
-    en: "Hey {nome}… you left me waiting 😏 Now you can pay from anywhere: card or crypto in US$. That blurry pic? Just a taste. The rest is waiting for you, uncensored 🔥 Tap below.",
+    pt: "Ei {nome}… tu deixou a gente aqui esperando, foi? 😏 Agora dá pra pagar de fora do Brasil também, em dólar, com cripto (USDT, Bitcoin, Litecoin…). Essa aí borrada é só o aperitivo… o resto tá sem censura te esperando 🔥 Toca aqui embaixo.",
+    en: "Hey {nome}… you left me waiting 😏 Now you can pay from anywhere: crypto in US$ (USDT, Bitcoin, Litecoin…). That blurry pic? Just a taste. The rest is waiting for you, uncensored 🔥 Tap below.",
   },
   {
     pt: "{nome}, vi que tu quase levou… 👀 Agora aceito pagamento de fora também, em dólar, sem complicação. Olha só o que tu tá perdendo 😈",
@@ -123,7 +123,7 @@ function chamadaPrompt(): string {
   return personaText(`Você escreve mensagens curtas para o bot de vendas no Telegram (conteúdo adulto, só para quem já disse ter 18 anos).
 ${who}
 Escreva no jeito de falar dela, em primeira pessoa.
-Situação: o fã escolheu um pacote, gerou o pagamento e não pagou. Muitos estão fora do Brasil e não tinham como pagar o Pix. Novidade: agora dá para pagar de qualquer país, em dólar, com cartão ou cripto (e o Pix continua para quem está no Brasil).
+Situação: o fã escolheu um pacote, gerou o pagamento e não pagou. Muitos estão fora do Brasil e não tinham como pagar o Pix. Novidade: agora dá para pagar de qualquer país, em dólar, com cripto (USDT, Bitcoin, Litecoin e outras; ainda não tem cartão) e o Pix continua para quem está no Brasil. Nunca diga cartão.
 A mensagem vai junto de uma foto dela borrada (prévia) e dos botões de pagamento.
 Escreva 6 mensagens diferentes. Cada uma com:
 - "pt": português do Brasil, 2 ou 3 frases curtas, safada e provocante, com malícia e duplo sentido, 1 a 3 emojis;
@@ -138,7 +138,7 @@ Regras:
 - é um convite safado, não uma cobrança: nada de "paga o que deve", "resolve esse negócio", tom de dívida ou bronca;
 - português correto e natural, só letras do português e do inglês (sem outros alfabetos), sem gíria inventada, sem palavra em CAIXA ALTA.
 Exemplos do tom (não copie, varie):
-{"pt": "Ei {nome}… tu deixou a coroa aqui esperando, foi? 😏 Agora dá pra pagar de fora do Brasil também, em dólar, no cartão ou cripto. Essa foto borrada é só o aperitivo… o resto tá sem censura te esperando 🔥 Toca aqui embaixo.", "en": "Hey {nome}… you left me waiting 😏 Now you can pay from anywhere: card or crypto in US$. That blurry pic? Just a taste. The rest is waiting for you, uncensored 🔥 Tap below."}
+{"pt": "Ei {nome}… tu deixou a coroa aqui esperando, foi? 😏 Agora dá pra pagar de fora do Brasil também, em dólar, com cripto (USDT, Bitcoin, Litecoin…). Essa foto borrada é só o aperitivo… o resto tá sem censura te esperando 🔥 Toca aqui embaixo.", "en": "Hey {nome}… you left me waiting 😏 Now you can pay from anywhere: crypto in US$ (USDT, Bitcoin, Litecoin…). That blurry pic? Just a taste. The rest is waiting for you, uncensored 🔥 Tap below."}
 Responda só JSON: {"mensagens": [{"pt": "...", "en": "..."}]}`);
 }
 
@@ -149,6 +149,7 @@ function badText(t: string): boolean {
     /[Ͱ-ϿЀ-ӿ֐-ࣿ฀-๿぀-ヿ一-鿿가-힯]/.test(t) ||
     !t.includes("{nome}") ||
     /\b(gostosa|linda|gatinha|princesa)\b/i.test(t) ||
+    /\b(cart[aã]o|card)\b/i.test(t) || // a NOWPayments so recebe cripto (cartao precisa de KYB)
     /\b(o que (você|tu) deve|resolve (logo )?esse neg[oó]cio|pay what you owe|pay up)\b/i.test(t) ||
     /\b[A-ZÀ-Ú]{5,}\b.*\b[A-ZÀ-Ú]{5,}\b/.test(t)
   );
