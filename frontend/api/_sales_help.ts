@@ -1,5 +1,5 @@
 // Ajuda com pagamento: o fa tentou pagar e nao conseguiu (geralmente de fora do
-// Brasil: Pix nao serve, Bitcoin da erro de minimo, nao sabe comprar estrelas).
+// Brasil: Pix nao serve, cripto abaixo de US$ 10 da erro de minimo, nao sabe comprar estrelas).
 // Manda um guia curto (ingles, portugues e russo) com os botoes do ultimo pacote
 // que ele tentou. Usado pelo /paysupport e pelo botao "Ajudar" do estudio.
 import { storeSetIfAbsent } from "./_store.js";
@@ -20,13 +20,13 @@ export const PAY_HELP_TEXT = [
   "Having trouble paying? Here is the easy way 💛",
   "",
   "⭐ Telegram Stars: pay with card, Apple Pay or Google Pay right here in Telegram. Tap the ⭐ button and, if you don't have enough stars, tap “Buy stars” on the screen that opens.",
-  "🌎 Crypto: on the payment page choose USDT (TRC20), Litecoin or TRX. Don't choose Bitcoin: its minimum is too high and it shows an error.",
+  "🌎 Crypto: on the payment page choose USDT (TRC20), Litecoin or TRX (lowest fees). Send the exact amount shown on the page.",
   "🇧🇷 Pix only works with a Brazilian bank.",
   "",
   "Still not working? Send /paysupport and what the error says.",
   "",
-  "— Português: pague com ⭐ estrelas (cartão dentro do Telegram) ou cripto (escolha USDT TRC20 ou Litecoin, não Bitcoin). Pix só com banco brasileiro.",
-  "— Русский: оплата ⭐ Stars картой прямо в Telegram или криптой (выберите USDT TRC20 или Litecoin, не Bitcoin). Pix только для банков Бразилии.",
+  "— Português: pague com ⭐ estrelas (cartão dentro do Telegram) ou cripto (USDT TRC20 ou Litecoin têm a menor taxa; mande o valor exato da página). Pix só com banco brasileiro.",
+  "— Русский: оплата ⭐ Stars картой прямо в Telegram или криптой (USDT TRC20 или Litecoin, самая низкая комиссия; отправьте точную сумму со страницы). Pix только для банков Бразилии.",
 ].join("\n");
 
 // tentativas das ultimas 24 h (pedidos pendentes ou cancelados) e se ja pagou

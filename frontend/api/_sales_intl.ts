@@ -25,8 +25,12 @@ export const INTL_GATEWAY = "nowpayments";
 const PAID = new Set(["confirmed", "sending", "finished"]);
 const PENDING_REUSE_MS = 30 * 60_000;
 // preco sugerido em centavos de dolar quando o pacote nao tem um proprio
-const SUGGESTED: Record<ProductRow["kind"], number> = { ensaio: 599, album: 1199, vip: 1999 };
-export const INTL_MIN_CENTS = 200;
+const SUGGESTED: Record<ProductRow["kind"], number> = { ensaio: 1199, album: 1799, vip: 2499 };
+// a NOWPayments recusa abaixo de US$ 10 (minimo da conta, 22/11): o estudio nao
+// deixa salvar menos. Precos antigos salvos abaixo disso continuam valendo ate
+// serem trocados (INTL_FLOOR_CENTS), para nao mudar preco sem o dono pedir.
+export const INTL_MIN_CENTS = 1000;
+export const INTL_FLOOR_CENTS = 200;
 export const INTL_MAX_CENTS = 50000;
 
 export interface IntlConfig {
@@ -63,7 +67,7 @@ export async function forgetIntl(): Promise<void> {
 }
 
 export function suggestedUsd(product: Pick<ProductRow, "kind">): number {
-  return SUGGESTED[product.kind] ?? 599;
+  return SUGGESTED[product.kind] ?? 1199;
 }
 
 // preco em centavos de dolar, ou null quando nao vende fora do Brasil
@@ -71,7 +75,7 @@ export function suggestedUsd(product: Pick<ProductRow, "kind">): number {
 export function intlPrice(product: Pick<ProductRow, "id" | "kind" | "billing">, config: IntlConfig): number | null {
   if (!config.enabled || !config.apiKey || !config.ipnSecret || product.billing === "mensal") return null;
   const own = Number(config.prices[product.id]);
-  return Number.isInteger(own) && own >= INTL_MIN_CENTS && own <= INTL_MAX_CENTS ? own : suggestedUsd(product);
+  return Number.isInteger(own) && own >= INTL_FLOOR_CENTS && own <= INTL_MAX_CENTS ? own : suggestedUsd(product);
 }
 
 export function usd(cents: number): string {
