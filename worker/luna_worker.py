@@ -1866,8 +1866,17 @@ def process_long_motion(studio: Studio, item: dict, naia: Naiaflow | None, test_
         if test_video:
             clip(i).write_bytes(test_video.read_bytes())
         else:
-            log(f"Trecho {i + 1} de {count} na Naiaflow…")
-            url = naia.copy_motion(None, cut, LONG_SEGMENT_S, m.get("outfit"), sound="sem", on_wait=beat, outfit_file=outfit_photo(m, folder, item))
+            # 22/11: igual a dancinha da persona. Luna: Trocar pessoa (cena, roupa e fundo
+            # do video, so a pessoa vira ela). Cleuza (BODY_FROM_CLONE): Copiar movimento,
+            # porque no Trocar pessoa o corpo vem da moca do video.
+            if PERSONA["id"] in BODY_FROM_CLONE:
+                log(f"Trecho {i + 1} de {count} na Naiaflow (Copiar movimento, corpo do clone)…")
+                url = naia.copy_motion(None, cut, LONG_SEGMENT_S, m.get("outfit"), sound="sem", on_wait=beat, outfit_file=outfit_photo(m, folder, item))
+            else:
+                pt = m.get("point") or {}
+                point = (float(pt["x"]), float(pt["y"])) if "x" in pt and "y" in pt else None
+                log(f"Trecho {i + 1} de {count} na Naiaflow (Trocar pessoa)…")
+                url = naia.swap_person(None, cut, LONG_SEGMENT_S, sound="sem", point=point, on_wait=beat)
             r = requests.get(url, timeout=300)
             r.raise_for_status()
             clip(i).write_bytes(r.content)
