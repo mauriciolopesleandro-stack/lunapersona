@@ -17,6 +17,7 @@ import {
 import { forgetPix, giftToFan, GIFT_GATEWAY, pixConfig, previewPack, savePixConfig, STARS_GATEWAY } from "./_sales_pay.js";
 import { saveStars, STARS_MAX, STARS_MIN, starsConfig, suggestedStars } from "./_sales_stars.js";
 import { checkIntlKey, forgetIntl, INTL_GATEWAY, INTL_MAX_CENTS, INTL_MIN_CENTS, intlConfig, saveIntl, suggestedUsd } from "./_sales_intl.js";
+import { cancelChamada, chamadaStatus, prepareChamada, startChamada } from "./_sales_chamada.js";
 import { ctaConfig, ctaDays, fill, previews, saveCtaConfig, savePreviews, sendCta, suggestCaptions } from "./_sales_cta.js";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
@@ -30,6 +31,9 @@ import { DEFAULT_PERSONA, personaId, personaPath, personaText, runAs } from "./_
 //   POST { action: "stars-save", enabled, prices }  estrelas do Telegram (fora do Brasil)
 //   POST { action: "intl-save", enabled, apiKey?, ipnSecret?, prices }  pagamento internacional (NOWPayments)
 //   POST { action: "intl-forget" }       apaga as chaves da NOWPayments
+//   POST { action: "chamada-prepare" }   chamada para quem nao pagou: monta e manda o exemplo ao administrador
+//   POST { action: "chamada-send", id }  envia a chamada preparada (aos poucos)
+//   POST { action: "chamada-cancel", id } para a chamada
 //   POST { action: "forget" }            desliga o bot de vendas
 //   POST { action: "product", id, ... }  muda nome, descricao, preco, dias de acesso, ativo
 //   POST { action: "media-url", product_id, mime_type, size_bytes }
@@ -479,6 +483,7 @@ async function status() {
       prices: c.prices,
       suggested: Object.fromEntries(products.map((p) => [p.id, suggestedUsd(p)])),
     })),
+    chamada: await chamadaStatus().catch(() => null),
   };
 }
 
@@ -786,6 +791,21 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     } else if (body.action === "intl-forget") {
       await forgetIntl();
       await audit("internacional_apagado", "sales", null);
+    } else if (body.action === "chamada-prepare") {
+      try {
+        await prepareChamada(needToken());
+      } catch (e) {
+        if (e instanceof Problem) throw e;
+        throw new Problem(400, e instanceof Error ? e.message : String(e));
+      }
+    } else if (body.action === "chamada-send" || body.action === "chamada-cancel") {
+      const id = typeof body.id === "string" ? body.id : "";
+      try {
+        if (body.action === "chamada-send") await startChamada(id);
+        else await cancelChamada(id);
+      } catch (e) {
+        throw new Problem(400, e instanceof Error ? e.message : String(e));
+      }
     } else if (body.action === "cta-save") {
       try {
         await saveCtaConfig(body);

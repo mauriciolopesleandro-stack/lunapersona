@@ -305,6 +305,12 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
         );
         return done();
       }
+      // chamada para quem nao pagou: "Enviar" / "Cancelar" do administrador
+      if ((kind === "chamadaok" || kind === "chamadano") && String(cb.from.id) === (await telegramConfig()).chatId) {
+        const { chamadaCallback } = await import("./_sales_chamada.js");
+        await chamadaCallback(token, chatId, kind, arg ?? "");
+        return done();
+      }
       if (kind === "age") {
         if (arg === "yes") {
           await dbUpdateWhere("fans", `id=eq.${fan.id}`, { adult_confirmed_at: new Date().toISOString() });
