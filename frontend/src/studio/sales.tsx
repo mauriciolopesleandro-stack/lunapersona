@@ -48,6 +48,8 @@ export interface Status {
   channel: string | null;
   products: Product[];
   fans: { total: number; adults: number; optedOut: number; blocked: number; today: number };
+  // estudo do publico (23/11): lingua do app do Telegram de cada fa novo e Brasil/fora
+  study?: { langs: { code: string; fans: number }[]; brasil: number; fora: number } | null;
   pix: { configured: boolean; env: "producao" | "sandbox" };
   sales: { count30: number; total30: number; pending: number; starsCount30?: number; stars30?: number; intlCount30?: number; intl30?: number };
   vipPosts: { media_id: string; path: string | null }[]; // arquivos da pasta do VIP ja postados no canal
@@ -81,6 +83,13 @@ interface Chamada {
   error: string | null;
   example: { pt: string; en: string } | null;
 }
+
+// lingua do app do Telegram (language_code) -> nome
+const LANG_NAMES: Record<string, string> = {
+  pt: "português", en: "inglês", es: "espanhol", fa: "persa (Irã)", ar: "árabe", hi: "hindi (Índia)", ur: "urdu (Paquistão)", uz: "uzbeque",
+  ru: "russo", tr: "turco", id: "indonésio", de: "alemão", fr: "francês", it: "italiano", bn: "bengali", ms: "malaio", uk: "ucraniano",
+  kk: "cazaque", az: "azerbaijano", he: "hebraico", nl: "holandês", pl: "polonês", ko: "coreano", ja: "japonês", zh: "chinês", th: "tailandês", vi: "vietnamita",
+};
 
 const CHAMADA_STATUS: Record<Chamada["status"], string> = {
   pronta: "esperando você enviar",
@@ -338,6 +347,24 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
                 <b>{status.fans.blocked}</b> bloquearam o bot
               </span>
             </div>
+            <h3>De onde vem quem entra (desde 23/11)</h3>
+            {status.study && (status.study.langs.length > 0 || status.study.brasil + status.study.fora > 0) ? (
+              <>
+                <p className="st-hint">
+                  Na idade: <b>{status.study.brasil}</b> disseram “sou do Brasil” e <b>{status.study.fora}</b> “fora do Brasil”. Língua do app do Telegram (cada fã conta
+                  uma vez):
+                </p>
+                <div className="st-sales-stats">
+                  {status.study.langs.map((l) => (
+                    <span key={l.code}>
+                      <b>{l.fans}</b> {LANG_NAMES[l.code] ?? l.code}
+                    </span>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="st-hint">Ainda sem dados: a contagem começa com os fãs que tocarem no bot a partir de agora.</p>
+            )}
           </section>
 
           <section className="st-panel st-settings">
