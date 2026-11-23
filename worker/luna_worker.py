@@ -927,11 +927,14 @@ class Naiaflow:
                 # 16/11+ (achado em 20/11): a 1a foto vem num job ("-0-") e as outras 2
                 # num job separado ("-var1-", "-var2-"), ~40 s depois. O robo so via a 1a
                 # e fazia um Criar novo para cada foto do carrossel (3 creditos em vez de 1).
-                # Espera as variacoes ate 2 min depois da 1a foto.
+                # Espera as variacoes ate 1 min depois da 1a foto (chegavam ~40 s depois).
+                # 23/11: no Vertical (Stories) a Naiaflow passou a mandar so a 1a foto,
+                # sem variacoes; esperar 2 min a toa deixava cada foto do Stories 1 min
+                # mais lenta (o robo faz um Criar por foto; 1 credito cada, igual antes)
                 first_at = first_at or time.time()
                 bases = sorted((x for x in stable if "-var" not in x), key=_job_time_ms)
                 variants = sorted({x for x in stable if "-var" in x}, key=lambda x: _job_variant(x)[1])
-                if (bases and len(variants) >= 2) or time.time() - first_at > 120:
+                if (bases and len(variants) >= 2) or time.time() - first_at > 60:
                     picked = (bases[:1] + variants[:2]) if bases else variants[:3]
                     return [x.rsplit("/", 1)[0] + "/public" for x in picked]
             seen = new
