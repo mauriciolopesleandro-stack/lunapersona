@@ -1,4 +1,4 @@
-import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
+import { storeConfigured, storeDelete, storeGet, storeIncr, storeSet, storeSetIfAbsent } from "./_store.js";
 import { dbSelect } from "./_supabase.js";
 import type { FanRow, ProductRow } from "./_sales_bot.js";
 import type { SaleProduct } from "./_sales_promo.js";
@@ -27,6 +27,37 @@ export async function setAbroad(fanId: string, abroad: boolean): Promise<void> {
   if (!storeConfigured()) return;
   await storeSet(COUNTRY(fanId), abroad ? "fora" : "br").catch(() => undefined);
   await storeSet(KEY(fanId), abroad ? "en" : "pt").catch(() => undefined);
+  // estudo do publico: quantos escolheram Brasil / fora (cada fa conta uma vez)
+  if (await storeSetIfAbsent(`luna:fan-pais-contado:${fanId}`, "1", STUDY_TTL).catch(() => false)) {
+    await storeIncr(`luna:pais-count:${abroad ? "fora" : "br"}`).catch(() => undefined);
+  }
+}
+
+// --- estudo do publico (23/11, pedido dele: "faz um estudo, nao deduz") ---------------------------
+// A lingua do app do Telegram de cada fa (language_code: "fa" persa, "ar" arabe,
+// "hi" hindi, "en" ingles...) e contada uma vez por fa. Junto com o "sou do
+// Brasil / fora", mostra de onde vem quem entra no bot (Vendas -> Fas).
+const STUDY_TTL = 400 * 86400;
+const CODES_KEY = "luna:lang-codes";
+
+async function countCode(fanId: string, code: string): Promise<void> {
+  const c = code.toLowerCase().slice(0, 2);
+  if (!/^[a-z]{2}$/.test(c)) return;
+  if (!(await storeSetIfAbsent(`luna:fan-code:${fanId}`, c, STUDY_TTL).catch(() => false))) return;
+  await storeIncr(`luna:lang-count:${c}`).catch(() => undefined);
+  const codes = new Set<string>(JSON.parse((await storeGet(CODES_KEY).catch(() => null)) ?? "[]"));
+  if (!codes.has(c)) {
+    codes.add(c);
+    await storeSet(CODES_KEY, JSON.stringify([...codes])).catch(() => undefined);
+  }
+}
+
+export async function audienceStudy(): Promise<{ langs: { code: string; fans: number }[]; brasil: number; fora: number }> {
+  if (!storeConfigured()) return { langs: [], brasil: 0, fora: 0 };
+  const codes: string[] = JSON.parse((await storeGet(CODES_KEY).catch(() => null)) ?? "[]");
+  const langs = await Promise.all(codes.map(async (code) => ({ code, fans: Number((await storeGet(`luna:lang-count:${code}`).catch(() => null)) ?? 0) })));
+  const n = async (k: string) => Number((await storeGet(k).catch(() => null)) ?? 0);
+  return { langs: langs.filter((l) => l.fans > 0).sort((a, b) => b.fans - a.fans), brasil: await n("luna:pais-count:br"), fora: await n("luna:pais-count:fora") };
 }
 
 // /zerar do administrador: volta a ser fa novo (escolhe o pais de novo)
@@ -53,6 +84,7 @@ export function langOf(code?: string | null): FanLang {
 export async function rememberLang(fanId: string, code?: string | null): Promise<void> {
   const lang = langOf(code);
   if (!lang || !storeConfigured()) return;
+  await countCode(fanId, String(code)).catch(() => undefined);
   if ((await fanAbroad(fanId)) !== null) return;
   await storeSet(KEY(fanId), lang).catch(() => undefined);
 }

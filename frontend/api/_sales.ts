@@ -446,6 +446,8 @@ async function status() {
       today: fans.filter((f) => Date.now() - Date.parse(f.started_at) < 86400_000).length,
     },
     pix: { configured: Boolean(pix.token), env: pix.env },
+    // estudo do publico (23/11): lingua do Telegram e Brasil/fora de quem entra
+    study: await (await import("./_sales_lang.js")).audienceStudy().catch(() => null),
     cta: await ctaConfig(),
     previews: previewList.map((p) => ({ media_id: p.media_id, kind: p.kind, path: pathOf.get(p.media_id) ?? null, text: p.text ?? "" })),
     // pastas: esperando a aprovacao no Telegram e recusadas (o estudio move para _removidos)
