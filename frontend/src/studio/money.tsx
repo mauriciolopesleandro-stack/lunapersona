@@ -293,7 +293,15 @@ export function PlansPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [prices, setPrices] = useState<Record<string, { price: string; days: string }>>({});
-  const [promo, setPromo] = useState<{ enabled: boolean; days: number[]; label: string; prices: Record<string, string> } | null>(null);
+  const [promo, setPromo] = useState<{
+    enabled: boolean;
+    days: number[];
+    label: string;
+    labelEn: string;
+    prices: Record<string, string>;
+    stars: Record<string, string>;
+    usd: Record<string, string>;
+  } | null>(null);
   const [stars, setStars] = useState<{ enabled: boolean; prices: Record<string, string> }>({ enabled: false, prices: {} });
   const [intl, setIntl] = useState<{ enabled: boolean; apiKey: string; ipnSecret: string; prices: Record<string, string> }>({ enabled: false, apiKey: "", ipnSecret: "", prices: {} });
 
@@ -304,7 +312,15 @@ export function PlansPage() {
     setPrices(Object.fromEntries(s.products.map((p) => [p.id, { price: toText(p.price_cents), days: String(p.period_days) }])));
     setStars({ enabled: Boolean(s.stars?.enabled), prices: Object.fromEntries(Object.entries(s.stars?.prices ?? {}).map(([id, n]) => [id, String(n)])) });
     setIntl({ enabled: Boolean(s.intl?.enabled), apiKey: "", ipnSecret: "", prices: Object.fromEntries(Object.entries(s.intl?.prices ?? {}).map(([id, c]) => [id, (c / 100).toFixed(2)])) });
-    setPromo({ enabled: s.promo.enabled, days: s.promo.days, label: s.promo.label, prices: Object.fromEntries(Object.entries(s.promo.prices).map(([id, c]) => [id, toText(c)])) });
+    setPromo({
+      enabled: s.promo.enabled,
+      days: s.promo.days,
+      label: s.promo.label,
+      labelEn: s.promo.labelEn ?? "Weekend deal",
+      prices: Object.fromEntries(Object.entries(s.promo.prices).map(([id, c]) => [id, toText(c)])),
+      stars: Object.fromEntries(Object.entries(s.promo.stars ?? {}).map(([id, n]) => [id, String(n)])),
+      usd: Object.fromEntries(Object.entries(s.promo.usd ?? {}).map(([id, c]) => [id, (c / 100).toFixed(2)])),
+    });
   }
   useEffect(() => {
     call()
@@ -425,7 +441,8 @@ export function PlansPage() {
         </div>
         <p className="st-hint">
           Nos dias marcados (horário de Brasília) o pacote sai pelo preço da promoção: no botão do bot (com o “era”), no Pix e na renovação do VIP. As
-          mensagens com os pacotes ganham uma faixa 🔥 no topo.
+          mensagens com os pacotes ganham uma faixa 🔥 no topo. Para o fã de fora, o preço da promoção em estrelas e em dólar (dólar: no mínimo US$ 10, o
+          mínimo da NOWPayments); no 1º dia da promoção o seu Telegram pergunta se quer chamar quem tentou pagar e não pagou.
         </p>
         <label className="st-check">
           <input type="checkbox" checked={promo.enabled} onChange={(e) => setPromo({ ...promo, enabled: e.target.checked })} />
@@ -449,6 +466,10 @@ export function PlansPage() {
           <span>Nome da promoção</span>
           <input className="st-input" maxLength={60} value={promo.label} onChange={(e) => setPromo({ ...promo, label: e.target.value })} />
         </label>
+        <label className="st-field">
+          <span>Nome em inglês (fã de fora)</span>
+          <input className="st-input" maxLength={60} value={promo.labelEn} onChange={(e) => setPromo({ ...promo, labelEn: e.target.value })} />
+        </label>
         <div className="st-plan-rows">
           {products.map((p) => {
             const value = promo.prices[p.id] ?? "";
@@ -470,6 +491,30 @@ export function PlansPage() {
                   />
                 </label>
                 <span className={off ? "st-plan-off" : "st-hint"}>{off ? `-${off}%` : value ? "precisa ser menor" : ""}</span>
+                {status.stars?.enabled && p.billing !== "mensal" && (
+                  <label>
+                    <span>⭐ na promoção (normal {status.stars.prices[p.id] ?? status.stars.suggested[p.id] ?? "—"})</span>
+                    <input
+                      className="st-input"
+                      inputMode="numeric"
+                      placeholder="sem promoção"
+                      value={promo.stars[p.id] ?? ""}
+                      onChange={(e) => setPromo({ ...promo, stars: { ...promo.stars, [p.id]: e.target.value.replace(/\D/g, "") } })}
+                    />
+                  </label>
+                )}
+                {status.intl?.enabled && p.billing !== "mensal" && (
+                  <label>
+                    <span>US$ na promoção (normal {(((status.intl.prices[p.id] ?? status.intl.suggested[p.id]) || 0) / 100).toFixed(2)})</span>
+                    <input
+                      className="st-input"
+                      inputMode="decimal"
+                      placeholder="sem promoção"
+                      value={promo.usd[p.id] ?? ""}
+                      onChange={(e) => setPromo({ ...promo, usd: { ...promo.usd, [p.id]: e.target.value } })}
+                    />
+                  </label>
+                )}
               </div>
             );
           })}
@@ -501,7 +546,10 @@ export function PlansPage() {
                   enabled: promo.enabled,
                   days: promo.days,
                   label: promo.label,
+                  labelEn: promo.labelEn,
                   prices: Object.fromEntries(Object.entries(promo.prices).map(([id, t]) => [id, toCents(t)])),
+                  stars: Object.fromEntries(Object.entries(promo.stars).filter(([, t]) => t.trim()).map(([id, t]) => [id, Number(t)])),
+                  usd: Object.fromEntries(Object.entries(promo.usd).filter(([, t]) => t.trim()).map(([id, t]) => [id, toCents(t)])),
                 },
                 promo.enabled ? `Promoção salva: vale em ${promoDays || "nenhum dia"}.` : "Promoção desligada."
               )

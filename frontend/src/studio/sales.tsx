@@ -31,6 +31,12 @@ export interface Cta {
   daily: string[];
   renewal: string[];
   renewalGrace: string;
+  // 23/11: fa de fora recebe em ingles; 1 por dia; para depois de N dias sem tocar
+  welcomeEn: string;
+  dailyEn: string[];
+  titlesEn: Record<string, string>;
+  oncePerDay: boolean;
+  stopAfterDays: number;
 }
 
 export interface Status {
@@ -89,8 +95,10 @@ function ChamadaPanel({ chamada, busy, run }: { chamada: Chamada | null | undefi
     <section className="st-panel st-settings">
       <h2>Chamar quem não pagou</h2>
       <p className="st-hint">
-        Uma mensagem para quem gerou o pagamento nos últimos 3 dias e não pagou (+18, sem bloqueio, sem compra): prévia borrada, texto da IA em
-        português e inglês e os botões do pacote que escolheu (dólar e Pix). Cada fã recebe uma vez. Antes, o exemplo chega no seu Telegram.
+        Uma mensagem para quem gerou o pagamento nos últimos 7 dias e não pagou (+18, sem bloqueio, sem compra): prévia borrada, texto da IA na língua
+        de cada um (de fora: inglês; Brasil: português; sem saber: as duas) e os botões do pacote que escolheu (cartão, cripto e Pix). No dia da
+        promoção os preços e a faixa 🔥 vão junto, e no 1º dia dela o seu Telegram pergunta se quer mandar. Cada fã recebe uma vez. Antes, o exemplo
+        chega no seu Telegram.
       </p>
       {c && (
         <p className={c.status === "cancelada" ? "st-hint" : "st-ok"}>
@@ -128,7 +136,10 @@ export interface Promo {
   enabled: boolean;
   days: number[]; // 0 = domingo
   label: string;
+  labelEn?: string; // nome para o fa de fora (23/11)
   prices: Record<string, number>;
+  stars?: Record<string, number>; // promocao em estrelas
+  usd?: Record<string, number>; // promocao em centavos de dolar
   active: boolean; // valendo agora (horario de Brasilia)
   today: number;
 }
@@ -376,7 +387,7 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
             )}
           </section>
 
-          <CtaEditor cta={status.cta} previews={status.previews.length} busy={busy} run={run} onFolders={onFolders} />
+          <CtaEditor cta={status.cta} products={status.products.filter((p) => p.active)} previews={status.previews.length} busy={busy} run={run} onFolders={onFolders} />
 
           {status.connected && <ChamadaPanel chamada={status.chamada} busy={busy} run={run} />}
 
@@ -466,21 +477,46 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
 // Mensagens que chamam o fa para comprar: boas-vindas, Pix esquecido e a diaria.
 function CtaEditor({
   cta,
+  products,
   previews,
   busy,
   run,
   onFolders,
 }: {
   cta: Cta;
+  products: Product[];
   previews: number;
   busy: string | null;
   run: (key: string, body: object, done?: string) => Promise<boolean>;
   onFolders: () => void;
 }) {
   const [draft, setDraft] = useState<Cta>(cta);
+  const [translating, setTranslating] = useState(false);
+  const [translateMsg, setTranslateMsg] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => setDraft(cta), [cta]);
   const changed = JSON.stringify(draft) !== JSON.stringify(cta);
   const set = (patch: Partial<Cta>) => setDraft((d) => ({ ...d, ...patch }));
+  // a IA traduz as mensagens em portugues (as salvas); o resultado entra no rascunho para conferir
+  async function translate() {
+    setTranslating(true);
+    setTranslateMsg(null);
+    try {
+      const r = (await call({ action: "cta-translate" })) as unknown as { translated?: { welcomeEn: string; dailyEn: string[]; titlesEn: Record<string, string> } };
+      const t = r.translated;
+      if (!t) throw new Error("A IA não devolveu a tradução.");
+      setDraft((d) => ({
+        ...d,
+        welcomeEn: t.welcomeEn || d.welcomeEn,
+        dailyEn: t.dailyEn.length ? t.dailyEn : d.dailyEn,
+        titlesEn: { ...d.titlesEn, ...t.titlesEn },
+      }));
+      setTranslateMsg({ ok: true, text: `Traduzido: confira as frases em inglês abaixo e toque em “Salvar mensagens”. (${t.dailyEn.length} frase(s))` });
+    } catch (e) {
+      setTranslateMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTranslating(false);
+    }
+  }
   return (
     <section className="st-panel st-settings st-cta">
       <h2>Mensagens para os fãs (CTA)</h2>
@@ -542,8 +578,26 @@ function CtaEditor({
           </button>
         )}
       </div>
+      <div className="st-row st-row-tight">
+        <label className="st-check">
+          <input type="checkbox" checked={draft.oncePerDay} onChange={(e) => set({ oncePerDay: e.target.checked })} />
+          Só 1 mensagem por dia (os horários viram tentativas)
+        </label>
+        <label className="st-field st-cta-hour">
+          <span>Parar depois de</span>
+          <select className="st-input" value={draft.stopAfterDays} onChange={(e) => set({ stopAfterDays: Number(e.target.value) })}>
+            {[0, 3, 5, 7, 10, 14, 21, 30].map((d) => (
+              <option key={d} value={d}>
+                {d === 0 ? "nunca" : `${d} dias`}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <p className="st-hint">
-        Uma em cada horário para quem ainda não é VIP (para com /parar). Cada fã recebe as frases na ordem abaixo (1, 2, 3…) e, depois da última, volta para a primeira; a prévia pode repetir.
+        {draft.oncePerDay ? "No máximo uma por dia (a boas-vindas conta) " : "Uma em cada horário "}
+        para quem ainda não é VIP (para com /parar){draft.stopAfterDays ? `; quem não toca em nada no bot há ${draft.stopAfterDays} dias para de receber e volta quando tocar` : ""}.
+        Cada fã recebe as frases na ordem abaixo (1, 2, 3…) e, depois da última, volta para a primeira; a prévia pode repetir.
       </p>
       <PhraseList label="Frase" items={draft.daily} onChange={(daily) => set({ daily })} />
       <div className="st-row st-row-tight">
@@ -552,6 +606,45 @@ function CtaEditor({
           Adicionar frase
         </button>
       </div>
+
+      <h3>🌎 Em inglês (fã de fora do Brasil)</h3>
+      <p className="st-hint">
+        Na confirmação da idade o fã escolhe “sou do Brasil” ou “fora do Brasil”. Quem é de fora recebe tudo em inglês e os pacotes com o preço em estrelas
+        (cartão, Apple Pay, Google Pay) ou em dólar; quem ainda não escolheu (fãs antigos) recebe pela língua do Telegram ou, sem saber, as duas línguas.
+      </p>
+      <div className="st-row st-row-tight">
+        <button type="button" className="st-btn st-btn-small" disabled={translating || busy !== null || changed} title={changed ? "Salve antes de traduzir" : undefined} onClick={translate}>
+          {translating ? "Traduzindo (a IA está escrevendo)…" : "✨ Traduzir as mensagens com a IA"}
+        </button>
+      </div>
+      {translateMsg && <p className={translateMsg.ok ? "st-ok" : "st-error"}>{translateMsg.text}</p>}
+      <label className="st-field">
+        <span>Boas-vindas em inglês</span>
+        <textarea className="st-input" rows={3} maxLength={900} value={draft.welcomeEn} onChange={(e) => set({ welcomeEn: e.target.value })} />
+      </label>
+      <PhraseList label="Frase em inglês" items={draft.dailyEn} onChange={(dailyEn) => set({ dailyEn })} />
+      <div className="st-row st-row-tight">
+        <button type="button" className="st-btn st-btn-small" onClick={() => set({ dailyEn: [...draft.dailyEn, "Hey {nome}… "] })}>
+          <Icon name="plus" size={14} />
+          Adicionar frase em inglês
+        </button>
+      </div>
+      {products.length > 0 && (
+        <div className="st-plan-rows">
+          {products.map((p) => (
+            <label key={p.id} className="st-field">
+              <span>Nome em inglês de “{p.title}” (vazio: nome padrão)</span>
+              <input
+                className="st-input"
+                maxLength={60}
+                value={draft.titlesEn[p.id] ?? ""}
+                placeholder={p.kind === "vip" ? "Full VIP: videos + photos every day" : p.kind === "album" ? "Uncensored VIP album" : "Photo set"}
+                onChange={(e) => set({ titlesEn: { ...draft.titlesEn, [p.id]: e.target.value } })}
+              />
+            </label>
+          ))}
+        </div>
+      )}
 
       <h3>Renovação do VIP</h3>
       <p className="st-hint">
@@ -576,7 +669,18 @@ function CtaEditor({
           className="st-btn st-btn-small st-btn-primary"
           disabled={!changed || busy !== null}
           onClick={() =>
-            run("cta-save", { action: "cta-save", ...draft, daily: draft.daily.filter((t) => t.trim()), renewal: draft.renewal.filter((t) => t.trim()) }, "Mensagens salvas.")
+            run(
+              "cta-save",
+              {
+                action: "cta-save",
+                ...draft,
+                daily: draft.daily.filter((t) => t.trim()),
+                dailyEn: draft.dailyEn.filter((t) => t.trim()),
+                renewal: draft.renewal.filter((t) => t.trim()),
+                titlesEn: Object.fromEntries(Object.entries(draft.titlesEn).filter(([, t]) => t.trim())),
+              },
+              "Mensagens salvas."
+            )
           }
         >
           Salvar mensagens
@@ -589,6 +693,15 @@ function CtaEditor({
           onClick={() => run("cta-test", { action: "cta-test" }, "Mandei a mensagem de hoje no seu Telegram, como o fã recebe.")}
         >
           Mandar um teste para mim
+        </button>
+        <button
+          type="button"
+          className="st-btn st-btn-small"
+          disabled={busy !== null || changed}
+          title={changed ? "Salve antes de testar" : undefined}
+          onClick={() => run("cta-test-en", { action: "cta-test", lang: "en" }, "Mandei no seu Telegram a mensagem como o fã de fora recebe (em inglês).")}
+        >
+          Teste em inglês
         </button>
       </div>
     </section>

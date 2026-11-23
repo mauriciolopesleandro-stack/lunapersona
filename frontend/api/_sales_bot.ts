@@ -26,6 +26,7 @@ import { sendWelcome } from "./_sales_cta.js";
 // O Telegram avisa quando o fa bloqueia o bot (my_chat_member): para de mandar.
 
 import { personaPath, personaText } from "./_persona.js";
+import { fanAbroad, fanLang, langOf, packLabels, rememberLang, setAbroad, titleEn, type FanLang } from "./_sales_lang.js";
 
 const TOKEN_KEY = "luna:sales-token";
 const TOKEN_PATTERN = /^\d{5,15}:[A-Za-z0-9_-]{30,60}$/;
@@ -118,8 +119,13 @@ export async function productsForSale(): Promise<SaleProduct[]> {
 }
 
 const AGE_TEXT = "Oi! Aqui é a Luna 💛\n\nAqui tem conteúdo só para maiores de 18 anos. Se você tem 18 ou mais, vem comigo curtir os meus melhores momentos 😘";
+// 23/11: a confirmacao da idade ja pergunta se o fa e do Brasil ou de fora (lingua e pagamento)
+const AGE_TEXT_EN = "Hi! It's Luna 💛\n\nThis is 18+ content only. If you're 18 or older, come enjoy my best moments with me 😘";
+const AGE_ASK = "Toque no botão: / Tap the button:";
 const MENU_TEXT = "Que bom te ver por aqui 😘\n\nEscolha o seu pacote:";
 const MENU_TEXT_NAMED = "Que bom te ver por aqui, {nome} 😘\n\nEscolha o seu pacote:";
+const MENU_TEXT_EN = "So good to see you here 😘\n\nPick your package:";
+const MENU_TEXT_NAMED_EN = "So good to see you here, {nome} 😘\n\nPick your package:";
 const NOTHING_TEXT = "Os pacotes estão sendo preparados. Volte daqui a pouquinho 💛";
 
 function safeSame(a: string, b: string): boolean {
@@ -158,30 +164,36 @@ async function upsertFan(from: From): Promise<FanRow> {
     blocked_at: null,
   });
   const [fan] = await dbSelect<FanRow>("fans", `select=*&telegram_id=eq.${from.id}`);
+  // lingua do Telegram do fa, para as mensagens que o bot manda sozinho (_sales_lang.ts)
+  if (fan && from.language_code) await rememberLang(fan.id, from.language_code);
   return fan;
 }
 
-export async function sendMenu(token: string, chatId: number, fan?: FanRow): Promise<void> {
+// lang: lingua do menu (sem ela, a guardada do fa; "en" = nomes em ingles e preco em estrelas/dolar)
+export async function sendMenu(token: string, chatId: number, fan?: FanRow, lang?: FanLang): Promise<void> {
   const products = await productsForSale();
   const mine = fan ? await activePacks(fan.id) : [];
   if (!products.length && !mine.length) {
     await telegram(token, "sendMessage", { chat_id: chatId, text: NOTHING_TEXT });
     return;
   }
-  const rows = products.map((p) => [{ text: productLabel(p), callback_data: `buy:${p.id}` }]);
-  if (mine.length) rows.push([{ text: "📂 Meus pacotes", callback_data: "mine" }]);
+  const shown: FanLang = (lang === undefined ? (fan ? await fanLang(fan) : "pt") : lang) === "en" ? "en" : "pt";
+  const labels = await packLabels(products, shown);
+  const rows = products.map((p, i) => [{ text: labels[i], callback_data: `buy:${p.id}` }]);
+  if (mine.length) rows.push([{ text: shown === "en" ? "📂 My packages" : "📂 Meus pacotes", callback_data: "mine" }]);
   // com previas cadastradas: a previa da vez + a historia dela (ou o texto do menu) + os botoes
   const { previews, sendCta, fill } = await import("./_sales_cta.js");
   const list = products.length ? await previews() : [];
   if (list.length) {
     const turn = Math.floor(Date.now() / 60_000); // gira a cada minuto
-    const own = list[turn % list.length].text;
-    await sendCta(token, chatId, fill(own || MENU_TEXT_NAMED, fan ?? { first_name: null }), turn, rows);
+    // a historia da previa e em portugues: o fa de fora recebe o texto do menu em ingles
+    const own = shown === "en" ? undefined : list[turn % list.length].text;
+    await sendCta(token, chatId, fill(own || (shown === "en" ? MENU_TEXT_NAMED_EN : MENU_TEXT_NAMED), fan ?? { first_name: null }, {}, shown), turn, rows, shown);
     return;
   }
   const { promoBanner } = await import("./_sales_promo.js");
-  const banner = products.length ? await promoBanner() : null;
-  const text = products.length ? MENU_TEXT : "Seus pacotes:";
+  const banner = products.length ? await promoBanner(shown) : null;
+  const text = products.length ? (shown === "en" ? MENU_TEXT_EN : MENU_TEXT) : shown === "en" ? "Your packages:" : "Seus pacotes:";
   await telegram(token, "sendMessage", { chat_id: chatId, text: banner ? `${banner}\n\n${text}` : text, reply_markup: { inline_keyboard: rows } });
 }
 
@@ -199,12 +211,19 @@ async function listMine(token: string, fan: FanRow, chatId: number): Promise<voi
   });
 }
 
-async function askAge(token: string, chatId: number): Promise<void> {
+// Idade + pais num toque so: "Brasil" recebe tudo em portugues e o Pix; "fora do
+// Brasil" recebe em ingles, com o cartao (estrelas) e a cripto. O texto vem na
+// lingua do Telegram (portugues primeiro para quem esta em portugues).
+async function askAge(token: string, chatId: number, code?: string): Promise<void> {
+  const foreign = langOf(code) === "en";
+  const br = [{ text: "🇧🇷 Tenho 18+ e sou do Brasil", callback_data: "age:br" }];
+  const abroad = [{ text: "🌎 I'm 18+ and outside Brazil", callback_data: "age:int" }];
+  const text = foreign ? `${AGE_TEXT_EN}\n\n🇧🇷 ${AGE_TEXT}` : `${AGE_TEXT}\n\n🌎 ${AGE_TEXT_EN}`;
   await telegram(token, "sendMessage", {
     chat_id: chatId,
-    text: personaText(AGE_TEXT),
+    text: personaText(`${text}\n\n${AGE_ASK}`),
     reply_markup: {
-      inline_keyboard: [[{ text: "✅ Tenho 18 anos ou mais", callback_data: "age:yes" }], [{ text: "Sair", callback_data: "age:no" }]],
+      inline_keyboard: [...(foreign ? [abroad, br] : [br, abroad]), [{ text: foreign ? "Leave / Sair" : "Sair / Leave", callback_data: "age:no" }]],
     },
   });
 }
@@ -220,16 +239,20 @@ function fanName(f: Pick<FanRow, "username" | "first_name" | "telegram_id">): st
 // how: "auto" (pela lingua do fa), "pix" (botao Pix) ou "estrelas" (botao das estrelas)
 async function buy(token: string, fan: FanRow, productId: string, chatId: number, site: string, lang?: string, how: "auto" | "pix" | "estrelas" | "intl" = "auto"): Promise<void> {
   if (!/^[0-9a-f-]{36}$/i.test(productId)) return;
-  const [product] = (await productsForSale()).filter((p) => p.id === productId);
-  if (!product) {
+  const [sold] = (await productsForSale()).filter((p) => p.id === productId);
+  if (!sold) {
     await telegram(token, "sendMessage", { chat_id: chatId, text: "Esse pacote não está mais disponível. Veja os outros:" });
-    await sendMenu(token, chatId);
+    await sendMenu(token, chatId, fan);
     return;
   }
   const { isForeign, sendStarsInvoice } = await import("./_sales_stars.js");
   const { startIntl } = await import("./_sales_intl.js");
   const { abroadRows } = await import("./_sales_pay.js");
-  const foreign = isForeign(lang);
+  // escolheu o pais na confirmacao da idade (23/11): vale mais que a lingua do Telegram
+  const foreign = (await fanAbroad(fan.id)) ?? isForeign(lang);
+  // fora do Brasil: o nome do pacote em ingles na fatura e na pagina da cripto
+  const { ctaConfig } = await import("./_sales_cta.js");
+  const product = foreign ? { ...sold, title: titleEn(sold, (await ctaConfig()).titlesEn) } : sold;
   const pixRow = [{ text: "🇧🇷 Pix (Brasil)", callback_data: `pix:${product.id}` }];
   // fora do Brasil (Telegram em outra lingua): primeiro o cartao (fatura em
   // estrelas: cartao, Apple Pay ou Google Pay no Telegram), com cripto e Pix de
@@ -310,21 +333,25 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
         return done();
       }
       // chamada para quem nao pagou: "Enviar" / "Cancelar" do administrador
-      if ((kind === "chamadaok" || kind === "chamadano") && String(cb.from.id) === (await telegramConfig()).chatId) {
+      if ((kind === "chamadaok" || kind === "chamadano" || kind === "chamadaprep") && String(cb.from.id) === (await telegramConfig()).chatId) {
         const { chamadaCallback } = await import("./_sales_chamada.js");
         await chamadaCallback(token, chatId, kind, arg ?? "");
         return done();
       }
       if (kind === "age") {
-        if (arg === "yes") {
+        if (arg === "yes" || arg === "br" || arg === "int") {
           await dbUpdateWhere("fans", `id=eq.${fan.id}`, { adult_confirmed_at: new Date().toISOString() });
+          // br / int: o fa disse onde mora (lingua e pagamento); "yes" (botao antigo): lingua do Telegram
+          if (arg !== "yes") await setAbroad(fan.id, arg === "int");
+          const lang: FanLang = arg === "int" ? "en" : arg === "br" ? "pt" : langOf(cb.from.language_code) ?? "pt";
           // boas-vindas com o nome, a previa e os pacotes (sem pacote pronto: o menu avisa)
-          if (!(await sendWelcome(token, fan, chatId))) await sendMenu(token, chatId, fan);
+          if (!(await sendWelcome(token, fan, chatId, lang))) await sendMenu(token, chatId, fan, lang);
         } else {
-          await telegram(token, "sendMessage", { chat_id: chatId, text: "Tudo bem! Este bot é só para maiores de 18 anos. Até mais 👋" });
+          const en = langOf(cb.from.language_code) === "en";
+          await telegram(token, "sendMessage", { chat_id: chatId, text: en ? "All right! This bot is for adults (18+) only. Bye 👋" : "Tudo bem! Este bot é só para maiores de 18 anos. Até mais 👋" });
         }
       } else if (!fan.adult_confirmed_at) {
-        await askAge(token, chatId);
+        await askAge(token, chatId, cb.from.language_code);
       } else if (kind === "buy") {
         await buy(token, fan, arg ?? "", chatId, baseUrl(req), cb.from.language_code);
       } else if (kind === "stars" || kind === "pix" || kind === "intl") {
@@ -351,6 +378,8 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
       // /zerar: so o administrador; volta a ser um fa novo para testar do inicio
       if (text.startsWith("/zerar") && String(msg.from.id) === (await telegramConfig()).chatId) {
         await dbUpdateWhere("fans", `id=eq.${fan.id}`, { adult_confirmed_at: null, cta_sent_at: null, cta_count: 0, opted_out_at: null });
+        const { forgetFanLang } = await import("./_sales_lang.js");
+        await forgetFanLang(fan.id);
         await telegram(token, "sendMessage", { chat_id: msg.chat.id, text: "Pronto, você voltou a ser um fã novo 🔄 Mande /start para ver tudo do começo (suas compras de teste continuam registradas)." });
         return done();
       }
@@ -389,7 +418,7 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
         return done();
       }
       if (!fan.adult_confirmed_at) {
-        await askAge(token, msg.chat.id);
+        await askAge(token, msg.chat.id, msg.from.language_code);
       } else if (text.startsWith("/parar")) {
         await dbUpdateWhere("fans", `id=eq.${fan.id}`, { opted_out_at: new Date().toISOString() });
         await telegram(token, "sendMessage", { chat_id: msg.chat.id, text: "Pronto, não mando mais novidades. Suas compras continuam valendo. Para voltar, mande /voltar." });

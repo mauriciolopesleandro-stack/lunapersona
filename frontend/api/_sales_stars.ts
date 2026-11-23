@@ -55,11 +55,13 @@ export function suggestedStars(product: Pick<ProductRow, "kind">): number {
 
 // preco em estrelas do pacote, ou null quando nao vende em estrelas
 // (desligado, ou VIP mensal: a assinatura e so pelo Pix Recorrente)
-export function starsPrice(product: Pick<ProductRow, "id" | "kind" | "billing">, config: StarsConfig): number | null {
+// promo_stars: preco da promocao do dia (withPromo em _sales_promo.ts), so se for menor
+export function starsPrice(product: Pick<ProductRow, "id" | "kind" | "billing"> & { promo_stars?: number }, config: StarsConfig): number | null {
   if (!config.enabled || product.billing === "mensal") return null;
   const own = Number(config.prices[product.id]);
-  const stars = Number.isInteger(own) && own >= STARS_MIN ? own : suggestedStars(product);
-  return Math.min(STARS_MAX, stars);
+  const stars = Math.min(STARS_MAX, Number.isInteger(own) && own >= STARS_MIN ? own : suggestedStars(product));
+  const promo = Number(product.promo_stars);
+  return Number.isInteger(promo) && promo >= STARS_MIN && promo < stars ? promo : stars;
 }
 
 // o Telegram do fa esta em outra lingua (sem Pix): a fatura em estrelas vem primeiro
