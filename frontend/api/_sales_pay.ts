@@ -491,6 +491,11 @@ async function deliverVip(order: OrderRow, fan: FanRow, product: ProductRow, sal
     reply_markup: { inline_keyboard: [[{ text: "Entrar no canal VIP", url: invite.invite_link }]] },
     protect_content: true,
   });
+  // VIP tem tudo (23/11): todas as fotos e videos dos pacotes, sem repetir. Se o
+  // Telegram pedir calma, o resto vai na conferencia de 10 min (vipPacksTick)
+  const { sendVipPacks } = await import("./_sales_vip_packs.js");
+  const { fanLang } = await import("./_sales_lang.js");
+  await sendVipPacks(salesToken, fan, abroad(order) ? "en" : await fanLang(fan)).catch(() => undefined);
   return until;
 }
 
@@ -507,16 +512,41 @@ export async function activeVip(fanId: string, withGrace = false): Promise<strin
 }
 
 // Pacotes (ensaio/album) pagos e ainda dentro do prazo, para "Meus pacotes".
+// VIP valendo (23/11): todos os pacotes a venda entram tambem, ate o fim do VIP
+// (id "vip-<pacote>", abre pelo openPack enquanto o VIP vale).
 export async function activePacks(fanId: string): Promise<{ id: string; title: string; access_until: string }[]> {
   const orders = await dbSelect<OrderRow>("sales_orders", `select=*&fan_id=eq.${fanId}&status=eq.entregue&access_until=gt.${new Date().toISOString()}&order=access_until.desc`);
   if (!orders.length) return [];
   const products = await dbSelect<ProductRow>("sales_products", `select=id,title,kind&id=in.(${[...new Set(orders.map((o) => o.product_id))].join(",")})`);
   const packs = new Map(products.filter((p) => p.kind !== "vip").map((p) => [p.id, p.title]));
-  return orders.filter((o) => packs.has(o.product_id)).map((o) => ({ id: o.id, title: packs.get(o.product_id)!, access_until: o.access_until! }));
+  const own = orders.filter((o) => packs.has(o.product_id)).map((o) => ({ id: o.id, title: packs.get(o.product_id)!, access_until: o.access_until! }));
+  const vipUntil = products.some((p) => p.kind === "vip") ? await activeVip(fanId) : null;
+  if (!vipUntil) return own;
+  const mine = new Set(orders.filter((o) => packs.has(o.product_id)).map((o) => o.product_id));
+  const all = await dbSelect<ProductRow>("sales_products", "select=id,title,kind&active=eq.true&kind=neq.vip&order=position.asc");
+  return [...own, ...all.filter((p) => !mine.has(p.id)).map((p) => ({ id: `vip-${p.id}`, title: `💎 ${p.title}`, access_until: vipUntil }))];
 }
 
 // "Meus pacotes" -> abrir: manda o pacote de novo enquanto o acesso vale.
 export async function openPack(orderId: string, fan: FanRow, salesToken: string, chatId: number): Promise<void> {
+  // pacote liberado pelo VIP (23/11): abre enquanto o VIP vale
+  const viaVip = /^vip-([0-9a-f-]{36})$/i.exec(orderId);
+  if (viaVip) {
+    const until = await activeVip(fan.id);
+    const [product] = await dbSelect<ProductRow>("sales_products", `select=*&id=eq.${viaVip[1]}&kind=neq.vip`);
+    if (!product) return;
+    if (!until) {
+      await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Seu VIP terminou 💔 Renove para abrir todos os pacotes de novo." });
+      return;
+    }
+    if (!(await storeSetIfAbsent(`luna:pack-open:vip:${fan.id}:${product.id}`, "1", REOPEN_WAIT_S).catch(() => true))) {
+      await telegram(salesToken, "sendMessage", { chat_id: chatId, text: "Acabei de te mandar esse pacote 💛 Role a conversa para cima." });
+      return;
+    }
+    await sendPack(product, chatId, salesToken);
+    await telegram(salesToken, "sendMessage", { chat_id: chatId, text: `Aproveite 💛 Com o VIP você abre todos os pacotes até ${day(until)}.` });
+    return;
+  }
   if (!/^[0-9a-f-]{36}$/i.test(orderId)) return;
   const [order] = await dbSelect<OrderRow>("sales_orders", `select=*&id=eq.${orderId}&fan_id=eq.${fan.id}`);
   const [product] = order ? await dbSelect<ProductRow>("sales_products", `select=*&id=eq.${order.product_id}`) : [];
@@ -690,6 +720,11 @@ export async function salesTick(site = ""): Promise<number> {
     const now = new Date().toISOString();
     const products = new Map((await dbSelect<ProductRow>("sales_products", "select=*")).map((p) => [p.id, p]));
     let done = token && site ? await renewalReminders(token, products, site) : 0;
+    // VIP tem tudo (23/11): quem ainda nao recebeu todos os pacotes (ou arquivo novo) recebe
+    if (token) {
+      const { vipPacksTick } = await import("./_sales_vip_packs.js");
+      done += await vipPacksTick(token).catch(() => 0);
+    }
     const expired = await dbSelect<OrderRow>("sales_orders", `select=*&status=eq.entregue&access_until=lt.${now}&order=access_until.asc&limit=200`);
     if (!expired.length) return done;
     const channel = await telegramChannel();
