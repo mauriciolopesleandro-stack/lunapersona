@@ -140,8 +140,8 @@ export async function feedCaption(prompt: string, change?: string, timeoutMs = 2
         role: "system",
         content:
           personaText(`Você escreve a legenda de um post do Instagram/TikTok da Luna Vox, influenciadora virtual brasileira (nada explícito).
-LEGENDA: uma frase curta, em tom de conversa ou pergunta provocante/fofa, com 1 a 3 emojis, sobre aquele momento da foto. Português do Brasil informal mas correto.
-HASHTAGS: 2 a 4 curtas e comuns (#fy #praia #verão #explore…).
+${persona().feedCaptionRule ?? "LEGENDA: uma frase curta, em tom de conversa ou pergunta provocante/fofa, com 1 a 3 emojis, sobre aquele momento da foto. Português do Brasil informal mas correto."}
+${persona().feedHashtagRule ?? "HASHTAGS: 2 a 4 curtas e comuns (#fy #praia #verão #explore…)."}
 Responda exatamente assim, em duas linhas:
 LEGENDA: …
 HASHTAGS: #… #…`) + voice(),
@@ -152,9 +152,11 @@ HASHTAGS: #… #…`) + voice(),
   );
   const text = out.text.replace(/\*\*/g, "");
   const tagsLine = text.match(/HASHTAGS\s*[:：]\s*([^\n]*)/i)?.[1] ?? "";
-  const hashtags = (tagsLine.match(/#[\p{L}\p{N}_]+/gu) ?? text.match(/#[\p{L}\p{N}_]+/gu) ?? []).slice(0, 4).join(" ");
+  // persona com regra propria (Cleuza: 5 hashtags, a maioria em ingles); Luna: ate 4
+  const maxTags = persona().feedHashtagRule ? 5 : 4;
+  const hashtags = (tagsLine.match(/#[\p{L}\p{N}_]+/gu) ?? text.match(/#[\p{L}\p{N}_]+/gu) ?? []).slice(0, maxTags).join(" ");
   let caption = text.match(/LEGENDA\s*[:：]\s*([^\n]*)/i)?.[1] ?? text.split("\n").find((l) => l.trim() && !/^\s*(#|PROMPT|HASHTAGS|DESTINO)/i.test(l)) ?? "";
-  caption = fixPt(caption.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/^["“]|["”]$/g, "").trim()).slice(0, 300);
+  caption = fixPt(caption.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/^["“]|["”]$/g, "").trim()).slice(0, persona().feedCaptionRule ? 400 : 300);
   return { caption, hashtags };
 }
 

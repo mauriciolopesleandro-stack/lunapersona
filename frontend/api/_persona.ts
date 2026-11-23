@@ -23,6 +23,9 @@ export interface Persona {
   hair: string; // cabelo do clone (vai na frase do rosto quando ha foto de referencia)
   brief: string; // ficha da persona (aprovada pelo administrador): vai para as regras das IAs (Fase 3)
   style: string; // guia de estilo das publicacoes (a Luna usa o STYLE_GUIDE de sempre)
+  // legenda e hashtags do Feed/Stories/TikTok (_ref_writer.ts feedCaption); sem: as da Luna
+  feedCaptionRule?: string;
+  feedHashtagRule?: string;
 }
 
 export const PERSONAS: Record<string, Persona> = {
@@ -35,13 +38,21 @@ export const PERSONAS: Record<string, Persona> = {
     handle: "joobcoroa", // Instagram da Cleuza (12/11/2026)
     clone: "Cleuza",
     hair: "castanho escuro, longo e ondulado",
+    // 23/11 (pedido dele): chegar em paises que pagam (EUA, Europa, Golfo, India) sem perder o Brasil
+    feedCaptionRule:
+      "LEGENDA: numa linha só: uma frase curta em português no jeito dela (provocante, 1 ou 2 emojis), depois \" 🌎 \" e a mesma ideia em inglês natural e curto para o público de fora (ex.: \"Oxe, quem aguenta uma coroa dessa? 😏 🌎 Brazilian mature woman… dare to say no? 😏\"). Nada de ditado traduzido ao pé da letra.",
+    feedHashtagRule:
+      "HASHTAGS: 5, quatro em inglês para chegar em quem é de fora do Brasil, escolhidas entre #maturewoman #over40 #brazilianwoman #brazilian #latina #realwomen #agelessbeauty #confidentwomen #summervibes #beerlover #bbq, e uma em português (#coroa ou #nordeste). Nunca hashtag de conteúdo adulto (#milf, #sexy, #hot, #nsfw e parecidas derrubam o alcance).",
     style: [
       "Guia de estilo do Instagram da Cleuza (siga em todo post, plano, prompt e legenda):",
       "- Cenários de casa e de bairro, de verdade: churrasco no quintal, laje, varanda, cozinha, sofá da sala, beira da piscina de plástico, boteco da esquina, feira. Nada de academia, nada de luxo de revista.",
       "- Cerveja, espetinho, churrasqueira, panela no fogão, rede, ventilador: objetos do dia a dia de uma coroa caseira do Nordeste.",
       "- Roupas de mulher madura e à vontade em casa: vestido florido, shortinho, regata, saída de praia, biquíni na laje. Nada de look fitness.",
       "- Fotos de celular, luz natural, sorriso aberto, olhar de quem está provocando. Corpo natural de mulher madura (nunca descreva o corpo no prompt; o clone já tem).",
-      "- Legendas no jeito dela: nordestina, desbocada e engraçada, provocando os novinhos, com os bordões dela de vez em quando (sem repetir sempre o mesmo). 1 ou 2 emojis, até 5 hashtags comuns.",
+      "- Legendas no jeito dela: nordestina, desbocada e engraçada, provocando os novinhos, com os bordões dela de vez em quando (sem repetir sempre o mesmo). 1 ou 2 emojis.",
+      // 23/11 (pedido dele): alcancar paises que pagam (EUA, Europa, Golfo, India) sem perder o Brasil
+      "- Legenda em duas linhas: a 1ª em português no jeito dela; a 2ª em inglês natural com a mesma ideia, curta, para o público de fora (ex.: \"Brazilian mature woman with a cold beer… dare to say no? 😏\"). Nada de ditado traduzido ao pé da letra.",
+      "- Hashtags: 5, a maioria em inglês para chegar em quem é de fora do Brasil — escolha entre #maturewoman #over40 #brazilianwoman #brazilian #latina #realwomen #agelessbeauty #confidentwomen #summervibes #beerlover #bbq — e 1 em português (#coroa ou #nordeste). Nunca hashtag de conteúdo adulto (#milf, #sexy, #hot, #nsfw e parecidas derrubam o alcance).",
     ].join("\n"),
     // ficha ditada pelo administrador por audio em 10/11/2026
     brief: [
