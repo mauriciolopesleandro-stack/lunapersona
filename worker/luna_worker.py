@@ -150,8 +150,12 @@ def log(msg: str) -> None:
 
 # link da foto: job-<id>-<n>-<ms> (ate 28/10) ou job-<id>-pro<n>-<ms> (29/10: cada
 # Criar entrega 3 fotos da mesma cena, pro1..pro3); <ms> = hora em que ficou pronta
-# (pro1..pro3: as 3 fotos no mesmo job; desde 16/11: "-0-" e outro job com "-var1/-var2-")
-JOB_LINK = re.compile(r"job-([0-9a-f-]{36})-(?:pro|var)?(\d+)-(\d{12,14})")
+# (pro1..pro3: as 3 fotos no mesmo job; desde 16/11: "-0-" e outro job com "-var1/-var2-";
+# desde 22/11 ~19h: as 3 no mesmo job de novo, "-gpt1/-gpt2/-gpt3-" - o robo nao
+# reconhecia e esperava 10 min com a foto pronta)
+JOB_LINK = re.compile(r"job-([0-9a-f-]{36})-(?:pro|var|gpt)?(\d+)-(\d{12,14})")
+# 3 fotos no mesmo job, na ordem (pro1..pro3 ou gpt1..gpt3)
+SAME_JOB = re.compile(r"-(?:pro|gpt)\d+-")
 
 
 def _job_time_ms(src: str) -> float:
@@ -173,7 +177,7 @@ def remember_job(local_path: str, url: str) -> None:
     # a sua pagina na Naiaflow
     _, variant = _job_variant(url)
     # 16/11+: a 1a foto e "job-<a>-0-", as outras sao outro job "job-<b>-var1/var2-" ("#v1")
-    jobs[local_path] = m.group(1) + (f"#{variant}" if "-pro" in url and variant else f"#v{variant}" if "-var" in url else "")
+    jobs[local_path] = m.group(1) + (f"#{variant}" if SAME_JOB.search(url) and variant else f"#v{variant}" if "-var" in url else "")
     JOBS_FILE.write_text(json.dumps(jobs, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
@@ -889,7 +893,8 @@ class Naiaflow:
         last_reload = time.time()
         seen: set[str] = set()
         first_at: float | None = None
-        while time.time() < deadline:
+        # a 1a foto chegou perto do fim: ainda espera as outras do mesmo Criar
+        while time.time() < deadline or (first_at and time.time() - first_at < 370):
             time.sleep(5)
             self._check_terms()
             try:
@@ -907,11 +912,17 @@ class Naiaflow:
             # mais o "Gerando" da pagina: uma geracao travada na galeria deixava
             # o aviso para sempre e o robo nunca achava a foto (29/10).
             stable = new & seen
-            if stable and any("-pro" in x for x in stable):
-                # tela antiga: as 3 fotos no mesmo job (pro1, pro2, pro3), na ordem
-                job = _job_variant(sorted(stable)[0])[0]
-                same = sorted({x for x in new if _job_variant(x)[0] == job}, key=lambda x: _job_variant(x)[1])
-                return [x.rsplit("/", 1)[0] + "/public" for x in same]
+            if stable and any(SAME_JOB.search(x) for x in stable):
+                # as 3 fotos no mesmo job (pro1..pro3 ou, desde 22/11, gpt1..gpt3), na
+                # ordem. gpt2/gpt3 chegam ~4 min depois da gpt1: espera as 3 (ate 6 min
+                # depois da 1a) para nao fazer outro Criar para as que faltam
+                first_at = first_at or time.time()
+                job = _job_variant(sorted(x for x in stable if SAME_JOB.search(x))[0])[0]
+                same = sorted({x for x in stable if _job_variant(x)[0] == job}, key=lambda x: _job_variant(x)[1])
+                if len(same) >= 3 or time.time() - first_at > 360:
+                    return [x.rsplit("/", 1)[0] + "/public" for x in same]
+                seen = new
+                continue
             if stable:
                 # 16/11+ (achado em 20/11): a 1a foto vem num job ("-0-") e as outras 2
                 # num job separado ("-var1-", "-var2-"), ~40 s depois. O robo so via a 1a
