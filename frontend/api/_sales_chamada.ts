@@ -210,7 +210,11 @@ export function chamadaCaption(t: ChamadaText, fan: Pick<FanRow, "first_name">, 
 // Botoes do pacote que o fa escolheu, com o preco de hoje (promocao inclusa):
 // brasileiro: Pix primeiro; fora do Brasil (ou nao se sabe): cartao (estrelas),
 // cripto e o Pix por ultimo
-async function chamadaButtons(productId: string, lang: FanLang): Promise<{ text: string; callback_data: string }[][] | null> {
+// O pacote que o fa escolheu com o preco de hoje: os botoes e, no dia da
+// promocao, a linha do topo da mensagem com o pacote e o preco dela (pedido de
+// 23/11: "o pacote X esta na promocao por Y, so hoje"). Fa de fora: preco em
+// estrelas; Brasil: em reais; sem saber, as duas linhas.
+async function chamadaOffer(productId: string, lang: FanLang): Promise<{ rows: { text: string; callback_data: string }[][]; line: string | null } | null> {
   const { productsForSale, price } = await import("./_sales_bot.js");
   const { abroadRows } = await import("./_sales_pay.js");
   const forSale = await productsForSale();
@@ -219,7 +223,24 @@ async function chamadaButtons(productId: string, lang: FanLang): Promise<{ text:
   const was = product.regular_cents ? ` (era ${price(product.regular_cents)})` : "";
   const pix = [{ text: `🇧🇷 Pix — ${price(product.price_cents)}${was}`, callback_data: `pix:${product.id}` }];
   const abroad = await abroadRows(product);
-  return lang === "pt" ? [pix, ...abroad] : [...abroad, pix];
+  const rows = lang === "pt" ? [pix, ...abroad] : [...abroad, pix];
+
+  const { promoActive, promoConfig } = await import("./_sales_promo.js");
+  const promo = await promoConfig();
+  if (!promoActive(promo)) return { rows, line: null };
+  const { starsConfig, starsPrice } = await import("./_sales_stars.js");
+  const { ctaConfig } = await import("./_sales_cta.js");
+  const { titleEn } = await import("./_sales_lang.js");
+  const sc = await starsConfig();
+  const stars = starsPrice(product, sc);
+  const starsWas = starsPrice({ ...product, promo_stars: undefined }, sc);
+  const pt = product.regular_cents ? `🔥 ${promo.label}: ${product.title} por só ${price(product.price_cents)} (era ${price(product.regular_cents)}). Só hoje!` : null;
+  const en =
+    stars && starsWas && stars < starsWas
+      ? `🔥 ${promo.labelEn}: ${titleEn(product, (await ctaConfig()).titlesEn)} for only ⭐ ${stars} (was ⭐ ${starsWas}). Today only!`
+      : null;
+  const line = lang === "en" ? en : lang === "pt" ? pt : [pt, en].filter(Boolean).join("\n") || null;
+  return { rows, line };
 }
 
 // as 3 previas mais novas, girando por fa
@@ -282,8 +303,8 @@ export async function prepareChamada(token: string): Promise<Chamada> {
   // o exemplo, como o fa de fora recebe (com o nome do administrador; as duas linguas para ele conferir)
   const { promoBanner } = await import("./_sales_promo.js");
   const [me] = await dbSelect<FanRow>("fans", `select=*&telegram_id=eq.${admin}`);
-  const rows = await chamadaButtons(c.targets[0]?.product ?? "", null);
-  if (rows) await sendOne(token, Number(admin), chamadaCaption(texts[0], me ?? { first_name: null }, null, await promoBanner(null)), rows, 0).catch(() => undefined);
+  const offer = await chamadaOffer(c.targets[0]?.product ?? "", null);
+  if (offer) await sendOne(token, Number(admin), chamadaCaption(texts[0], me ?? { first_name: null }, null, offer.line ?? (await promoBanner(null))), offer.rows, 0).catch(() => undefined);
   const others = texts
     .slice(1)
     .map((t, i) => `${i + 2}. ${t.pt}`)
@@ -407,9 +428,10 @@ export async function chamadaTick(token: string): Promise<number> {
       const { fanLang } = await import("./_sales_lang.js");
       const { promoBanner } = await import("./_sales_promo.js");
       const lang = await fanLang(fan);
-      const rows = await chamadaButtons(target.product, lang);
-      if (!rows) throw new Error("nenhum pacote à venda");
-      await sendOne(token, fan.telegram_id, chamadaCaption(c.texts[c.next % c.texts.length], fan, lang, await promoBanner(lang)), rows, c.next);
+      const offer = await chamadaOffer(target.product, lang);
+      if (!offer) throw new Error("nenhum pacote à venda");
+      // promocao: "o pacote X por Y, so hoje" no topo (sem preco de promocao no pacote, a faixa geral)
+      await sendOne(token, fan.telegram_id, chamadaCaption(c.texts[c.next % c.texts.length], fan, lang, offer.line ?? (await promoBanner(lang))), offer.rows, c.next);
       c.sent++;
       sent++;
       c.next++;
