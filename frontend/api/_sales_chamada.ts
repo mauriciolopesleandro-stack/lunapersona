@@ -137,7 +137,10 @@ Regras:
 - termine chamando para tocar no botão;
 - sem descrever ato sexual nem partes íntimas (o fã ainda não pagou), sem preço, sem link, sem prometer encontro;
 - o fã é homem: fale com ele no masculino (nunca "gostosa", "linda");
-- é um convite safado, não uma cobrança: nada de "paga o que deve", "resolve esse negócio", tom de dívida ou bronca;
+- é um convite safado, não uma cobrança: nada de "paga o que deve", "tá me devendo", "resolve esse negócio", tom de dívida ou bronca;
+- nunca provoque a masculinidade dele nem ofenda ("é homem ou moleque", "mostra que é homem", "man or a boy"): carinho e malícia, sem humilhar;
+- não prometa vídeo nem nada que o pacote talvez não tenha: fale de "o resto", "o pacote", "sem censura";
+- no inglês, nada de ditado traduzido ao pé da letra (ex.: "panela velha" não vira "old pot"): escreva como um gringo entende;
 - português correto e natural, só letras do português e do inglês (sem outros alfabetos), sem gíria inventada, sem palavra em CAIXA ALTA.
 Exemplos do tom (não copie, varie):
 {"pt": "Ei {nome}… tu deixou a coroa aqui esperando, foi? 😏 Agora dá pra pagar de qualquer lugar, com cartão aqui mesmo no Telegram. Essa foto borrada é só o aperitivo… o resto tá sem censura te esperando 🔥 Toca aqui embaixo.", "en": "Hey {nome}… you left me waiting 😏 Now you can pay from anywhere, by card right here in Telegram. That blurry pic? Just a taste. The rest is waiting for you, uncensored 🔥 Tap below."}
@@ -154,6 +157,8 @@ function badText(t: string): boolean {
     // preco inventado pela IA (o preco certo esta nos botoes)
     /(R\$|US\$|\$)\s?\d|\d+([.,]\d+)?\s?(reais|d[oó]lares|dollars|estrelas|stars)\b/i.test(t) ||
     /\b(o que (você|tu) deve|resolve (logo )?esse neg[oó]cio|pay what you owe|pay up)\b/i.test(t) ||
+    // 23/11: ofensa, cobranca, video prometido, ditado traduzido ao pe da letra
+    /(homem ou (é )?moleque|mostra que (tu|você) é homem|man or a boy|you're a man|t[aá] me devendo|me deve|you owe me|old pot|panela velha|v[ií]deo completo|full video)/i.test(t) ||
     /\b[A-ZÀ-Ú]{5,}\b.*\b[A-ZÀ-Ú]{5,}\b/.test(t)
   );
 }
