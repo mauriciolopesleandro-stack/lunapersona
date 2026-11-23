@@ -214,7 +214,10 @@ export function chamadaCaption(t: ChamadaText, fan: Pick<FanRow, "first_name">, 
 // promocao, a linha do topo da mensagem com o pacote e o preco dela (pedido de
 // 23/11: "o pacote X esta na promocao por Y, so hoje"). Fa de fora: preco em
 // estrelas; Brasil: em reais; sem saber, as duas linhas.
-async function chamadaOffer(productId: string, lang: FanLang): Promise<{ rows: { text: string; callback_data: string }[][]; line: string | null } | null> {
+// fanId: o fa (23/11): se a fatura em estrelas que ele recebeu antes era mais cara
+// que o preco de agora, a mensagem diz "agora so ⭐ X (era ⭐ Y)" - os precos em
+// estrelas cairam em 23/11 (250/500/1000 -> 155/310/465)
+export async function chamadaOffer(productId: string, lang: FanLang, fanId?: string): Promise<{ rows: { text: string; callback_data: string }[][]; line: string | null } | null> {
   const { productsForSale, price } = await import("./_sales_bot.js");
   const { abroadRows } = await import("./_sales_pay.js");
   const forSale = await productsForSale();
@@ -225,14 +228,23 @@ async function chamadaOffer(productId: string, lang: FanLang): Promise<{ rows: {
   const abroad = await abroadRows(product);
   const rows = lang === "pt" ? [pix, ...abroad] : [...abroad, pix];
 
-  const { promoActive, promoConfig } = await import("./_sales_promo.js");
-  const promo = await promoConfig();
-  if (!promoActive(promo)) return { rows, line: null };
   const { starsConfig, starsPrice } = await import("./_sales_stars.js");
   const { ctaConfig } = await import("./_sales_cta.js");
   const { titleEn } = await import("./_sales_lang.js");
   const sc = await starsConfig();
   const stars = starsPrice(product, sc);
+  const { promoActive, promoConfig } = await import("./_sales_promo.js");
+  const promo = await promoConfig();
+  if (!promoActive(promo)) {
+    // sem promocao: o fa de fora que viu a fatura mais cara fica sabendo que baixou
+    if (lang === "pt" || !stars || !fanId) return { rows, line: null };
+    const [seen] = await dbSelect<{ amount_cents: number }>(
+      "sales_orders",
+      `select=amount_cents&fan_id=eq.${fanId}&product_id=eq.${product.id}&gateway=eq.estrelas&order=amount_cents.desc&limit=1`
+    ).catch(() => [] as { amount_cents: number }[]);
+    if (!seen || seen.amount_cents <= stars) return { rows, line: null };
+    return { rows, line: `⭐ New lower price: ${titleEn(product, (await ctaConfig()).titlesEn)} now only ⭐ ${stars} (was ⭐ ${seen.amount_cents}).` };
+  }
   const starsWas = starsPrice({ ...product, promo_stars: undefined }, sc);
   const pt = product.regular_cents ? `🔥 ${promo.label}: ${product.title} por só ${price(product.price_cents)} (era ${price(product.regular_cents)}). Só hoje!` : null;
   const en =
@@ -303,7 +315,7 @@ export async function prepareChamada(token: string): Promise<Chamada> {
   // o exemplo, como o fa de fora recebe (com o nome do administrador; as duas linguas para ele conferir)
   const { promoBanner } = await import("./_sales_promo.js");
   const [me] = await dbSelect<FanRow>("fans", `select=*&telegram_id=eq.${admin}`);
-  const offer = await chamadaOffer(c.targets[0]?.product ?? "", null);
+  const offer = await chamadaOffer(c.targets[0]?.product ?? "", null, c.targets[0]?.fan);
   if (offer) await sendOne(token, Number(admin), chamadaCaption(texts[0], me ?? { first_name: null }, null, offer.line ?? (await promoBanner(null))), offer.rows, 0).catch(() => undefined);
   const others = texts
     .slice(1)
@@ -428,7 +440,7 @@ export async function chamadaTick(token: string): Promise<number> {
       const { fanLang } = await import("./_sales_lang.js");
       const { promoBanner } = await import("./_sales_promo.js");
       const lang = await fanLang(fan);
-      const offer = await chamadaOffer(target.product, lang);
+      const offer = await chamadaOffer(target.product, lang, fan.id);
       if (!offer) throw new Error("nenhum pacote à venda");
       // promocao: "o pacote X por Y, so hoje" no topo (sem preco de promocao no pacote, a faixa geral)
       await sendOne(token, fan.telegram_id, chamadaCaption(c.texts[c.next % c.texts.length], fan, lang, offer.line ?? (await promoBanner(lang))), offer.rows, c.next);
