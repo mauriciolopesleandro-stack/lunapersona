@@ -3,6 +3,7 @@ import { dbSelect, dbUpdate, dbUpdateWhere } from "./_supabase.js";
 import { telegram } from "./_telegram.js";
 import type { FanRow, ProductRow } from "./_sales_bot.js";
 import { personaIdentity, personaText } from "./_persona.js";
+import { fanLang, type FanLang } from "./_sales_lang.js";
 
 // Mensagens que chamam o fa para comprar (CTA) no bot de vendas, sempre com o
 // nome dele ({nome}), uma previa (foto com as partes intimas cobertas, escolhida
@@ -44,6 +45,15 @@ export interface CtaConfig {
   daily: string[];
   renewal: string[]; // VIP vence em breve: {data} = vencimento, {dias} = quanto falta
   renewalGrace: string; // VIP venceu e ainda esta no canal: {data} = quando sai
+  // 23/11: fa de fora (Telegram em outra lingua) recebe em ingles; quem ainda nao
+  // tem lingua conhecida recebe as duas (_sales_lang.ts)
+  welcomeEn: string;
+  dailyEn: string[];
+  titlesEn: Record<string, string>; // id do pacote -> nome em ingles (vazio: nome padrao pelo tipo)
+  // 23/11 (140 de 223 bloquearam): no maximo 1 diaria por dia (os horarios viram
+  // tentativas) e para de mandar para quem nao toca em nada ha stopAfterDays dias
+  oncePerDay: boolean;
+  stopAfterDays: number; // 0 = nunca para
 }
 
 export interface Preview {
@@ -82,7 +92,44 @@ export const DEFAULT_CTA: CtaConfig = {
     "Amor, seu VIP vence em {data} 💔 Minhas próximas aventuras eu fiz pensando em você 😏 Renova e fica comigo.",
   ],
   renewalGrace: "{nome}, seu VIP venceu 😢 Você ainda tá no canal até {data}… renova agora pra não perder o ensaio novo que tá chegando 🔥",
+  welcomeEn: "Hey {nome}! So glad you came 😘\n\nHere I show what I can't show anywhere else… Pick your package and come see me 🔥",
+  dailyEn: [
+    "Hey {nome}, you didn't forget about me, right? 😈 I woke up today wanting to show you everything…",
+    "Hi again {nome}… I thought you'd be back by now 👀 There's still time to see everything you were curious about 🔥",
+    "{nome}, I picked some pics I've never shown out here 🤫 Only my VIP gets to see them.",
+    "I'm here thinking about you, {nome} 💭 How about we meet today? In my VIP I get really comfortable 😏",
+    "{nome}, new pics in the VIP today 📸 just the way you like it… Come see before I change my mind 🙈",
+    "Psst, {nome}… 💋 In less than 2 minutes you could be seeing everything, uncensored.",
+    "{nome}, you only saw the preview… imagine the rest 😈 Pick your package below.",
+    "Missing you here, {nome} 🥺 I just dropped a brand-new photo set, come check it out 🔥",
+    "{nome}, my VIP gets hotter every day 🌶️ New content almost daily, only for those inside.",
+    "Hey {nome} 😘 Today I'm just in lingerie and I feel like being seen… but only in the VIP 🔒",
+  ],
+  titlesEn: {},
+  oncePerDay: true,
+  stopAfterDays: 7,
 };
+
+const STOP_MAX_DAYS = 60;
+
+function cleanList(raw: unknown, max: number): string[] {
+  return Array.isArray(raw) ? raw.map((t) => clean(t, 900)).filter(Boolean).slice(0, max) : [];
+}
+
+function cleanTitles(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, string> = {};
+  for (const [id, t] of Object.entries(raw as Record<string, unknown>)) {
+    const title = clean(t, 60);
+    if (/^[0-9a-f-]{36}$/i.test(id) && title) out[id] = title;
+  }
+  return out;
+}
+
+function cleanStop(raw: unknown): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= STOP_MAX_DAYS ? n : DEFAULT_CTA.stopAfterDays;
+}
 
 // 1 a 4 horarios inteiros (0-23), sem repetir, em ordem
 function cleanHours(raw: unknown, fallback: unknown): number[] {
@@ -111,6 +158,11 @@ export async function ctaConfig(): Promise<CtaConfig> {
       daily: daily.length ? daily : DEFAULT_CTA.daily,
       renewal: Array.isArray(saved.renewal) && saved.renewal.some((t) => clean(t, 900)) ? saved.renewal.map((t) => clean(t, 900)).filter(Boolean) : DEFAULT_CTA.renewal,
       renewalGrace: clean(saved.renewalGrace, 900) || DEFAULT_CTA.renewalGrace,
+      welcomeEn: clean(saved.welcomeEn, 900) || DEFAULT_CTA.welcomeEn,
+      dailyEn: cleanList(saved.dailyEn, 60).length ? cleanList(saved.dailyEn, 60) : DEFAULT_CTA.dailyEn,
+      titlesEn: cleanTitles(saved.titlesEn),
+      oncePerDay: saved.oncePerDay !== false,
+      stopAfterDays: saved.stopAfterDays === undefined ? DEFAULT_CTA.stopAfterDays : cleanStop(saved.stopAfterDays),
     };
   } catch {
     return DEFAULT_CTA;
@@ -131,9 +183,51 @@ export async function saveCtaConfig(raw: Record<string, unknown>): Promise<CtaCo
     daily,
     renewal: renewal.length ? renewal : DEFAULT_CTA.renewal,
     renewalGrace: clean(raw.renewalGrace, 900) || DEFAULT_CTA.renewalGrace,
+    welcomeEn: clean(raw.welcomeEn, 900) || DEFAULT_CTA.welcomeEn,
+    dailyEn: cleanList(raw.dailyEn, 60).length ? cleanList(raw.dailyEn, 60) : DEFAULT_CTA.dailyEn,
+    titlesEn: cleanTitles(raw.titlesEn),
+    oncePerDay: raw.oncePerDay !== false,
+    stopAfterDays: raw.stopAfterDays === undefined ? DEFAULT_CTA.stopAfterDays : cleanStop(raw.stopAfterDays),
   };
+  if (raw.stopAfterDays !== undefined && cleanStop(raw.stopAfterDays) !== Number(raw.stopAfterDays)) throw new Error(`“Parar depois de” vai de 0 (nunca) a ${STOP_MAX_DAYS} dias.`);
   await storeSet(CONFIG_KEY, JSON.stringify(config));
   return config;
+}
+
+// --- textos em ingles pela IA (botao do estudio: o administrador confere antes de salvar) ------
+
+// texto que nao vai para o fa: outro alfabeto ou sem o {nome}
+const BAD_EN = /[Ͱ-ϿЀ-ӿ֐-ࣿ฀-๿぀-ヿ一-鿿가-힯]/;
+
+export async function translateCta(config: Pick<CtaConfig, "welcome" | "daily">, products: { id: string; title: string }[]): Promise<{ welcomeEn: string; dailyEn: string[]; titlesEn: Record<string, string> }> {
+  const { askAi } = await import("./_assistant.js");
+  const who = personaIdentity() ?? "A Luna Vox é uma influenciadora virtual brasileira criada com IA, adulta, carinhosa, confiante e provocante.";
+  const system = personaText(`Você traduz as mensagens do bot de vendas no Telegram (conteúdo adulto, só para quem já disse ter 18 anos) para fãs de fora do Brasil.
+${who}
+Traduza para um inglês natural, no jeito dela (não ao pé da letra): mantenha a malícia, o charme e os emojis. Ela é brasileira: pode deixar uma palavra carinhosa em português de vez em quando (ex.: "meu bem"), no máximo uma por mensagem.
+Regras:
+- mantenha exatamente {nome} (com as chaves) onde entra o nome do fã;
+- uma tradução para cada mensagem, na mesma ordem e na mesma quantidade;
+- sem descrever ato sexual nem partes íntimas, sem preço, sem link;
+- nomes dos pacotes: curtos (até 40 letras), claros para um gringo.
+Responda só JSON: {"welcome": "...", "daily": ["...", ...], "titles": {"<id>": "..."}}`);
+  const out = await askAi(
+    "normal",
+    [
+      { role: "system", content: system },
+      { role: "user", content: JSON.stringify({ welcome: config.welcome, daily: config.daily, titles: Object.fromEntries(products.map((p) => [p.id, p.title])) }) },
+    ],
+    { json: true, maxTokens: 3000, timeoutMs: 45_000, temperature: 0.6 }
+  );
+  const raw = out.text.replace(/^```(?:json)?\s*|\s*```$/g, "");
+  const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
+  const ok = (t: unknown) => typeof t === "string" && t.trim().length > 5 && t.includes("{nome}") && !BAD_EN.test(t);
+  const welcomeEn = ok(parsed.welcome) ? clean(parsed.welcome, 900) : "";
+  const dailyEn = (Array.isArray(parsed.daily) ? parsed.daily : []).filter(ok).map((t: string) => clean(t, 900));
+  const titlesEn = cleanTitles(parsed.titles);
+  for (const [id, t] of Object.entries(titlesEn)) if (BAD_EN.test(t) || !products.some((p) => p.id === id)) delete titlesEn[id];
+  if (!welcomeEn && !dailyEn.length) throw new Error("A IA não devolveu a tradução. Tente de novo.");
+  return { welcomeEn, dailyEn, titlesEn };
 }
 
 export async function previews(): Promise<Preview[]> {
@@ -199,24 +293,36 @@ export async function suggestCaptions(image: string): Promise<string[]> {
   return clean.slice(0, 3);
 }
 
-export function fill(text: string, fan: Pick<FanRow, "first_name">, extra: Record<string, string> = {}): string {
-  const name = (fan.first_name ?? "").trim().split(/\s+/)[0] || "amor";
+export function fill(text: string, fan: Pick<FanRow, "first_name">, extra: Record<string, string> = {}, lang: FanLang = "pt"): string {
+  const name = (fan.first_name ?? "").trim().split(/\s+/)[0] || (lang === "en" ? "babe" : "amor");
   return Object.entries({ nome: name, ...extra }).reduce((t, [k, v]) => t.split(`{${k}}`).join(v), text);
 }
 
-async function buyButtons(): Promise<{ text: string; callback_data: string }[][]> {
-  const { productsForSale, productLabel } = await import("./_sales_bot.js");
-  return (await productsForSale()).map((p: ProductRow) => [{ text: productLabel(p), callback_data: `buy:${p.id}` }]);
+// botoes dos pacotes na lingua do fa ("en": nome em ingles e preco em estrelas/dolar)
+async function buyButtons(lang: FanLang = "pt"): Promise<{ text: string; callback_data: string }[][]> {
+  const { productsForSale } = await import("./_sales_bot.js");
+  const { packLabels } = await import("./_sales_lang.js");
+  const products = await productsForSale();
+  const labels = await packLabels(products, lang);
+  return products.map((p: ProductRow, i) => [{ text: labels[i], callback_data: `buy:${p.id}` }]);
 }
 
 // Manda o CTA: previa (se houver) com o texto na legenda e os botoes dos pacotes
-// (ou os botoes dados). "turn" escolhe a previa (gira a cada mensagem).
-export async function sendCta(token: string, chatId: number, text: string, turn: number, buttons?: { text: string; callback_data: string }[][]): Promise<void> {
-  const rows = buttons ?? (await buyButtons());
+// (ou os botoes dados). "turn" escolhe a previa (gira a cada mensagem). "lang":
+// lingua da faixa da promocao e dos botoes (null: as duas faixas, botoes em reais).
+export async function sendCta(
+  token: string,
+  chatId: number,
+  text: string,
+  turn: number,
+  buttons?: { text: string; callback_data: string }[][],
+  lang: FanLang = "pt"
+): Promise<void> {
+  const rows = buttons ?? (await buyButtons(lang));
   // dia de promocao: a faixa vai no topo de toda mensagem com os pacotes
   if (rows.length) {
     const { promoBanner } = await import("./_sales_promo.js");
-    const banner = await promoBanner();
+    const banner = await promoBanner(lang);
     if (banner) text = `${banner}\n\n${text}`;
   }
   const list = await previews();
@@ -235,13 +341,19 @@ export async function sendCta(token: string, chatId: number, text: string, turn:
   }
 }
 
+// texto na lingua do fa: "pt", "en" ou os dois (lingua ainda desconhecida)
+export function inLang(pt: string, en: string, lang: FanLang): string {
+  return lang === "en" ? en : lang === "pt" ? pt : `${pt}\n\n🌎 ${en}`;
+}
+
 // Boas-vindas logo depois do "tenho 18". Conta como a mensagem do dia.
-export async function sendWelcome(token: string, fan: FanRow, chatId: number): Promise<boolean> {
-  if (!(await buyButtons()).length) return false;
+export async function sendWelcome(token: string, fan: FanRow, chatId: number, lang: FanLang = "pt"): Promise<boolean> {
+  const rows = await buyButtons(lang);
+  if (!rows.length) return false;
   const config = await ctaConfig();
   // a previa gira a cada fa novo (antes ia sempre a primeira): usa todas as que estiverem na pasta
   const turn = storeConfigured() ? await storeIncr("luna:cta-boasvindas-giro").catch(() => Date.now()) : Date.now();
-  await sendCta(token, chatId, fill(config.welcome, fan), turn);
+  await sendCta(token, chatId, fill(inLang(config.welcome, config.welcomeEn, lang), fan, {}, lang), turn, rows, lang);
   await dbUpdateWhere("fans", `id=eq.${fan.id}`, { cta_sent_at: new Date().toISOString() });
   return true;
 }
@@ -367,13 +479,17 @@ export async function ctaTick(): Promise<number> {
     await intlSweep(token).catch(() => undefined);
 
     // chamada para quem gerou o pagamento e nao pagou (22/11): aos poucos, depois do "Enviar"
-    const { chamadaTick } = await import("./_sales_chamada.js");
+    const { chamadaTick, promoReminderTick } = await import("./_sales_chamada.js");
     sent += await chamadaTick(token).catch(() => 0);
+    // 1o dia da promocao: pergunta ao administrador se manda a chamada com o preco dela
+    await promoReminderTick(token).catch(() => undefined);
 
-    // Pix gerado e nao pago ha 20 min (no maximo 1 dia): um lembrete
+    // Pix gerado e nao pago ha 20 min (no maximo 1 dia): um lembrete. So Pix (ate
+    // 23/11 o pedido em dolar tambem caia aqui e o fa de fora recebia "teu Pix
+    // ta aqui"); fa de fora nao recebe (ele nao paga Pix)
     const pending = await dbSelect<{ id: string; fan_id: string; product_id: string }>(
       "sales_orders",
-      `select=id,fan_id,product_id&status=eq.pendente&reminded_at=is.null&gateway_charge_id=not.is.null&created_at=lt.${new Date(now - PIX_REMINDER_MS).toISOString()}&created_at=gt.${new Date(now - 86400_000).toISOString()}&limit=${BATCH}`
+      `select=id,fan_id,product_id&status=eq.pendente&gateway=eq.pushinpay&reminded_at=is.null&gateway_charge_id=not.is.null&created_at=lt.${new Date(now - PIX_REMINDER_MS).toISOString()}&created_at=gt.${new Date(now - 86400_000).toISOString()}&limit=${BATCH}`
     );
     for (const order of pending) {
       // pagou e o aviso nao chegou: entrega em vez de cobrar de novo
@@ -383,6 +499,7 @@ export async function ctaTick(): Promise<number> {
       const [fan] = await dbSelect<FanRow>("fans", `select=*&id=eq.${order.fan_id}`);
       const [product] = await dbSelect<ProductRow>("sales_products", `select=*&id=eq.${order.product_id}`);
       if (!fan || !product || fan.blocked_at) continue;
+      if ((await fanLang(fan)) === "en") continue;
       await telegram(token, "sendMessage", {
         chat_id: fan.telegram_id,
         text: fill(config.pixReminder, fan, { pacote: product.title }),
@@ -412,16 +529,20 @@ export async function ctaTick(): Promise<number> {
       return sent;
     }
     await storeSetIfAbsent(logKey(brDay(), slot, "rodou"), "1", LOG_TTL).catch(() => undefined);
-    // uma por horario: quem recebeu depois do inicio do horario (ou ha menos de 3 h) espera o proximo
+    // uma por horario: quem recebeu depois do inicio do horario (ou ha menos de 3 h) espera o proximo.
+    // 1 por dia (padrao desde 23/11): quem ja recebeu hoje (boas-vindas conta) espera amanha
     const slotStart = Date.parse(`${brDay()}T${String(slot).padStart(2, "0")}:00:00-03:00`);
-    const since = new Date(Math.min(slotStart, now - MIN_GAP_MS)).toISOString();
+    const dayStart = Date.parse(`${brDay()}T00:00:00-03:00`);
+    const since = new Date(Math.min(config.oncePerDay ? dayStart : slotStart, now - MIN_GAP_MS)).toISOString();
+    // quem nao toca em nada no bot ha stopAfterDays dias para de receber (volta quando tocar)
+    const quiet = config.stopAfterDays > 0 ? `&last_seen_at=gt.${new Date(now - config.stopAfterDays * 86400_000).toISOString()}` : "";
     // o administrador recebe a chamada mesmo com VIP (cortesia para ver como o cliente ve):
-    // assim ele confere as duas mensagens do dia em todas as personas
+    // assim ele confere as mensagens do dia em todas as personas
     const { telegramConfig } = await import("./_telegram.js");
     const adminChat = (await telegramConfig().catch(() => null))?.chatId ?? null;
     const fans = await dbSelect<CtaFan>(
       "fans",
-      `select=*&adult_confirmed_at=not.is.null&opted_out_at=is.null&blocked_at=is.null&or=(cta_sent_at.is.null,cta_sent_at.lt.${since})&order=cta_sent_at.asc&limit=${BATCH}`
+      `select=*&adult_confirmed_at=not.is.null&opted_out_at=is.null&blocked_at=is.null${quiet}&or=(cta_sent_at.is.null,cta_sent_at.lt.${since})&order=cta_sent_at.asc&limit=${BATCH}`
     );
     for (const fan of fans) {
       if (Date.now() - now > CTA_BUDGET_MS) break;
@@ -437,9 +558,13 @@ export async function ctaTick(): Promise<number> {
       const list = await previews();
       const own = list.length ? list[turn % list.length].text : undefined;
       // modelos em sequencia por fa: a 1a diaria e o modelo 1; depois do ultimo, volta ao 1
-      const text = own || config.daily[fan.cta_count % config.daily.length];
+      const pt = own || config.daily[fan.cta_count % config.daily.length];
+      // fa de fora: a frase em ingles da vez (a chamada da previa e em portugues)
+      const en = config.dailyEn[fan.cta_count % config.dailyEn.length];
+      const lang = await fanLang(fan);
+      const text = inLang(pt, en, lang);
       try {
-        await sendCta(token, fan.telegram_id, fill(text, fan), turn);
+        await sendCta(token, fan.telegram_id, fill(text, fan, {}, lang), turn, undefined, lang);
         sent++;
         await logDaily(slot, "ok", { text, media_id: list.length ? list[Math.abs(turn) % list.length].media_id : null });
       } catch (e) {

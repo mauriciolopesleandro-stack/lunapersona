@@ -72,10 +72,13 @@ export function suggestedUsd(product: Pick<ProductRow, "kind">): number {
 
 // preco em centavos de dolar, ou null quando nao vende fora do Brasil
 // (desligado, sem as chaves, ou VIP mensal: a assinatura e so pelo Pix)
-export function intlPrice(product: Pick<ProductRow, "id" | "kind" | "billing">, config: IntlConfig): number | null {
+// promo_usd: preco da promocao do dia (withPromo em _sales_promo.ts), so se for menor
+export function intlPrice(product: Pick<ProductRow, "id" | "kind" | "billing"> & { promo_usd?: number }, config: IntlConfig): number | null {
   if (!config.enabled || !config.apiKey || !config.ipnSecret || product.billing === "mensal") return null;
   const own = Number(config.prices[product.id]);
-  return Number.isInteger(own) && own >= INTL_FLOOR_CENTS && own <= INTL_MAX_CENTS ? own : suggestedUsd(product);
+  const cents = Number.isInteger(own) && own >= INTL_FLOOR_CENTS && own <= INTL_MAX_CENTS ? own : suggestedUsd(product);
+  const promo = Number(product.promo_usd);
+  return Number.isInteger(promo) && promo >= INTL_MIN_CENTS && promo < cents ? promo : cents;
 }
 
 export function usd(cents: number): string {

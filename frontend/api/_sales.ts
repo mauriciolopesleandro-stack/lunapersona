@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { promoActive, promoConfig, savePromo, weekdayInBrazil } from "./_sales_promo.js";
+import { PROMO_USD_MIN, promoActive, promoConfig, savePromo, weekdayInBrazil } from "./_sales_promo.js";
 import { randomUUID } from "crypto";
 import { isAuthenticated } from "./_auth.js";
 import { UPLOAD_BUCKET } from "./_posts.js";
@@ -15,10 +15,10 @@ import {
   type ProductRow,
 } from "./_sales_bot.js";
 import { forgetPix, giftToFan, GIFT_GATEWAY, pixConfig, previewPack, savePixConfig, STARS_GATEWAY } from "./_sales_pay.js";
-import { saveStars, STARS_MAX, STARS_MIN, starsConfig, suggestedStars } from "./_sales_stars.js";
-import { checkIntlKey, forgetIntl, INTL_GATEWAY, INTL_MAX_CENTS, INTL_MIN_CENTS, intlConfig, saveIntl, suggestedUsd } from "./_sales_intl.js";
+import { saveStars, STARS_MAX, STARS_MIN, starsConfig, starsPrice, suggestedStars } from "./_sales_stars.js";
+import { checkIntlKey, forgetIntl, INTL_GATEWAY, INTL_MAX_CENTS, INTL_MIN_CENTS, intlConfig, intlPrice, saveIntl, suggestedUsd } from "./_sales_intl.js";
 import { cancelChamada, chamadaStatus, prepareChamada, startChamada } from "./_sales_chamada.js";
-import { ctaConfig, ctaDays, fill, previews, saveCtaConfig, savePreviews, sendCta, suggestCaptions } from "./_sales_cta.js";
+import { ctaConfig, ctaDays, fill, previews, saveCtaConfig, savePreviews, sendCta, suggestCaptions, translateCta } from "./_sales_cta.js";
 import { storeConfigured, storeDelete, storeGet, storeSet } from "./_store.js";
 import { audit, dbDelete, dbInsert, dbSelect, dbUpdate, storageReadUrl, storageRemove, storageUploadUrl, supabaseConfigured } from "./_supabase.js";
 import { telegram, telegramChannel, telegramConfig } from "./_telegram.js";
@@ -57,7 +57,9 @@ import { DEFAULT_PERSONA, personaId, personaPath, personaText, runAs } from "./_
 //   POST { action: "preview-suggest", image }          a IA (com visao) olha a previa e sugere 3 chamadas
 //   POST { action: "preview-text", media_id, text }    guarda a chamada daquela previa (vazio tira)
 //   POST { action: "cta-days", start, days }           calendario: a diaria de cada dia (✓ saiu / ✗ falhou)
-//   POST { action: "promo-save", enabled, days, label, prices }  promocao (ex.: de domingo) por pacote
+//   POST { action: "promo-save", enabled, days, label, labelEn, prices, stars, usd }
+//                                        promocao (ex.: de domingo) por pacote, em reais, estrelas e dolar
+//   POST { action: "cta-translate" }     a IA escreve as mensagens em ingles (volta para conferir, nao salva)
 //
 // Pastas do Telegram (pagina Telegram): conteudos/vendas/ensaio e album-vip viram
 // o conteudo dos pacotes (media-add/media-remove); conteudos/vendas/vip e postado
@@ -745,10 +747,36 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         if (cents >= p.price_cents) throw new Problem(400, `Promoção de “${p.title}” precisa ser menor que o preço normal.`);
         prices[p.id] = cents;
       }
-      if (body.enabled && !Object.keys(prices).length) throw new Problem(400, "Coloque o preço da promoção em pelo menos um pacote.");
+      // 23/11: tambem em estrelas e em dolar (fa de fora), menor que o preco normal de cada um
+      const sc = await starsConfig();
+      const ic = await intlConfig();
+      const allRows = await dbSelect<ProductRow>("sales_products", "select=*");
+      const promoIn = (key: "stars" | "usd") => (body[key] && typeof body[key] === "object" ? (body[key] as Record<string, unknown>) : {});
+      const stars: Record<string, number> = {};
+      const usd: Record<string, number> = {};
+      for (const p of allRows) {
+        const s = promoIn("stars")[p.id];
+        if (s !== undefined && s !== null && s !== "") {
+          const n = Number(s);
+          const normal = starsPrice(p, { ...sc, enabled: true });
+          if (!Number.isInteger(n) || n < STARS_MIN) throw new Problem(400, `Promoção em estrelas de “${p.title}”: no mínimo ${STARS_MIN} ⭐.`);
+          if (normal && n >= normal) throw new Problem(400, `Promoção em estrelas de “${p.title}” precisa ser menor que o normal (${normal} ⭐).`);
+          stars[p.id] = n;
+        }
+        const u = promoIn("usd")[p.id];
+        if (u !== undefined && u !== null && u !== "") {
+          const n = Number(u);
+          const normal = intlPrice(p, { ...ic, enabled: true, apiKey: ic.apiKey ?? "x", ipnSecret: ic.ipnSecret ?? "x" });
+          if (!Number.isInteger(n) || n < PROMO_USD_MIN) throw new Problem(400, `Promoção em dólar de “${p.title}”: no mínimo US$ ${PROMO_USD_MIN / 100} (mínimo da NOWPayments).`);
+          if (normal && n >= normal) throw new Problem(400, `Promoção em dólar de “${p.title}” precisa ser menor que o normal (US$ ${(normal / 100).toFixed(2)}).`);
+          usd[p.id] = n;
+        }
+      }
+      if (body.enabled && !Object.keys(prices).length && !Object.keys(stars).length && !Object.keys(usd).length) throw new Problem(400, "Coloque o preço da promoção em pelo menos um pacote.");
       const label = typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 60) : "Promoção de domingo";
-      await savePromo({ enabled: Boolean(body.enabled), days, label, prices });
-      await audit("promocao", "sales", null, { ligada: Boolean(body.enabled), dias: days, pacotes: Object.keys(prices).length });
+      const labelEn = typeof body.labelEn === "string" && body.labelEn.trim() ? body.labelEn.trim().slice(0, 60) : "Weekend deal";
+      await savePromo({ enabled: Boolean(body.enabled), days, label, labelEn, prices, stars, usd });
+      await audit("promocao", "sales", null, { ligada: Boolean(body.enabled), dias: days, pacotes: Object.keys(prices).length, estrelas: Object.keys(stars).length, dolar: Object.keys(usd).length });
     } else if (body.action === "stars-save") {
       const products = await dbSelect<ProductRow>("sales_products", "select=id,title");
       const prices: Record<string, number> = {};
@@ -813,11 +841,25 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         throw new Problem(400, e instanceof Error ? e.message : String(e));
       }
       await audit("cta_textos", "sales", null);
+    } else if (body.action === "cta-translate") {
+      // a IA escreve as mensagens em ingles a partir das em portugues; volta para o
+      // estudio conferir (so salva quando o administrador tocar em Salvar)
+      const config = await ctaConfig();
+      const products = await dbSelect<ProductRow>("sales_products", "select=id,title&active=eq.true&order=position.asc");
+      try {
+        return reply(200, { translated: await translateCta(config, products) });
+      } catch (e) {
+        throw new Problem(502, e instanceof Error ? e.message : String(e));
+      }
     } else if (body.action === "cta-test") {
+      // lang "en": como o fa de fora recebe (frase em ingles, botoes em estrelas/dolar)
       const chat = await adminChat();
       const config = await ctaConfig();
       const [me] = await dbSelect<FanRow>("fans", `select=*&telegram_id=eq.${chat}`);
-      await sendCta(needToken(), chat, fill(config.daily[Math.floor(Date.now() / 86400_000) % config.daily.length], me), Math.floor(Math.random() * 1000));
+      const en = body.lang === "en";
+      const day = Math.floor(Date.now() / 86400_000);
+      const text = en ? config.dailyEn[day % config.dailyEn.length] : config.daily[day % config.daily.length];
+      await sendCta(needToken(), chat, fill(text, me, {}, en ? "en" : "pt"), Math.floor(Math.random() * 1000), undefined, en ? "en" : "pt");
     } else if (body.action === "test") {
       await sendMenu(needToken(), await adminChat());
     } else if (body.action === "fan-help") {
