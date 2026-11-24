@@ -25,6 +25,8 @@ import { PERSONAS, persona, personaId, personaState, runAs, stateTarget } from "
 // GET                          estado (nunca devolve o token)
 // GET  &action=fb-connect      vai para o Login do Facebook para Empresas
 // GET  &action=audio&q=...     musicas da biblioteca do Instagram (so pela conexao do Facebook)
+// GET  &action=dm-check        conversas recentes do direct e a bio (so leitura)
+// POST { action: "direct", on }       liga/desliga o direct respondido pela persona (igual /direct no Telegram)
 // POST { action: "connect", token }   confere o token (Instagram Login) e guarda cifrado
 // POST { action: "restore" }          volta para a conexao anterior (Instagram Login)
 // POST { action: "disconnect" }
@@ -115,6 +117,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       hasBackup: Boolean(row?.backup_ciphertext),
       fbConfigured: fbConfigured(),
       redirectUri: redirectUri(req),
+      direct: await (async () => {
+        const { dmSystem, directEnabled, directStatus } = await import("./_ig_dm.js");
+        if (!dmSystem()) return null;
+        return { enabled: await directEnabled(), last: await directStatus() };
+      })().catch(() => null),
     };
   };
 
@@ -134,11 +141,23 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (conn.provider !== "facebook_login") return reply(400, { detail: "A música do Instagram precisa da conexão pelo Facebook (página Instagram)." });
       return reply(200, { audio: await igAudioSearch(conn, params.get("q") ?? "") });
     }
+    if (req.method === "GET" && params.get("action") === "dm-check") {
+      const { directCheck } = await import("./_ig_dm.js");
+      return reply(200, await directCheck());
+    }
     if (req.method === "GET") return reply(200, await status());
     if (req.method !== "POST") return reply(405, { detail: "Use GET ou POST." });
     let raw = "";
     for await (const chunk of req) raw += chunk;
-    const body = JSON.parse(raw || "{}") as { action?: string; token?: unknown };
+    const body = JSON.parse(raw || "{}") as { action?: string; token?: unknown; on?: unknown };
+
+    if (body.action === "direct") {
+      const { dmSystem, setDirectEnabled } = await import("./_ig_dm.js");
+      if (!dmSystem()) return reply(400, { detail: `O direct automático ainda não tem as regras da ${persona().name}.` });
+      await setDirectEnabled(body.on === true);
+      await audit("configurar", "instagram", null, { direct: body.on === true });
+      return reply(200, await status());
+    }
 
     if (body.action === "connect") {
       if (!encryptionConfigured()) return reply(501, { detail: "Falta cadastrar TOKEN_ENCRYPTION_KEY na Vercel (só servidor) para guardar o token cifrado." });
