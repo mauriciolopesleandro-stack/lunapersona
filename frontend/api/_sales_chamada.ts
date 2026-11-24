@@ -125,7 +125,7 @@ function chamadaPrompt(promo: string | null): string {
   return personaText(`Você escreve mensagens curtas para o bot de vendas no Telegram (conteúdo adulto, só para quem já disse ter 18 anos).
 ${who}
 Escreva no jeito de falar dela, em primeira pessoa.
-Situação: o fã escolheu um pacote, gerou o pagamento e não pagou. Muitos estão fora do Brasil e não tinham como pagar o Pix. Agora dá para pagar de qualquer país: cartão, Apple Pay ou Google Pay aqui mesmo no Telegram (sem sair do app), ou cripto; e o Pix continua para quem está no Brasil.
+Situação: o fã escolheu um pacote, gerou o pagamento e não pagou. Muitos estão fora do Brasil e não tinham como pagar o Pix. Agora dá para pagar de qualquer país: cartão, UPI (Índia), Apple Pay ou Google Pay aqui mesmo no Telegram (sem sair do app), ou cripto; e o Pix continua para quem está no Brasil.
 ${promo ? `Hoje tem promoção ("${promo}"): preço especial só hoje. Diga isso em todas as mensagens, sem dizer o preço.\n` : ""}A mensagem vai junto de uma foto dela borrada (prévia) e dos botões de pagamento.
 Escreva 6 mensagens diferentes. Cada uma com:
 - "pt": português do Brasil, 2 ou 3 frases curtas, safada e provocante, com malícia e duplo sentido, 1 a 3 emojis;

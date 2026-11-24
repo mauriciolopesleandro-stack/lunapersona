@@ -19,7 +19,7 @@ const DAY_MS = 24 * 3600_000;
 export const PAY_HELP_TEXT = [
   "Having trouble paying? Here is the easy way 💛",
   "",
-  "💳 Card, Apple Pay or Google Pay: tap the 💳 button and pay right here in Telegram (it uses Telegram Stars ⭐; if asked, tap “Buy stars” and pay with your card).",
+  "💳 Card, UPI, Apple Pay or Google Pay: tap the 💳 button and pay right here in Telegram (it uses Telegram Stars ⭐; if asked, tap “Buy stars” and pay with your card, or with UPI on Android in India).",
   "🪙 Crypto: tap the 🪙 button and choose Litecoin (LTC) or USDT (TRC20) on the page. Send the exact amount shown.",
   "🇧🇷 Pix only works with a Brazilian bank.",
   "",

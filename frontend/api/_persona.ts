@@ -42,7 +42,7 @@ export const PERSONAS: Record<string, Persona> = {
     feedCaptionRule:
       "LEGENDA: numa linha só: uma frase curta em português no jeito dela (provocante, 1 ou 2 emojis), depois \" 🌎 \" e a mesma ideia em inglês natural e curto para o público de fora (ex.: \"Oxe, quem aguenta uma coroa dessa? 😏 🌎 Brazilian mature woman… dare to say no? 😏\"). Nada de ditado traduzido ao pé da letra.",
     feedHashtagRule:
-      "HASHTAGS: 5, quatro em inglês para chegar em quem é de fora do Brasil, escolhidas entre #maturewoman #over40 #brazilianwoman #brazilian #latina #realwomen #agelessbeauty #confidentwomen #summervibes #beerlover #bbq, e uma em português (#coroa ou #nordeste). Nunca hashtag de conteúdo adulto (#milf, #sexy, #hot, #nsfw e parecidas derrubam o alcance).",
+      "HASHTAGS: 5, quatro em inglês para chegar em quem é de fora do Brasil, escolhidas entre #maturewoman #over40 #brazilianwoman #brazilian #latina #realwomen #agelessbeauty #confidentwomen #summervibes #beerlover #bbq (de vez em quando troque uma por #brasileña ou #mujermadura, para o público de língua espanhola), e uma em português (#coroa ou #nordeste). Nunca hashtag de conteúdo adulto (#milf, #sexy, #hot, #nsfw e parecidas derrubam o alcance).",
     style: [
       "Guia de estilo do Instagram da Cleuza (siga em todo post, plano, prompt e legenda):",
       "- Cenários de casa e de bairro, de verdade: churrasco no quintal, laje, varanda, cozinha, sofá da sala, beira da piscina de plástico, boteco da esquina, feira. Nada de academia, nada de luxo de revista.",
