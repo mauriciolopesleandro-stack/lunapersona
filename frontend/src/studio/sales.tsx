@@ -321,6 +321,15 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
                 <button
                   type="button"
                   className="st-btn st-btn-small"
+                  disabled={busy !== null || !status.adminStarted}
+                  title="Compra de verdade por 1 estrela, para testar o pagamento e a entrega (também pelo /teste1 no bot)"
+                  onClick={() => run("stars-test", { action: "stars-test" }, "Mandei no seu Telegram a fatura de ⭐ 1: toque em Pagar e veja se o pacote chega.")}
+                >
+                  🧪 Testar compra (⭐ 1)
+                </button>
+                <button
+                  type="button"
+                  className="st-btn st-btn-small"
                   disabled={busy !== null}
                   onClick={() => window.confirm("Desligar o bot de vendas? Os fãs param de ser atendidos.") && run("forget", { action: "forget" }, "Bot de vendas desligado.")}
                 >

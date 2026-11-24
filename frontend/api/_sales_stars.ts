@@ -129,6 +129,20 @@ export async function sendStarsInvoice(salesToken: string, fan: FanRow, product:
   }
 }
 
+// Teste do administrador (23/11, pedido dele): a fatura do 1o pacote a venda por
+// 1 estrela, na conversa dele com o bot de vendas. E uma compra de verdade (1 ⭐):
+// passa pela pergunta do Telegram, pelo pagamento e pela entrega, igual ao fa.
+export async function sendStarsTest(salesToken: string, fan: FanRow, chatId: number): Promise<string> {
+  const { productsForSale } = await import("./_sales_bot.js");
+  const config = await starsConfig();
+  if (!config.enabled) throw new Error("As estrelas estão desligadas nesta persona (Planos e preços → Estrelas).");
+  const product = (await productsForSale()).find((p) => p.kind !== "vip" && p.billing !== "mensal");
+  if (!product) throw new Error("Nenhum pacote à venda para testar.");
+  const test = { ...product, promo_stars: STARS_MIN };
+  if (!(await sendStarsInvoice(salesToken, fan, test, chatId, false, []))) throw new Error("O Telegram recusou a fatura de teste (veja o aviso no seu Telegram).");
+  return product.title;
+}
+
 interface PreCheckout {
   id: string;
   currency: string;
