@@ -35,16 +35,19 @@ const KEEP_S = 30 * 86400;
 
 export const CLEUZA_DM_SYSTEM = `Você é a Cleuza (@joobcoroa), influenciadora virtual brasileira, respondendo o DIRECT (mensagens privadas) do seu próprio Instagram.
 Quem é a Cleuza: uma coroa nordestina, madura e orgulhosa disso, caseira, de churrasco e cerveja, piadista e bem safada na malícia — adora provocar os novinhos que babam nas fotos dela.
-Objetivo da conversa: ser simpática e provocante, deixar a pessoa com vontade de mais e levar para o link da bio (lá tem o cantinho reservado dela, que já conversa na língua da pessoa).
+Objetivo da conversa (24/11, pedido do dono): interpretar a conversa e interagir de verdade com a pessoa, e SEMPRE levar para o link da bio, onde tem mais conteúdo dela, explicando o caminho certo.
+{CAMINHO}
 Como responder:
 - Língua: responda NA LÍNGUA da última mensagem da pessoa. Português: com jeitinho nordestino (oxe, visse, meu fi, vixe). Espanhol: em espanhol. Qualquer outra língua (inglês, hindi, persa, árabe, indonésio, turco...) ou só emoji: em inglês simples e natural. Nunca escreva em outro alfabeto.
-- Curto: 1 ou 2 frases, no máximo 30 palavras, 0 a 2 emojis (😏 🔥 😜 😈 💋 👀 🤭 😘).
+- Curto: 2 ou 3 frases, no máximo 45 palavras, 0 a 2 emojis (😏 🔥 😜 😈 💋 👀 🤭 😘).
 - Responda ao que a pessoa escreveu, olhando a conversa; cada resposta diferente, nada de frase pronta repetida.
-- Convite para a bio: quando a pessoa pedir mais (fotos, vídeos, "mais", contato, WhatsApp, Telegram, encontro, nudes, preço) ou da segunda resposta em diante, convide com charme para o link da bio ("o que é mais quentinho fica no link da minha bio 😏", "check the link in my bio, babe 🔥", "mira el link de mi bio 😉"). Não convide em toda mensagem.
+- Primeiro reaja ao que a pessoa escreveu (elogio, pergunta, emoji, "hi"), com malícia e no jeito dela; depois, em TODA resposta, chame para o link da bio com charme.
+- Explique o caminho: na primeira resposta da conversa (ou quando a pessoa perguntar como, disser que não achou ou pedir fotos, vídeos, contato, WhatsApp, Telegram, nudes, preço), explique o caminho completo, passo a passo e curtinho; nas outras, só lembre com variação ("já foi lá no link da minha bio? 😏", "did you check my bio link yet? 🔥").
+- Pode dizer que lá tem mais fotos e vídeos dela e que lá ela conversa com a pessoa na língua dela; nada além disso.
 - Se perguntarem se ela é real ou IA: responde na brincadeira que é uma influenciadora virtual criada com IA.
 Nunca:
 - nada sexual explícito: sem palavrão sexual, sem descrever sexo ou partes do corpo, sem prometer ou mandar nudes, fotos ou vídeos pelo direct;
-- nada de link, @ de outra conta, preço, número de telefone, WhatsApp, e-mail, encontro ou cidade exata; não diga o que tem no link além de "meu cantinho reservado";
+- nada de link escrito, @ de outra conta (só o perfil reservado do caminho, se houver), preço, número de telefone, WhatsApp, e-mail, encontro ou cidade exata;
 - política, religião, falar mal de alguém, discutir, prometer o que não existe.
 Não responda (responder: false) quando for: spam, propaganda, golpe, pedido de dinheiro; ofensa, ódio ou assédio pesado; pessoa que parece menor de idade; mensagem automática ou sem sentido.
 Devolva só JSON: {"responder":true,"texto":"<resposta>"} ou {"responder":false,"motivo":"<curto>"}`;
@@ -80,15 +83,33 @@ const isOwn = (conn: IgConnection, m: IgDmMessage) =>
 const isPermission = (e: unknown) => e instanceof InstagramError && (e.code === 10 || e.code === 200 || e.code === 3 || /permission/i.test(e.message));
 
 // Resposta limpa: sem link, sem @, sem telefone, sem aspas, curta.
-const BLOCK = /\b(nudes?|pelad[ao]s?|buceta|xoxota|pau|pica|rola|sexo|transar|foder|fuck|pussy|dick|cock|boobs|tits|whats ?app|zap|telegram|pix|r\$|us\$|\$\s?\d)\b|\d{7,}/i;
-export function cleanDm(text: string): string {
+// "Telegram" pode (24/11: ela explica o caminho bio -> perfil reservado -> Telegram).
+const BLOCK = /\b(nudes?|pelad[ao]s?|buceta|xoxota|pau|pica|rola|sexo|transar|foder|fuck|pussy|dick|cock|boobs|tits|whats ?app|zap|pix|r\$|us\$|\$\s?\d)\b|\d{7,}/i;
+export function cleanDm(text: string, allowHandle: string | null = null): string {
   return text
     .replace(/https?:\/\/\S+|www\.\S+|t\.me\/\S+/gi, "")
-    .replace(/@[\w.]+/g, "")
+    .replace(/@[\w.]+/g, (h) => (allowHandle && h.slice(1).replace(/\.$/, "").toLowerCase() === allowHandle ? h : ""))
     .replace(/["“”]/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 300);
+}
+
+// O caminho certo ate o conteudo, a partir do link da bio da conta (24/11: o
+// @joobcoroa leva ao perfil reservado @cleuzaprivado, cuja bio leva ao Telegram).
+export function pathFromBio(website: string | undefined | null): { text: string; handle: string | null } {
+  const ig = /instagram\.com\/([a-z0-9._]{1,30})/i.exec(website ?? "");
+  if (ig) {
+    const handle = ig[1].toLowerCase();
+    return {
+      handle,
+      text: `Caminho certo até o conteúdo: (1) tocar no link da bio do seu perfil; (2) ele abre o seu perfil reservado @${handle}; (3) lá, tocar no link da bio do @${handle}, que abre o seu cantinho no Telegram, com mais fotos e vídeos seus, onde você conversa com a pessoa na língua dela. Pode citar o @${handle}; nenhum outro @.`,
+    };
+  }
+  if (/t\.me\//i.test(website ?? "")) {
+    return { handle: null, text: "Caminho certo até o conteúdo: tocar no link da bio do seu perfil; ele abre o seu cantinho no Telegram, com mais fotos e vídeos seus, onde você conversa com a pessoa na língua dela." };
+  }
+  return { handle: null, text: "Caminho certo até o conteúdo: tocar no link da bio do seu perfil, onde tem mais fotos e vídeos seus." };
 }
 
 async function warnPermission(message: string): Promise<void> {
@@ -154,6 +175,8 @@ export async function directTick(): Promise<string | null> {
   if (!conn) return null;
 
   const now = Date.now();
+  const path = pathFromBio((await igBio(conn).catch(() => null))?.website);
+  const rules = system.replace("{CAMINHO}", path.text);
   const pending: Pending[] = [];
   try {
     for (const t of await igConversations(conn)) {
@@ -183,13 +206,13 @@ export async function directTick(): Promise<string | null> {
     }
     let d: { responder?: boolean; texto?: string; motivo?: string };
     try {
-      d = await decide(conn, p, system);
+      d = await decide(conn, p, rules);
     } catch (e) {
       // IA fora do ar ou JSON torto: tenta de novo na proxima rodada
       error = `IA: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`;
       continue;
     }
-    const text = d.responder ? cleanDm(d.texto ?? "") : "";
+    const text = d.responder ? cleanDm(d.texto ?? "", path.handle) : "";
     const blocked = Boolean(text) && BLOCK.test(text);
     if (!(await storeSetIfAbsent(DONE(p.fan.id), text && !blocked ? "respondido" : "ignorado", KEEP_S).catch(() => false))) continue;
     if (!text || blocked) {
