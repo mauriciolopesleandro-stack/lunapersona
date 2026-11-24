@@ -50,6 +50,8 @@ export interface Status {
   fans: { total: number; adults: number; optedOut: number; blocked: number; today: number };
   // estudo do publico (23/11): lingua do app do Telegram de cada fa novo e Brasil/fora
   study?: { langs: { code: string; fans: number }[]; brasil: number; fora: number } | null;
+  // meta do ano (23/11): R$ 10 mil de 01/11 a 31/12, Luna + Cleuza
+  goal?: { target: number; cents: number; sales: number; daysLeft: number } | null;
   pix: { configured: boolean; env: "producao" | "sandbox" };
   sales: { count30: number; total30: number; pending: number; starsCount30?: number; stars30?: number; intlCount30?: number; intl30?: number };
   vipPosts: { media_id: string; path: string | null }[]; // arquivos da pasta do VIP ja postados no canal

@@ -244,7 +244,8 @@ export async function abroadRows(product: ProductRow, skip: "intl" | "estrelas" 
   const { intlConfig, intlPrice, usd } = await import("./_sales_intl.js");
   const rows: { text: string; callback_data: string }[][] = [];
   const stars = skip === "estrelas" ? null : starsPrice(product, await starsConfig().catch(() => ({ enabled: false, prices: {} })));
-  if (stars) rows.push([{ text: `💳 Card / Apple Pay / Google Pay — ⭐ ${stars}`, callback_data: `stars:${product.id}` }]);
+  // 23/11: UPI no botao (India e 28% do publico da Cleuza; as estrelas saem pela Google Play com UPI)
+  if (stars) rows.push([{ text: `💳 Card / UPI / Apple Pay / Google Pay — ⭐ ${stars}`, callback_data: `stars:${product.id}` }]);
   const cents = skip === "intl" ? null : intlPrice(product, await intlConfig().catch(() => ({ enabled: false, apiKey: null, ipnSecret: null, prices: {} })));
   if (cents) rows.push([{ text: `🪙 Crypto (Litecoin / USDT) — ${usd(cents)}`, callback_data: `intl:${product.id}` }]);
   return rows;

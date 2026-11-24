@@ -107,7 +107,7 @@ export async function sendStarsInvoice(salesToken: string, fan: FanRow, product:
       chat_id: chatId,
       title: product.title.slice(0, 32),
       description: (foreign
-        ? `${product.title} — ${days}. Pay with Telegram Stars ⭐ (card, Apple Pay or Google Pay right here in Telegram). Delivered instantly in this chat.`
+        ? `${product.title} — ${days}. Pay with Telegram Stars ⭐ (card, UPI, Apple Pay or Google Pay right here in Telegram). Delivered instantly in this chat.`
         : `${product.title} — pague com estrelas do Telegram ⭐ (cartão, Apple Pay ou Google Pay aqui mesmo). Chega na hora aqui no chat.`
       ).slice(0, 255),
       payload: `o:${order.id}`,

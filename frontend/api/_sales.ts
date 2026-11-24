@@ -473,6 +473,8 @@ async function status() {
       starsCount30: soldStars.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).length,
       stars30: soldStars.filter((o) => Date.parse(o.paid_at ?? o.created_at) > month).reduce((t, o) => t + o.amount_cents, 0),
     },
+    // meta do ano (23/11): R$ 10 mil de 01/11 a 31/12, somando Luna e Cleuza
+    goal: await goalProgress().catch(() => null),
     orders: orders.slice(0, 50).map((o) => ({ ...o, product: titleOf.get(o.product_id) ?? "?", fan: fanOf.get(o.fan_id) ?? "?" })),
     vipMembers,
     channelMembers,
@@ -489,6 +491,35 @@ async function status() {
     })),
     chamada: await chamadaStatus().catch(() => null),
   };
+}
+
+// --- meta (pedido de 23/11: "bater nossa primeira meta, 10k vendidos ate o final do ano") ---
+// Vendas pagas de 01/11 a 31/12 de todas as personas, em reais: Pix pelo valor;
+// estrelas pelo que cai limpo (~US$ 0,013 por estrela a ~R$ 5,00 = R$ 0,065);
+// dolar (cripto) a ~R$ 5,00. Cortesia nao conta.
+const GOAL = { cents: 1_000_000, from: "2026-11-01T03:00:00.000Z", until: "2027-01-01T03:00:00.000Z" };
+const STAR_BRL_CENTS = 6.5;
+const USD_BRL = 5;
+
+async function goalProgress(): Promise<{ target: number; cents: number; sales: number; daysLeft: number }> {
+  const { PERSONAS } = await import("./_persona.js");
+  let cents = 0;
+  let sales = 0;
+  for (const id of Object.keys(PERSONAS)) {
+    const rows = await runAs(id, () =>
+      dbSelect<{ amount_cents: number; gateway: string | null }>(
+        "sales_orders",
+        `select=amount_cents,gateway&status=in.(pago,entregue,expirado)&paid_at=gte.${GOAL.from}&paid_at=lt.${GOAL.until}`
+      )
+    );
+    for (const o of rows) {
+      if (o.gateway === GIFT_GATEWAY) continue;
+      sales++;
+      cents += o.gateway === STARS_GATEWAY ? Math.round(o.amount_cents * STAR_BRL_CENTS) : o.gateway === INTL_GATEWAY ? o.amount_cents * USD_BRL : o.amount_cents;
+    }
+  }
+  const daysLeft = Math.max(0, Math.ceil((Date.parse(GOAL.until) - Date.now()) / 86400_000));
+  return { target: GOAL.cents, cents, sales, daysLeft };
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {

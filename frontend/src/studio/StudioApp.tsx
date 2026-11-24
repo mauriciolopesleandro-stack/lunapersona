@@ -400,6 +400,13 @@ function MoneyChips({ go }: { go: (id: string) => void }) {
   const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const chips: { text: string; to: string; hot?: boolean }[] = [{ text: `${brl(status.sales.total30)} em 30 dias`, to: "financeiro" }];
   chips.push({ text: `${status.vipMembers.length} no VIP`, to: "assinaturas" });
+  // meta do ano: quanto falta e quanto precisa por dia
+  if (status.goal) {
+    const g = status.goal;
+    const pct = Math.min(100, Math.floor((g.cents / g.target) * 1000) / 10);
+    const perDay = g.daysLeft ? Math.max(0, g.target - g.cents) / g.daysLeft : 0;
+    chips.push({ text: `🎯 Meta: ${brl(g.cents)} de ${brl(g.target)} (${pct}%)${perDay ? ` · faltam ${brl(perDay)}/dia` : ""}`, to: "financeiro" });
+  }
   if (status.promo?.active) chips.push({ text: `🔥 ${status.promo.label} valendo`, to: "planos", hot: true });
   if (status.sales.pending) chips.push({ text: `${status.sales.pending} Pix esperando`, to: "vendas", hot: true });
   if (!status.pix.configured) chips.push({ text: "Pix desligado", to: "vendas", hot: true });
