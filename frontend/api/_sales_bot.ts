@@ -383,6 +383,14 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
         await telegram(token, "sendMessage", { chat_id: msg.chat.id, text: "Pronto, você voltou a ser um fã novo 🔄 Mande /start para ver tudo do começo (suas compras de teste continuam registradas)." });
         return done();
       }
+      // /teste1: so o administrador; fatura de 1 estrela do 1o pacote (compra de verdade, para testar)
+      if (text.startsWith("/teste1") && String(msg.from.id) === (await telegramConfig()).chatId) {
+        const { sendStarsTest } = await import("./_sales_stars.js");
+        await sendStarsTest(token, fan, msg.chat.id)
+          .then((title) => telegram(token, "sendMessage", { chat_id: msg.chat.id, text: `🧪 Teste: “${title}” por ⭐ 1. Toque em Pagar acima; se precisar, o Telegram oferece comprar estrelas. O pacote deve chegar aqui na hora.` }))
+          .catch((e) => telegram(token, "sendMessage", { chat_id: msg.chat.id, text: `⚠️ ${e instanceof Error ? e.message : String(e)}` }));
+        return done();
+      }
       // /ver: so o administrador; escolhe o pacote e recebe igual ao fa
       if (text.startsWith("/ver") && String(msg.from.id) === (await telegramConfig()).chatId) {
         const packs = (await dbSelect<ProductRow>("sales_products", "select=*&active=eq.true&order=position.asc")).filter((p) => p.kind !== "vip");

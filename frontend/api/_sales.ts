@@ -895,6 +895,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       await sendCta(needToken(), chat, fill(text, me, {}, en ? "en" : "pt"), Math.floor(Math.random() * 1000), undefined, en ? "en" : "pt");
     } else if (body.action === "test") {
       await sendMenu(needToken(), await adminChat());
+    } else if (body.action === "stars-test") {
+      // teste do administrador: fatura de 1 estrela do 1o pacote no Telegram dele (compra de verdade)
+      const chat = await adminChat();
+      const [me] = await dbSelect<FanRow>("fans", `select=*&telegram_id=eq.${chat}`);
+      if (!me) throw new Problem(400, "Abra o bot de vendas no seu Telegram e toque em Começar antes de testar.");
+      const { sendStarsTest } = await import("./_sales_stars.js");
+      try {
+        await sendStarsTest(needToken(), me, chat);
+      } catch (e) {
+        throw new Problem(400, e instanceof Error ? e.message : String(e));
+      }
     } else if (body.action === "fan-help") {
       // fa que tentou pagar e nao conseguiu: manda o guia de pagamento com os botoes
       const fanId = String(body.fan_id ?? "");
