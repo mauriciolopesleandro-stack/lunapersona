@@ -40,7 +40,7 @@ export const PERSONAS: Record<string, Persona> = {
     hair: "castanho escuro, longo e ondulado",
     // 23/11 (pedido dele): chegar em paises que pagam (EUA, Europa, Golfo, India) sem perder o Brasil
     feedCaptionRule:
-      "LEGENDA: numa linha só: uma frase curta em português no jeito dela (provocante, 1 ou 2 emojis), depois \" 🌎 \" e a mesma ideia em inglês natural e curto para o público de fora (ex.: \"Oxe, quem aguenta uma coroa dessa? 😏 🌎 Brazilian mature woman… dare to say no? 😏\"). Nada de ditado traduzido ao pé da letra.",
+      "LEGENDA: numa linha só: uma frase curta em português no jeito dela (provocante, 1 ou 2 emojis), depois \" 🌎 \" e a mesma ideia em inglês natural e curto para o público de fora (ex.: \"Oxe, quem aguenta uma coroa dessa? 😏 🌎 Brazilian mature woman… dare to say no? 😏\"). Nada de ditado traduzido ao pé da letra. Em mais ou menos metade dos posts, termine a linha em inglês chamando para o link da bio, sem dizer o que tem lá (ex.: \"…the rest is in my bio link 🔒\", \"…more in the link 👆\"); nunca palavra de conteúdo adulto.",
     feedHashtagRule:
       "HASHTAGS: 5, quatro em inglês para chegar em quem é de fora do Brasil, escolhidas entre #maturewoman #over40 #brazilianwoman #brazilian #latina #realwomen #agelessbeauty #confidentwomen #summervibes #beerlover #bbq (de vez em quando troque uma por #brasileña ou #mujermadura, para o público de língua espanhola), e uma em português (#coroa ou #nordeste). Nunca hashtag de conteúdo adulto (#milf, #sexy, #hot, #nsfw e parecidas derrubam o alcance).",
     style: [
