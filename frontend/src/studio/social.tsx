@@ -140,6 +140,8 @@ export function InstagramPage() {
         {message && <p className={message.ok ? "st-ok" : "st-error"}>{message.text}</p>}
       </section>
 
+      {state !== "sem-banco" && fromServer?.connected && fromServer.direct && <DirectPanel initial={fromServer.direct} />}
+
       {state !== "sem-banco" && instagram && (
         <section className="st-panel st-settings">
           <h2>Música do Instagram nos Reels</h2>
@@ -193,6 +195,95 @@ export function InstagramPage() {
         </p>
       </section>
     </div>
+  );
+}
+
+type Direct = NonNullable<InstagramStatus["direct"]>;
+interface DmCheck {
+  conversations: number;
+  recent: { user: string | null; last: string; fromAccount: boolean; at: string }[];
+  bio: { biography?: string; website?: string } | null;
+  error: string | null;
+}
+
+// Direct do Instagram respondido pela persona (24/11; igual ao /direct no Telegram).
+function DirectPanel({ initial }: { initial: Direct }) {
+  const [direct, setDirect] = useState<Direct>(initial);
+  const [busy, setBusy] = useState(false);
+  const [check, setCheck] = useState<DmCheck | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function toggle(on: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/studio?r=instagram", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "direct", on }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail ?? `HTTP ${r.status}`);
+      if (j.direct) setDirect(j.direct);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function look() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/studio?r=instagram&action=dm-check");
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail ?? `HTTP ${r.status}`);
+      setCheck(j);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const last = direct.last;
+  return (
+    <section className="st-panel st-settings">
+      <h2>Direct do Instagram</h2>
+      <p>
+        <span className={`st-badge ${direct.enabled ? "st-badge-aprovado" : "st-badge-rascunho"}`}>{direct.enabled ? "Ligado" : "Desligado"}</span> A persona
+        responde o direct na língua da pessoa e chama para o link da bio. Nada explícito, sem preço e sem link. Se você responder a mão numa conversa,
+        ela para nela por 24 h. O resumo chega no seu Telegram (também dá para ligar e desligar lá com /direct).
+      </p>
+      {last && (
+        <p className="st-hint">
+          Última olhada: {new Date(last.at).toLocaleString("pt-BR")} — {last.replied} respondida(s), {last.ignored} sem resposta
+          {last.error ? ` · erro: ${last.error}` : ""}
+        </p>
+      )}
+      <div className="st-row">
+        <button type="button" className={`st-btn ${direct.enabled ? "st-btn-danger" : "st-btn-primary"}`} disabled={busy} onClick={() => toggle(!direct.enabled)}>
+          {direct.enabled ? "Desligar" : "Ligar"}
+        </button>
+        <button type="button" className="st-btn" disabled={busy} onClick={look}>
+          Ver conversas (só leitura)
+        </button>
+      </div>
+      {error && <p className="st-error">{error}</p>}
+      {check && (
+        <div>
+          {check.error ? (
+            <p className="st-error">A Meta não liberou o direct: {check.error}</p>
+          ) : (
+            <>
+              <p className="st-ok">{check.conversations} conversa(s) recente(s) lidas.</p>
+              <ul className="st-steps">
+                {check.recent.map((c, i) => (
+                  <li key={i}>
+                    {c.user ? `@${c.user}` : "alguém"} · {c.fromAccount ? "última foi da conta" : "última foi da pessoa"}: {c.last}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {check.bio && <p className="st-hint">Link da bio: {check.bio.website || "nenhum link na bio"}</p>}
+        </div>
+      )}
+    </section>
   );
 }
 

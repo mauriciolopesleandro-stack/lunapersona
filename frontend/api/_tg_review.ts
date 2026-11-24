@@ -74,6 +74,7 @@ const COMMANDS = [
   { command: "agenda", description: "Ver a agenda e os buracos dos próximos dias" },
   { command: "comentarios", description: "Respostas automáticas no Instagram (on/off)" },
   { command: "dmluna", description: "Convite no direct para quem comenta o nome (on/off/@conta)" },
+  { command: "direct", description: "Direct do Instagram respondido pela persona (on/off)" },
   { command: "ajuda", description: "Como mandar um pedido pelo celular" },
 ];
 const setCommands = (token: string) => telegram(token, "setMyCommands", { commands: COMMANDS }).catch(() => undefined);
@@ -82,6 +83,7 @@ const HELP = [
   "🎬 Mande um vídeo (até 20 MB) ou o link de uma dancinha do TikTok/Instagram: eu pergunto se é dancinha (Reels + TikTok) ou vídeo longo +18, a roupa e mostro o custo.",
   "📅 /agenda mostra os próximos 7 dias e os buracos — o pedido novo entra sozinho no primeiro buraco.",
   "💬 /comentarios mostra as respostas automáticas da Luna no Instagram; /comentarios off desliga e /comentarios on liga.",
+  "📨 /direct mostra o direct do Instagram respondido pela persona; /direct on liga e /direct off desliga.",
   "📩 /dmluna mostra o convite no direct para quem comenta LUNA; /dmluna @conta_nova escolhe a conta divulgada, /dmluna off desliga e /dmluna on liga.",
   "As fotos prontas chegam aqui para você aprovar.",
 ].join("\n\n");
@@ -540,7 +542,7 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
     );
     return done();
   }
-  if (msg && String(msg.chat.id) === chatId && msg.text && /^\/(agenda|calendario|ajuda|start|comentarios|dmluna)\b/i.test(msg.text)) {
+  if (msg && String(msg.chat.id) === chatId && msg.text && /^\/(agenda|calendario|ajuda|start|comentarios|dmluna|direct)\b/i.test(msg.text)) {
     await setCommands(token);
     if (/^\/comentarios/i.test(msg.text)) {
       const { commentsText, setCommentsEnabled } = await import("./_ig_comments.js");
@@ -549,6 +551,16 @@ export default async function telegramHook(req: IncomingMessage, res: ServerResp
         if (arg === "on" || arg === "ligar") await setCommentsEnabled(true);
         if (arg === "off" || arg === "desligar") await setCommentsEnabled(false);
         await say(await commentsText());
+      } catch (e) {
+        await say(`⚠️ ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } else if (/^\/direct/i.test(msg.text)) {
+      const { directText, setDirectEnabled } = await import("./_ig_dm.js");
+      const arg = msg.text.split(/\s+/)[1]?.toLowerCase();
+      try {
+        if (arg === "on" || arg === "ligar") await setDirectEnabled(true);
+        if (arg === "off" || arg === "desligar") await setDirectEnabled(false);
+        await say(await directText());
       } catch (e) {
         await say(`⚠️ ${e instanceof Error ? e.message : String(e)}`);
       }

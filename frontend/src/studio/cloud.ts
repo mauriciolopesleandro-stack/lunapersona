@@ -213,6 +213,8 @@ export interface InstagramStatus {
   expiresAt: string | null;
   refreshedAt: string | null;
   lastError: string | null;
+  // direct respondido pela persona (24/11); null = persona sem as regras
+  direct?: { enabled: boolean; last: { at: string; replied: number; ignored: number; error: string | null } | null } | null;
 }
 
 export async function cloudInstagram(): Promise<InstagramStatus> {

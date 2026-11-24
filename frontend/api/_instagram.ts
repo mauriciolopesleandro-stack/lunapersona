@@ -149,26 +149,64 @@ export async function igReplyComment(conn: IgConnection, commentId: string, mess
 // (Login do Facebook). Regras da Meta: ate 7 dias depois do comentario, uma
 // mensagem por comentario. Pelo Facebook a mensagem sai pela Pagina ligada a
 // conta, com o token da Pagina.
-export async function igPrivateReply(conn: IgConnection, commentId: string, text: string): Promise<string> {
-  const body = JSON.stringify({ recipient: { comment_id: commentId }, message: { text } });
-  let url = `${conn.host}/${conn.userId}/messages`;
-  let token = conn.token;
-  if (conn.provider === "facebook_login") {
-    const pages = await graph<{ data?: { id: string; access_token?: string; instagram_business_account?: { id: string } }[] }>(
-      `${FB_GRAPH}/me/accounts?fields=id,access_token,instagram_business_account{id}&limit=50`,
-      auth(conn.token)
-    );
-    const page = (pages.data ?? []).find((p) => p.instagram_business_account?.id === conn.userId);
-    if (!page?.access_token) throw new InstagramError("Instagram: Pagina ligada a conta nao encontrada (permission).", false, false, 200);
-    url = `${FB_GRAPH}/${page.id}/messages`;
-    token = page.access_token;
-  }
-  const res = await graph<{ message_id?: string; recipient_id?: string }>(url, {
+// Onde fica o direct: pela conexao do Facebook, na Pagina ligada a conta (token
+// da Pagina); pelo Instagram Login, na propria conta.
+async function dmTarget(conn: IgConnection): Promise<{ base: string; token: string }> {
+  if (conn.provider !== "facebook_login") return { base: `${conn.host}/${conn.userId}`, token: conn.token };
+  const pages = await graph<{ data?: { id: string; access_token?: string; instagram_business_account?: { id: string } }[] }>(
+    `${FB_GRAPH}/me/accounts?fields=id,access_token,instagram_business_account{id}&limit=50`,
+    auth(conn.token)
+  );
+  const page = (pages.data ?? []).find((p) => p.instagram_business_account?.id === conn.userId);
+  if (!page?.access_token) throw new InstagramError("Instagram: Pagina ligada a conta nao encontrada (permission).", false, false, 200);
+  return { base: `${FB_GRAPH}/${page.id}`, token: page.access_token };
+}
+
+async function dmSend(conn: IgConnection, recipient: Record<string, string>, text: string): Promise<string> {
+  const { base, token } = await dmTarget(conn);
+  const res = await graph<{ message_id?: string; recipient_id?: string }>(`${base}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body,
+    body: JSON.stringify({ recipient, message: { text } }),
   });
   return res.message_id ?? res.recipient_id ?? "";
+}
+
+export function igPrivateReply(conn: IgConnection, commentId: string, text: string): Promise<string> {
+  return dmSend(conn, { comment_id: commentId }, text);
+}
+
+// --- Direct: conversas (24/11/2026) -------------------------------------------------------
+// instagram_manage_messages. A Meta so deixa responder ate 24 h depois da
+// ultima mensagem da pessoa.
+export interface IgDmMessage {
+  id: string;
+  created_time: string;
+  from?: { id?: string; username?: string };
+  message?: string;
+}
+
+export interface IgDmThread {
+  id: string;
+  updated_time?: string;
+  // mais nova primeiro
+  messages?: { data?: IgDmMessage[] };
+}
+
+export async function igConversations(conn: IgConnection, limit = 15, perThread = 8): Promise<IgDmThread[]> {
+  const { base, token } = await dmTarget(conn);
+  const fields = `id,updated_time,messages.limit(${perThread}){id,created_time,from,message}`;
+  const res = await graph<{ data?: IgDmThread[] }>(`${base}/conversations?platform=instagram&fields=${encodeURIComponent(fields)}&limit=${limit}`, auth(token));
+  return res.data ?? [];
+}
+
+export function igSendDm(conn: IgConnection, recipientId: string, text: string): Promise<string> {
+  return dmSend(conn, { id: recipientId }, text);
+}
+
+// Bio e link do perfil (para conferir para onde o direct manda a pessoa).
+export async function igBio(conn: IgConnection): Promise<{ biography?: string; website?: string }> {
+  return graph(`${conn.host}/${conn.userId}?fields=biography,website`, auth(conn.token));
 }
 
 // --- Login do Facebook para Empresas -----------------------------------------------------

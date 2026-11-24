@@ -673,6 +673,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     // persona sem nada conectado nao faz nada). Os textos das outras personas
     // vao no resultado com o nome na frente.
     const { commentsTick } = await import("./_ig_comments.js");
+    const { directTick } = await import("./_ig_dm.js");
     for (const id of Object.keys(PERSONAS)) {
       const tag = (v: string | null) => (v && id !== DEFAULT_PERSONA ? `${id}: ${v}` : v);
       const join = (a: string | null, b: string | null) => (a && b ? `${a} | ${b}` : a ?? b);
@@ -691,6 +692,9 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         result.aviso_metas = join(result.aviso_metas, tag(await goalsReminder()));
         // Instagram: a persona responde os comentarios novos (no maximo a cada 4 min)
         result.comentarios = join(result.comentarios, tag(await commentsTick().catch((e) => `erro: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`)));
+        // Instagram: a persona responde o direct (so com /direct on; no maximo a cada 2 min)
+        const direct = await directTick().catch((e) => `erro: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`);
+        if (direct) result.comentarios = join(result.comentarios, tag(`direct: ${direct}`));
       }).catch((e) => {
         if (id === DEFAULT_PERSONA) throw e;
         result.comentarios = join(result.comentarios, `${id}: erro: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`);
