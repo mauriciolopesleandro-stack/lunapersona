@@ -119,7 +119,7 @@ function CallVideoPanel({ data, busy, run }: { data: CallVideoStatus; busy: stri
       <h2>🎬 Vídeo da chamada</h2>
       <p className="st-hint">
         Cole o link da mensagem do Telegram com o vídeo (ex.: https://t.me/c/1234567890/12). O bot baixa o vídeo (a pessoa recebe o próprio vídeo, não
-        o link) e ele passa a ir na boas-vindas de todo fã novo, com a frase e os botões dos pacotes. O bot de vendas precisa estar no canal do link.
+        o link) e ele passa a ir na boas-vindas de todo fã novo, com a frase e os botões dos pacotes. O bot de vendas precisa estar no canal do link. Mais fácil: mande o vídeo direto para o bot de vendas no seu Telegram e toque em “🎬 Usar na chamada”.
       </p>
       {data.video ? (
         <p className="st-ok">

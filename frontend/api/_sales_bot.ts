@@ -147,6 +147,10 @@ interface Update {
     chat: { id: number; type: string };
     from?: From;
     text?: string;
+    // 24/11: o administrador manda o video da chamada direto para o bot
+    video?: { file_id: string };
+    animation?: { file_id: string };
+    document?: { file_id: string; mime_type?: string };
     successful_payment?: { currency: string; total_amount: number; invoice_payload: string; telegram_payment_charge_id: string };
   };
   pre_checkout_query?: { id: string; from: From; currency: string; total_amount: number; invoice_payload: string };
@@ -333,6 +337,23 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
         return done();
       }
       // chamada para quem nao pagou: "Enviar" / "Cancelar" do administrador
+      // video mandado pelo administrador: "usar como video da chamada"
+      if (kind === "vidcall" && String(cb.from.id) === (await telegramConfig()).chatId) {
+        const { confirmPendingVideo, sendWithCallVideo, DEFAULT_BROADCAST } = await import("./_sales_video.js");
+        if (arg !== "ok") {
+          await telegram(token, "sendMessage", { chat_id: chatId, text: "Tudo bem, não mudei nada." });
+          return done();
+        }
+        const video = await confirmPendingVideo();
+        if (!video) {
+          await telegram(token, "sendMessage", { chat_id: chatId, text: "⚠️ Não achei o vídeo. Mande de novo." });
+          return done();
+        }
+        const { buyButtonsFor, fill, promoLine } = await import("./_sales_cta.js");
+        await telegram(token, "sendMessage", { chat_id: chatId, text: "🎬 Pronto! Esse vídeo agora vai na boas-vindas de todo fã novo. Assim o fã recebe a chamada para todos (o envio para todos você liga no estúdio, em Vendas → Vídeo da chamada):" });
+        await sendWithCallVideo(token, chatId, video, await promoLine(fill(DEFAULT_BROADCAST.pt, fan, {}, "pt"), "pt"), await buyButtonsFor("pt"));
+        return done();
+      }
       if ((kind === "chamadaok" || kind === "chamadano" || kind === "chamadaprep") && String(cb.from.id) === (await telegramConfig()).chatId) {
         const { chamadaCallback } = await import("./_sales_chamada.js");
         await chamadaCallback(token, chatId, kind, arg ?? "");
@@ -382,6 +403,20 @@ export default async function salesHook(req: IncomingMessage, res: ServerRespons
         await forgetFanLang(fan.id);
         await telegram(token, "sendMessage", { chat_id: msg.chat.id, text: "Pronto, você voltou a ser um fã novo 🔄 Mande /start para ver tudo do começo (suas compras de teste continuam registradas)." });
         return done();
+      }
+      // video mandado pelo administrador: pergunta se vira o video da chamada
+      if ((msg.video || msg.animation || msg.document?.mime_type?.startsWith("video/")) && String(msg.from.id) === (await telegramConfig()).chatId) {
+        const { fileFromMessage, holdPendingVideo } = await import("./_sales_video.js");
+        const file = fileFromMessage(msg, "enviado ao bot");
+        if (file) {
+          await holdPendingVideo(file);
+          await telegram(token, "sendMessage", {
+            chat_id: msg.chat.id,
+            text: "🎬 Quer usar esse vídeo na chamada? Ele vai na boas-vindas de todo fã novo (e no envio para todos, quando você ligar).",
+            reply_markup: { inline_keyboard: [[{ text: "🎬 Usar na chamada", callback_data: "vidcall:ok" }], [{ text: "Não", callback_data: "vidcall:no" }]] },
+          });
+          return done();
+        }
       }
       // /teste1: so o administrador; fatura de 1 estrela do 1o pacote (compra de verdade, para testar)
       if (text.startsWith("/teste1") && String(msg.from.id) === (await telegramConfig()).chatId) {
