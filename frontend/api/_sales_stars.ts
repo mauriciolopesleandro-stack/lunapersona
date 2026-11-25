@@ -120,6 +120,9 @@ export async function sendStarsInvoice(salesToken: string, fan: FanRow, product:
         ],
       },
     });
+    // 25/11: quem e de fora trava na 1a compra de estrelas; um passo a passo curto
+    // (India: Google Play com UPI), uma vez por dia por fa
+    if (foreign) await sendStarsGuide(salesToken, fan, chatId, stars).catch(() => undefined);
     return true;
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
@@ -127,6 +130,23 @@ export async function sendStarsInvoice(salesToken: string, fan: FanRow, product:
     await adminNotice(`⚠️ Não consegui mandar a fatura em estrelas de “${product.title}” para ${fanName(fan)}: ${error.slice(0, 200)}`);
     return false;
   }
+}
+
+export function starsGuideText(stars: number): string {
+  return [
+    "How to pay (1 minute) 👇",
+    `1️⃣ Tap “💳 Pay ⭐ ${stars}” above.`,
+    "2️⃣ No Stars yet? Tap “Buy Stars” — Telegram sells them right there.",
+    "🇮🇳 India: on Android pick Google Play and pay with UPI (PhonePe, Google Pay or Paytm).",
+    "🌎 Other countries: card, Apple Pay or Google Pay.",
+    "3️⃣ Done! Your pack arrives here instantly 🔥",
+  ].join("\n");
+}
+
+async function sendStarsGuide(salesToken: string, fan: FanRow, chatId: number, stars: number): Promise<void> {
+  const { storeSetIfAbsent } = await import("./_store.js");
+  if (!(await storeSetIfAbsent(`luna:guia-estrelas:${fan.id}`, "1", 86400).catch(() => false))) return;
+  await telegram(salesToken, "sendMessage", { chat_id: chatId, text: starsGuideText(stars) });
 }
 
 // Teste do administrador (23/11, pedido dele): a fatura do 1o pacote a venda por
