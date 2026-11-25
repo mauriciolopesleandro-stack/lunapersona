@@ -378,7 +378,7 @@ export async function dmStatusText(): Promise<string> {
 // Conferencia so de leitura (estudio, 24/11): o que a rodada enxerga nos posts
 // recentes - comentarios dos ultimos 7 dias, se a conta ja respondeu e se ja
 // foi decidido. Nao responde nada.
-export async function commentsCheck(): Promise<unknown> {
+export async function commentsCheck(): Promise<object> {
   const conn = await igConnection();
   if (!conn) return { error: "Instagram não conectado." };
   const since = Date.now() - WINDOW_MS;
