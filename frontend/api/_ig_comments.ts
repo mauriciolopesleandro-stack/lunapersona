@@ -374,3 +374,36 @@ export async function dmStatusText(): Promise<string> {
     "Trocar a conta: /dmluna @conta_nova",
   ].join("\n");
 }
+
+// Conferencia so de leitura (estudio, 24/11): o que a rodada enxerga nos posts
+// recentes - comentarios dos ultimos 7 dias, se a conta ja respondeu e se ja
+// foi decidido. Nao responde nada.
+export async function commentsCheck(): Promise<unknown> {
+  const conn = await igConnection();
+  if (!conn) return { error: "Instagram não conectado." };
+  const since = Date.now() - WINDOW_MS;
+  const media = await igRecentMedia(conn);
+  const out = [];
+  for (const m of media) {
+    const row: Record<string, unknown> = { id: m.id, at: m.timestamp, type: m.media_type, count: m.comments_count ?? 0 };
+    if ((m.comments_count ?? 0) > 0) {
+      const list = await igComments(conn, m.id).catch((e) => { row.error = e instanceof Error ? e.message : String(e); return []; });
+      row.returned = list.length;
+      row.recent = await Promise.all(
+        list
+          .filter((c) => new Date(c.timestamp ?? 0).getTime() >= since)
+          .slice(0, 6)
+          .map(async (c) => ({
+            user: c.username ?? null,
+            at: c.timestamp,
+            own: own(conn, c.username),
+            replied: (c.replies?.data ?? []).some((r) => own(conn, r.username)),
+            seen: await storeGet(SEEN(c.id)).catch(() => "erro"),
+            text: quote(c.text ?? "", 40),
+          }))
+      );
+    }
+    out.push(row);
+  }
+  return { account: conn.username, media: out };
+}

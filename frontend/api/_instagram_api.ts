@@ -146,6 +146,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (conn.provider !== "facebook_login") return reply(400, { detail: "A música do Instagram precisa da conexão pelo Facebook (página Instagram)." });
       return reply(200, { audio: await igAudioSearch(conn, params.get("q") ?? "") });
     }
+    if (req.method === "GET" && params.get("action") === "comments-check") {
+      const { commentsCheck } = await import("./_ig_comments.js");
+      return reply(200, await commentsCheck());
+    }
     if (req.method === "GET" && params.get("action") === "dm-check") {
       const { directCheck } = await import("./_ig_dm.js");
       return reply(200, await directCheck());
