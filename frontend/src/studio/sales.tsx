@@ -72,6 +72,7 @@ export interface Status {
   intl?: { enabled: boolean; configured: boolean; apiKeySet: boolean; ipnSecretSet: boolean; prices: Record<string, number>; suggested: Record<string, number> };
   // chamada para quem gerou o pagamento e nao pagou (22/11)
   chamada?: Chamada | null;
+  callVideo?: CallVideoStatus | null;
 }
 interface Chamada {
   id: string;
@@ -99,6 +100,94 @@ const CHAMADA_STATUS: Record<Chamada["status"], string> = {
   feita: "enviada",
   cancelada: "cancelada",
 };
+
+interface CallVideoStatus {
+  video: { link: string; kind: string; at: string } | null;
+  broadcast: { startedAt: string; doneAt?: string; sent?: number; blocked?: number; failed?: number; pending: number; textPt: string; textEn: string } | null;
+  defaults: { pt: string; en: string };
+}
+
+// Video da chamada (24/11): vai na boas-vindas de todo fa novo e, uma vez, para todos que ja entraram.
+function CallVideoPanel({ data, busy, run }: { data: CallVideoStatus; busy: string | null; run: (key: string, body: object, done?: string) => Promise<boolean> }) {
+  const [link, setLink] = useState("");
+  const [textPt, setTextPt] = useState(data.broadcast?.textPt || data.defaults.pt);
+  const [textEn, setTextEn] = useState(data.broadcast?.textEn || data.defaults.en);
+  const b = data.broadcast;
+  const sending = Boolean(b && !b.doneAt);
+  return (
+    <section className="st-panel st-settings">
+      <h2>🎬 Vídeo da chamada</h2>
+      <p className="st-hint">
+        Cole o link da mensagem do Telegram com o vídeo (ex.: https://t.me/c/1234567890/12). O bot baixa o vídeo (a pessoa recebe o próprio vídeo, não
+        o link) e ele passa a ir na boas-vindas de todo fã novo, com a frase e os botões dos pacotes. O bot de vendas precisa estar no canal do link.
+      </p>
+      {data.video ? (
+        <p className="st-ok">
+          Vídeo escolhido em {new Date(data.video.at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })} ({data.video.link})
+        </p>
+      ) : (
+        <p className="st-hint">Nenhum vídeo: a boas-vindas usa as prévias de sempre.</p>
+      )}
+      <div className="st-row">
+        <input className="st-input" placeholder="https://t.me/c/.../12" value={link} onChange={(e) => setLink(e.target.value)} />
+        <button
+          type="button"
+          className="st-btn st-btn-primary"
+          disabled={busy !== null || !link.trim()}
+          onClick={() => run("video-import", { action: "video-import", link }, "Vídeo guardado: ele chegou no seu Telegram e já vai na boas-vindas.")}
+        >
+          {busy === "video-import" ? "Baixando..." : data.video ? "Trocar vídeo" : "Usar este vídeo"}
+        </button>
+        {data.video && (
+          <button type="button" className="st-btn" disabled={busy !== null} onClick={() => run("video-clear", { action: "video-clear" }, "Vídeo tirado: a boas-vindas volta para as prévias.")}>
+            Tirar vídeo
+          </button>
+        )}
+      </div>
+      {data.video && (
+        <>
+          <h3>Mandar para todos que já entraram</h3>
+          <p className="st-hint">Uma vez para cada fã (+18, sem bloqueio), aos poucos. Fã de fora recebe em inglês; sem saber a língua, os dois. {"{nome}"} vira o nome.</p>
+          <label className="st-field">
+            Português
+            <textarea className="st-input" rows={3} value={textPt} onChange={(e) => setTextPt(e.target.value)} />
+          </label>
+          <label className="st-field">
+            Inglês
+            <textarea className="st-input" rows={3} value={textEn} onChange={(e) => setTextEn(e.target.value)} />
+          </label>
+          {b && (
+            <p className={sending ? "st-ok" : "st-hint"}>
+              {sending ? `Enviando: ${b.sent ?? 0} receberam, faltam ${b.pending}.` : `Último envio: ${b.sent ?? 0} receberam${b.blocked ? `, ${b.blocked} tinham bloqueado` : ""}${b.failed ? `, ${b.failed} falharam` : ""}.`}
+            </p>
+          )}
+          <div className="st-row">
+            <button type="button" className="st-btn" disabled={busy !== null} onClick={() => run("video-test", { action: "video-test", textPt, textEn, lang: "pt" }, "Exemplo em português no seu Telegram.")}>
+              Ver exemplo
+            </button>
+            <button type="button" className="st-btn" disabled={busy !== null} onClick={() => run("video-test", { action: "video-test", textPt, textEn, lang: "en" }, "Exemplo em inglês no seu Telegram.")}>
+              Exemplo em inglês
+            </button>
+            {sending ? (
+              <button type="button" className="st-btn st-btn-danger" disabled={busy !== null} onClick={() => run("video-stop", { action: "video-stop" }, "Envio parado.")}>
+                Parar envio
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="st-btn st-btn-primary"
+                disabled={busy !== null || !textPt.trim() || !textEn.trim()}
+                onClick={() => run("video-send-all", { action: "video-send-all", textPt, textEn }, "Envio começou: vai aos poucos e o resultado chega no seu Telegram.")}
+              >
+                Mandar para todos
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
 
 function ChamadaPanel({ chamada, busy, run }: { chamada: Chamada | null | undefined; busy: string | null; run: (key: string, body: object, done?: string) => Promise<boolean> }) {
   const c = chamada ?? null;
@@ -428,6 +517,7 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
           <CtaEditor cta={status.cta} products={status.products.filter((p) => p.active)} previews={status.previews.length} busy={busy} run={run} onFolders={onFolders} />
 
           {status.connected && <ChamadaPanel chamada={status.chamada} busy={busy} run={run} />}
+          {status.connected && status.callVideo && <CallVideoPanel data={status.callVideo} busy={busy} run={run} />}
 
           <div className="st-sales-products">
             {status.products.map((p) => (

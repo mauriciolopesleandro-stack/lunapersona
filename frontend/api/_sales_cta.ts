@@ -307,6 +307,14 @@ async function buyButtons(lang: FanLang = "pt"): Promise<{ text: string; callbac
   return products.map((p: ProductRow, i) => [{ text: labels[i], callback_data: `buy:${p.id}` }]);
 }
 
+// para o video da chamada (_sales_video.ts): os mesmos botoes e a faixa da promocao
+export const buyButtonsFor = (lang: FanLang = "pt") => buyButtons(lang);
+export async function promoLine(text: string, lang: FanLang = "pt"): Promise<string> {
+  const { promoBanner } = await import("./_sales_promo.js");
+  const banner = await promoBanner(lang);
+  return banner ? `${banner}\n\n${text}` : text;
+}
+
 // Manda o CTA: previa (se houver) com o texto na legenda e os botoes dos pacotes
 // (ou os botoes dados). "turn" escolhe a previa (gira a cada mensagem). "lang":
 // lingua da faixa da promocao e dos botoes (null: as duas faixas, botoes em reais).
@@ -353,7 +361,12 @@ export async function sendWelcome(token: string, fan: FanRow, chatId: number, la
   const config = await ctaConfig();
   // a previa gira a cada fa novo (antes ia sempre a primeira): usa todas as que estiverem na pasta
   const turn = storeConfigured() ? await storeIncr("luna:cta-boasvindas-giro").catch(() => Date.now()) : Date.now();
-  await sendCta(token, chatId, fill(inLang(config.welcome, config.welcomeEn, lang), fan, {}, lang), turn, rows, lang);
+  const text = fill(inLang(config.welcome, config.welcomeEn, lang), fan, {}, lang);
+  // 24/11: com o video da chamada escolhido, a boas-vindas vai com ele (no lugar da previa)
+  const { callVideo, sendWithCallVideo } = await import("./_sales_video.js");
+  const video = await callVideo();
+  if (video) await sendWithCallVideo(token, chatId, video, await promoLine(text, lang), rows);
+  else await sendCta(token, chatId, text, turn, rows, lang);
   await dbUpdateWhere("fans", `id=eq.${fan.id}`, { cta_sent_at: new Date().toISOString() });
   return true;
 }
