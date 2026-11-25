@@ -174,7 +174,7 @@ export async function stopBroadcast(): Promise<void> {
 
 // +18, sem bloqueio, sem ter pedido para sair
 function audience(): Promise<FanRow[]> {
-  return dbSelect<FanRow>("fans", "select=*&adult_confirmed_at=not.is.null&opted_out_at=is.null&blocked_at=is.null&order=created_at.asc&limit=1000");
+  return dbSelect<FanRow>("fans", "select=*&adult_confirmed_at=not.is.null&opted_out_at=is.null&blocked_at=is.null&order=started_at.asc&limit=1000");
 }
 
 const isBlockedError = (msg: string) => /blocked by the user|user is deactivated|chat not found|bot can't initiate/i.test(msg);
