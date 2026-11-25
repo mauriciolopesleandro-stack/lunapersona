@@ -725,6 +725,9 @@ export async function salesTick(site = ""): Promise<number> {
     if (token) {
       const { vipPacksTick } = await import("./_sales_vip_packs.js");
       done += await vipPacksTick(token).catch(() => 0);
+      // 24/11: video da chamada para todos que ja entraram (so depois do administrador mandar)
+      const { videoBroadcastTick } = await import("./_sales_video.js");
+      done += await videoBroadcastTick(token).catch(() => 0);
     }
     const expired = await dbSelect<OrderRow>("sales_orders", `select=*&status=eq.entregue&access_until=lt.${now}&order=access_until.asc&limit=200`);
     if (!expired.length) return done;

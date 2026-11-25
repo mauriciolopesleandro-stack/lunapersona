@@ -433,6 +433,12 @@ async function status() {
     bot,
     connected: hooked,
     adminStarted: Boolean(config.chatId && fans.some((f) => String(f.telegram_id) === config.chatId)),
+    // video da chamada (24/11)
+    callVideo: await (async () => {
+      const { callVideo, broadcastStatus, DEFAULT_BROADCAST } = await import("./_sales_video.js");
+      const v = await callVideo();
+      return { video: v ? { link: v.link, kind: v.kind, at: v.at } : null, broadcast: await broadcastStatus().catch(() => null), defaults: DEFAULT_BROADCAST };
+    })().catch(() => null),
     channel: channel?.title ?? null,
     products: products.map((p) => ({
       ...p,
@@ -895,6 +901,41 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       await sendCta(needToken(), chat, fill(text, me, {}, en ? "en" : "pt"), Math.floor(Math.random() * 1000), undefined, en ? "en" : "pt");
     } else if (body.action === "test") {
       await sendMenu(needToken(), await adminChat());
+    } else if (body.action === "video-import") {
+      // video da chamada (24/11): pelo link da mensagem do Telegram
+      const { importCallVideo } = await import("./_sales_video.js");
+      try {
+        await importCallVideo(needToken(), String(body.link ?? ""), await adminChat());
+      } catch (e) {
+        throw new Problem(400, e instanceof Error ? e.message : String(e));
+      }
+      await audit("video_chamada", "sales", null, { link: String(body.link ?? "").slice(0, 200) });
+    } else if (body.action === "video-clear") {
+      const { clearCallVideo } = await import("./_sales_video.js");
+      await clearCallVideo();
+      await audit("video_chamada_tirar", "sales", null, {});
+    } else if (body.action === "video-test") {
+      // exemplo no Telegram do administrador: como o fa recebe (texto do envio para todos)
+      const { callVideo, sendWithCallVideo } = await import("./_sales_video.js");
+      const { buyButtonsFor, fill, promoLine } = await import("./_sales_cta.js");
+      const video = await callVideo();
+      if (!video) throw new Problem(400, "Escolha o vídeo antes.");
+      const chat = await adminChat();
+      const lang = body.lang === "en" ? "en" : "pt";
+      const text = String((lang === "en" ? body.textEn : body.textPt) ?? "").trim();
+      if (!text) throw new Problem(400, "Escreva o texto antes.");
+      await sendWithCallVideo(needToken(), chat, video, await promoLine(fill(text, { first_name: "Admin" }, {}, lang), lang), await buyButtonsFor(lang));
+    } else if (body.action === "video-send-all") {
+      const { startBroadcast } = await import("./_sales_video.js");
+      try {
+        await startBroadcast(String(body.textPt ?? ""), String(body.textEn ?? ""));
+      } catch (e) {
+        throw new Problem(400, e instanceof Error ? e.message : String(e));
+      }
+      await audit("video_chamada_todos", "sales", null, {});
+    } else if (body.action === "video-stop") {
+      const { stopBroadcast } = await import("./_sales_video.js");
+      await stopBroadcast();
     } else if (body.action === "stars-test") {
       // teste do administrador: fatura de 1 estrela do 1o pacote no Telegram dele (compra de verdade)
       const chat = await adminChat();
