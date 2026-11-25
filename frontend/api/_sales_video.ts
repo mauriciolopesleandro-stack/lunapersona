@@ -80,7 +80,8 @@ export async function importCallVideo(token: string, link: string, adminChat: nu
   if (!ref) throw new Error("Link inválido. Use o link da mensagem do Telegram (ex.: https://t.me/c/1234567890/12).");
   let msg: TgMessage;
   try {
-    msg = await telegram<TgMessage>(token, "forwardMessage", { chat_id: adminChat, from_chat_id: ref.chat, message_id: ref.message });
+    // video grande: o Telegram pode demorar para encaminhar (24/11: passou de 20 s)
+    msg = await telegram<TgMessage>(token, "forwardMessage", { chat_id: adminChat, from_chat_id: ref.chat, message_id: ref.message }, 50_000);
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     throw new Error(

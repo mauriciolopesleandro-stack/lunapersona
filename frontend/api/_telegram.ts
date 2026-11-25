@@ -96,12 +96,12 @@ interface TelegramReply<T> {
   description?: string;
 }
 
-export async function telegram<T>(token: string, method: string, payload: Record<string, unknown> = {}): Promise<T> {
+export async function telegram<T>(token: string, method: string, payload: Record<string, unknown> = {}, timeoutMs = 20_000): Promise<T> {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const body = (await res.json().catch(() => ({}))) as TelegramReply<T>;
   if (!body.ok) throw new Error(body.description || `Telegram respondeu ${res.status}`);
