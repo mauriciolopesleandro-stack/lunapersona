@@ -333,10 +333,15 @@ export async function sendCta(
     const banner = await promoBanner(lang);
     if (banner) text = `${banner}\n\n${text}`;
   }
-  const list = await previews();
   const markup = rows.length ? { reply_markup: { inline_keyboard: rows } } : {};
+  // 24/11: o video da chamada entra no giro das previas (a diaria vai intercalando)
+  const { callVideo, sendWithCallVideo } = await import("./_sales_video.js");
+  const video = await callVideo();
+  const list: (Preview | "video")[] = [...(video ? (["video"] as const) : []), ...(await previews())];
   const preview = list.length ? list[Math.abs(turn) % list.length] : null;
-  if (preview) {
+  if (preview === "video" && video) {
+    await sendWithCallVideo(token, chatId, video, text, rows);
+  } else if (preview && preview !== "video") {
     await telegram(token, preview.kind === "video" ? "sendVideo" : "sendPhoto", {
       chat_id: chatId,
       [preview.kind === "video" ? "video" : "photo"]: preview.file_id,
