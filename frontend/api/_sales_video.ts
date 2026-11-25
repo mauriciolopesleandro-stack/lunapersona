@@ -101,6 +101,27 @@ export async function importCallVideo(token: string, link: string, adminChat: nu
   return file;
 }
 
+// 24/11: o administrador manda o video direto para o bot de vendas (sem link).
+const PENDING_KEY = "luna:video-chamada-pendente";
+export function fileFromMessage(msg: TgMessage, link: string): CallVideo | null {
+  const at = new Date().toISOString();
+  if (msg.video) return { file_id: msg.video.file_id, kind: "video", link, at };
+  if (msg.animation) return { file_id: msg.animation.file_id, kind: "animation", link, at };
+  if (msg.document?.mime_type?.startsWith("video/")) return { file_id: msg.document.file_id, kind: "video", link, at };
+  return null;
+}
+export async function holdPendingVideo(file: CallVideo): Promise<void> {
+  await storeSet(PENDING_KEY, JSON.stringify(file));
+}
+// "ok": o video pendente vira o video da chamada
+export async function confirmPendingVideo(): Promise<CallVideo | null> {
+  const raw = await storeGet(PENDING_KEY).catch(() => null);
+  if (!raw) return null;
+  await storeSet(VIDEO_KEY, raw);
+  await storeDelete(PENDING_KEY).catch(() => undefined);
+  return JSON.parse(raw) as CallVideo;
+}
+
 // Manda o video com o texto na legenda e os botoes dados (protegido: nao da para salvar/encaminhar).
 export async function sendWithCallVideo(
   token: string,
