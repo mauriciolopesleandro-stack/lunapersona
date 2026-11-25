@@ -117,6 +117,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       hasBackup: Boolean(row?.backup_ciphertext),
       fbConfigured: fbConfigured(),
       redirectUri: redirectUri(req),
+      // respostas automaticas aos comentarios (so leitura; igual ao /comentarios no Telegram)
+      comments: await (async () => {
+        const { commentsEnabled, commentsStatus } = await import("./_ig_comments.js");
+        return { enabled: await commentsEnabled(), last: await commentsStatus() };
+      })().catch(() => null),
       direct: await (async () => {
         const { dmSystem, directEnabled, directStatus } = await import("./_ig_dm.js");
         if (!dmSystem()) return null;
