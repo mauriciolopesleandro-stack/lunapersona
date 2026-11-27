@@ -268,6 +268,13 @@ async function previewFor(turn: number) {
 }
 
 async function sendOne(token: string, chatId: number, caption: string, rows: { text: string; callback_data?: string; url?: string }[][], turn: number): Promise<void> {
+  // 27/11: com o video da chamada cadastrado, a chamada vai com ele (sem ele, a previa borrada)
+  const { callVideo, sendWithCallVideo } = await import("./_sales_video.js");
+  const video = await callVideo().catch(() => null);
+  if (video) {
+    await sendWithCallVideo(token, chatId, video, caption, rows);
+    return;
+  }
   const preview = await previewFor(turn);
   const markup = { reply_markup: { inline_keyboard: rows } };
   if (!preview) {
@@ -335,7 +342,7 @@ export async function prepareChamada(token: string): Promise<Chamada> {
     text:
       `📣 Chamada para quem gerou o pagamento e não pagou (últimos 7 dias, +18, sem bloqueio e sem compra): ${c.targets.length} fã(s)` +
       ` (${abroad} de fora: só em inglês · ${br} do Brasil: só em português · ${c.targets.length - abroad - br} sem saber: as duas línguas).\n` +
-      `Cada um recebe uma vez, com uma das ${texts.length} mensagens (a 1ª está acima), uma das prévias borradas e os botões do pacote que escolheu (cartão, cripto e Pix${promoActive(promo) ? `, com o preço da ${promo.label}` : ""}).` +
+      `Cada um recebe uma vez, com uma das ${texts.length} mensagens (a 1ª está acima), o vídeo da chamada (ou uma prévia borrada) e os botões do pacote que escolheu (cartão, cripto e Pix${promoActive(promo) ? `, com o preço da ${promo.label}` : ""}).` +
       (others ? `\n\nAs outras:\n\n${others}` : ""),
     ...(c.targets.length
       ? { reply_markup: { inline_keyboard: [[{ text: `✅ Enviar para ${c.targets.length} fã(s)`, callback_data: `chamadaok:${c.id}` }], [{ text: "❌ Cancelar", callback_data: `chamadano:${c.id}` }]] } }
