@@ -408,6 +408,8 @@ class Naiaflow:
                 "--disable-renderer-backgrounding",
                 # robo fechado a forca (religar): sem o balao "Restaurar paginas?" na tela
                 "--hide-crash-restore-bubble",
+                # 27/11: aba da Naiaflow sem som enquanto gera
+                "--mute-audio",
                 *hidden_window_args(),
             ],
         )
