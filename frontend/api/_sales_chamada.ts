@@ -120,20 +120,31 @@ const FALLBACK: ChamadaText[] = [
   },
 ];
 
-function chamadaPrompt(promo: string | null): string {
+const FALLBACK_VIDEO: ChamadaText[] = [
+  {
+    pt: "Ei {nome}… tu deixou a coroa aqui esperando, foi? 😏 Esse vídeo é só um gostinho… o resto tá sem censura te esperando, e agora dá pra pagar de qualquer lugar 🔥 Toca aqui embaixo.",
+    en: "Hey {nome}… you left me waiting 😏 This video is just a little taste… the rest is waiting for you, uncensored, and now you can pay from anywhere 🔥 Tap below.",
+  },
+  {
+    pt: "{nome}, tu chegou tão pertinho… 👀 Gostou do vídeo? O pacote completo tá aqui, é só tocar no botão 😈",
+    en: "{nome}, you were so close… 👀 Liked the video? The full package is right here, just tap the button 😈",
+  },
+];
+
+function chamadaPrompt(promo: string | null, video = false): string {
   const who = personaIdentity() ?? "A Luna Vox é uma influenciadora virtual brasileira criada com IA, adulta, carinhosa, confiante e provocante.";
   return personaText(`Você escreve mensagens curtas para o bot de vendas no Telegram (conteúdo adulto, só para quem já disse ter 18 anos).
 ${who}
 Escreva no jeito de falar dela, em primeira pessoa.
 Situação: o fã escolheu um pacote, gerou o pagamento e não pagou. Muitos estão fora do Brasil e não tinham como pagar o Pix. Agora dá para pagar de qualquer país: cartão, UPI (Índia), Apple Pay ou Google Pay aqui mesmo no Telegram (sem sair do app), ou cripto; e o Pix continua para quem está no Brasil.
-${promo ? `Hoje tem promoção ("${promo}"): preço especial só hoje. Diga isso em todas as mensagens, sem dizer o preço.\n` : ""}A mensagem vai junto de uma foto dela borrada (prévia) e dos botões de pagamento.
+${promo ? `Hoje tem promoção ("${promo}"): preço especial só hoje. Diga isso em todas as mensagens, sem dizer o preço.\n` : ""}${video ? "A mensagem vai junto de um vídeo curto dela (prévia, sem mostrar nada íntimo) e dos botões de pagamento." : "A mensagem vai junto de uma foto dela borrada (prévia) e dos botões de pagamento."}
 Escreva 6 mensagens diferentes. Cada uma com:
 - "pt": português do Brasil, 2 ou 3 frases curtas, safada e provocante, com malícia e duplo sentido, 1 a 3 emojis;
 - "en": a mesma ideia em inglês natural (não traduza ao pé da letra), 2 ou 3 frases, 1 a 3 emojis.
 Regras:
 - use exatamente {nome} onde entra o primeiro nome do fã (com as chaves), nas duas línguas;
 - diga que agora dá para pagar de qualquer país, com cartão aqui no Telegram;
-- provoque com a foto borrada (é só o começo, o resto está sem censura no pacote);
+${video ? "- provoque com o vídeo (é só um gostinho, o resto está sem censura no pacote); não fale de foto nem de borrão;" : "- provoque com a foto borrada (é só o começo, o resto está sem censura no pacote);"}
 - termine chamando para tocar no botão;
 - sem descrever ato sexual nem partes íntimas (o fã ainda não pagou), sem preço, sem link, sem prometer encontro;
 - o fã é homem: fale com ele no masculino (nunca "gostosa", "linda");
@@ -163,12 +174,12 @@ function badText(t: string): boolean {
   );
 }
 
-async function askTexts(mode: "normal" | "adulto", promo: string | null): Promise<ChamadaText[]> {
+async function askTexts(mode: "normal" | "adulto", promo: string | null, video = false): Promise<ChamadaText[]> {
   const { askAi } = await import("./_assistant.js");
   const out = await askAi(
     mode,
     [
-      { role: "system", content: chamadaPrompt(promo) },
+      { role: "system", content: chamadaPrompt(promo, video) },
       { role: "user", content: "Escreva as 6 mensagens." },
     ],
     { json: true, maxTokens: 1800, timeoutMs: 25_000, temperature: 0.85 }
@@ -180,7 +191,8 @@ async function askTexts(mode: "normal" | "adulto", promo: string | null): Promis
       const x = m as Record<string, unknown>;
       const pt = typeof x?.pt === "string" ? x.pt.trim().slice(0, 450) : "";
       const en = typeof x?.en === "string" ? x.en.trim().slice(0, 450) : "";
-      return pt.length > 10 && en.length > 10 && !badText(pt) && !badText(en) ? { pt, en } : null;
+      const photoTalk = (t: string) => video && /(foto|borr|blur|pic\b|photo)/i.test(t);
+      return pt.length > 10 && en.length > 10 && !badText(pt) && !badText(en) && !photoTalk(pt) && !photoTalk(en) ? { pt, en } : null;
     })
     .filter(Boolean) as ChamadaText[];
 }
@@ -191,11 +203,14 @@ async function askTexts(mode: "normal" | "adulto", promo: string | null): Promis
 // no filtro sai; sobrando menos de 3, entram os textos prontos.
 // promo: nome da promocao de hoje (os textos dizem "so hoje"), ou null
 export async function writeChamadaTexts(promo: string | null = null): Promise<ChamadaText[]> {
+  // 27/11: com o video da chamada, os textos falam do video (nao de foto borrada)
+  const { callVideo } = await import("./_sales_video.js");
+  const video = Boolean(await callVideo().catch(() => null));
   for (const mode of ["normal", "adulto"] as const) {
-    const list = await askTexts(mode, promo).catch(() => [] as ChamadaText[]);
+    const list = await askTexts(mode, promo, video).catch(() => [] as ChamadaText[]);
     if (list.length >= 3) return list.slice(0, 6);
   }
-  return FALLBACK;
+  return video ? FALLBACK_VIDEO : FALLBACK;
 }
 
 // --- a mensagem ---------------------------------------------------------------------------------
