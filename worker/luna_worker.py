@@ -2258,7 +2258,11 @@ def main() -> None:
             # Cada persona na vez dela (a Luna primeiro); o primeiro pedido achado e o feito.
             item = None
             failed = False
+            # 27/11: personas pausadas (LUNA_PAUSADAS=luna no luna-worker.env) nao pegam pedido novo
+            paused = {x.strip().lower() for x in os.environ.get("LUNA_PAUSADAS", "").split(",") if x.strip()}
             for p in personas:
+                if p["id"] in paused:
+                    continue
                 use_persona(p, personas)
                 studio = studios[p["id"]]
                 try:
