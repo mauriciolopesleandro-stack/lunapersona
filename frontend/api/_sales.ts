@@ -435,6 +435,7 @@ async function status() {
     adminStarted: Boolean(config.chatId && fans.some((f) => String(f.telegram_id) === config.chatId)),
     // cartao pelo Tribute (27/11): link da assinatura do canal VIP
     cardLink: await (async () => (await import("./_sales_card.js")).cardLink())().catch(() => null),
+    cardPrice: await (async () => (await import("./_sales_card.js")).cardPrice())().catch(() => "$6.99/month"),
     // video da chamada (24/11)
     callVideo: await (async () => {
       const { callVideo, broadcastStatus, DEFAULT_BROADCAST } = await import("./_sales_video.js");
@@ -915,7 +916,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     } else if (body.action === "card-link") {
       const { setCardLink } = await import("./_sales_card.js");
       try {
-        await setCardLink(typeof body.link === "string" ? body.link : null);
+        await setCardLink(typeof body.link === "string" ? body.link : null, typeof body.price === "string" ? body.price : null);
       } catch (e) {
         throw new Problem(400, e instanceof Error ? e.message : String(e));
       }
