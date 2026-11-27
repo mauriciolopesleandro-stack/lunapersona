@@ -239,10 +239,12 @@ async function sendPix(salesToken: string, chatId: number, product: ProductRow, 
 
 // Outras formas de pagar (o que estiver ligado): cartao primeiro (estrelas do
 // Telegram: cartao, Apple Pay ou Google Pay sem sair do app), cripto depois
-export async function abroadRows(product: ProductRow, skip: "intl" | "estrelas" | null = null): Promise<{ text: string; callback_data: string }[][]> {
+export async function abroadRows(product: ProductRow, skip: "intl" | "estrelas" | null = null): Promise<{ text: string; callback_data?: string; url?: string }[][]> {
   const { starsConfig, starsPrice } = await import("./_sales_stars.js");
   const { intlConfig, intlPrice, usd } = await import("./_sales_intl.js");
-  const rows: { text: string; callback_data: string }[][] = [];
+  // 27/11: cartao pelo Tribute (link da assinatura do canal VIP) antes de tudo
+  const { cardRows } = await import("./_sales_card.js");
+  const rows: { text: string; callback_data?: string; url?: string }[][] = [...(await cardRows())];
   const stars = skip === "estrelas" ? null : starsPrice(product, await starsConfig().catch(() => ({ enabled: false, prices: {} })));
   // 23/11: UPI no botao (India e 28% do publico da Cleuza; as estrelas saem pela Google Play com UPI)
   if (stars) rows.push([{ text: `💳 Card / UPI / Apple Pay / Google Pay — ⭐ ${stars}`, callback_data: `stars:${product.id}` }]);

@@ -73,6 +73,7 @@ export interface Status {
   // chamada para quem gerou o pagamento e nao pagou (22/11)
   chamada?: Chamada | null;
   callVideo?: CallVideoStatus | null;
+  cardLink?: string | null; // cartao pelo Tribute (27/11)
 }
 interface Chamada {
   id: string;
@@ -108,6 +109,31 @@ interface CallVideoStatus {
 }
 
 // Video da chamada (24/11): vai na boas-vindas de todo fa novo e, uma vez, para todos que ja entraram.
+function CardLinkPanel({ link, busy, run }: { link: string | null; busy: string | null; run: (key: string, body: object, done?: string) => Promise<boolean> }) {
+  const [value, setValue] = useState(link ?? "");
+  return (
+    <section className="st-panel st-settings">
+      <h2>💳 Cartão para fãs de fora (Tribute)</h2>
+      <p className="st-hint">
+        Link da assinatura do canal VIP no Tribute (@tribute no Telegram). O fã de fora vê o botão “💳 Card / Apple Pay / Google Pay — VIP channel” nos pacotes e
+        nas formas de pagamento; o Tribute cobra, põe a pessoa no canal e renova todo mês. Apague o link para tirar o botão.
+      </p>
+      {link ? <p className="st-ok">Botão ligado: {link}</p> : <p className="st-hint">Sem link: o botão não aparece.</p>}
+      <div className="st-row">
+        <input className="st-input" placeholder="https://t.me/tribute/app?startapp=..." value={value} onChange={(e) => setValue(e.target.value)} />
+        <button
+          type="button"
+          className="st-btn st-btn-primary"
+          disabled={busy !== null || value.trim() === (link ?? "")}
+          onClick={() => run("card-link", { action: "card-link", link: value.trim() }, value.trim() ? "Botão do cartão ligado." : "Botão do cartão tirado.")}
+        >
+          {busy === "card-link" ? "Salvando..." : value.trim() ? "Salvar link" : "Tirar botão"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function CallVideoPanel({ data, busy, run }: { data: CallVideoStatus; busy: string | null; run: (key: string, body: object, done?: string) => Promise<boolean> }) {
   const [link, setLink] = useState("");
   const [textPt, setTextPt] = useState(data.broadcast?.textPt || data.defaults.pt);
@@ -517,6 +543,7 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
           <CtaEditor cta={status.cta} products={status.products.filter((p) => p.active)} previews={status.previews.length} busy={busy} run={run} onFolders={onFolders} />
 
           {status.connected && <ChamadaPanel chamada={status.chamada} busy={busy} run={run} />}
+          {status.connected && <CardLinkPanel link={status.cardLink ?? null} busy={busy} run={run} />}
           {status.connected && status.callVideo && <CallVideoPanel data={status.callVideo} busy={busy} run={run} />}
 
           <div className="st-sales-products">

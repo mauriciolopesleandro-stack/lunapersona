@@ -222,7 +222,7 @@ export function chamadaCaption(t: ChamadaText, fan: Pick<FanRow, "first_name">, 
 // fanId: o fa (23/11): se a fatura em estrelas que ele recebeu antes era mais cara
 // que o preco de agora, a mensagem diz "agora so ⭐ X (era ⭐ Y)" - os precos em
 // estrelas cairam em 23/11 (250/500/1000 -> 155/310/465)
-export async function chamadaOffer(productId: string, lang: FanLang, fanId?: string): Promise<{ rows: { text: string; callback_data: string }[][]; line: string | null } | null> {
+export async function chamadaOffer(productId: string, lang: FanLang, fanId?: string): Promise<{ rows: { text: string; callback_data?: string; url?: string }[][]; line: string | null } | null> {
   const { productsForSale, price } = await import("./_sales_bot.js");
   const { abroadRows } = await import("./_sales_pay.js");
   const forSale = await productsForSale();
@@ -267,7 +267,7 @@ async function previewFor(turn: number) {
   return list.length ? list[list.length - 1 - (Math.abs(turn) % list.length)] : null;
 }
 
-async function sendOne(token: string, chatId: number, caption: string, rows: { text: string; callback_data: string }[][], turn: number): Promise<void> {
+async function sendOne(token: string, chatId: number, caption: string, rows: { text: string; callback_data?: string; url?: string }[][], turn: number): Promise<void> {
   const preview = await previewFor(turn);
   const markup = { reply_markup: { inline_keyboard: rows } };
   if (!preview) {

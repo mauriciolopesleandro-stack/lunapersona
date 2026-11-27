@@ -433,6 +433,8 @@ async function status() {
     bot,
     connected: hooked,
     adminStarted: Boolean(config.chatId && fans.some((f) => String(f.telegram_id) === config.chatId)),
+    // cartao pelo Tribute (27/11): link da assinatura do canal VIP
+    cardLink: await (async () => (await import("./_sales_card.js")).cardLink())().catch(() => null),
     // video da chamada (24/11)
     callVideo: await (async () => {
       const { callVideo, broadcastStatus, DEFAULT_BROADCAST } = await import("./_sales_video.js");
@@ -910,6 +912,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         throw new Problem(400, e instanceof Error ? e.message : String(e));
       }
       await audit("video_chamada", "sales", null, { link: String(body.link ?? "").slice(0, 200) });
+    } else if (body.action === "card-link") {
+      const { setCardLink } = await import("./_sales_card.js");
+      try {
+        await setCardLink(typeof body.link === "string" ? body.link : null);
+      } catch (e) {
+        throw new Problem(400, e instanceof Error ? e.message : String(e));
+      }
+      await audit("cartao_link", "sales", null, { link: String(body.link ?? "").slice(0, 200) });
     } else if (body.action === "video-clear") {
       const { clearCallVideo } = await import("./_sales_video.js");
       await clearCallVideo();

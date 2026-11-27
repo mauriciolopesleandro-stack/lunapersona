@@ -299,12 +299,18 @@ export function fill(text: string, fan: Pick<FanRow, "first_name">, extra: Recor
 }
 
 // botoes dos pacotes na lingua do fa ("en": nome em ingles e preco em estrelas/dolar)
-async function buyButtons(lang: FanLang = "pt"): Promise<{ text: string; callback_data: string }[][]> {
+async function buyButtons(lang: FanLang = "pt"): Promise<{ text: string; callback_data?: string; url?: string }[][]> {
   const { productsForSale } = await import("./_sales_bot.js");
   const { packLabels } = await import("./_sales_lang.js");
   const products = await productsForSale();
   const labels = await packLabels(products, lang);
-  return products.map((p: ProductRow, i) => [{ text: labels[i], callback_data: `buy:${p.id}` }]);
+  const rows: { text: string; callback_data?: string; url?: string }[][] = products.map((p: ProductRow, i) => [{ text: labels[i], callback_data: `buy:${p.id}` }]);
+  // 27/11: fa de fora tambem ve o cartao (Tribute) direto na chamada
+  if (lang === "en" && rows.length) {
+    const { cardRows } = await import("./_sales_card.js");
+    rows.push(...(await cardRows()));
+  }
+  return rows;
 }
 
 // para o video da chamada (_sales_video.ts): os mesmos botoes e a faixa da promocao
@@ -323,7 +329,7 @@ export async function sendCta(
   chatId: number,
   text: string,
   turn: number,
-  buttons?: { text: string; callback_data: string }[][],
+  buttons?: { text: string; callback_data?: string; url?: string }[][],
   lang: FanLang = "pt"
 ): Promise<void> {
   const rows = buttons ?? (await buyButtons(lang));
