@@ -128,7 +128,7 @@ export async function sendWithCallVideo(
   chatId: number,
   video: CallVideo,
   text: string,
-  rows: { text: string; callback_data: string }[][]
+  rows: { text: string; callback_data?: string; url?: string }[][]
 ): Promise<void> {
   const method = video.kind === "photo" ? "sendPhoto" : video.kind === "animation" ? "sendAnimation" : "sendVideo";
   await telegram(token, method, {

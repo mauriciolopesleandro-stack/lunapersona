@@ -58,11 +58,14 @@ export async function sendPayHelp(token: string, chatId: number, tried: TriedOrd
   const { abroadRows } = await import("./_sales_pay.js");
   const products = await productsForSale();
   const product = tried.map((o) => products.find((p) => p.id === o.product_id)).find(Boolean);
-  const rows: { text: string; callback_data: string }[][] = [];
+  const rows: { text: string; callback_data?: string; url?: string }[][] = [];
   if (product) {
     const abroad = await abroadRows(product);
     // estrelas primeiro: e o que funciona com cartao sem sair do Telegram
-    rows.push(...abroad.filter((r) => r[0].callback_data.startsWith("stars:")), ...abroad.filter((r) => !r[0].callback_data.startsWith("stars:")));
+    // 27/11: o cartao do Tribute (botao com link) vem antes de tudo
+    const isStars = (r: (typeof abroad)[number]) => Boolean(r[0]?.callback_data?.startsWith("stars:"));
+    const isCard = (r: (typeof abroad)[number]) => Boolean(r[0]?.url);
+    rows.push(...abroad.filter(isCard), ...abroad.filter(isStars), ...abroad.filter((r) => !isCard(r) && !isStars(r)));
     rows.push([{ text: "🇧🇷 Pix (Brasil)", callback_data: `pix:${product.id}` }]);
   }
   rows.push([{ text: "📦 Packages / Pacotes", callback_data: "menu:" }]);
