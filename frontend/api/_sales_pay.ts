@@ -233,18 +233,18 @@ async function sendPix(salesToken: string, chatId: number, product: ProductRow, 
     chat_id: chatId,
     text: `<code>${escapeHtml(order.pix_code ?? "")}</code>`,
     parse_mode: "HTML",
-    reply_markup: { inline_keyboard: [[{ text: "✅ Já paguei", callback_data: `paid:${order.id}` }], ...(await abroadRows(product))] },
+    reply_markup: { inline_keyboard: [[{ text: "✅ Já paguei", callback_data: `paid:${order.id}` }]] },
   });
 }
 
 // Outras formas de pagar (o que estiver ligado): cartao primeiro (estrelas do
 // Telegram: cartao, Apple Pay ou Google Pay sem sair do app), cripto depois
-export async function abroadRows(product: ProductRow, skip: "intl" | "estrelas" | null = null): Promise<{ text: string; callback_data?: string; url?: string }[][]> {
+export async function abroadRows(product: ProductRow, skip: "intl" | "estrelas" | null = null, who: "br" | "foreign" = "foreign"): Promise<{ text: string; callback_data?: string; url?: string }[][]> {
   const { starsConfig, starsPrice } = await import("./_sales_stars.js");
   const { intlConfig, intlPrice, usd } = await import("./_sales_intl.js");
   // 27/11: cartao pelo Tribute (link da assinatura do canal VIP) antes de tudo
   const { cardRows } = await import("./_sales_card.js");
-  const rows: { text: string; callback_data?: string; url?: string }[][] = [...(await cardRows())];
+  const rows: { text: string; callback_data?: string; url?: string }[][] = who === "foreign" ? [...(await cardRows())] : [];
   const stars = skip === "estrelas" ? null : starsPrice(product, await starsConfig().catch(() => ({ enabled: false, prices: {} })));
   // 23/11: UPI no botao (India e 28% do publico da Cleuza; as estrelas saem pela Google Play com UPI)
   if (stars) rows.push([{ text: `💳 Card / UPI / Apple Pay / Google Pay — ⭐ ${stars}`, callback_data: `stars:${product.id}` }]);

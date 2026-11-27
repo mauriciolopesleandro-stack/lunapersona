@@ -231,7 +231,7 @@ export async function chamadaOffer(productId: string, lang: FanLang, fanId?: str
   const was = product.regular_cents ? ` (era ${price(product.regular_cents)})` : "";
   const pix = [{ text: `🇧🇷 Pix — ${price(product.price_cents)}${was}`, callback_data: `pix:${product.id}` }];
   const abroad = await abroadRows(product);
-  const rows = lang === "pt" ? [pix, ...abroad] : [...abroad, pix];
+  const rows = lang === "pt" ? [pix] : abroad.length ? abroad : [pix];
 
   const { starsConfig, starsPrice } = await import("./_sales_stars.js");
   const { ctaConfig } = await import("./_sales_cta.js");

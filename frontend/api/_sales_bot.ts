@@ -261,12 +261,16 @@ async function buy(token: string, fan: FanRow, productId: string, chatId: number
   // fora do Brasil (Telegram em outra lingua): primeiro o cartao (fatura em
   // estrelas: cartao, Apple Pay ou Google Pay no Telegram), com cripto e Pix de
   // alternativa; sem estrelas, a pagina em dolar (cripto)
-  const others = foreign ? [...(await abroadRows(product, "estrelas")), pixRow] : undefined;
+  // 27/11: quem e de fora nao ve o Pix (nao mistura); antes do pagamento, foto com chamada
+  void pixRow;
+  const others = foreign ? await abroadRows(product, "estrelas") : undefined;
+  const { sendStepPhoto } = await import("./_sales_card.js");
+  await sendStepPhoto(token, chatId, fan.first_name, foreign).catch(() => undefined);
   if (how === "estrelas" || (how === "auto" && foreign)) {
     if (await sendStarsInvoice(token, fan, product, chatId, foreign, others).catch(() => false)) return;
   }
   if (how === "intl" || (how === "auto" && foreign)) {
-    if (await startIntl(token, fan, product, chatId, site, [...(await abroadRows(product, "intl")), pixRow]).catch(() => false)) return;
+    if (await startIntl(token, fan, product, chatId, site, await abroadRows(product, "intl")).catch(() => false)) return;
     // cripto fora do ar: o fa de fora que tocou nela recebe o cartao (estrelas)
     if (how === "intl" && foreign && (await sendStarsInvoice(token, fan, product, chatId, foreign, others).catch(() => false))) return;
   }

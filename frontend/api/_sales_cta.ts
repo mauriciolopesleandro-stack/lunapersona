@@ -308,7 +308,7 @@ async function buyButtons(lang: FanLang = "pt"): Promise<{ text: string; callbac
   // 27/11: fa de fora tambem ve o cartao (Tribute) direto na chamada
   if (lang === "en" && rows.length) {
     const { cardRows } = await import("./_sales_card.js");
-    rows.push(...(await cardRows()));
+    rows.unshift(...(await cardRows()));
   }
   return rows;
 }

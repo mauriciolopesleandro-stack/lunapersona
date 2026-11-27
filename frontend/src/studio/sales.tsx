@@ -74,6 +74,7 @@ export interface Status {
   chamada?: Chamada | null;
   callVideo?: CallVideoStatus | null;
   cardLink?: string | null; // cartao pelo Tribute (27/11)
+  cardPrice?: string;
 }
 interface Chamada {
   id: string;
@@ -109,8 +110,9 @@ interface CallVideoStatus {
 }
 
 // Video da chamada (24/11): vai na boas-vindas de todo fa novo e, uma vez, para todos que ja entraram.
-function CardLinkPanel({ link, busy, run }: { link: string | null; busy: string | null; run: (key: string, body: object, done?: string) => Promise<boolean> }) {
+function CardLinkPanel({ link, price, busy, run }: { link: string | null; price: string; busy: string | null; run: (key: string, body: object, done?: string) => Promise<boolean> }) {
   const [value, setValue] = useState(link ?? "");
+  const [cost, setCost] = useState(price);
   return (
     <section className="st-panel st-settings">
       <h2>💳 Cartão para fãs de fora (Tribute)</h2>
@@ -121,11 +123,12 @@ function CardLinkPanel({ link, busy, run }: { link: string | null; busy: string 
       {link ? <p className="st-ok">Botão ligado: {link}</p> : <p className="st-hint">Sem link: o botão não aparece.</p>}
       <div className="st-row">
         <input className="st-input" placeholder="https://t.me/tribute/app?startapp=..." value={value} onChange={(e) => setValue(e.target.value)} />
+        <input className="st-input" style={{ maxWidth: 140 }} placeholder="$6.99/month" value={cost} onChange={(e) => setCost(e.target.value)} />
         <button
           type="button"
           className="st-btn st-btn-primary"
-          disabled={busy !== null || value.trim() === (link ?? "")}
-          onClick={() => run("card-link", { action: "card-link", link: value.trim() }, value.trim() ? "Botão do cartão ligado." : "Botão do cartão tirado.")}
+          disabled={busy !== null || (value.trim() === (link ?? "") && cost.trim() === price)}
+          onClick={() => run("card-link", { action: "card-link", link: value.trim(), price: cost.trim() }, value.trim() ? "Botão do cartão ligado." : "Botão do cartão tirado.")}
         >
           {busy === "card-link" ? "Salvando..." : value.trim() ? "Salvar link" : "Tirar botão"}
         </button>
@@ -543,7 +546,7 @@ export function SalesPage({ onFolders }: { onFolders: () => void }) {
           <CtaEditor cta={status.cta} products={status.products.filter((p) => p.active)} previews={status.previews.length} busy={busy} run={run} onFolders={onFolders} />
 
           {status.connected && <ChamadaPanel chamada={status.chamada} busy={busy} run={run} />}
-          {status.connected && <CardLinkPanel link={status.cardLink ?? null} busy={busy} run={run} />}
+          {status.connected && <CardLinkPanel link={status.cardLink ?? null} price={status.cardPrice ?? "$6.99/month"} busy={busy} run={run} />}
           {status.connected && status.callVideo && <CallVideoPanel data={status.callVideo} busy={busy} run={run} />}
 
           <div className="st-sales-products">
